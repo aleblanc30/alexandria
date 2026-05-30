@@ -1,0 +1,15 @@
+import { createRouter, createWebHashHistory } from 'vue-router'
+
+export const router = createRouter({
+  history: createWebHashHistory(),
+  routes: [
+    { path: '/',           redirect: '/search' },
+    { path: '/search',     component: () => import('@/views/SearchView.vue') },
+    { path: '/clusters',   component: () => import('@/views/ClusterView.vue') },
+    { path: '/trends',     component: () => import('@/views/TrendsView.vue') },
+    { path: '/tags',       component: () => import('@/views/TagView.vue') },
+    { path: '/runs',       component: () => import('@/views/RunManagerView.vue') },
+    { path: '/ingestion',  component: () => import('@/views/IngestionView.vue') },
+    { path: '/lists',      component: () => import('@/views/ReadingListView.vue') },
+  ],
+})

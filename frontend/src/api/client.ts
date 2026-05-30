@@ -1,0 +1,244 @@
+// Typed API client — one function per endpoint.
+// All paths are relative so the Vite proxy routes them to FastAPI in dev,
+// and FastAPI serves them directly from /dist in production.
+
+const BASE = ''
+const DEFAULT_TIMEOUT_MS = 30000
+const INGESTION_TIMEOUT_MS = 120000
+
+export class ApiError extends Error {
+  status: number
+  constructor(msg: string, status: number) {
+    super(msg)
+    this.status = status
+    this.name = 'ApiError'
+  }
+}
+
+async function req<T>(
+  path: string,
+  options: RequestInit = {},
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+  const ctrl = new AbortController()
+  const timer = timeoutMs > 0
+    ? setTimeout(() => ctrl.abort(), timeoutMs)
+    : null
+  try {
+    const r = await fetch(BASE + path, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: ctrl.signal,
+      ...options,
+    })
+    if (!r.ok) {
+      let detail = r.statusText
+      try { detail = (await r.json()).detail ?? detail } catch { /* keep statusText */ }
+      throw new ApiError(`${r.status} ${detail} — ${path}`, r.status)
+    }
+    if (r.status === 204) return undefined as T
+    return r.json()
+  } catch (e: any) {
+    if (e.name === 'AbortError') throw new ApiError(`Timeout: ${path}`, 0)
+    throw e
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface TagOut       { tag: string; origin: string; confidence: number | null }
+export interface DocumentOut  {
+  id: number; source: string; source_id: string; title: string
+  url_or_path: string | null; date_added: number | null; fetch_status: string
+  source_tags: string[]; overlay_tags: TagOut[]
+  cluster_id: number | null; cluster_label: string | null
+  similarity: number | null
+}
+export interface DocumentDetail extends DocumentOut {
+  chunks_count: number; collections: string[]
+}
+export interface SearchRequest {
+  query: string; sources?: string[]; cluster_ids?: number[]; tags?: string[]
+  date_from?: number; date_to?: number; fetch_status?: string
+  mode?: 'semantic' | 'fulltext' | 'hybrid'; limit?: number; offset?: number
+  include_images?: boolean
+}
+export interface ImageOut {
+  id: number; path: string; filename: string; image_type: string | null
+  width: number | null; height: number | null
+  description: string | null; ocr_text: string | null
+  date_taken: number | null; tags: string[]; similarity: number | null
+}
+export interface SearchResponse { query: string; total: number; documents: DocumentOut[]; images: ImageOut[] }
+export interface ClusterOut    { cluster_id: number; label: string; description: string | null; run_id: number; doc_count: number; suggested_tag: string; tag_candidates: TagCandidate[]; llm_error?: string | null }
+export interface TagCandidate  { tag: string; source: string; coverage: number; doc_count: number }
+export interface ClusterDetail extends ClusterOut { top_tags: string[] }
+export interface ApplyTagResult { cluster_id: number; tag: string; applied: number; skipped: number }
+export interface ApplyAllTagsResult { clusters: ApplyTagResult[]; total_applied: number; total_skipped: number }
+export interface UmapPoint     { doc_id: number; x: number; y: number; cluster_id: number | null; title: string }
+export interface RunOut        { run_id: number; timestamp: number; algorithm: string; parameters: Record<string,unknown>; accepted: boolean; status: string; n_clusters: number; n_noise: number; notes: string | null }
+export interface DiagnosticsOut { run_id: number; n_clusters: number; n_noise: number; cluster_sizes: Record<string,number>; drift_flags: DriftFlag[]; merge_suggestions: MergeSuggestion[] }
+export interface DriftFlag     { cluster_id: number; label: string; drift_score: number; n_recent: number; flagged: boolean }
+export interface MergeSuggestion { cluster_id_a: number; label_a: string; cluster_id_b: number; label_b: string; similarity: number }
+export interface TagRow        { tag: string; origin: string; count: number }
+export interface IngestionStatus {
+  total: number
+  by_source: Record<string, number>
+  fetch_by_source?: Record<string, Record<string, number>>
+  unfetchable: number
+  pending: number
+}
+export interface PhaseDetail {
+  name: string
+  total: number
+  processed: number
+  percent: number
+  active: boolean
+}
+export interface SyncProgress {
+  source: string
+  status: 'idle' | 'running' | 'done' | 'error' | 'paused' | 'cancelled'
+  phase: string
+  active_job: 'metadata' | 'ingest' | null
+  total: number
+  processed: number
+  failed: number
+  percent: number
+  overall_total: number
+  overall_processed: number
+  phase_index: number
+  phase_count: number
+  phases: string[]
+  phase_details: PhaseDetail[]
+  error: string | null
+  last_result?: Record<string, unknown> | null
+}
+export interface UnfetchableRow  { id: number; title: string; url: string; http_status: number | null; error: string | null; timestamp: number }
+export interface ReadingList   { list_id: number; name: string; description: string; created_at: number; item_count: number }
+export interface ReadingListItem { id: number; position: number; note: string; doc_id: number; title: string; source: string; url_or_path: string | null }
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+export const search = (body: SearchRequest) =>
+  req<SearchResponse>('/search', { method: 'POST', body: JSON.stringify(body) })
+
+// ── Documents ─────────────────────────────────────────────────────────────────
+
+export const getDocument = (id: number) =>
+  req<DocumentDetail>(`/documents/${id}`)
+
+export const patchTags = (id: number, add: string[], remove: string[]) =>
+  req<void>(`/documents/${id}/tags`, { method: 'PATCH', body: JSON.stringify({ add, remove }) })
+
+// ── Clusters ──────────────────────────────────────────────────────────────────
+
+export const listClusters    = ()  => req<ClusterOut[]>('/clusters')
+export const getCluster      = (id: number) => req<ClusterDetail>(`/clusters/${id}`)
+export const clusterDocs     = (id: number, limit = 20, offset = 0) =>
+  req<DocumentOut[]>(`/clusters/${id}/documents?limit=${limit}&offset=${offset}`)
+export const scatterPoints   = ()  => req<UmapPoint[]>('/clusters/scatter/points')
+export const applyClusterTag = (id: number, tag?: string) =>
+  req<ApplyTagResult>(`/clusters/${id}/apply-tag`, {
+    method: 'POST',
+    body: JSON.stringify(tag ? { tag } : {}),
+  })
+export const regenerateClusterTag = (id: number) =>
+  req<ClusterOut>(`/clusters/${id}/regenerate-tag`, { method: 'POST', body: '{}' })
+export const applyAllClusterTags = () =>
+  req<ApplyAllTagsResult>('/clusters/apply-all-tags', { method: 'POST', body: '{}' })
+
+// ── Runs ──────────────────────────────────────────────────────────────────────
+
+export const listRuns        = ()  => req<RunOut[]>('/runs')
+export const getDiagnostics  = (id: number) => req<DiagnosticsOut>(`/runs/${id}/diagnostics`)
+export const acceptRun       = (id: number) => req<void>(`/runs/${id}/accept`, { method: 'POST' })
+export const rejectRun       = (id: number, notes = '') =>
+  req<void>(`/runs/${id}/reject?notes=${encodeURIComponent(notes)}`, { method: 'POST' })
+export const triggerRun      = ()  => req<{ status: string; run_id: number }>('/runs/trigger', { method: 'POST' })
+export const cancelRun       = (id: number) =>
+  req<{ status: string; run_id: number }>(`/runs/${id}/cancel`, { method: 'POST' })
+
+// ── Tags ──────────────────────────────────────────────────────────────────────
+
+export const listTags = (params?: { origin?: string; q?: string; limit?: number }) => {
+  const qs = new URLSearchParams(params as Record<string,string>).toString()
+  return req<TagRow[]>(`/tags${qs ? '?' + qs : ''}`)
+}
+
+// ── Trends ────────────────────────────────────────────────────────────────────
+
+export const trendTimeline = (granularity: 'month' | 'year' = 'month') =>
+  req<Record<string, Record<string, number>>>(`/trends/timeline?granularity=${granularity}`)
+export const trendSources  = (granularity: 'month' | 'year' = 'month') =>
+  req<Record<string, Record<string, number>>>(`/trends/sources?granularity=${granularity}`)
+
+// ── Ingestion ─────────────────────────────────────────────────────────────────
+
+export const ingestionStatus    = () =>
+  req<IngestionStatus>('/ingestion/status', {}, INGESTION_TIMEOUT_MS)
+export const syncProgress       = (source?: string) =>
+  req<Record<string, SyncProgress>>(
+    `/ingestion/sync/progress${source ? `?source=${source}` : ''}`,
+    {},
+    0,
+  )
+export const unfetchableUrls    = (limit = 50, offset = 0) =>
+  req<UnfetchableRow[]>(
+    `/ingestion/unfetchable?limit=${limit}&offset=${offset}`,
+    {},
+    INGESTION_TIMEOUT_MS,
+  )
+export const syncSource         = (source: string, force = false) =>
+  req<{ status: string; source: string }>(
+    `/ingestion/sync/${source}${force ? '?force=1' : ''}`,
+    { method: 'POST' },
+    10000,
+  )
+export const syncMetadata       = (source: string, force = false) =>
+  req<{ status: string; source: string; job: string }>(
+    `/ingestion/sync/${source}/metadata${force ? '?force=1' : ''}`,
+    { method: 'POST' },
+    10000,
+  )
+export const syncIngest         = (source: string, force = false) =>
+  req<{ status: string; source: string; job: string }>(
+    `/ingestion/sync/${source}/ingest${force ? '?force=1' : ''}`,
+    { method: 'POST' },
+    10000,
+  )
+export const pauseSync          = (source: string) =>
+  req<{ status: string; source: string }>(
+    `/ingestion/sync/${source}/pause`,
+    { method: 'POST' },
+    10000,
+  )
+export const cancelSync         = (source: string) =>
+  req<{ status: string; source: string }>(
+    `/ingestion/sync/${source}/cancel`,
+    { method: 'POST' },
+    10000,
+  )
+
+// ── Images ────────────────────────────────────────────────────────────────────
+
+export const listImages   = (params?: { image_type?: string; limit?: number; offset?: number }) => {
+  const qs = new URLSearchParams(params as Record<string,string>).toString()
+  return req<ImageOut[]>(`/images${qs ? '?' + qs : ''}`)
+}
+export const searchImages = (q: string, n = 10) =>
+  req<ImageOut[]>(`/images/search?q=${encodeURIComponent(q)}&n=${n}`)
+export const getImage     = (id: number) => req<ImageOut>(`/images/${id}`)
+
+// ── Reading lists ─────────────────────────────────────────────────────────────
+
+export const listReadingLists = () => req<ReadingList[]>('/reading-lists')
+export const createReadingList = (name: string, description = '') =>
+  req<{ list_id: number }>('/reading-lists', { method: 'POST', body: JSON.stringify({ name, description }) })
+export const deleteReadingList = (id: number) =>
+  req<void>(`/reading-lists/${id}`, { method: 'DELETE' })
+export const getListItems  = (id: number) => req<ReadingListItem[]>(`/reading-lists/${id}/items`)
+export const addListItem   = (listId: number, document_id: number, note = '') =>
+  req<{ id: number }>(`/reading-lists/${listId}/items`, { method: 'POST', body: JSON.stringify({ document_id, note }) })
+export const removeListItem = (listId: number, itemId: number) =>
+  req<void>(`/reading-lists/${listId}/items/${itemId}`, { method: 'DELETE' })

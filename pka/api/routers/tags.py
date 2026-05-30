@@ -1,0 +1,45 @@
+"""``/tags`` — list source and overlay tags with optional filter."""
+import sqlalchemy as sa
+from fastapi import APIRouter, Depends, Query
+
+from pka.api.dependencies import get_engine
+from pka.db.schema import overlay_tags, source_tags
+
+router = APIRouter(prefix="/tags", tags=["tags"])
+
+
+@router.get("")
+async def list_tags(
+    origin: str | None = Query(None, description="source | inferred | manual | llm"),
+    q:      str | None = Query(None),
+    limit:  int = 100,
+    engine=Depends(get_engine),
+):
+    with engine.connect() as con:
+        src_q = sa.select(
+            source_tags.c.tag_string.label("tag"),
+            sa.literal("source").label("origin"),
+            sa.func.count(source_tags.c.id).label("n"),
+        ).group_by(source_tags.c.tag_string)
+        if q:
+            src_q = src_q.where(source_tags.c.tag_string.ilike(f"%{q}%"))
+
+        ov_q = sa.select(
+            overlay_tags.c.tag.label("tag"),
+            overlay_tags.c.origin.label("origin"),
+            sa.func.count(overlay_tags.c.id).label("n"),
+        ).group_by(overlay_tags.c.tag, overlay_tags.c.origin)
+        if q:
+            ov_q = ov_q.where(overlay_tags.c.tag.ilike(f"%{q}%"))
+
+        rows: list[dict] = []
+        if not origin or origin == "source":
+            rows += [{"tag": r[0], "origin": r[1], "count": r[2]}
+                     for r in con.execute(src_q).fetchall()]
+        if not origin or origin in ("inferred", "manual", "llm"):
+            rows += [{"tag": r[0], "origin": r[1], "count": r[2]}
+                     for r in con.execute(ov_q).fetchall()
+                     if not origin or r[1] == origin]
+
+        rows.sort(key=lambda x: -x["count"])
+        return rows[:limit]
