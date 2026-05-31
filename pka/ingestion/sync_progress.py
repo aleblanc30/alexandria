@@ -18,6 +18,8 @@ class PhasePlan:
     name: str
     total: int = 0
     processed: int = 0
+    success: int = 0   # fetching phase: resolved without error
+    failure: int = 0   # fetching phase: unfetchable
 
 
 @dataclass
@@ -36,6 +38,9 @@ class SyncState:
     stop_requested: StopReason | None = None
     active_job: JobKind | None = None
     last_result: dict | None = None
+    metadata_baseline: int = 0   # archive row count at metadata job start
+    metadata_pending: int = 0    # source items not in archive at job start
+    metadata_sync_active: bool = False
 
 
 _lock = threading.Lock()
@@ -96,9 +101,10 @@ def _normalize_phases(state: SyncState) -> None:
 
     # Downstream progress implies upstream stages completed, but never
     # raise metadata/fetching because embedding overshot its total.
-    fetch.processed = max(fetch.processed, embed.processed)
+    fetch.processed = max(fetch.processed, embed.processed, fetch.success + fetch.failure)
     if fetch.total:
-        fetch.processed = min(fetch.processed, meta.processed, fetch.total)
+        upper = meta.processed if meta.processed else fetch.total
+        fetch.processed = min(fetch.processed, upper, fetch.total)
 
     if embed.total:
         embed.processed = min(embed.processed, fetch.processed, embed.total)
@@ -116,8 +122,13 @@ def is_running(source: str) -> bool:
         return state is not None and state.status == "running"
 
 
-def hydrate(source: str, totals: dict[str, int], processed: dict[str, int] | None = None) -> None:
-    """Set display totals/processed for idle progress bars (from DB counts)."""
+def hydrate(
+    source: str,
+    totals: dict[str, int],
+    processed: dict[str, int] | None = None,
+    fetch_outcomes: dict[str, int] | None = None,
+) -> None:
+    """Replace display totals/processed from DB counts (authoritative when not running)."""
     with _lock:
         state = _states.get(source)
         if state and state.status == "running":
@@ -125,16 +136,52 @@ def hydrate(source: str, totals: dict[str, int], processed: dict[str, int] | Non
         if not state:
             state = SyncState(source=source, status="idle")
             _states[source] = state
-        _ensure_standard_phases(state)
-        proc = processed or {}
-        phase_map = _phase_map(state)
-        for name in STANDARD_PHASES:
-            plan = phase_map[name]
-            if name in totals:
-                _apply_monotonic_total(plan, totals[name])
-            if name in proc:
-                _apply_monotonic_processed(plan, proc[name])
-        _normalize_phases(state)
+        _apply_db_counts(state, totals, processed, fetch_outcomes)
+
+
+def refresh_display_from_db(
+    source: str,
+    totals: dict[str, int],
+    processed: dict[str, int] | None = None,
+    fetch_outcomes: dict[str, int] | None = None,
+) -> None:
+    """Refresh phase totals/processed from DB while an ingest job is running."""
+    with _lock:
+        state = _states.get(source)
+        if not state or state.status != "running" or state.active_job != "ingest":
+            return
+        _apply_db_counts(state, totals, processed, fetch_outcomes)
+
+
+def _apply_db_counts(
+    state: SyncState,
+    totals: dict[str, int],
+    processed: dict[str, int] | None,
+    fetch_outcomes: dict[str, int] | None,
+) -> None:
+    _ensure_standard_phases(state)
+    proc = processed or {}
+    phase_map = _phase_map(state)
+    for name in STANDARD_PHASES:
+        plan = phase_map[name]
+        if name in totals:
+            plan.total = totals[name]
+        if name in proc:
+            plan.processed = proc[name]
+        if plan.total:
+            plan.processed = min(plan.processed, plan.total)
+    fetch = phase_map["fetching"]
+    if fetch_outcomes:
+        fetch.success = fetch_outcomes.get("success", 0)
+        fetch.failure = fetch_outcomes.get("failure", 0)
+        fetch.processed = fetch.success + fetch.failure
+    else:
+        fetch.success = 0
+        fetch.failure = 0
+    _normalize_phases(state)
+    meta = phase_map["metadata"]
+    state.total = meta.total
+    state.processed = meta.processed
 
 
 def begin_job(source: str, job: JobKind, phase: str = "loading") -> None:
@@ -152,6 +199,79 @@ def begin_job(source: str, job: JobKind, phase: str = "loading") -> None:
         state.stop_requested = None
         state.started_at = time.time()
         state.finished_at = None
+
+
+def begin_metadata_sync(source: str, pending: int, baseline: int) -> None:
+    """Start metadata import progress using live archive counts vs source corpus size."""
+    corpus = baseline + pending
+    with _lock:
+        state = _states.get(source)
+        if not state:
+            state = SyncState(source=source, status="running", active_job="metadata")
+            _states[source] = state
+        _ensure_standard_phases(state)
+        state.metadata_baseline = baseline
+        state.metadata_pending = pending
+        state.metadata_sync_active = True
+        meta = _phase_map(state)["metadata"]
+        meta.total = corpus
+        meta.processed = baseline
+        state.phase_index = 0
+        state.phase = "metadata"
+        state.total = corpus
+        state.processed = baseline
+        state.status = "running"
+        state.active_job = "metadata"
+
+
+def activate_phase(source: str, phase: str) -> None:
+    """Mark a phase active without changing corpus totals (metadata re-sync)."""
+    alias = {"fulltext": "embedding", "ingesting": "embedding"}
+    phase = alias.get(phase, phase)
+    with _lock:
+        state = _states.get(source)
+        if not state:
+            state = SyncState(source=source, status="running")
+            _states[source] = state
+        _ensure_standard_phases(state)
+        if phase not in STANDARD_PHASES:
+            raise ValueError(f"Unknown phase: {phase}")
+        state.phase_index = STANDARD_PHASES.index(phase)
+        plan = _phase_map(state)[phase]
+        state.phase = phase
+        state.total = plan.total
+        state.processed = plan.processed
+        state.status = "running"
+
+
+def advance_archive_growth(source: str) -> None:
+    """Metadata sync added a new archive document — grow corpus totals by one."""
+    with _lock:
+        state = _states.get(source)
+        if not state:
+            return
+        _ensure_standard_phases(state)
+        meta = state.phases[0]
+        meta.processed += 1
+        meta.total += 1
+        for plan in state.phases:
+            plan.total = meta.total
+        state.processed = meta.processed
+        state.total = meta.total
+        _normalize_phases(state)
+
+
+def set_corpus_total(source: str, total: int) -> None:
+    """Set shared corpus size on all phases (authoritative job scope)."""
+    with _lock:
+        state = _states.get(source)
+        if not state:
+            state = SyncState(source=source, status="running")
+            _states[source] = state
+        _ensure_standard_phases(state)
+        for plan in state.phases:
+            plan.total = total
+        _normalize_phases(state)
 
 
 def begin(source: str, phase: str = "loading") -> None:
@@ -234,7 +354,14 @@ def advance(source: str, *, failed: bool = False, phase: str | None = None) -> N
             idx = STANDARD_PHASES.index(phase)
         if state.phases and idx < len(state.phases):
             plan = state.phases[idx]
-            plan.processed += 1
+            if plan.name == "fetching":
+                if failed:
+                    plan.failure += 1
+                else:
+                    plan.success += 1
+                plan.processed = plan.success + plan.failure
+            else:
+                plan.processed += 1
             if plan.processed > plan.total:
                 plan.total = plan.processed
             state.processed = plan.processed
@@ -301,6 +428,7 @@ def finish(
         state.finished_at = time.time()
         state.stop_requested = None
         state.active_job = None
+        state.metadata_sync_active = False
 
 
 def reset(source: str) -> None:
@@ -323,9 +451,25 @@ def snapshot(source: str | None = None) -> dict[str, dict]:
 
 
 def _to_dict(state: SyncState) -> dict:
+    from pka.ingestion.pending_metadata import metadata_job_progress
+
     _ensure_standard_phases(state)
-    _normalize_phases(state)
-    done, total = _overall(state)
+    metadata_job = (
+        state.status == "running"
+        and state.active_job == "metadata"
+        and state.metadata_sync_active
+    )
+    if not metadata_job:
+        _normalize_phases(state)
+
+    if metadata_job:
+        meta_processed, meta_total = metadata_job_progress(
+            state.source, state.metadata_baseline, state.metadata_pending,
+        )
+        done, total = meta_processed, meta_total
+    else:
+        done, total = _overall(state)
+
     if state.status == "running" and total:
         percent = min(100, round(100 * done / total))
     elif state.status in ("done", "paused", "cancelled"):
@@ -336,21 +480,38 @@ def _to_dict(state: SyncState) -> dict:
     phase_details = []
     for name in STANDARD_PHASES:
         plan = _phase_map(state)[name]
-        phase_details.append({
+        if name == "metadata" and metadata_job:
+            processed, phase_total = meta_processed, meta_total
+            phase_pct = (
+                100 if phase_total <= 0 and processed <= 0
+                else min(100, round(100 * processed / phase_total)) if phase_total else 0
+            )
+        else:
+            processed, phase_total = plan.processed, plan.total
+            phase_pct = _phase_percent(plan)
+        detail: dict = {
             "name":      name,
-            "total":     plan.total,
-            "processed": plan.processed,
-            "percent":   _phase_percent(plan),
+            "total":     phase_total,
+            "processed": processed,
+            "percent":   phase_pct,
             "active":    state.status == "running" and state.phase == name,
-        })
+        }
+        if name == "fetching" and plan.total > 0:
+            pending = max(0, plan.total - plan.success - plan.failure)
+            detail["breakdown"] = {
+                "success": plan.success,
+                "failure": plan.failure,
+                "pending": pending,
+            }
+        phase_details.append(detail)
 
     return {
         "source":           state.source,
         "status":           state.status,
         "phase":            state.phase,
         "active_job":       state.active_job,
-        "total":            state.total,
-        "processed":        state.processed,
+        "total":            meta_total if metadata_job else state.total,
+        "processed":        meta_processed if metadata_job else state.processed,
         "failed":           state.failed,
         "percent":          percent,
         "overall_total":    total,

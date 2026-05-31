@@ -85,8 +85,14 @@ export interface TagRow        { tag: string; origin: string; count: number }
 export interface IngestionStatus {
   total: number
   by_source: Record<string, number>
+  pending_metadata_by_source?: Record<string, number>
   fetch_by_source?: Record<string, Record<string, number>>
   unfetchable: number
+  pending: number
+}
+export interface PhaseBreakdown {
+  success: number
+  failure: number
   pending: number
 }
 export interface PhaseDetail {
@@ -95,6 +101,7 @@ export interface PhaseDetail {
   processed: number
   percent: number
   active: boolean
+  breakdown?: PhaseBreakdown
 }
 export interface SyncProgress {
   source: string

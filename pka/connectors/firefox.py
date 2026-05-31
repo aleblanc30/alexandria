@@ -1,19 +1,21 @@
 """
 Read-only Firefox bookmarks connector.
 
-Operates on a temporary copy of ``places.sqlite`` to avoid lock contention
-with a running Firefox process. Bookmark *content* (HTTP fetch + parse) is
-deferred to :mod:`pka.ingestion.fetcher`.
+Dev (``PKA_DEV=1``): snapshot ``places.sqlite`` once into ``data/`` and reuse it.
+Prod: read the live profile DB directly (may wait on Firefox's lock).
+Bookmark *content* (HTTP fetch + parse) is deferred to :mod:`pka.ingestion.fetcher`.
 """
 import logging
-import shutil
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
 from pka.config import settings as cfg
+from pka.db.sqlite_copy import copy_sqlite_database
 
 log = logging.getLogger(__name__)
+
+LIVE_DB_TIMEOUT_SECONDS = 30.0
 
 
 @dataclass
@@ -46,17 +48,25 @@ def _find_places_sqlite(firefox_root: Path) -> Path:
     )
 
 
-def _copy_db(src: Path) -> Path:
-    dst = cfg.data_dir / "firefox_places_copy.sqlite"
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-    # Also copy WAL/SHM siblings if present (avoids incomplete reads)
-    for ext in ("-wal", "-shm"):
-        s = src.with_suffix(src.suffix + ext)
-        if s.exists():
-            shutil.copy2(s, dst.with_suffix(dst.suffix + ext))
-    log.debug("Copied Firefox places.sqlite to %s", dst)
-    return dst
+def _dev_places_copy(src: Path, *, refresh: bool = False) -> Path:
+    """One-time snapshot for dev; reused until ``refresh`` or the file is deleted."""
+    dst = cfg.firefox_places_copy
+    if dst.exists() and not refresh:
+        log.debug("Using dev Firefox places copy: %s", dst)
+        return dst
+    log.info("Creating dev Firefox places copy from %s", src)
+    return copy_sqlite_database(src, dst)
+
+
+def _resolve_places_db(src: Path, *, refresh: bool = False) -> Path:
+    if cfg.dev:
+        return _dev_places_copy(src, refresh=refresh)
+    return src
+
+
+def _connect_ro(db_path: Path) -> sqlite3.Connection:
+    uri = f"file:{db_path.resolve()}?mode=ro"
+    return sqlite3.connect(uri, uri=True, timeout=LIVE_DB_TIMEOUT_SECONDS)
 
 
 # ── Folder path reconstruction ───────────────────────────────────────────────
@@ -140,6 +150,8 @@ def _build_tag_index(cur: sqlite3.Cursor) -> dict[int, list[str]]:
 def load_bookmarks(
     firefox_root: Path | None = None,
     places_db: Path | None = None,
+    *,
+    refresh: bool = False,
 ) -> list[FirefoxBookmark]:
     """Load bookmarks from Firefox ``places.sqlite``.
 
@@ -147,20 +159,25 @@ def load_bookmarks(
       1. ``places_db`` argument (exact path)
       2. ``firefox_root`` argument  → auto-detect profile
       3. :data:`pka.config.settings.firefox_db` → auto-detect profile
+
+    When ``PKA_DEV=1``, the profile DB is copied once to ``data/firefox_places_copy.sqlite``
+    and that snapshot is reused. Pass ``refresh=True`` (or delete the copy) to resnapshot.
+    In production, the live profile file is opened read-only.
     """
     if places_db:
-        src = places_db
+        db_path = places_db
+        if not db_path.exists():
+            raise FileNotFoundError(f"Firefox places.sqlite not found: {db_path}")
     else:
         root = firefox_root or cfg.firefox_db
         src = _find_places_sqlite(root) if root.is_dir() else root
+        if not src.exists():
+            raise FileNotFoundError(f"Firefox places.sqlite not found: {src}")
+        db_path = _resolve_places_db(src, refresh=refresh)
 
-    if not src.exists():
-        raise FileNotFoundError(f"Firefox places.sqlite not found: {src}")
-
-    db_copy = _copy_db(src)
     bookmarks: list[FirefoxBookmark] = []
 
-    with sqlite3.connect(db_copy) as con:
+    with _connect_ro(db_path) as con:
         con.row_factory = sqlite3.Row
         cur = con.cursor()
 

@@ -13,13 +13,13 @@ File layout assumed (Calibre default):
         cover.jpg
         metadata.opf
 """
-import shutil
-import sqlite3
 import logging
+import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from pka.config import settings as cfg
+from pka.db.sqlite_copy import copy_sqlite_database
 
 log = logging.getLogger(__name__)
 
@@ -52,14 +52,7 @@ def _copy_db(library_root: Path) -> Path:
     if not src.exists():
         raise FileNotFoundError(f"Calibre metadata.db not found at {src}")
     dst = cfg.data_dir / "calibre_metadata_copy.db"
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-    for ext in ("-wal", "-shm"):
-        s = src.with_suffix(src.suffix + ext)
-        if s.exists():
-            shutil.copy2(s, dst.with_suffix(dst.suffix + ext))
-    log.debug("Copied Calibre metadata.db to %s", dst)
-    return dst
+    return copy_sqlite_database(src, dst)
 
 
 # ── Format path resolution ────────────────────────────────────────────────────
@@ -129,23 +122,19 @@ def load_books(
         copy_path:    Where to write the DB copy. Defaults to data_dir/calibre_copy.db.
     """
     root = library_root or cfg.book_archive
-    db_copy = copy_path or (cfg.data_dir / "calibre_metadata_copy.db")
-
     src = root / "metadata.db"
     if not src.exists():
         raise FileNotFoundError(f"Calibre metadata.db not found at {src}")
 
-    dst = db_copy
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-    for ext in ("-wal", "-shm"):
-        s = src.with_suffix(src.suffix + ext)
-        if s.exists():
-            shutil.copy2(s, dst.with_suffix(dst.suffix + ext))
+    db_copy = copy_path or (cfg.data_dir / "calibre_metadata_copy.db")
+    if copy_path:
+        copy_sqlite_database(src, db_copy)
+    else:
+        db_copy = _copy_db(root)
 
     books: list[CalibreBook] = []
 
-    with sqlite3.connect(dst) as con:
+    with sqlite3.connect(db_copy) as con:
         con.row_factory = sqlite3.Row
         cur = con.cursor()
 

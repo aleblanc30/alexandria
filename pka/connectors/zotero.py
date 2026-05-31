@@ -5,13 +5,13 @@ Operates on a temporary copy of ``zotero.sqlite`` to avoid lock contention
 with a running Zotero process.
 """
 import logging
-import shutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from pka.config import settings
+from pka.db.sqlite_copy import copy_sqlite_database
 
 log = logging.getLogger(__name__)
 
@@ -50,9 +50,7 @@ _FIELD_NAMES: tuple[str, ...] = ("title", "abstractNote", "DOI", "date", "url")
 
 
 def _copy_db(src: Path, dst: Path) -> None:
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-    log.debug("Copied Zotero DB to %s", dst)
+    copy_sqlite_database(src, dst)
 
 
 def _parse_year(date_str: str | None) -> int | None:

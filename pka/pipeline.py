@@ -23,6 +23,7 @@ from pka.db.queries import (
     existing_chunk_count,
     get_engine,
     insert_chunks,
+    insert_document_if_new,
     insert_source_collections,
     insert_source_tags,
     source_ids_with_chunks,
@@ -41,6 +42,14 @@ def _progress_tick(key: str | None, *, failed: bool = False) -> None:
     if key:
         from pka.ingestion.sync_progress import advance
         advance(key, failed=failed)
+
+
+def _progress_metadata_tick(key: str | None, *, created: bool, failed: bool) -> None:
+    if not key or failed:
+        if key and failed:
+            from pka.ingestion.sync_progress import advance
+            advance(key, failed=True)
+    # Progress is read from archive.db on each snapshot poll — no in-memory tick.
 
 
 def _stop_requested(key: str | None):
@@ -188,16 +197,25 @@ def ingest_zotero_metadata(
     dry_run: bool = False,
     progress_key: str | None = None,
 ) -> dict:
-    """Persist Zotero items (documents, tags, collections) without embedding."""
+    """Persist new Zotero items (documents, tags, collections) without embedding."""
     stats = {"processed": 0, "skipped": 0, "failed": 0}
+    known = document_index(Source.ZOTERO)
 
     for item in items:
         if (stop := _stop_requested(progress_key)):
             stats["stopped"] = stop
             break
+        if item.source_id in known:
+            stats["skipped"] += 1
+            continue
         failed = False
+        created = False
         try:
-            doc_id = upsert_document(
+            if dry_run:
+                stats["processed"] += 1
+                created = True
+                continue
+            doc_id = insert_document_if_new(
                 source       = Source.ZOTERO,
                 source_id    = item.source_id,
                 title        = item.title,
@@ -207,15 +225,20 @@ def ingest_zotero_metadata(
                     FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
                 ),
             )
+            if doc_id is None:
+                stats["skipped"] += 1
+                continue
             insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
             insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
+            known[item.source_id] = doc_id
             stats["processed"] += 1
+            created = True
         except Exception as exc:
             log.exception("Zotero metadata %s failed: %s", item.source_id, exc)
             stats["failed"] += 1
             failed = True
         finally:
-            _progress_tick(progress_key, failed=failed)
+            _progress_metadata_tick(progress_key, created=created, failed=failed)
 
     return stats
 
@@ -293,16 +316,25 @@ def ingest_firefox_bookmarks(
     dry_run: bool = False,
     progress_key: str | None = None,
 ) -> dict:
-    """Phase 1: persist bookmark metadata. Fetching happens out-of-band."""
+    """Phase 1: persist new bookmark metadata. Fetching happens out-of-band."""
     stats = {"processed": 0, "skipped": 0, "failed": 0}
+    known = document_index(Source.FIREFOX) if skip_existing else {}
 
     for bm in bookmarks:
         if (stop := _stop_requested(progress_key)):
             stats["stopped"] = stop
             break
+        if skip_existing and bm.source_id in known:
+            stats["skipped"] += 1
+            continue
         failed = False
+        created = False
         try:
-            doc_id = upsert_document(
+            if dry_run:
+                stats["processed"] += 1
+                created = True
+                continue
+            doc_id = insert_document_if_new(
                 source       = Source.FIREFOX,
                 source_id    = bm.source_id,
                 title        = bm.title,
@@ -310,17 +342,21 @@ def ingest_firefox_bookmarks(
                 date_added   = bm.date_added,
                 fetch_status = FetchStatus.PENDING,
             )
+            if doc_id is None:
+                stats["skipped"] += 1
+                continue
             insert_source_tags(doc_id, bm.tags, source=Source.FIREFOX)
             if bm.folder_path:
                 insert_source_collections(doc_id, [bm.folder_path], source=Source.FIREFOX)
-
+            known[bm.source_id] = doc_id
             stats["processed"] += 1
+            created = True
         except Exception as exc:
             log.exception("Failed bookmark %s: %s", bm.source_id, exc)
             stats["failed"] += 1
             failed = True
         finally:
-            _progress_tick(progress_key, failed=failed)
+            _progress_metadata_tick(progress_key, created=created, failed=failed)
 
     return stats
 
@@ -376,16 +412,25 @@ def ingest_calibre_metadata(
     dry_run: bool = False,
     progress_key: str | None = None,
 ) -> dict:
-    """Persist Calibre book records without embedding."""
+    """Persist new Calibre book records without embedding."""
     stats = {"processed": 0, "skipped": 0, "failed": 0}
+    known = document_index(Source.CALIBRE)
 
     for book in books:
         if (stop := _stop_requested(progress_key)):
             stats["stopped"] = stop
             break
+        if book.source_id in known:
+            stats["skipped"] += 1
+            continue
         failed = False
+        created = False
         try:
-            doc_id = upsert_document(
+            if dry_run:
+                stats["processed"] += 1
+                created = True
+                continue
+            doc_id = insert_document_if_new(
                 source       = Source.CALIBRE,
                 source_id    = book.source_id,
                 title        = book.title,
@@ -395,16 +440,21 @@ def ingest_calibre_metadata(
                     FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING
                 ),
             )
+            if doc_id is None:
+                stats["skipped"] += 1
+                continue
             insert_source_tags(doc_id, book.tags, source=Source.CALIBRE)
             if book.series:
                 insert_source_collections(doc_id, [book.series], source=Source.CALIBRE)
+            known[book.source_id] = doc_id
             stats["processed"] += 1
+            created = True
         except Exception as exc:
             log.exception("Failed calibre metadata %s: %s", book.source_id, exc)
             stats["failed"] += 1
             failed = True
         finally:
-            _progress_tick(progress_key, failed=failed)
+            _progress_metadata_tick(progress_key, created=created, failed=failed)
 
     return stats
 

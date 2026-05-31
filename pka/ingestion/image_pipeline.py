@@ -82,12 +82,14 @@ def register_images(
                 stats["stopped"] = stop
                 break
         failed = False
+        created = False
         try:
             if _image_already_indexed(img.path):
                 stats["skipped"] += 1
                 continue
             if dry_run:
                 stats["processed"] += 1
+                created = True
                 continue
 
             now = int(time.time())
@@ -106,14 +108,15 @@ def register_images(
                     "dt": img.date_taken,
                 })
             stats["processed"] += 1
+            created = True
         except Exception as exc:
             log.exception("Failed registering image %s: %s", img.path.name, exc)
             stats["failed"] += 1
             failed = True
         finally:
-            if progress_key:
+            if progress_key and failed:
                 from pka.ingestion.sync_progress import advance
-                advance(progress_key, failed=failed)
+                advance(progress_key, failed=True)
 
     return stats
 

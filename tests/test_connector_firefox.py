@@ -73,3 +73,23 @@ class TestLoadBookmarks:
         firefox_root = firefox_places_db.parent.parent
         items = load_bookmarks(firefox_root=firefox_root)
         assert len(items) == 2
+
+    def test_dev_mode_reuses_one_time_copy(self, firefox_places_db, monkeypatch):
+        from pka import config
+
+        monkeypatch.setattr(config.settings, "dev", True)
+        firefox_root = firefox_places_db.parent.parent
+        copy_path = config.settings.firefox_places_copy
+        assert not copy_path.exists()
+
+        first = load_bookmarks(firefox_root=firefox_root)
+        assert copy_path.exists()
+        assert len(first) == 2
+        mtime = copy_path.stat().st_mtime
+
+        second = load_bookmarks(firefox_root=firefox_root)
+        assert copy_path.stat().st_mtime == mtime
+        assert len(second) == 2
+
+        load_bookmarks(firefox_root=firefox_root, refresh=True)
+        assert copy_path.stat().st_mtime >= mtime

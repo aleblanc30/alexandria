@@ -2,7 +2,9 @@
 import logging
 
 from pka.connectors.calibre import load_books
+from pka.constants import Source
 from pka.ingestion import sync_progress as sp
+from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.ingestion.sync_helpers import should_stop
 from pka.pipeline import (
     ingest_calibre_books,
@@ -17,11 +19,14 @@ def sync_calibre_metadata(
     progress_key: str | None = None,
     dry_run: bool = False,
 ) -> dict:
+    from pka.db.queries import init_db
+
+    init_db()
     key = progress_key or "calibre"
+    baseline = archive_document_count(Source.CALIBRE)
+    pending = count_pending_metadata(Source.CALIBRE)
+    sp.begin_metadata_sync(key, pending, baseline)
     books = load_books()
-    n = len(books)
-    sp.plan_pipeline(key, [("metadata", n), ("fetching", 0), ("embedding", n)])
-    sp.set_phase(key, "metadata", n)
     stats = ingest_calibre_metadata(books, dry_run=dry_run, progress_key=key)
     log.info("Calibre metadata: %s", stats)
     return {"metadata": stats, "stopped": stats.get("stopped")}
@@ -38,7 +43,7 @@ def sync_calibre_ingest(
     n_files = sum(
         1 for b in books if b.preferred_path and b.preferred_path.exists()
     )
-    sp.plan_pipeline(key, [("metadata", n), ("fetching", 0), ("embedding", n_files or n)])
+    sp.set_corpus_total(key, n_files or n)
     sp.skip_phase(key, "fetching")
 
     stats: dict = {}

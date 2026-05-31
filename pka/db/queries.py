@@ -83,6 +83,49 @@ def init_db() -> None:
 
 # ── Documents ────────────────────────────────────────────────────────────────
 
+def insert_document_if_new(
+    source: Source | str,
+    source_id: str,
+    title: str,
+    url_or_path: str | None,
+    date_added: int | None,
+    fetch_status: FetchStatus | str = FetchStatus.PENDING,
+) -> int | None:
+    """Insert a document when ``(source, source_id)`` is not already archived."""
+    eng = get_engine()
+    now = int(time.time())
+    with eng.begin() as con:
+        existing = con.execute(
+            sa.select(documents.c.id).where(
+                (documents.c.source == str(source)) &
+                (documents.c.source_id == source_id)
+            )
+        ).fetchone()
+        if existing:
+            return None
+        con.execute(
+            sa.text("""
+                INSERT INTO documents
+                    (source, source_id, title, url_or_path,
+                     date_added, ingested_at, fetch_status)
+                VALUES
+                    (:source, :sid, :title, :url, :da, :now, :fs)
+            """),
+            {
+                "source": str(source), "sid": source_id,
+                "title": title, "url": url_or_path,
+                "da": date_added, "now": now, "fs": str(fetch_status),
+            },
+        )
+        row = con.execute(
+            sa.select(documents.c.id).where(
+                (documents.c.source == str(source)) &
+                (documents.c.source_id == source_id)
+            )
+        ).fetchone()
+    return row[0]
+
+
 def upsert_document(
     source: Source | str,
     source_id: str,

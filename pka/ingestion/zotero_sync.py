@@ -5,6 +5,7 @@ from pka.connectors.zotero import ensure_zotero_copy, load_item_keys, load_items
 from pka.constants import Source
 from pka.db.queries import source_ids_with_chunks
 from pka.ingestion import sync_progress as sp
+from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.pipeline import ingest_zotero_embed, ingest_zotero_metadata
 
 log = logging.getLogger(__name__)
@@ -30,11 +31,14 @@ def sync_zotero_metadata(
     progress_key: str | None = None,
     dry_run: bool = False,
 ) -> dict:
+    from pka.db.queries import init_db
+
+    init_db()
     key = progress_key or "zotero"
+    baseline = archive_document_count(Source.ZOTERO)
+    pending = count_pending_metadata(Source.ZOTERO)
+    sp.begin_metadata_sync(key, pending, baseline)
     items = load_items()
-    n = len(items)
-    sp.plan_pipeline(key, [("metadata", n), ("fetching", 0), ("embedding", n)])
-    sp.set_phase(key, "metadata", n)
     stats = ingest_zotero_metadata(items, dry_run=dry_run, progress_key=key)
     log.info("Zotero metadata: %s", stats)
     return {"metadata": stats, "stopped": stats.get("stopped")}
@@ -47,7 +51,7 @@ def sync_zotero_ingest(
 ) -> dict:
     key = progress_key or "zotero"
     items, n, pre_skipped = _load_zotero_items_for_embed(skip_existing=skip_existing)
-    sp.plan_pipeline(key, [("metadata", n), ("fetching", 0), ("embedding", n)])
+    sp.set_corpus_total(key, n)
     sp.skip_phase(key, "fetching")
     sp.set_phase(key, "embedding", n)
     if not items:

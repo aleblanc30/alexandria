@@ -99,6 +99,10 @@ export const useIngestionStore = defineStore('ingestion', () => {
     try {
       const snap = await api.syncProgress()
       applyProgressSnapshot(snap)
+      const anyRunning = Object.values(snap).some(p => p.status === 'running')
+      if (anyRunning) {
+        try { status.value = await api.ingestionStatus() } catch { /* non-critical */ }
+      }
       for (const [src, p] of Object.entries(snap)) {
         const noteKey = `${src}:${p.active_job ?? 'any'}:${p.status}`
         if (p.status === 'done' && !notified.has(noteKey)) {

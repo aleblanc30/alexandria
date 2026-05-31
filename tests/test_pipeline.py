@@ -146,6 +146,21 @@ class TestIngestFirefoxBookmarks:
             ).fetchone()
         assert row[0] == "web"
 
+    def test_resync_skips_existing_bookmark(self):
+        bm = _make_firefox_bookmark()
+        first = ingest_firefox_bookmarks([bm])
+        assert first["processed"] == 1
+        second = ingest_firefox_bookmarks([bm])
+        assert second["processed"] == 0
+        assert second["skipped"] == 1
+        with get_engine().connect() as con:
+            count = con.execute(
+                sa.select(sa.func.count()).select_from(documents).where(
+                    documents.c.source == "firefox"
+                )
+            ).scalar()
+        assert count == 1
+
 
 class TestIngestFetchedTexts:
     def test_chunks_created_for_fetched_text(self, mock_chroma):

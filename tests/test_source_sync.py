@@ -15,6 +15,12 @@ def setup_function():
         sp.reset(src)
 
 
+def _mock_pending_counts(monkeypatch, sync_module: str, *, pending: int = 1, baseline: int = 0):
+    """Stub DB-backed pending totals; sync modules import these at module scope."""
+    monkeypatch.setattr(f"{sync_module}.archive_document_count", lambda _src: baseline)
+    monkeypatch.setattr(f"{sync_module}.count_pending_metadata", lambda _src: pending)
+
+
 def _firefox_bm() -> FirefoxBookmark:
     return FirefoxBookmark(
         source_id="F1", url="https://example.com", title="Ex",
@@ -53,6 +59,7 @@ def _image_file(tmp_path) -> ImageFile:
 
 class TestFirefoxSync:
     def test_no_pending_skips_fetch_and_embed(self, monkeypatch):
+        _mock_pending_counts(monkeypatch, "pka.ingestion.firefox_sync", pending=1)
         monkeypatch.setattr(
             "pka.ingestion.firefox_sync.load_bookmarks",
             lambda: [_firefox_bm()],
@@ -74,6 +81,7 @@ class TestFirefoxSync:
         fetch_mock.assert_not_called()
 
     def test_runs_fetch_and_embed(self, monkeypatch):
+        _mock_pending_counts(monkeypatch, "pka.ingestion.firefox_sync", pending=1)
         monkeypatch.setattr(
             "pka.ingestion.firefox_sync.load_bookmarks",
             lambda: [_firefox_bm()],
@@ -106,6 +114,7 @@ class TestFirefoxSync:
         assert stats["embed"]["processed"] == 1
 
     def test_stops_after_fetch_when_cancelled(self, monkeypatch):
+        _mock_pending_counts(monkeypatch, "pka.ingestion.firefox_sync", pending=1)
         monkeypatch.setattr(
             "pka.ingestion.firefox_sync.load_bookmarks",
             lambda: [_firefox_bm()],
@@ -167,6 +176,7 @@ class TestFirefoxSync:
         assert stats["embed"]["processed"] == 1
 
     def test_stops_after_metadata_when_cancelled(self, monkeypatch):
+        _mock_pending_counts(monkeypatch, "pka.ingestion.firefox_sync", pending=1)
         monkeypatch.setattr(
             "pka.ingestion.firefox_sync.load_bookmarks",
             lambda: [_firefox_bm()],
@@ -188,6 +198,7 @@ class TestFirefoxSync:
 
 class TestZoteroSync:
     def test_runs_embedding_phase(self, monkeypatch):
+        _mock_pending_counts(monkeypatch, "pka.ingestion.zotero_sync", pending=1)
         monkeypatch.setattr(
             "pka.ingestion.zotero_sync.load_items",
             lambda: [_zotero_item()],
@@ -214,6 +225,7 @@ class TestZoteroSync:
 
 class TestCalibreSync:
     def test_runs_metadata_and_fulltext(self, monkeypatch, tmp_path):
+        _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=1)
         books = [_calibre_book(tmp_path, with_file=True)]
         monkeypatch.setattr("pka.ingestion.calibre_sync.load_books", lambda: books)
         reg = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0})
@@ -234,6 +246,7 @@ class TestCalibreSync:
         assert stats["fulltext"]["processed"] == 1
 
     def test_skips_fulltext_when_no_files(self, monkeypatch, tmp_path):
+        _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=1)
         monkeypatch.setattr(
             "pka.ingestion.calibre_sync.load_books",
             lambda: [_calibre_book(tmp_path, with_file=False)],
@@ -257,6 +270,7 @@ class TestCalibreSync:
         assert stats["fulltext"]["processed"] == 0
 
     def test_stops_after_metadata_when_cancelled(self, monkeypatch, tmp_path):
+        _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=1)
         monkeypatch.setattr(
             "pka.ingestion.calibre_sync.load_books",
             lambda: [_calibre_book(tmp_path, with_file=True)],
@@ -278,6 +292,7 @@ class TestCalibreSync:
 
 class TestImageSync:
     def test_scans_and_ingests(self, monkeypatch, tmp_path):
+        _mock_pending_counts(monkeypatch, "pka.ingestion.image_sync", pending=1)
         img = _image_file(tmp_path)
         monkeypatch.setattr(
             "pka.ingestion.image_sync.scan_images",

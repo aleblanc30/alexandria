@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     # ── Output paths ────────────────────────────────────────────────────────
     data_dir: Path = Path("data")
+    dev: bool = False  # PKA_DEV=1 — dev API + one-time Firefox places snapshot
 
     @property
     def archive_db(self) -> Path:
@@ -31,6 +32,10 @@ class Settings(BaseSettings):
     @property
     def zotero_db_copy(self) -> Path:
         return self.data_dir / "zotero_copy.sqlite"
+
+    @property
+    def firefox_places_copy(self) -> Path:
+        return self.data_dir / "firefox_places_copy.sqlite"
 
     # ── Ollama ──────────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
@@ -52,6 +57,15 @@ class Settings(BaseSettings):
     clip_model: str = "openai/clip-vit-base-patch32"       # HuggingFace hub id
 
     # ── Validators ──────────────────────────────────────────────────────────
+    @field_validator("dev", mode="before")
+    @classmethod
+    def _parse_dev(cls, v: object) -> bool:
+        if isinstance(v, bool):
+            return v
+        if v is None:
+            return False
+        return str(v).strip().lower() in ("1", "true", "yes", "on")
+
     @field_validator("zotero_db", "firefox_db", "book_archive", "images_dir")
     @classmethod
     def _expand_and_check(cls, v: Path) -> Path:

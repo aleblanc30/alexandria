@@ -15,12 +15,14 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 
 
-def _phase_baselines(engine, src: str) -> tuple[dict[str, int], dict[str, int]]:
-    """Return (totals, processed) for idle progress bars from DB counts.
+def _phase_baselines(engine, src: str) -> tuple[dict[str, int], dict[str, int], dict[str, int] | None]:
+    """Return (totals, processed, fetch_outcomes) for idle progress bars from DB counts.
 
     Every item traverses metadata → fetching → embedding, so all phases share
     the same corpus total. Processed counts decrease downstream.
+    fetch_outcomes is set for Firefox only: success (fetched+skipped) and failure (unfetchable).
     """
+    fetch_outcomes: dict[str, int] | None = None
     with engine.connect() as con:
         if src == Source.IMAGE:
             total = con.execute(
@@ -35,6 +37,7 @@ def _phase_baselines(engine, src: str) -> tuple[dict[str, int], dict[str, int]]:
             return (
                 {"metadata": total, "fetching": total, "embedding": total},
                 {"metadata": total, "fetching": total, "embedding": embedded},
+                None,
             )
 
         doc_count = con.execute(
@@ -52,30 +55,36 @@ def _phase_baselines(engine, src: str) -> tuple[dict[str, int], dict[str, int]]:
 
         fetching_done = doc_count
         if src == Source.FIREFOX:
-            fetching_done = con.execute(
-                sa.select(sa.func.count()).select_from(documents).where(
-                    documents.c.source == src,
-                    documents.c.fetch_status.in_([
-                        str(FetchStatus.FETCHED),
-                        str(FetchStatus.UNFETCHABLE),
-                        str(FetchStatus.SKIPPED),
-                    ]),
-                )
-            ).scalar() or 0
+            rows = con.execute(
+                sa.select(documents.c.fetch_status, sa.func.count())
+                .where(documents.c.source == src)
+                .group_by(documents.c.fetch_status)
+            ).fetchall()
+            counts = {status: count for status, count in rows}
+            success = counts.get(str(FetchStatus.FETCHED), 0) + counts.get(
+                str(FetchStatus.SKIPPED), 0
+            )
+            failure = counts.get(str(FetchStatus.UNFETCHABLE), 0)
+            fetching_done = success + failure
+            fetch_outcomes = {"success": success, "failure": failure}
 
         return (
             {"metadata": doc_count, "fetching": doc_count, "embedding": doc_count},
             {"metadata": doc_count, "fetching": fetching_done, "embedding": embedded},
+            fetch_outcomes,
         )
 
 
 @router.get("/status")
 async def ingestion_status(engine=Depends(get_engine)):
+    from pka.ingestion.pending_metadata import count_pending_metadata
+
     with engine.connect() as con:
         total = con.execute(
             sa.select(sa.func.count()).select_from(documents)
         ).scalar()
         by_source = {}
+        pending_metadata_by_source: dict[str, int] = {}
         fetch_by_source: dict[str, dict[str, int]] = {}
         for src in ALL_SOURCES:
             n = con.execute(
@@ -83,6 +92,11 @@ async def ingestion_status(engine=Depends(get_engine)):
                 .where(documents.c.source == src)
             ).scalar()
             by_source[src] = n
+            try:
+                pending_metadata_by_source[src] = count_pending_metadata(src)
+            except Exception:
+                log.exception("Pending metadata count failed for %s", src)
+                pending_metadata_by_source[src] = 0
             if src == Source.FIREFOX:
                 rows = con.execute(
                     sa.select(documents.c.fetch_status, sa.func.count())
@@ -109,6 +123,7 @@ async def ingestion_status(engine=Depends(get_engine)):
     return {
         "total": total,
         "by_source": by_source,
+        "pending_metadata_by_source": pending_metadata_by_source,
         "fetch_by_source": fetch_by_source,
         "unfetchable": unfetchable,
         "pending": pending,
@@ -122,9 +137,11 @@ async def sync_progress(source: str | None = None, engine=Depends(get_engine)):
         raise HTTPException(400, f"Unknown source: {source}")
     targets = [source] if source else ALL_SOURCES
     for src in targets:
-        if not sp.is_running(src):
-            totals, processed = _phase_baselines(engine, src)
-            sp.hydrate(src, totals, processed)
+        totals, processed, fetch_outcomes = _phase_baselines(engine, src)
+        if sp.is_running(src):
+            sp.refresh_display_from_db(src, totals, processed, fetch_outcomes)
+        else:
+            sp.hydrate(src, totals, processed, fetch_outcomes)
     return sp.snapshot(source)
 
 
@@ -179,11 +196,11 @@ def _finish_job(src: str, stats: dict | None, *, error: str | None = None) -> No
 
 
 def _seed_baselines(src: str) -> None:
-    """Load DB counts into progress state so new jobs never regress bars."""
+    """Sync progress display from current DB counts."""
     from pka.db.queries import get_engine
 
-    totals, processed = _phase_baselines(get_engine(), src)
-    sp.hydrate(src, totals, processed)
+    totals, processed, fetch_outcomes = _phase_baselines(get_engine(), src)
+    sp.hydrate(src, totals, processed, fetch_outcomes)
 
 
 def _sync_metadata(src: str) -> None:

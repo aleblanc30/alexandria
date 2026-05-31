@@ -3,8 +3,10 @@ import asyncio
 import logging
 
 from pka.connectors.firefox import load_bookmarks
+from pka.constants import Source
 from pka.ingestion.fetcher import fetch_pending, _get_pending
 from pka.ingestion import sync_progress as sp
+from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.ingestion.sync_helpers import should_stop
 from pka.pipeline import ingest_fetched_texts, ingest_firefox_bookmarks
 
@@ -16,22 +18,21 @@ def _stopped(stats: dict) -> str | None:
 
 
 def _plan_counts(n_bm: int) -> None:
-    sp.plan_pipeline("firefox", [
-        ("metadata", n_bm),
-        ("fetching", n_bm),
-        ("embedding", n_bm),
-    ])
+    sp.set_corpus_total("firefox", n_bm)
 
 
 def sync_firefox_metadata(
     progress_key: str | None = None,
     dry_run: bool = False,
 ) -> dict:
+    from pka.db.queries import init_db
+
+    init_db()
     key = progress_key or "firefox"
     bookmarks = load_bookmarks()
-    n_bm = len(bookmarks)
-    _plan_counts(n_bm)
-    sp.set_phase(key, "metadata", n_bm)
+    baseline = archive_document_count(Source.FIREFOX)
+    pending = count_pending_metadata(Source.FIREFOX)
+    sp.begin_metadata_sync(key, pending, baseline)
     stats = ingest_firefox_bookmarks(
         bookmarks, dry_run=dry_run, progress_key=key,
     )

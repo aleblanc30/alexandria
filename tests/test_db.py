@@ -8,6 +8,7 @@ import sqlalchemy as sa
 
 from pka.db.queries import (
     init_db, get_engine,
+    insert_document_if_new,
     upsert_document, insert_source_tags, insert_source_collections,
     insert_chunks, document_has_chunks, document_index, source_ids_with_chunks,
 )
@@ -75,6 +76,24 @@ class TestUpsertDocument:
                 sa.select(documents.c.date_added).where(documents.c.source_id == "F1")
             ).fetchone()
         assert row[0] == 1700000000
+
+
+class TestInsertDocumentIfNew:
+    def test_inserts_new_row(self):
+        doc_id = insert_document_if_new("firefox", "new1", "T", "https://x.com", None)
+        assert isinstance(doc_id, int)
+
+    def test_skips_existing_row(self):
+        insert_document_if_new("firefox", "dup1", "T", "https://a.com", None)
+        assert insert_document_if_new("firefox", "dup1", "Other", "https://b.com", None) is None
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.title, documents.c.url_or_path).where(
+                    documents.c.source_id == "dup1"
+                )
+            ).fetchone()
+        assert row[0] == "T"
+        assert row[1] == "https://a.com"
 
 
 # ── insert_source_tags ────────────────────────────────────────────────────────

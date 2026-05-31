@@ -16,8 +16,23 @@
               <span class="phase-bar-label">{{ phaseLabel(phase.name) }}</span>
               <span class="phase-bar-count">{{ phaseCountLabel(phase) }}</span>
             </div>
-            <div class="progress-track">
+            <div class="progress-track" :class="{ 'progress-track--stacked': hasFetchBreakdown(phase) }">
+              <template v-if="hasFetchBreakdown(phase)">
+                <div
+                  class="progress-seg progress-seg--success"
+                  :style="fetchSegStyle(phase, 'success')"
+                />
+                <div
+                  class="progress-seg progress-seg--failure"
+                  :style="fetchSegStyle(phase, 'failure')"
+                />
+                <div
+                  class="progress-seg progress-seg--pending"
+                  :style="fetchSegStyle(phase, 'pending')"
+                />
+              </template>
               <div
+                v-else
                 class="progress-fill"
                 :class="{
                   'progress-fill--indeterminate': phaseIndeterminate(phase),
@@ -125,6 +140,17 @@ function phaseCountLabel(phase: PhaseDetail): string {
 function phaseIndeterminate(phase: PhaseDetail): boolean {
   const p = progressFor()
   return !!p && p.status === 'running' && phase.active && phase.total === 0
+}
+
+function hasFetchBreakdown(phase: PhaseDetail): boolean {
+  return props.source === 'firefox' && phase.name === 'fetching' && !!phase.breakdown
+}
+
+function fetchSegStyle(phase: PhaseDetail, key: 'success' | 'failure' | 'pending'): Record<string, string> {
+  const b = phase.breakdown
+  if (!b || phase.total <= 0) return { width: '0%' }
+  const pct = Math.max(0, Math.min(100, Math.round(100 * b[key] / phase.total)))
+  return { width: `${pct}%` }
 }
 
 function phaseBarStyle(phase: PhaseDetail): Record<string, string> {

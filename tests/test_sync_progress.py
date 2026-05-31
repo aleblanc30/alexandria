@@ -151,3 +151,100 @@ def test_embedding_overflow_does_not_inflate_metadata():
     assert snap["phase_details"][0]["processed"] == 10
     assert snap["phase_details"][1]["processed"] == 10
     assert snap["phase_details"][2]["processed"] == 10
+
+
+def test_fetch_breakdown_from_hydrate():
+    sp.hydrate(
+        "firefox",
+        {"metadata": 100, "fetching": 100, "embedding": 100},
+        {"metadata": 100, "fetching": 70, "embedding": 40},
+        {"success": 60, "failure": 10},
+    )
+    fetch = sp.snapshot("firefox")["firefox"]["phase_details"][1]
+    assert fetch["name"] == "fetching"
+    assert fetch["breakdown"] == {"success": 60, "failure": 10, "pending": 30}
+
+
+def test_fetch_breakdown_resets_stale_success_on_hydrate():
+    sp.begin("firefox")
+    sp.set_phase("firefox", "fetching", 100)
+    for _ in range(80):
+        sp.advance("firefox")
+    sp.finish("firefox")
+    assert sp.snapshot("firefox")["firefox"]["phase_details"][1]["breakdown"]["success"] == 80
+
+    sp.hydrate(
+        "firefox",
+        {"metadata": 100, "fetching": 100, "embedding": 100},
+        {"metadata": 100, "fetching": 0, "embedding": 0},
+        {"success": 0, "failure": 0},
+    )
+    fetch = sp.snapshot("firefox")["firefox"]["phase_details"][1]
+    assert fetch["breakdown"] == {"success": 0, "failure": 0, "pending": 100}
+
+
+def test_fetch_breakdown_updates_on_advance():
+    sp.begin("firefox")
+    sp.set_phase("firefox", "fetching", 10)
+    sp.advance("firefox")
+    sp.advance("firefox", failed=True)
+    sp.advance("firefox")
+    fetch = sp.snapshot("firefox")["firefox"]["phase_details"][1]
+    assert fetch["breakdown"] == {"success": 2, "failure": 1, "pending": 7}
+    assert fetch["processed"] == 3
+
+
+def test_metadata_job_progress_from_archive_db():
+    from pka.db.queries import init_db, insert_document_if_new
+    from pka.ingestion.pending_metadata import metadata_job_progress
+
+    init_db()
+    insert_document_if_new("firefox", "bm0", "T", "http://z", None)
+    sp.begin_metadata_sync("firefox", pending=3, baseline=1)
+    insert_document_if_new("firefox", "bm1", "T", "http://a", None)
+    insert_document_if_new("firefox", "bm2", "T", "http://b", None)
+    snap = sp.snapshot("firefox")["firefox"]
+    meta = snap["phase_details"][0]
+    assert meta["processed"] == 3
+    assert meta["total"] == 4
+    assert metadata_job_progress("firefox", 1, 3) == (3, 4)
+
+
+def test_hydrate_shrinks_totals_after_documents_removed():
+    sp.hydrate(
+        "firefox",
+        {"metadata": 10000, "fetching": 10000, "embedding": 10000},
+        {"metadata": 10000, "fetching": 8000, "embedding": 5000},
+        {"success": 7000, "failure": 1000},
+    )
+    snap = sp.snapshot("firefox")["firefox"]
+    assert snap["phase_details"][0]["total"] == 10000
+
+    sp.hydrate(
+        "firefox",
+        {"metadata": 0, "fetching": 0, "embedding": 0},
+        {"metadata": 0, "fetching": 0, "embedding": 0},
+        {"success": 0, "failure": 0},
+    )
+    snap = sp.snapshot("firefox")["firefox"]
+    assert all(p["total"] == 0 for p in snap["phase_details"])
+    assert all(p["processed"] == 0 for p in snap["phase_details"])
+    assert "breakdown" not in snap["phase_details"][1]
+
+
+def test_hydrate_before_job_uses_db_not_stale_memory():
+    sp.begin("firefox")
+    sp.set_phase("firefox", "metadata", 10000)
+    for _ in range(10000):
+        sp.advance("firefox")
+    sp.finish("firefox")
+
+    sp.hydrate(
+        "firefox",
+        {"metadata": 500, "fetching": 500, "embedding": 500},
+        {"metadata": 500, "fetching": 0, "embedding": 0},
+        {"success": 0, "failure": 0},
+    )
+    snap = sp.snapshot("firefox")["firefox"]
+    assert snap["phase_details"][0]["total"] == 500
+    assert snap["phase_details"][0]["processed"] == 500
