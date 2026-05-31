@@ -25,8 +25,7 @@ def _clustering_preflight() -> None:
         raise HTTPException(
             status_code=400,
             detail=(
-                "No embeddings in the vector store. Sync and embed documents first "
-                "(requires Ollama with nomic-embed-text: ollama pull nomic-embed-text)."
+                "No embeddings in the vector store. Sync and embed documents first."
             ),
         )
     if n < 5:

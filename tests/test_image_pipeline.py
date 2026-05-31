@@ -58,8 +58,8 @@ def mock_clip(monkeypatch):
 @pytest.fixture()
 def mock_text_embed(monkeypatch):
     monkeypatch.setattr(
-        "pka.ingestion.image_pipeline.embed_image_text",
-        lambda ocr, desc: FAKE_TEXT_VEC,
+        "pka.ingestion.image_pipeline.image_search_text",
+        lambda ocr, desc: "description and ocr combined",
     )
 
 

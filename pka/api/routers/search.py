@@ -113,7 +113,6 @@ def _batch_doc_rows_to_out(
 
 @router.post("", response_model=SearchResponse)
 async def search(req: SearchRequest, engine=Depends(get_engine)):
-    from pka.ingestion.embedder import embed_one
     from pka.storage.vector_store import query as vquery
 
     results: list[tuple[int, float | None]] = []
@@ -121,11 +120,10 @@ async def search(req: SearchRequest, engine=Depends(get_engine)):
     # ── Semantic / hybrid ────────────────────────────────────────────────────
     if req.mode in ("semantic", "hybrid"):
         try:
-            vec = embed_one(req.query)
             where_filter: dict = {}
             if req.sources:
                 where_filter["source"] = {"$in": [str(s) for s in req.sources]}
-            hits = vquery(vec, n_results=req.limit * 3, where=where_filter or None)
+            hits = vquery(req.query, n_results=req.limit * 3, where=where_filter or None)
             seen: dict[int, float] = {}
             for h in hits:
                 did = int(h["metadata"].get("document_id", -1))
@@ -134,7 +132,7 @@ async def search(req: SearchRequest, engine=Depends(get_engine)):
                     seen[did] = sim
             results = sorted(seen.items(), key=lambda x: -x[1])
         except Exception:
-            # Fall through to fulltext if embedder is unavailable
+            # Fall through to fulltext if the vector store is unavailable
             pass
 
     with engine.connect() as con:

@@ -1,6 +1,10 @@
 """
 Chroma collection wrapper (embedded mode, persistent on disk).
 
+Text chunks use Chroma's default embedding function (Sentence Transformers
+``all-MiniLM-L6-v2``). Pass documents only on upsert; use :func:`query` with
+natural-language text at search time.
+
 A single module-level client/collection pair is cached for the lifetime of
 the process. Tests should reset it via :func:`reset_collection`.
 """
@@ -10,6 +14,7 @@ import logging
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
+from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
 from pka.config import settings as cfg
 
@@ -17,8 +22,16 @@ log = logging.getLogger(__name__)
 
 _client: chromadb.ClientAPI | None = None
 _collection: chromadb.Collection | None = None
+_embedding_fn: DefaultEmbeddingFunction | None = None
 COLLECTION_NAME = "pka_chunks"
 _FETCH_BATCH_SIZE = 200
+
+
+def _get_embedding_function() -> DefaultEmbeddingFunction:
+    global _embedding_fn
+    if _embedding_fn is None:
+        _embedding_fn = DefaultEmbeddingFunction()
+    return _embedding_fn
 
 
 def _get_client() -> chromadb.ClientAPI:
@@ -39,6 +52,7 @@ def get_collection() -> chromadb.Collection:
         _collection = _get_client().get_or_create_collection(
             name=COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
+            embedding_function=_get_embedding_function(),
         )
         log.debug("Chroma collection '%s' ready", COLLECTION_NAME)
     return _collection
@@ -71,14 +85,13 @@ def drop_document_collection() -> None:
 
 
 def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
-    """Rebuild ``pka_chunks`` from SQLite chunk text (requires Ollama)."""
+    """Rebuild ``pka_chunks`` from SQLite chunk text (Chroma embeds in-process)."""
     import uuid
 
     import sqlalchemy as sa
 
     from pka.db.queries import get_engine
     from pka.db.schema import chunks, documents
-    from pka.ingestion.embedder import embed_batch
 
     drop_document_collection()
     eng = get_engine()
@@ -104,7 +117,6 @@ def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
     for i in range(0, total, batch_size):
         batch = rows[i : i + batch_size]
         texts = [r.text for r in batch]
-        embeddings = embed_batch(texts, batch_size=batch_size)
         vector_ids = [str(uuid.uuid4()) for _ in batch]
         metadatas = [
             {
@@ -115,7 +127,7 @@ def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
             }
             for r in batch
         ]
-        upsert_chunks(vector_ids, embeddings, texts, metadatas)
+        upsert_chunks(vector_ids, texts, metadatas)
         with eng.begin() as con:
             for row, vid in zip(batch, vector_ids):
                 con.execute(
@@ -138,16 +150,14 @@ def reset_collection() -> None:
 
 def upsert_chunks(
     ids: list[str],
-    embeddings: list[list[float]],
     texts: list[str],
     metadatas: list[dict],
 ) -> None:
-    """Upsert a batch of chunk embeddings into Chroma."""
+    """Upsert chunk documents; Chroma computes embeddings from ``texts``."""
     if not ids:
         return
     get_collection().upsert(
         ids=ids,
-        embeddings=embeddings,
         documents=texts,
         metadatas=metadatas,
     )
@@ -207,12 +217,12 @@ def purge_vectors(vector_ids: list[str]) -> int:
 
 
 def query(
-    embedding: list[float],
+    query_text: str,
     n_results: int = 10,
     where: dict | None = None,
 ) -> list[dict]:
-    """Return the top-n most similar chunks for a query embedding."""
-    kwargs: dict = {"query_embeddings": [embedding], "n_results": n_results}
+    """Return the top-n most similar chunks for a natural-language query."""
+    kwargs: dict = {"query_texts": [query_text], "n_results": n_results}
     if where:
         kwargs["where"] = where
     res = get_collection().query(**kwargs)

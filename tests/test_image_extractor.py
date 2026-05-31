@@ -162,24 +162,16 @@ class TestClipEmbed:
         assert clip_embed_image(sample_png) is None
 
 
-class TestEmbedImageText:
-    def test_combines_and_embeds(self, monkeypatch):
-        monkeypatch.setattr(
-            "pka.ingestion.embedder.embed_one",
-            lambda t: [0.1] * 8,
-        )
-        from pka.ingestion.image_extractor import embed_image_text
-        vec = embed_image_text("OCR text", "Description here")
-        assert vec == [0.1] * 8
+class TestImageSearchText:
+    def test_combines_description_and_ocr(self):
+        from pka.ingestion.image_extractor import image_search_text
+        text = image_search_text("OCR text", "Description here")
+        assert text == "Description here\n\nOCR text"
 
     def test_empty_input_returns_none(self):
-        from pka.ingestion.image_extractor import embed_image_text
-        assert embed_image_text("", "") is None
+        from pka.ingestion.image_extractor import image_search_text
+        assert image_search_text("", "") is None
 
-    def test_embed_failure_returns_none(self, monkeypatch):
-        monkeypatch.setattr(
-            "pka.ingestion.embedder.embed_one",
-            lambda t: (_ for _ in ()).throw(RuntimeError("embed")),
-        )
-        from pka.ingestion.image_extractor import embed_image_text
-        assert embed_image_text("text", "") is None
+    def test_ocr_only(self):
+        from pka.ingestion.image_extractor import image_search_text
+        assert image_search_text("scan line", "") == "scan line"

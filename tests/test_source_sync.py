@@ -298,7 +298,7 @@ class TestImageSync:
 
 
 class TestPipelineStop:
-    def test_zotero_stops_mid_loop(self, mock_embedder, mock_chroma):
+    def test_zotero_stops_mid_loop(self, mock_chroma):
         from pka.pipeline import ingest_zotero_items
 
         sp.begin("zotero")

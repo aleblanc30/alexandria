@@ -16,7 +16,7 @@ pka/                          # Python backend
 ├── pipeline.py               # _ingest_text_block + per-source ingestion funcs
 ├── db/                       # SQLAlchemy Core schema + queries
 ├── connectors/               # zotero, firefox, calibre, images
-├── ingestion/                # chunker, embedder, fetcher, extractors, image_pipeline
+├── ingestion/                # chunker, fetcher, extractors, image_pipeline
 ├── storage/                  # ChromaDB wrapper
 ├── clustering/               # UMAP + HDBSCAN engine + lifecycle (drift/merge)
 └── api/                      # FastAPI app, 9 routers, 5 Pydantic schema modules
@@ -54,8 +54,9 @@ npm install
 
 System prerequisites:
 
-- **Ollama** running locally with `nomic-embed-text` pulled
-  (`ollama pull nomic-embed-text`); for image work, `ollama pull llava`.
+- **Ollama** for clustering labels and image vision (`ollama pull llava` or your
+  chat model). Text chunk embeddings use Chroma's built-in Sentence Transformers
+  model (`all-MiniLM-L6-v2`, downloaded on first use).
 - **Tesseract OCR** for image text extraction
   (`brew install tesseract` / `apt install tesseract-ocr`).
 
@@ -108,7 +109,7 @@ pytest
 pytest --cov=pka --cov-report=term-missing
 ```
 
-All external calls (Ollama, ChromaDB, HTTP) are mocked at the module
+All external calls (Ollama chat/vision, ChromaDB, HTTP) are mocked at the module
 boundary by fixtures in `tests/conftest.py`. No real services are touched.
 
 ## Configuration

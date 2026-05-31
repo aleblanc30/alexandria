@@ -20,9 +20,6 @@ def client(monkeypatch):
     """Return a TestClient with a fresh DB and mocked vector store."""
     init_db()
 
-    # Stub out embed_one so search doesn't need Ollama
-    monkeypatch.setattr("pka.ingestion.embedder.embed_one", lambda t: [0.1] * 8)
-
     # Stub out vector query to return empty results by default
     mock_col = MagicMock()
     mock_col.count.return_value = 0
@@ -228,11 +225,11 @@ class TestSearch:
         })
         assert all(d["cluster_id"] == cid for d in r.json()["documents"])
 
-    def test_semantic_embed_failure_falls_back_to_fulltext(self, client, monkeypatch):
+    def test_semantic_query_failure_falls_back_to_fulltext(self, client, monkeypatch):
         _seed_docs(2)
         monkeypatch.setattr(
-            "pka.ingestion.embedder.embed_one",
-            lambda t: (_ for _ in ()).throw(RuntimeError("ollama down")),
+            "pka.storage.vector_store.query",
+            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("chroma down")),
         )
         r = client.post("/search", json={"query": "Document 0", "mode": "hybrid"})
         assert r.status_code == 200

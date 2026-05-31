@@ -21,7 +21,7 @@ from pka.db.schema import image_tags, images
 from pka.ingestion.image_extractor import (
     classify_and_describe,
     clip_embed_image,
-    embed_image_text,
+    image_search_text,
     ocr_image,
 )
 
@@ -143,8 +143,8 @@ def ingest_image(
     if not skip_clip:
         clip_vector = clip_embed_image(img.path)
 
-    # ── Pass 4b: text embedding (OCR + description) ───────────────────────────
-    text_vector = embed_image_text(ocr_text, description)
+    # ── Pass 4b: searchable text (OCR + description → Chroma embeds) ─────────
+    text_doc = image_search_text(ocr_text, description)
 
     if dry_run:
         return {
@@ -152,13 +152,13 @@ def ingest_image(
             "image_type":   image_type,
             "has_ocr":      bool(ocr_text),
             "has_clip":     clip_vector is not None,
-            "has_text_emb": text_vector is not None,
+            "has_text_emb": text_doc is not None,
         }
 
     # ── Persist to SQLite ─────────────────────────────────────────────────────
     now = int(time.time())
     clip_vid = str(uuid.uuid4()) if clip_vector else None
-    text_vid = str(uuid.uuid4()) if text_vector else None
+    text_vid = str(uuid.uuid4()) if text_doc else None
 
     eng = get_engine()
     with eng.begin() as con:
@@ -220,14 +220,13 @@ def ingest_image(
         except Exception as exc:
             log.warning("CLIP Chroma upsert failed: %s", exc)
 
-    if text_vector and text_vid:
+    if text_doc and text_vid:
         try:
-            from pka.storage.vector_store import get_collection
-            get_collection().upsert(
-                ids        = [text_vid],
-                embeddings = [text_vector],
-                documents  = [f"{description}\n{ocr_text}".strip()],
-                metadatas  = [{**meta_base, "modality": "text", "source": "image"}],
+            from pka.storage.vector_store import upsert_chunks
+            upsert_chunks(
+                ids       = [text_vid],
+                texts     = [text_doc],
+                metadatas = [{**meta_base, "modality": "text", "source": "image"}],
             )
         except Exception as exc:
             log.warning("Text Chroma upsert failed: %s", exc)
@@ -237,7 +236,7 @@ def ingest_image(
         "image_type":   image_type,
         "has_ocr":      bool(ocr_text),
         "has_clip":     clip_vector is not None,
-        "has_text_emb": text_vector is not None,
+        "has_text_emb": text_doc is not None,
     }
 
 

@@ -197,16 +197,9 @@ def clip_embed_text(query: str) -> list[float] | None:
         return None
 
 
-# ── Text embedding for description + OCR ─────────────────────────────────────
+# ── Searchable text for description + OCR ────────────────────────────────────
 
-def embed_image_text(ocr_text: str, description: str) -> list[float] | None:
-    """Combine OCR + description and embed with the standard text embedder."""
+def image_search_text(ocr_text: str, description: str) -> str | None:
+    """Combine OCR + description for Chroma text search (same collection as chunks)."""
     combined = "\n\n".join(filter(None, [description, ocr_text])).strip()
-    if not combined:
-        return None
-    try:
-        from pka.ingestion.embedder import embed_one
-        return embed_one(combined)
-    except Exception as exc:
-        log.warning("Text embedding for image failed: %s", exc)
-        return None
+    return combined or None

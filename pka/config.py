@@ -34,7 +34,6 @@ class Settings(BaseSettings):
 
     # ── Ollama ──────────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
-    embed_model: str = "nomic-embed-text"
     chat_model: str = ""   # auto-detect first non-embedding model when empty
     vision_model: str = "llava"
 

@@ -32,7 +32,6 @@ from pka.db.schema import chunks as chunks_table
 from pka.db.schema import documents
 from pka.ingestion.book_extractor import extract_book_text, metadata_text
 from pka.ingestion.chunker import sentence_window_chunks
-from pka.ingestion.embedder import embed_batch
 from pka.storage.vector_store import upsert_chunks
 
 log = logging.getLogger(__name__)
@@ -97,7 +96,6 @@ def _ingest_text_block(
     if dry_run:
         return {"chunks_added": len(chunk_texts), "skipped": False}
 
-    embeddings = embed_batch(chunk_texts)
     vector_ids = [str(uuid.uuid4()) for _ in chunk_texts]
 
     base_meta = {
@@ -107,10 +105,9 @@ def _ingest_text_block(
     }
 
     upsert_chunks(
-        ids        = vector_ids,
-        embeddings = embeddings,
-        texts      = chunk_texts,
-        metadatas  = [
+        ids       = vector_ids,
+        texts     = chunk_texts,
+        metadatas = [
             {**base_meta, "chunk_index": chunk_offset + i}
             for i in range(len(chunk_texts))
         ],

@@ -2,9 +2,8 @@
 Shared fixtures for the PKA test suite.
 
 Every test runs in an isolated ``tmp_path``; no real browser, Zotero, or
-Calibre databases are touched. Ollama and outbound HTTP calls are never
-made — they are patched at the module boundary by ``mock_embedder`` and
-``mock_chroma``.
+Calibre databases are touched. Ollama chat/vision and outbound HTTP calls are
+never made — Chroma is replaced by ``mock_chroma``.
 """
 import sqlite3
 from pathlib import Path
@@ -152,26 +151,13 @@ def firefox_places_db(tmp_path) -> Path:
     return _make_firefox_db(profile_dir / "places.sqlite")
 
 
-# ── Mock embedder ─────────────────────────────────────────────────────────────
-
-FAKE_DIM = 8   # tiny dimension for tests
+FAKE_DIM = 8   # tiny dimension for mock Chroma vectors
 
 
 def fake_embedding(text: str) -> list[float]:
     """Deterministic fake embedding: ASCII sum spread over FAKE_DIM dims."""
     total = sum(ord(c) for c in text)
     return [(total % (i + 2)) / 100.0 for i in range(FAKE_DIM)]
-
-
-@pytest.fixture()
-def mock_embedder(monkeypatch):
-    import pka.ingestion.embedder as emb
-    monkeypatch.setattr(emb, "embed_one",   fake_embedding)
-    monkeypatch.setattr(
-        emb, "embed_batch",
-        lambda texts, **kw: [fake_embedding(t) for t in texts],
-    )
-    return fake_embedding
 
 
 # ── Mock Chroma ───────────────────────────────────────────────────────────────
@@ -183,15 +169,20 @@ def mock_chroma(monkeypatch):
 
     col = MagicMock()
 
-    def _upsert(ids, embeddings, documents, metadatas):
+    def _upsert(ids, documents, metadatas, embeddings=None, **kwargs):
         for i, vid in enumerate(ids):
+            emb = (
+                embeddings[i]
+                if embeddings is not None
+                else fake_embedding(documents[i])
+            )
             store[vid] = {
                 "text": documents[i],
                 "meta": metadatas[i],
-                "emb":  embeddings[i],
+                "emb":  emb,
             }
 
-    def _query(query_embeddings, n_results=10, **kw):
+    def _query(query_texts=None, query_embeddings=None, n_results=10, **kw):
         items = list(store.values())[:n_results]
         return {
             "ids":       [[v for v in store.keys()][:n_results]],

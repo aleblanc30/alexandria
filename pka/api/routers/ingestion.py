@@ -344,7 +344,7 @@ _rebuild_running = False
 
 @router.post("/rebuild-vectors", status_code=202)
 async def rebuild_vectors():
-    """Rebuild the Chroma chunk index from SQLite chunk text (requires Ollama)."""
+    """Rebuild the Chroma chunk index from SQLite chunk text."""
     global _rebuild_running
     with _rebuild_lock:
         if _rebuild_running:

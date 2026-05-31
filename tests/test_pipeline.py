@@ -37,7 +37,7 @@ def _make_firefox_bookmark(**overrides) -> FirefoxBookmark:
 
 
 class TestIngestZoteroItems:
-    def test_document_written_to_db(self, mock_embedder, mock_chroma):
+    def test_document_written_to_db(self, mock_chroma):
         ingest_zotero_items([_make_zotero_item()])
         with get_engine().connect() as con:
             row = con.execute(
@@ -45,7 +45,7 @@ class TestIngestZoteroItems:
             ).fetchone()
         assert row[0] == "Z001"
 
-    def test_tags_written_to_db(self, mock_embedder, mock_chroma):
+    def test_tags_written_to_db(self, mock_chroma):
         ingest_zotero_items([_make_zotero_item()])
         with get_engine().connect() as con:
             row = con.execute(
@@ -53,7 +53,7 @@ class TestIngestZoteroItems:
             ).fetchone()
         assert row[0] == "test-tag"
 
-    def test_chunks_created(self, mock_embedder, mock_chroma):
+    def test_chunks_created(self, mock_chroma):
         item = _make_zotero_item()
         ingest_zotero_items([item])
         with get_engine().connect() as con:
@@ -62,34 +62,34 @@ class TestIngestZoteroItems:
             ).scalar()
         assert document_has_chunks(doc_id)
 
-    def test_embeddings_sent_to_chroma(self, mock_embedder, mock_chroma):
+    def test_embeddings_sent_to_chroma(self, mock_chroma):
         store, col = mock_chroma
         ingest_zotero_items([_make_zotero_item()])
         assert col.upsert.called
 
-    def test_skip_existing_skips_rechunking(self, mock_embedder, mock_chroma):
+    def test_skip_existing_skips_rechunking(self, mock_chroma):
         _, col = mock_chroma
         ingest_zotero_items([_make_zotero_item()])
         first_call_count = col.upsert.call_count
         ingest_zotero_items([_make_zotero_item()], skip_existing=True)
         assert col.upsert.call_count == first_call_count   # no new upserts
 
-    def test_dry_run_skips_chroma_and_chunks(self, mock_embedder, mock_chroma):
+    def test_dry_run_skips_chroma_and_chunks(self, mock_chroma):
         _, col = mock_chroma
         ingest_zotero_items([_make_zotero_item()], dry_run=True)
         assert not col.upsert.called
 
-    def test_item_without_text_is_skipped(self, mock_embedder, mock_chroma):
+    def test_item_without_text_is_skipped(self, mock_chroma):
         item = _make_zotero_item(title="", abstract=None, authors=[])
         stats = ingest_zotero_items([item])
         assert stats["skipped"] == 1
 
-    def test_stats_returned(self, mock_embedder, mock_chroma):
+    def test_stats_returned(self, mock_chroma):
         stats = ingest_zotero_items([_make_zotero_item()])
         assert stats["processed"] == 1
         assert stats["failed"] == 0
 
-    def test_failed_item_counted_not_raised(self, monkeypatch, mock_embedder, mock_chroma):
+    def test_failed_item_counted_not_raised(self, monkeypatch, mock_chroma):
         monkeypatch.setattr(
             "pka.pipeline.upsert_document",
             MagicMock(side_effect=Exception("db error")),
@@ -97,7 +97,7 @@ class TestIngestZoteroItems:
         stats = ingest_zotero_items([_make_zotero_item()])
         assert stats["failed"] == 1
 
-    def test_short_title_with_authors_is_embedded(self, mock_embedder, mock_chroma):
+    def test_short_title_with_authors_is_embedded(self, mock_chroma):
         item = _make_zotero_item(
             title="Short title",
             abstract=None,
@@ -107,7 +107,7 @@ class TestIngestZoteroItems:
         assert stats["processed"] == 1
         assert stats["skipped"] == 0
 
-    def test_annotation_highlight_is_embedded(self, mock_embedder, mock_chroma):
+    def test_annotation_highlight_is_embedded(self, mock_chroma):
         item = _make_zotero_item(
             source_id="ANN001",
             title="",
@@ -148,7 +148,7 @@ class TestIngestFirefoxBookmarks:
 
 
 class TestIngestFetchedTexts:
-    def test_chunks_created_for_fetched_text(self, mock_embedder, mock_chroma):
+    def test_chunks_created_for_fetched_text(self, mock_chroma):
         doc_id = __import__("pka.db.queries", fromlist=["upsert_document"]).upsert_document(
             "firefox", "F002", "Page", "https://x.com", None
         )
@@ -160,7 +160,7 @@ class TestIngestFetchedTexts:
         })
         assert document_has_chunks(doc_id)
 
-    def test_dry_run_produces_no_chunks(self, mock_embedder, mock_chroma):
+    def test_dry_run_produces_no_chunks(self, mock_chroma):
         from pka.db.queries import upsert_document as ud
         doc_id = ud("firefox", "F003", "P", "https://y.com", None)
         ingest_fetched_texts(
@@ -169,7 +169,7 @@ class TestIngestFetchedTexts:
         )
         assert not document_has_chunks(doc_id)
 
-    def test_empty_texts_dict_returns_zero_processed(self, mock_embedder, mock_chroma):
+    def test_empty_texts_dict_returns_zero_processed(self, mock_chroma):
         stats = ingest_fetched_texts({})
         assert stats["processed"] == 0
 
@@ -186,7 +186,7 @@ class TestPipelineStop:
         stats = ingest_firefox_bookmarks(bms, progress_key="firefox")
         assert stats.get("stopped") == "cancel"
 
-    def test_calibre_fulltext_stops_on_pause(self, tmp_path, mock_embedder, mock_chroma):
+    def test_calibre_fulltext_stops_on_pause(self, tmp_path, mock_chroma):
         from pka.connectors.calibre import CalibreBook
         from pka.ingestion import sync_progress as sp
         from pka.pipeline import ingest_calibre_books, ingest_calibre_fulltext

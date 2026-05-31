@@ -29,7 +29,7 @@ def _make_book(**overrides) -> CalibreBook:
     return CalibreBook(**{**defaults, **overrides})
 
 
-def test_metadata_pass_creates_chunks(mock_embedder, mock_chroma):
+def test_metadata_pass_creates_chunks(mock_chroma):
     from pka.pipeline import ingest_calibre_books
 
     book = _make_book()
@@ -44,7 +44,7 @@ def test_metadata_pass_creates_chunks(mock_embedder, mock_chroma):
 
 
 def test_fulltext_pass_offsets_chunk_indices(
-    mock_embedder, mock_chroma, tmp_path, monkeypatch,
+    mock_chroma, tmp_path, monkeypatch,
 ):
     from pka.pipeline import ingest_calibre_books, ingest_calibre_fulltext
 
