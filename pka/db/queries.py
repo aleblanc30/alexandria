@@ -2,7 +2,7 @@
 Reusable insert / select helpers for ``archive.db``.
 
 Engine setup, table initialisation, document/tag/collection/chunk upserts.
-Higher-level orchestration lives in :mod:`pka.pipeline`.
+Higher-level orchestration lives in :mod:`pka.ingestion.runners` and :mod:`pka.ingestion.core`.
 """
 import time
 from typing import Any

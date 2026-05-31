@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Ingest a Calibre library (metadata pass, then optional full-text).
+"""Ingest a Calibre library via sync jobs (metadata, embed, optional full-text).
 
 Usage::
 
@@ -18,7 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pka.connectors.calibre import load_books
 from pka.db.queries import init_db
-from pka.pipeline import ingest_calibre_books, ingest_calibre_fulltext
+from pka.ingestion.calibre_sync import sync_calibre, sync_calibre_metadata
+from pka.ingestion.runners.calibre import ingest_calibre_books
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,29 +48,29 @@ def main() -> None:
     books = load_books(library_root=args.library)
     log.info("Loaded %d books", len(books))
 
-    log.info("Phase 1: metadata + description pass…")
+    if args.fulltext:
+        log.info("Full sync (metadata + embed + fulltext)…")
+        stats = sync_calibre(
+            dry_run=args.dry_run,
+            max_pages=args.max_pages,
+        )
+        log.info("Done: %s", stats)
+        return
+
+    log.info("Metadata registration…")
+    meta = sync_calibre_metadata(dry_run=args.dry_run)
+    log.info("Metadata: %s", meta.get("metadata", meta))
+
+    log.info("Embedding title + description…")
     s1 = ingest_calibre_books(
         books,
-        skip_existing = not args.force_reindex,
-        dry_run       = args.dry_run,
+        skip_existing=not args.force_reindex,
+        dry_run=args.dry_run,
     )
     log.info(
-        "Metadata pass: processed=%d  skipped=%d  failed=%d  chunks=%d",
+        "Metadata embed: processed=%d  skipped=%d  failed=%d  chunks=%d",
         s1["processed"], s1["skipped"], s1["failed"], s1["chunks"],
     )
-
-    if args.fulltext:
-        log.info("Phase 2: full-text extraction pass…")
-        s2 = ingest_calibre_fulltext(
-            books,
-            force     = args.force_reindex,
-            dry_run   = args.dry_run,
-            max_pages = args.max_pages,
-        )
-        log.info(
-            "Full-text pass: processed=%d  skipped=%d  failed=%d  chunks=%d",
-            s2["processed"], s2["skipped"], s2["failed"], s2["chunks"],
-        )
 
 
 if __name__ == "__main__":

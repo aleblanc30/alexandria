@@ -2,7 +2,7 @@
 from pka.constants import Source
 from pka.db.queries import init_db, insert_document_if_new
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
-from pka.pipeline import ingest_firefox_bookmarks
+from pka.ingestion.runners.firefox import ingest_firefox_bookmarks
 from tests.test_pipeline import _make_firefox_bookmark
 
 

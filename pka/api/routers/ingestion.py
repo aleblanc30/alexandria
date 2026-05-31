@@ -6,128 +6,24 @@ import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
 
 from pka.api.dependencies import get_engine
-from pka.constants import ALL_SOURCES, FetchStatus, Source
-from pka.db.schema import chunks, documents, fetch_log, images
+from pka.constants import ALL_SOURCES, FetchStatus
+from pka.db.schema import documents, fetch_log
 from pka.ingestion import sync_progress as sp
+from pka.ingestion.progress_baselines import (
+    apply_progress_baselines,
+    build_ingestion_status,
+    seed_progress_from_db,
+)
+from pka.ingestion.registry import require_handlers
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 
 
-def _phase_baselines(engine, src: str) -> tuple[dict[str, int], dict[str, int], dict[str, int] | None]:
-    """Return (totals, processed, fetch_outcomes) for idle progress bars from DB counts.
-
-    Every item traverses metadata → fetching → embedding, so all phases share
-    the same corpus total. Processed counts decrease downstream.
-    fetch_outcomes is set for Firefox only: success (fetched+skipped) and failure (unfetchable).
-    """
-    fetch_outcomes: dict[str, int] | None = None
-    with engine.connect() as con:
-        if src == Source.IMAGE:
-            total = con.execute(
-                sa.select(sa.func.count()).select_from(images)
-            ).scalar() or 0
-            embedded = con.execute(
-                sa.select(sa.func.count()).select_from(images).where(
-                    images.c.clip_vector_id.isnot(None)
-                    | images.c.text_vector_id.isnot(None)
-                )
-            ).scalar() or 0
-            return (
-                {"metadata": total, "fetching": total, "embedding": total},
-                {"metadata": total, "fetching": total, "embedding": embedded},
-                None,
-            )
-
-        doc_count = con.execute(
-            sa.select(sa.func.count()).select_from(documents)
-            .where(documents.c.source == src)
-        ).scalar() or 0
-
-        embedded = con.execute(
-            sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))
-            .select_from(
-                chunks.join(documents, chunks.c.document_id == documents.c.id)
-            )
-            .where(documents.c.source == src)
-        ).scalar() or 0
-
-        fetching_done = doc_count
-        if src == Source.FIREFOX:
-            rows = con.execute(
-                sa.select(documents.c.fetch_status, sa.func.count())
-                .where(documents.c.source == src)
-                .group_by(documents.c.fetch_status)
-            ).fetchall()
-            counts = {status: count for status, count in rows}
-            success = counts.get(str(FetchStatus.FETCHED), 0) + counts.get(
-                str(FetchStatus.SKIPPED), 0
-            )
-            failure = counts.get(str(FetchStatus.UNFETCHABLE), 0)
-            fetching_done = success + failure
-            fetch_outcomes = {"success": success, "failure": failure}
-
-        return (
-            {"metadata": doc_count, "fetching": doc_count, "embedding": doc_count},
-            {"metadata": doc_count, "fetching": fetching_done, "embedding": embedded},
-            fetch_outcomes,
-        )
-
-
 @router.get("/status")
 async def ingestion_status(engine=Depends(get_engine)):
-    from pka.ingestion.pending_metadata import count_pending_metadata
-
-    with engine.connect() as con:
-        total = con.execute(
-            sa.select(sa.func.count()).select_from(documents)
-        ).scalar()
-        by_source = {}
-        pending_metadata_by_source: dict[str, int] = {}
-        fetch_by_source: dict[str, dict[str, int]] = {}
-        for src in ALL_SOURCES:
-            n = con.execute(
-                sa.select(sa.func.count()).select_from(documents)
-                .where(documents.c.source == src)
-            ).scalar()
-            by_source[src] = n
-            try:
-                pending_metadata_by_source[src] = count_pending_metadata(src)
-            except Exception:
-                log.exception("Pending metadata count failed for %s", src)
-                pending_metadata_by_source[src] = 0
-            if src == Source.FIREFOX:
-                rows = con.execute(
-                    sa.select(documents.c.fetch_status, sa.func.count())
-                    .where(documents.c.source == src)
-                    .group_by(documents.c.fetch_status)
-                ).fetchall()
-                fetch_by_source[src] = {status: count for status, count in rows}
-                embedded = con.execute(
-                    sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))
-                    .select_from(
-                        chunks.join(documents, chunks.c.document_id == documents.c.id)
-                    )
-                    .where(documents.c.source == src)
-                ).scalar() or 0
-                fetch_by_source[src]["embedded"] = embedded
-        unfetchable = con.execute(
-            sa.select(sa.func.count()).select_from(documents)
-            .where(documents.c.fetch_status == str(FetchStatus.UNFETCHABLE))
-        ).scalar()
-        pending = con.execute(
-            sa.select(sa.func.count()).select_from(documents)
-            .where(documents.c.fetch_status == str(FetchStatus.PENDING))
-        ).scalar()
-    return {
-        "total": total,
-        "by_source": by_source,
-        "pending_metadata_by_source": pending_metadata_by_source,
-        "fetch_by_source": fetch_by_source,
-        "unfetchable": unfetchable,
-        "pending": pending,
-    }
+    return build_ingestion_status(engine)
 
 
 @router.get("/sync/progress")
@@ -137,11 +33,7 @@ async def sync_progress(source: str | None = None, engine=Depends(get_engine)):
         raise HTTPException(400, f"Unknown source: {source}")
     targets = [source] if source else ALL_SOURCES
     for src in targets:
-        totals, processed, fetch_outcomes = _phase_baselines(engine, src)
-        if sp.is_running(src):
-            sp.refresh_display_from_db(src, totals, processed, fetch_outcomes)
-        else:
-            sp.hydrate(src, totals, processed, fetch_outcomes)
+        apply_progress_baselines(engine, src)
     return sp.snapshot(source)
 
 
@@ -196,93 +88,55 @@ def _finish_job(src: str, stats: dict | None, *, error: str | None = None) -> No
 
 
 def _seed_baselines(src: str) -> None:
-    """Sync progress display from current DB counts."""
     from pka.db.queries import get_engine
 
-    totals, processed, fetch_outcomes = _phase_baselines(get_engine(), src)
-    sp.hydrate(src, totals, processed, fetch_outcomes)
+    seed_progress_from_db(get_engine(), src)
 
 
 def _sync_metadata(src: str) -> None:
-    from pka.db.queries import init_db
+    from pka.db.queries import get_engine, init_db
 
     init_db()
     _seed_baselines(src)
     sp.begin_job(src, "metadata", phase="loading")
     try:
-        if src == Source.ZOTERO:
-            from pka.ingestion.zotero_sync import sync_zotero_metadata
-            stats = sync_zotero_metadata(progress_key=src)
-        elif src == Source.FIREFOX:
-            from pka.ingestion.firefox_sync import sync_firefox_metadata
-            stats = sync_firefox_metadata(progress_key=src)
-        elif src == Source.CALIBRE:
-            from pka.ingestion.calibre_sync import sync_calibre_metadata
-            stats = sync_calibre_metadata(progress_key=src)
-        elif src == Source.IMAGE:
-            from pka.ingestion.image_sync import sync_images_metadata
-            stats = sync_images_metadata(progress_key=src)
-        else:
-            raise ValueError(f"Unknown source: {src}")
+        stats = require_handlers(src).sync_metadata(progress_key=src)
         _finish_job(src, stats)
     except Exception as exc:
         log.exception("Metadata sync failed for %s", src)
         sp.finish(src, error=str(exc))
+        seed_progress_from_db(get_engine(), src)
 
 
 def _sync_ingest(src: str) -> None:
-    from pka.db.queries import init_db
+    from pka.db.queries import get_engine, init_db
 
     init_db()
     _seed_baselines(src)
     sp.begin_job(src, "ingest", phase="loading")
     try:
-        if src == Source.ZOTERO:
-            from pka.ingestion.zotero_sync import sync_zotero_ingest
-            stats = sync_zotero_ingest(progress_key=src)
-        elif src == Source.FIREFOX:
-            from pka.ingestion.firefox_sync import sync_firefox_ingest
-            stats = sync_firefox_ingest(progress_key=src, fetch_limit=None)
-        elif src == Source.CALIBRE:
-            from pka.ingestion.calibre_sync import sync_calibre_ingest
-            stats = sync_calibre_ingest(progress_key=src)
-        elif src == Source.IMAGE:
-            from pka.ingestion.image_sync import sync_images_ingest
-            stats = sync_images_ingest(progress_key=src)
-        else:
-            raise ValueError(f"Unknown source: {src}")
+        stats = require_handlers(src).sync_ingest(progress_key=src)
         _finish_job(src, stats)
     except Exception as exc:
         log.exception("Ingest failed for %s", src)
         sp.finish(src, error=str(exc))
+        seed_progress_from_db(get_engine(), src)
 
 
 def _sync(src: str) -> None:
     """Background entry point for ``POST /ingestion/sync/{source}`` (full pipeline)."""
-    from pka.db.queries import init_db
+    from pka.db.queries import get_engine, init_db
 
     init_db()
     _seed_baselines(src)
     sp.begin_job(src, "metadata", phase="loading")
     try:
-        if src == Source.ZOTERO:
-            from pka.ingestion.zotero_sync import sync_zotero
-            stats = sync_zotero(progress_key=src)
-        elif src == Source.FIREFOX:
-            from pka.ingestion.firefox_sync import sync_firefox
-            stats = sync_firefox(progress_key=src, fetch_limit=None)
-        elif src == Source.CALIBRE:
-            from pka.ingestion.calibre_sync import sync_calibre
-            stats = sync_calibre(progress_key=src)
-        elif src == Source.IMAGE:
-            from pka.ingestion.image_sync import sync_images
-            stats = sync_images(progress_key=src)
-        else:
-            raise ValueError(f"Unknown source: {src}")
+        stats = require_handlers(src).sync_full(progress_key=src)
         _finish_job(src, stats)
     except Exception as exc:
         log.exception("Ingestion sync failed for %s", src)
         sp.finish(src, error=str(exc))
+        seed_progress_from_db(get_engine(), src)
 
 
 def _queue_job(src: str, job: sp.JobKind, force: bool) -> dict:

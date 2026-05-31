@@ -244,23 +244,6 @@ def activate_phase(source: str, phase: str) -> None:
         state.status = "running"
 
 
-def advance_archive_growth(source: str) -> None:
-    """Metadata sync added a new archive document — grow corpus totals by one."""
-    with _lock:
-        state = _states.get(source)
-        if not state:
-            return
-        _ensure_standard_phases(state)
-        meta = state.phases[0]
-        meta.processed += 1
-        meta.total += 1
-        for plan in state.phases:
-            plan.total = meta.total
-        state.processed = meta.processed
-        state.total = meta.total
-        _normalize_phases(state)
-
-
 def set_corpus_total(source: str, total: int) -> None:
     """Set shared corpus size on all phases (authoritative job scope)."""
     with _lock:

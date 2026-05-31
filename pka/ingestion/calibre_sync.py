@@ -6,7 +6,7 @@ from pka.constants import Source
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.ingestion.sync_helpers import should_stop
-from pka.pipeline import (
+from pka.ingestion.runners.calibre import (
     ingest_calibre_books,
     ingest_calibre_fulltext,
     ingest_calibre_metadata,

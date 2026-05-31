@@ -69,7 +69,7 @@ Do **not** run full ingestion scripts (`run_zotero`, `run_firefox`, etc.) or pro
 - Python **3.11+**. Line length **100** (ruff). Enabled rules: E, F, I, B, UP.
 - Settings: `pka/config.py` (Pydantic). Enums: `pka/constants.py` (`Source`, `FetchStatus`, `TagOrigin` are string enums).
 - DB: SQLAlchemy Core in `pka/db/schema.py` + queries in `pka/db/queries.py`. No ORM models.
-- Ingestion flows through `pka/pipeline.py` → `_ingest_text_block()` for uniform chunk/embed/persist.
+- Ingestion flows through `pka/ingestion/core.py` (`ingest_text_block`) and `pka/ingestion/runners/`; `pka/pipeline.py` re-exports for compatibility.
 - API: FastAPI routers in `pka/api/routers/`, Pydantic schemas in `pka/api/schemas/`. App entry: `pka/api/main.py`.
 - Match existing module layout and naming. Keep diffs minimal; do not refactor unrelated code.
 
@@ -85,7 +85,7 @@ Before modifying an area, skim these entry points:
 
 | Area | Start here |
 |------|------------|
-| Ingestion / connectors | `pka/pipeline.py`, `pka/connectors/`, `DESIGN.md` §2–3 |
+| Ingestion / connectors | `pka/ingestion/core.py`, `pka/ingestion/runners/`, `pka/connectors/`, `DESIGN.md` §2–3 |
 | Search / vectors | `pka/storage/vector_store.py`, `pka/api/routers/search.py` |
 | Clustering | `pka/clustering/engine.py`, `pka/clustering/lifecycle.py`, `scripts/run_clustering.py` |
 | Images | `pka/ingestion/image_pipeline.py`, `pka/ingestion/image_extractor.py` |

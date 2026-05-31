@@ -36,19 +36,23 @@ To add a new source (e.g. Pocket, Raindrop, Readwise):
 
 2. Add the source to the `Source` enum in `pka/constants.py`.
 
-3. Add `ingest_<source>_items()` to `pka/pipeline.py`, routing text through
-   `_ingest_text_block()` (the helper handles chunking, embedding, and
-   persistence uniformly).
+3. Add `pka/ingestion/runners/<source>.py` with metadata/embed steps routing
+   text through `ingest_text_block()` in `pka/ingestion/core.py`.
 
-4. Add `scripts/run_<source>.py` as the CLI entry point.
+4. Add `pka/ingestion/<source>_sync.py` with `sync_<source>_metadata` /
+   `sync_<source>_ingest` (and optional `sync_<source>` full pipeline).
 
-5. Register the source name in `pka/api/routers/ingestion.py::_sync` so the
-   `/ingestion/sync/{source}` endpoint can fan out to it.
+5. Register handlers in `pka/ingestion/registry.py` (used by the ingestion API).
 
-6. Add a fixture in `tests/conftest.py` and a test module
+6. Add `count_pending_metadata()` coverage in `pka/ingestion/pending_metadata.py`
+   if the source is document-based.
+
+7. Add `scripts/run_<source>.py` calling the `sync_*` entry points.
+
+8. Add a fixture in `tests/conftest.py` and a test module
    `tests/test_connector_<source>.py`.
 
-7. Add an entry to the sidebar in `frontend/src/components/AppSidebar.vue`.
+9. Add an entry to the sidebar in `frontend/src/components/AppSidebar.vue`.
 
 ## 3. Two-phase ingestion model
 

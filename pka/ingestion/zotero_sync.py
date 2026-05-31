@@ -6,7 +6,7 @@ from pka.constants import Source
 from pka.db.queries import source_ids_with_chunks
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
-from pka.pipeline import ingest_zotero_embed, ingest_zotero_metadata
+from pka.ingestion.runners.zotero import ingest_zotero_embed, ingest_zotero_metadata
 
 log = logging.getLogger(__name__)
 

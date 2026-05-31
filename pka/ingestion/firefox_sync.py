@@ -8,7 +8,7 @@ from pka.ingestion.fetcher import fetch_pending, _get_pending
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.ingestion.sync_helpers import should_stop
-from pka.pipeline import ingest_fetched_texts, ingest_firefox_bookmarks
+from pka.ingestion.runners.firefox import ingest_fetched_texts, ingest_firefox_bookmarks
 
 log = logging.getLogger(__name__)
 

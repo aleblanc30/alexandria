@@ -4,7 +4,12 @@ from pka.connectors.zotero import ZoteroItem
 from pka.connectors.firefox import FirefoxBookmark
 from pka.db.queries import init_db, document_has_chunks, get_engine
 from pka.db.schema import documents, source_tags
-from pka.pipeline import ingest_zotero_items, ingest_zotero_embed, ingest_firefox_bookmarks, ingest_fetched_texts
+from pka.ingestion.runners import (
+    ingest_fetched_texts,
+    ingest_firefox_bookmarks,
+    ingest_zotero_embed,
+    ingest_zotero_items,
+)
 import sqlalchemy as sa
 
 
@@ -91,7 +96,7 @@ class TestIngestZoteroItems:
 
     def test_failed_item_counted_not_raised(self, monkeypatch, mock_chroma):
         monkeypatch.setattr(
-            "pka.pipeline.upsert_document",
+            "pka.ingestion.runners.zotero.upsert_document",
             MagicMock(side_effect=Exception("db error")),
         )
         stats = ingest_zotero_items([_make_zotero_item()])
@@ -192,7 +197,7 @@ class TestIngestFetchedTexts:
 class TestPipelineStop:
     def test_firefox_bookmarks_stops_on_cancel(self):
         from pka.ingestion import sync_progress as sp
-        from pka.pipeline import ingest_firefox_bookmarks
+        from pka.ingestion.runners.firefox import ingest_firefox_bookmarks
 
         sp.begin("firefox")
         sp.set_phase("firefox", "metadata", 3)
@@ -204,7 +209,7 @@ class TestPipelineStop:
     def test_calibre_fulltext_stops_on_pause(self, tmp_path, mock_chroma):
         from pka.connectors.calibre import CalibreBook
         from pka.ingestion import sync_progress as sp
-        from pka.pipeline import ingest_calibre_books, ingest_calibre_fulltext
+        from pka.ingestion.runners.calibre import ingest_calibre_books, ingest_calibre_fulltext
 
         epub = tmp_path / "book.epub"
         epub.write_bytes(b"PK")
@@ -220,13 +225,13 @@ class TestPipelineStop:
         sp.set_phase("calibre", "fulltext", 2)
         sp.request_pause("calibre")
 
-        import pka.pipeline as pl
-        original = pl.extract_book_text
-        pl.extract_book_text = lambda p, **kw: [
+        import pka.ingestion.runners.calibre as calibre_runner
+        original = calibre_runner.extract_book_text
+        calibre_runner.extract_book_text = lambda p, **kw: [
             {"title": "Ch", "text": "Section one. " * 20, "index": 0},
         ]
         try:
             stats = ingest_calibre_fulltext([book], progress_key="calibre")
         finally:
-            pl.extract_book_text = original
+            calibre_runner.extract_book_text = original
         assert stats.get("stopped") == "pause"

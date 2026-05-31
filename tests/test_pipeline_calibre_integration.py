@@ -30,7 +30,7 @@ def _make_book(**overrides) -> CalibreBook:
 
 
 def test_metadata_pass_creates_chunks(mock_chroma):
-    from pka.pipeline import ingest_calibre_books
+    from pka.ingestion.runners.calibre import ingest_calibre_books
 
     book = _make_book()
     stats = ingest_calibre_books([book])
@@ -46,7 +46,7 @@ def test_metadata_pass_creates_chunks(mock_chroma):
 def test_fulltext_pass_offsets_chunk_indices(
     mock_chroma, tmp_path, monkeypatch,
 ):
-    from pka.pipeline import ingest_calibre_books, ingest_calibre_fulltext
+    from pka.ingestion.runners.calibre import ingest_calibre_books, ingest_calibre_fulltext
 
     epub = tmp_path / "fake.epub"
     epub.write_bytes(b"PK")
@@ -55,7 +55,7 @@ def test_fulltext_pass_offsets_chunk_indices(
 
     # Mock fulltext extractor to return two sections
     monkeypatch.setattr(
-        "pka.pipeline.extract_book_text",
+        "pka.ingestion.runners.calibre.extract_book_text",
         lambda p, **kw: [
             {"title": "Ch1",
              "text":  "Sentence one. Sentence two. Sentence three.",

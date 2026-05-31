@@ -1,10 +1,11 @@
 #!/usr/bin/env python
-"""Initialise DB, ingest Zotero library, print stats.
+"""Initialise DB, sync Zotero library, print stats.
 
 Usage::
 
     python scripts/run_zotero.py
     python scripts/run_zotero.py --dry-run
+    python scripts/run_zotero.py --metadata-only
     python scripts/run_zotero.py --force-reindex
 """
 import argparse
@@ -14,9 +15,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pka.connectors.zotero import load_items
 from pka.db.queries import init_db
-from pka.pipeline import ingest_zotero_items
+from pka.ingestion.zotero_sync import (
+    sync_zotero,
+    sync_zotero_ingest,
+    sync_zotero_metadata,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +33,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run",       action="store_true",
                         help="Skip embedding and storage writes")
+    parser.add_argument("--metadata-only", action="store_true",
+                        help="Register items only (no embedding)")
     parser.add_argument("--force-reindex", action="store_true",
                         help="Re-chunk and re-embed all items")
     args = parser.parse_args()
@@ -36,22 +42,20 @@ def main() -> None:
     log.info("Initialising database…")
     init_db()
 
-    log.info("Loading Zotero items…")
-    items = load_items()
-    log.info("Loaded %d items", len(items))
+    log.info("Syncing Zotero (dry_run=%s)…", args.dry_run)
+    if args.metadata_only:
+        stats = sync_zotero_metadata(dry_run=args.dry_run)
+    elif args.force_reindex:
+        meta = sync_zotero_metadata(dry_run=args.dry_run)
+        embed = sync_zotero_ingest(
+            dry_run=args.dry_run,
+            skip_existing=False,
+        )
+        stats = {**meta, **embed}
+    else:
+        stats = sync_zotero(dry_run=args.dry_run)
 
-    log.info("Ingesting (dry_run=%s, skip_existing=%s)…",
-             args.dry_run, not args.force_reindex)
-    stats = ingest_zotero_items(
-        items,
-        skip_existing = not args.force_reindex,
-        dry_run       = args.dry_run,
-    )
-
-    log.info(
-        "Done. processed=%d  skipped=%d  failed=%d  chunks=%d",
-        stats["processed"], stats["skipped"], stats["failed"], stats["chunks"],
-    )
+    log.info("Done: %s", stats)
 
 
 if __name__ == "__main__":
