@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 
-from pka.db.queries import init_db, upsert_document
+from pka.db.queries import init_db, upsert_document, insert_chunks
 from pka.db.schema import reading_lists, cluster_runs, clusters, cluster_assignments
 import sqlalchemy as sa
 
@@ -239,6 +239,62 @@ class TestSearch:
 # ── Documents ─────────────────────────────────────────────────────────────────
 
 class TestDocuments:
+    def test_list_documents_200(self, client):
+        _seed_docs(3)
+        r = client.get("/documents")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] == 3
+        assert len(data["documents"]) == 3
+
+    def test_list_documents_fields(self, client):
+        ids = _seed_docs(1)
+        insert_chunks([{
+            "document_id": ids[0], "chunk_index": 0,
+            "text": "First chunk body text.", "token_count": 4, "vector_id": "v0",
+        }])
+        doc = client.get("/documents").json()["documents"][0]
+        for key in ("id", "source", "title", "description"):
+            assert key in doc
+        assert doc["description"] == "First chunk body text."
+
+    def test_list_documents_snippet_truncation(self, client):
+        ids = _seed_docs(1)
+        long_text = "word " * 50
+        insert_chunks([{
+            "document_id": ids[0], "chunk_index": 0,
+            "text": long_text, "token_count": 50, "vector_id": "v0",
+        }])
+        doc = client.get("/documents").json()["documents"][0]
+        assert len(doc["description"]) <= 161
+        assert doc["description"].endswith("…")
+
+    def test_list_documents_uses_first_chunk(self, client):
+        ids = _seed_docs(1)
+        insert_chunks([
+            {"document_id": ids[0], "chunk_index": 1, "text": "Second", "token_count": 1, "vector_id": "v1"},
+            {"document_id": ids[0], "chunk_index": 0, "text": "First", "token_count": 1, "vector_id": "v0"},
+        ])
+        doc = client.get("/documents").json()["documents"][0]
+        assert doc["description"] == "First"
+
+    def test_list_documents_source_filter(self, client):
+        _seed_docs(3)
+        r = client.get("/documents?sources=zotero")
+        docs = r.json()["documents"]
+        assert all(d["source"] == "zotero" for d in docs)
+
+    def test_list_documents_pagination(self, client):
+        _seed_docs(5)
+        page1 = client.get("/documents?limit=2&offset=0").json()
+        page2 = client.get("/documents?limit=2&offset=2").json()
+        assert page1["total"] == 5
+        assert len(page1["documents"]) == 2
+        assert len(page2["documents"]) == 2
+        ids1 = {d["id"] for d in page1["documents"]}
+        ids2 = {d["id"] for d in page2["documents"]}
+        assert ids1.isdisjoint(ids2)
+
     def test_get_document_200(self, client):
         ids = _seed_docs(1)
         r = client.get(f"/documents/{ids[0]}")

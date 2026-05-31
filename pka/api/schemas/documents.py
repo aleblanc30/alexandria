@@ -31,3 +31,15 @@ class DocumentDetail(DocumentOut):
 class TagPatchRequest(BaseModel):
     add: list[str] = []
     remove: list[str] = []
+
+
+class DocumentListItem(BaseModel):
+    id: int
+    source: str
+    title: str
+    description: str
+
+
+class DocumentListResponse(BaseModel):
+    total: int
+    documents: list[DocumentListItem]

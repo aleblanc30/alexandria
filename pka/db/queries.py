@@ -270,3 +270,75 @@ def existing_chunk_count(document_id: int) -> int:
             .where(chunks.c.document_id == document_id)
         ).scalar()
     return n or 0
+
+
+_SNIPPET_MAX = 160
+
+
+def _truncate_snippet(text: str | None, max_len: int = _SNIPPET_MAX) -> str:
+    if not text:
+        return ""
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= max_len:
+        return collapsed
+    return collapsed[:max_len].rstrip() + "…"
+
+
+def list_documents(
+    sources: list[str] | None = None,
+    limit: int = 48,
+    offset: int = 0,
+) -> tuple[int, list[dict[str, Any]]]:
+    """Paginated document browse list with first-chunk snippet as description."""
+    source_filter = [str(s) for s in sources] if sources else None
+
+    with get_engine().connect() as con:
+        count_q = sa.select(sa.func.count()).select_from(documents)
+        if source_filter:
+            count_q = count_q.where(documents.c.source.in_(source_filter))
+        total = con.execute(count_q).scalar() or 0
+
+        page_q = (
+            sa.select(documents.c.id, documents.c.source, documents.c.title)
+            .order_by(documents.c.date_added.is_(None), documents.c.date_added.desc(), documents.c.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        if source_filter:
+            page_q = page_q.where(documents.c.source.in_(source_filter))
+        rows = con.execute(page_q).fetchall()
+
+        doc_ids = [r[0] for r in rows]
+        snippet_map: dict[int, str] = {}
+        if doc_ids:
+            min_idx = (
+                sa.select(
+                    chunks.c.document_id,
+                    sa.func.min(chunks.c.chunk_index).label("min_idx"),
+                )
+                .where(chunks.c.document_id.in_(doc_ids))
+                .group_by(chunks.c.document_id)
+                .subquery()
+            )
+            chunk_rows = con.execute(
+                sa.select(chunks.c.document_id, chunks.c.text)
+                .select_from(
+                    chunks.join(
+                        min_idx,
+                        (chunks.c.document_id == min_idx.c.document_id)
+                        & (chunks.c.chunk_index == min_idx.c.min_idx),
+                    )
+                )
+            ).fetchall()
+            snippet_map = {r[0]: r[1] for r in chunk_rows}
+
+    items = [
+        {
+            "id": doc_id,
+            "source": source,
+            "title": title or "",
+            "description": _truncate_snippet(snippet_map.get(doc_id)),
+        }
+        for doc_id, source, title in rows
+    ]
+    return total, items

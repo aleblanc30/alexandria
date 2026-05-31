@@ -1,13 +1,20 @@
-"""``/documents/{id}`` — detail view and tag patch."""
+"""``/documents`` list and ``/documents/{id}`` detail + tag patch."""
 import time
+from typing import Annotated
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from pka.api.db_rows import fetchone_mapping
 from pka.api.dependencies import get_engine
-from pka.api.schemas.documents import DocumentDetail, TagPatchRequest
-from pka.constants import TagOrigin
+from pka.api.schemas.documents import (
+    DocumentDetail,
+    DocumentListItem,
+    DocumentListResponse,
+    TagPatchRequest,
+)
+from pka.constants import Source, TagOrigin
+from pka.db.queries import list_documents as query_list_documents
 from pka.db.schema import (
     chunks,
     cluster_assignments,
@@ -20,6 +27,22 @@ from pka.db.schema import (
 )
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+@router.get("", response_model=DocumentListResponse)
+async def list_documents(
+    sources: Annotated[list[Source] | None, Query()] = None,
+    limit: int = Query(default=48, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    source_vals = [str(s) for s in sources] if sources else None
+    total, rows = query_list_documents(
+        sources=source_vals, limit=limit, offset=offset,
+    )
+    return DocumentListResponse(
+        total=total,
+        documents=[DocumentListItem(**row) for row in rows],
+    )
 
 
 @router.get("/{doc_id}", response_model=DocumentDetail)

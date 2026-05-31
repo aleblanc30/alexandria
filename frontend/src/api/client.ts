@@ -58,6 +58,10 @@ export interface DocumentOut  {
 export interface DocumentDetail extends DocumentOut {
   chunks_count: number; collections: string[]
 }
+export interface DocumentListItem {
+  id: number; source: string; title: string; description: string
+}
+export interface DocumentListResponse { total: number; documents: DocumentListItem[] }
 export interface SearchRequest {
   query: string; sources?: string[]; cluster_ids?: number[]; tags?: string[]
   date_from?: number; date_to?: number; fetch_status?: string
@@ -134,6 +138,15 @@ export const search = (body: SearchRequest) =>
 
 export const getDocument = (id: number) =>
   req<DocumentDetail>(`/documents/${id}`)
+
+export const listDocuments = (params?: { sources?: string[]; limit?: number; offset?: number }) => {
+  const qs = new URLSearchParams()
+  params?.sources?.forEach(s => qs.append('sources', s))
+  if (params?.limit != null) qs.set('limit', String(params.limit))
+  if (params?.offset != null) qs.set('offset', String(params.offset))
+  const query = qs.toString()
+  return req<DocumentListResponse>(`/documents${query ? '?' + query : ''}`)
+}
 
 export const patchTags = (id: number, add: string[], remove: string[]) =>
   req<void>(`/documents/${id}/tags`, { method: 'PATCH', body: JSON.stringify({ add, remove }) })

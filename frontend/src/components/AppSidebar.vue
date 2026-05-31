@@ -4,6 +4,7 @@
 
     <div class="nav-section">Explore</div>
     <RouterLink to="/search"   class="nav-item"><IconSearch />Search</RouterLink>
+    <RouterLink to="/browse"   class="nav-item"><IconBrowse />Browse</RouterLink>
     <RouterLink to="/clusters" class="nav-item"><IconCluster />Clusters</RouterLink>
     <RouterLink to="/trends"   class="nav-item"><IconTrend />Trends</RouterLink>
     <RouterLink to="/tags"     class="nav-item"><IconTag />Tags</RouterLink>
@@ -65,6 +66,7 @@ import { INGESTION_SOURCES, SOURCE_COLORS, SOURCE_LABELS } from '@/constants/sou
 import { useIngestionStore } from '@/stores/ingestion'
 
 const IconSearch  = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>` }
+const IconBrowse  = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>` }
 const IconCluster = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="8" r="2.5"/><circle cx="11" cy="5" r="2.5"/><circle cx="11" cy="11" r="2.5"/><line x1="7.5" y1="7" x2="9" y2="6"/><line x1="7.5" y1="9" x2="9" y2="10"/></svg>` }
 const IconTrend   = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2,12 6,7 9,9 14,3"/></svg>` }
 const IconTag     = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h7l5 4-5 4H2V4z"/></svg>` }
