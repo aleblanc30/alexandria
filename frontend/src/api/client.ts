@@ -139,9 +139,17 @@ export const search = (body: SearchRequest) =>
 export const getDocument = (id: number) =>
   req<DocumentDetail>(`/documents/${id}`)
 
-export const listDocuments = (params?: { sources?: string[]; limit?: number; offset?: number }) => {
+export const listDocuments = (params?: {
+  sources?: string[]
+  source_tags?: string[]
+  overlay_tags?: string[]
+  limit?: number
+  offset?: number
+}) => {
   const qs = new URLSearchParams()
   params?.sources?.forEach(s => qs.append('sources', s))
+  params?.source_tags?.forEach(t => qs.append('source_tags', t))
+  params?.overlay_tags?.forEach(t => qs.append('overlay_tags', t))
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.offset != null) qs.set('offset', String(params.offset))
   const query = qs.toString()
@@ -181,9 +189,14 @@ export const cancelRun       = (id: number) =>
 
 // ── Tags ──────────────────────────────────────────────────────────────────────
 
-export const listTags = (params?: { origin?: string; q?: string; limit?: number }) => {
-  const qs = new URLSearchParams(params as Record<string,string>).toString()
-  return req<TagRow[]>(`/tags${qs ? '?' + qs : ''}`)
+export const listTags = (params?: { origin?: string; sources?: string[]; q?: string; limit?: number }) => {
+  const qs = new URLSearchParams()
+  if (params?.origin) qs.set('origin', params.origin)
+  params?.sources?.forEach(s => qs.append('sources', s))
+  if (params?.q) qs.set('q', params.q)
+  if (params?.limit != null) qs.set('limit', String(params.limit))
+  const query = qs.toString()
+  return req<TagRow[]>(`/tags${query ? '?' + query : ''}`)
 }
 
 // ── Trends ────────────────────────────────────────────────────────────────────

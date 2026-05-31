@@ -295,6 +295,34 @@ class TestDocuments:
         ids2 = {d["id"] for d in page2["documents"]}
         assert ids1.isdisjoint(ids2)
 
+    def test_list_documents_source_tags_and_filter(self, client):
+        from pka.db.queries import insert_source_tags
+
+        ids = _seed_docs(3)
+        insert_source_tags(ids[0], ["ml", "python"], source="zotero")
+        insert_source_tags(ids[1], ["ml"], source="firefox")
+        insert_source_tags(ids[2], ["python"], source="calibre")
+
+        r = client.get("/documents", params=[("source_tags", "ml"), ("source_tags", "python")])
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] == 1
+        assert data["documents"][0]["id"] == ids[0]
+
+    def test_list_documents_overlay_tags_and_source_filter(self, client):
+        ids = _seed_docs(3)
+        client.patch(f"/documents/{ids[0]}/tags", json={"add": ["review"], "remove": []})
+        client.patch(f"/documents/{ids[1]}/tags", json={"add": ["review"], "remove": []})
+
+        r = client.get(
+            "/documents",
+            params=[("sources", "zotero"), ("overlay_tags", "review")],
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] == 1
+        assert data["documents"][0]["id"] == ids[0]
+
     def test_get_document_200(self, client):
         ids = _seed_docs(1)
         r = client.get(f"/documents/{ids[0]}")
@@ -362,6 +390,18 @@ class TestTags:
         client.patch(f"/documents/{ids[0]}/tags", json={"add": ["unique-xyz"], "remove": []})
         r = client.get("/tags?q=unique-xyz")
         assert any("unique-xyz" in t["tag"] for t in r.json())
+
+    def test_filter_by_document_source(self, client):
+        from pka.db.queries import insert_source_tags
+
+        ids = _seed_docs(3)
+        insert_source_tags(ids[0], ["zotero-only"], source="zotero")
+        insert_source_tags(ids[1], ["firefox-only"], source="firefox")
+
+        r = client.get("/tags", params=[("sources", "firefox"), ("origin", "source")])
+        tags = [t["tag"] for t in r.json()]
+        assert "firefox-only" in tags
+        assert "zotero-only" not in tags
 
 
 # ── Clusters ──────────────────────────────────────────────────────────────────

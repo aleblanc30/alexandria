@@ -1,7 +1,7 @@
 <template>
-  <div class="app">
-    <AppSidebar />
-    <main class="main">
+  <div class="app" :class="{ 'app--browse': isBrowse }">
+    <AppSidebar :collapsed="isBrowse" :overlay="isBrowse" />
+    <main class="main" :class="{ 'main--browse': isBrowse }">
       <RouterView />
     </main>
     <DocDetailPanel v-if="ui.detailOpen" />
@@ -10,11 +10,16 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import AppSidebar      from '@/components/AppSidebar.vue'
 import DocDetailPanel  from '@/components/DocDetailPanel.vue'
 import ToastContainer  from '@/components/ToastContainer.vue'
 import { useUiStore }  from '@/stores/ui'
+
+const route = useRoute()
 const ui = useUiStore()
+const isBrowse = computed(() => route.path === '/browse' || route.path.startsWith('/browse/'))
 </script>
 
 <style>
@@ -37,5 +42,7 @@ const ui = useUiStore()
   background: var(--bg);
 }
 .app  { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh }
+.app--browse { --sidebar-w: 0; grid-template-columns: 1fr }
 .main { padding: 24px; overflow: auto; min-width: 0 }
+.main--browse { padding: 16px 20px }
 </style>

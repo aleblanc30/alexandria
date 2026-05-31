@@ -15,6 +15,7 @@ from pka.db.schema import (
     chunks,
     documents,
     meta,
+    overlay_tags,
     source_collections,
     source_tags,
 )
@@ -284,28 +285,70 @@ def _truncate_snippet(text: str | None, max_len: int = _SNIPPET_MAX) -> str:
     return collapsed[:max_len].rstrip() + "…"
 
 
+def _apply_document_browse_filters(
+    q: sa.Select,
+    *,
+    source_filter: list[str] | None,
+    source_tag_filter: list[str] | None,
+    overlay_tag_filter: list[str] | None,
+) -> sa.Select:
+    if source_filter:
+        q = q.where(documents.c.source.in_(source_filter))
+    if source_tag_filter:
+        for tag in source_tag_filter:
+            q = q.where(
+                sa.exists(
+                    sa.select(source_tags.c.id).where(
+                        (source_tags.c.document_id == documents.c.id)
+                        & (source_tags.c.tag_string == tag)
+                    )
+                )
+            )
+    if overlay_tag_filter:
+        for tag in overlay_tag_filter:
+            q = q.where(
+                sa.exists(
+                    sa.select(overlay_tags.c.id).where(
+                        (overlay_tags.c.document_id == documents.c.id)
+                        & (overlay_tags.c.tag == tag)
+                    )
+                )
+            )
+    return q
+
+
 def list_documents(
     sources: list[str] | None = None,
+    source_tags: list[str] | None = None,
+    overlay_tags: list[str] | None = None,
     limit: int = 48,
     offset: int = 0,
 ) -> tuple[int, list[dict[str, Any]]]:
     """Paginated document browse list with first-chunk snippet as description."""
     source_filter = [str(s) for s in sources] if sources else None
+    source_tag_filter = [str(t) for t in source_tags] if source_tags else None
+    overlay_tag_filter = [str(t) for t in overlay_tags] if overlay_tags else None
+    filter_kwargs = {
+        "source_filter": source_filter,
+        "source_tag_filter": source_tag_filter,
+        "overlay_tag_filter": overlay_tag_filter,
+    }
 
     with get_engine().connect() as con:
-        count_q = sa.select(sa.func.count()).select_from(documents)
-        if source_filter:
-            count_q = count_q.where(documents.c.source.in_(source_filter))
+        count_q = _apply_document_browse_filters(
+            sa.select(sa.func.count()).select_from(documents),
+            **filter_kwargs,
+        )
         total = con.execute(count_q).scalar() or 0
 
-        page_q = (
-            sa.select(documents.c.id, documents.c.source, documents.c.title)
-            .order_by(documents.c.date_added.is_(None), documents.c.date_added.desc(), documents.c.id.desc())
-            .limit(limit)
-            .offset(offset)
-        )
-        if source_filter:
-            page_q = page_q.where(documents.c.source.in_(source_filter))
+        page_q = _apply_document_browse_filters(
+            sa.select(documents.c.id, documents.c.source, documents.c.title),
+            **filter_kwargs,
+        ).order_by(
+            documents.c.date_added.is_(None),
+            documents.c.date_added.desc(),
+            documents.c.id.desc(),
+        ).limit(limit).offset(offset)
         rows = con.execute(page_q).fetchall()
 
         doc_ids = [r[0] for r in rows]

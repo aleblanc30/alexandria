@@ -32,12 +32,18 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 @router.get("", response_model=DocumentListResponse)
 async def list_documents(
     sources: Annotated[list[Source] | None, Query()] = None,
+    source_tags: Annotated[list[str] | None, Query()] = None,
+    overlay_tags: Annotated[list[str] | None, Query()] = None,
     limit: int = Query(default=48, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
     source_vals = [str(s) for s in sources] if sources else None
     total, rows = query_list_documents(
-        sources=source_vals, limit=limit, offset=offset,
+        sources=source_vals,
+        source_tags=source_tags,
+        overlay_tags=overlay_tags,
+        limit=limit,
+        offset=offset,
     )
     return DocumentListResponse(
         total=total,

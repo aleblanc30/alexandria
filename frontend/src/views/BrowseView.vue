@@ -1,58 +1,52 @@
 <template>
-  <div>
-    <h1 class="page-title">Browse</h1>
-    <p class="page-sub">All documents in your archive</p>
+  <div class="browse-layout">
+    <BrowseNavPanel />
 
-    <div class="filter-row">
-      <span
-        v-for="src in INGESTION_SOURCES"
-        :key="src"
-        class="chip"
-        :class="{ active: store.sources.includes(src) }"
-        @click="store.toggleSource(src)"
-      >{{ SOURCE_LABELS[src] }}</span>
+    <div class="browse-content">
+      <h1 class="page-title">Browse</h1>
+      <p class="page-sub">All documents in your archive</p>
+
+      <p class="results-meta">
+        <template v-if="store.loading">Loading…</template>
+        <template v-else>{{ store.total.toLocaleString() }} documents</template>
+      </p>
+
+      <div v-if="store.loading && !store.documents.length" class="browse-loading">
+        Loading documents…
+      </div>
+
+      <div v-else class="doc-grid">
+        <DocGridCard
+          v-for="doc in store.documents"
+          :key="doc.id"
+          :doc="doc"
+          :selected="ui.activeDocId === doc.id"
+          @click="openDoc(doc.id)"
+        />
+      </div>
+
+      <div ref="sentinel" class="browse-sentinel">
+        <button
+          v-if="hasMore && !store.loading"
+          class="btn browse-load-more"
+          :disabled="store.loadingMore"
+          @click="store.loadMore()"
+        >
+          {{ store.loadingMore ? 'Loading…' : 'Load more' }}
+        </button>
+      </div>
+
+      <p v-if="store.error" class="error">{{ store.error }}</p>
     </div>
-
-    <p class="results-meta">
-      <template v-if="store.loading">Loading…</template>
-      <template v-else>{{ store.total.toLocaleString() }} documents</template>
-    </p>
-
-    <div v-if="store.loading && !store.documents.length" class="browse-loading">
-      Loading documents…
-    </div>
-
-    <div v-else class="doc-grid">
-      <DocGridCard
-        v-for="doc in store.documents"
-        :key="doc.id"
-        :doc="doc"
-        :selected="ui.activeDocId === doc.id"
-        @click="openDoc(doc.id)"
-      />
-    </div>
-
-    <div ref="sentinel" class="browse-sentinel">
-      <button
-        v-if="hasMore && !store.loading"
-        class="btn browse-load-more"
-        :disabled="store.loadingMore"
-        @click="store.loadMore()"
-      >
-        {{ store.loadingMore ? 'Loading…' : 'Load more' }}
-      </button>
-    </div>
-
-    <p v-if="store.error" class="error">{{ store.error }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { INGESTION_SOURCES, SOURCE_LABELS } from '@/constants/sources'
 import { getDocument } from '@/api/client'
 import { useBrowseStore } from '@/stores/browse'
 import { useUiStore } from '@/stores/ui'
+import BrowseNavPanel from '@/components/BrowseNavPanel.vue'
 import DocGridCard from '@/components/DocGridCard.vue'
 
 const store = useBrowseStore()
@@ -68,8 +62,8 @@ async function openDoc(id: number) {
   ui.openDetail(doc)
 }
 
-onMounted(() => {
-  store.load()
+onMounted(async () => {
+  await Promise.all([store.loadTags(), store.load()])
   observer = new IntersectionObserver(
     entries => {
       if (

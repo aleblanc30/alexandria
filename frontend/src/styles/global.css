@@ -203,6 +203,24 @@ input:focus { border-color: rgba(0,0,0,.3) }
 .unfetch-url  { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .err-badge    { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #FCEBEB; color: #A32D2D; font-weight: 500; flex-shrink: 0 }
 
+/* ── Browse layout ───────────────────────────────────────────────────────────── */
+.browse-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 16px;
+  min-height: calc(100vh - 80px);
+  align-items: start;
+}
+.browse-nav {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  max-height: calc(100vh - 80px);
+  overflow: hidden;
+}
+.browse-content { min-width: 0 }
+
 /* ── Reading lists ───────────────────────────────────────────────────────────── */
 .rl-layout    { display: grid; grid-template-columns: 220px 1fr; gap: 16px; min-height: 400px }
 .rl-nav       { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); overflow: hidden }
