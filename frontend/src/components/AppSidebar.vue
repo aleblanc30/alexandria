@@ -9,32 +9,61 @@
     <RouterLink to="/tags"     class="nav-item"><IconTag />Tags</RouterLink>
 
     <div class="nav-section">Manage</div>
-    <RouterLink to="/runs"      class="nav-item"><IconRun />Cluster runs</RouterLink>
-    <RouterLink to="/ingestion" class="nav-item"><IconIngest />Ingestion</RouterLink>
-    <RouterLink to="/lists"     class="nav-item"><IconList />Reading lists</RouterLink>
+    <RouterLink to="/runs" class="nav-item"><IconRun />Cluster runs</RouterLink>
+
+    <div class="nav-group" :class="{ 'nav-group--open': ingestionOpen }">
+      <RouterLink
+        to="/ingestion"
+        class="nav-item nav-item--parent"
+        :class="{ 'router-link-active': isIngestionActive }"
+        @click="ingestionOpen = true"
+      >
+        <IconIngest />Ingestion
+        <button
+          type="button"
+          class="nav-chevron"
+          :aria-expanded="ingestionOpen"
+          aria-label="Toggle ingestion sources"
+          @click.prevent.stop="ingestionOpen = !ingestionOpen"
+        >
+          <IconChevron />
+        </button>
+      </RouterLink>
+      <div v-show="ingestionOpen" class="nav-submenu">
+        <RouterLink
+          v-for="src in INGESTION_SOURCES"
+          :key="src"
+          :to="`/ingestion/${src}`"
+          class="nav-item nav-item--sub"
+        >
+          <span class="dot" :style="{ background: SOURCE_COLORS[src] }" />
+          {{ SOURCE_LABELS[src] }}
+          <span class="count">{{ counts[src] ?? '—' }}</span>
+        </RouterLink>
+      </div>
+    </div>
+
+    <RouterLink to="/lists" class="nav-item"><IconList />Reading lists</RouterLink>
 
     <div class="nav-divider" />
     <div class="nav-section">Sources</div>
-    <div class="nav-item source-row">
-      <span class="dot" style="background:#378ADD" />Firefox
-      <span class="count">{{ counts.firefox ?? '—' }}</span>
-    </div>
-    <div class="nav-item source-row">
-      <span class="dot" style="background:#639922" />Zotero
-      <span class="count">{{ counts.zotero ?? '—' }}</span>
-    </div>
-    <div class="nav-item source-row">
-      <span class="dot" style="background:#BA7517" />Calibre
-      <span class="count">{{ counts.calibre ?? '—' }}</span>
+    <div
+      v-for="src in INGESTION_SOURCES"
+      :key="`stat-${src}`"
+      class="nav-item source-stat"
+    >
+      <span class="dot" :style="{ background: SOURCE_COLORS[src] }" />{{ SOURCE_LABELS[src] }}
+      <span class="count">{{ counts[src] ?? '—' }}</span>
     </div>
   </nav>
 </template>
 
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { INGESTION_SOURCES, SOURCE_COLORS, SOURCE_LABELS } from '@/constants/sources'
 import { useIngestionStore } from '@/stores/ingestion'
 
-// Inline micro-icons as SVG components to avoid an icon library dependency
 const IconSearch  = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>` }
 const IconCluster = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="8" r="2.5"/><circle cx="11" cy="5" r="2.5"/><circle cx="11" cy="11" r="2.5"/><line x1="7.5" y1="7" x2="9" y2="6"/><line x1="7.5" y1="9" x2="9" y2="10"/></svg>` }
 const IconTrend   = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2,12 6,7 9,9 14,3"/></svg>` }
@@ -42,10 +71,20 @@ const IconTag     = { template: `<svg class="icon" viewBox="0 0 16 16" fill="non
 const IconRun     = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="2"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="5" y1="10" x2="8" y2="10"/></svg>` }
 const IconIngest  = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="8" y1="5" x2="8" y2="11"/><line x1="5" y1="8" x2="11" y2="8"/></svg>` }
 const IconList    = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="10" height="13" rx="1.5"/><line x1="5" y1="6" x2="10" y2="6"/><line x1="5" y1="9" x2="10" y2="9"/><line x1="5" y1="12" x2="8" y2="12"/></svg>` }
+const IconChevron = { template: `<svg class="icon icon-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4,6 8,10 12,6"/></svg>` }
 
+const route = useRoute()
 const ingest = useIngestionStore()
+const ingestionOpen = ref(false)
+
 onMounted(() => ingest.load())
 const counts = computed(() => ingest.status?.by_source ?? {})
+
+const isIngestionActive = computed(() => route.path.startsWith('/ingestion'))
+
+watch(isIngestionActive, (active) => {
+  if (active) ingestionOpen.value = true
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -59,5 +98,32 @@ const counts = computed(() => ingest.status?.by_source ?? {})
 .icon        { width: 14px; height: 14px; opacity: .6; flex-shrink: 0 }
 .dot         { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0 }
 .count       { margin-left: auto; font-size: 10px; color: var(--hint) }
-.source-row  { cursor: default }
+.source-stat { cursor: default }
+
+.nav-group { display: flex; flex-direction: column }
+.nav-item--parent { position: relative; padding-right: 32px }
+.nav-chevron {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--hint);
+  border-radius: 4px;
+}
+.nav-chevron:hover { background: rgba(0, 0, 0, .06); color: var(--text) }
+.nav-group--open .nav-chevron .icon-chevron { transform: rotate(180deg) }
+.nav-submenu { display: flex; flex-direction: column }
+.nav-item--sub {
+  padding-left: 34px;
+  font-size: 12px;
+}
 </style>
