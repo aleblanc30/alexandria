@@ -65,7 +65,8 @@ Calibre and Firefox follow a two-phase pattern:
   performs.
 
 - **Phase 2** is slow and side-effecting. It pulls full-text from PDFs/EPUBs
-  (Calibre) or fetches and extracts HTML (Firefox) and embeds the result.
+  (Calibre) or fetches and extracts HTML and remote PDFs (Firefox) and embeds
+  the result.
   Chunk indices are offset past the phase-1 chunks via `existing_chunk_count()`
   so the two passes coexist in a single document.
 

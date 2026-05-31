@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     fetch_timeout_seconds: float = 10.0       # max seconds to read response body
     fetch_connect_timeout_seconds: float = 5.0  # max seconds to establish connection
     fetch_concurrency: int = 8                # parallel URL fetches
+    fetch_pdf_max_pages: int | None = None    # cap PDF pages (None = all)
+    fetch_pdf_max_bytes: int = 50_000_000     # reject larger PDF downloads
+    fetch_pdf_timeout_seconds: float = 120.0  # read timeout for .pdf bookmark URLs
+    fetch_pdf_budget_extra_seconds: float = 30.0  # extraction slack on top of PDF timeouts
 
     # ── Images ──────────────────────────────────────────────────────────────
     ocr_lang: str = "eng"                                  # passed to pytesseract

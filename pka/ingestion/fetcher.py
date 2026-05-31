@@ -5,14 +5,22 @@ Runs as a background job — does not block the ingestion pipeline.
 Strategy:
   - httpx AsyncClient with rate limiting (token bucket, per-domain)
   - trafilatura for main-content extraction; readability-lxml as fallback
-  - Non-HTML targets (PDF links, torrents, …) flagged as "skipped"
+  - Remote PDFs: download bytes, extract via book_extractor.extract_pdf, embed
+  - Other non-HTML targets (EPUB, torrents, …) flagged as "skipped"
   - Auth failures, timeouts, 4xx/5xx → status "unfetchable", logged to fetch_log
+
+Previously skipped PDF bookmarks stay ``fetch_status=skipped`` until reset manually, e.g.::
+
+    UPDATE documents SET fetch_status = 'pending'
+    WHERE source = 'firefox' AND fetch_status = 'skipped' AND url_or_path LIKE '%.pdf';
 """
 import asyncio
 import logging
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -22,14 +30,17 @@ from pka.config import settings as cfg
 from pka.constants import FetchStatus, Source
 from pka.db.queries import get_engine
 from pka.db.schema import documents, fetch_log
+from pka.ingestion.book_extractor import extract_pdf
 
 log = logging.getLogger(__name__)
 
 # MIME types we will attempt to parse as HTML
 _HTML_TYPES = {"text/html", "application/xhtml+xml"}
+_PDF_TYPES = {"application/pdf"}
+_PDF_MAGIC = b"%PDF"
 
-# Extensions that are not HTML and should be skipped or handled separately
-_SKIP_EXTENSIONS = {".pdf", ".epub", ".torrent", ".zip", ".gz", ".mp4", ".mp3"}
+# Extensions that are not HTML and should be skipped (PDF handled separately)
+_SKIP_EXTENSIONS = {".epub", ".torrent", ".zip", ".gz", ".mp4", ".mp3"}
 
 
 @dataclass
@@ -68,18 +79,51 @@ class _DomainRateLimiter:
 _limiter = _DomainRateLimiter(rps=1.0)   # 1 req/s per domain
 
 
-def _http_timeout() -> httpx.Timeout:
-    return httpx.Timeout(
-        connect=cfg.fetch_connect_timeout_seconds,
-        read=cfg.fetch_timeout_seconds,
-        write=cfg.fetch_connect_timeout_seconds,
-        pool=cfg.fetch_connect_timeout_seconds,
-    )
+def _url_looks_like_pdf(url: str) -> bool:
+    return urlparse(url).path.lower().endswith(".pdf")
 
 
-def _fetch_budget_seconds() -> float:
+def _is_pdf_content_type(content_type: str) -> bool:
+    base = content_type.split(";")[0].strip().lower()
+    return base in _PDF_TYPES
+
+
+def _is_pdf_bytes(data: bytes) -> bool:
+    return len(data) >= 4 and data[:4] == _PDF_MAGIC
+
+
+def _http_timeout(*, pdf: bool = False) -> httpx.Timeout:
+    read = cfg.fetch_pdf_timeout_seconds if pdf else cfg.fetch_timeout_seconds
+    connect = cfg.fetch_connect_timeout_seconds
+    return httpx.Timeout(connect=connect, read=read, write=connect, pool=connect)
+
+
+def _fetch_budget_seconds(*, pdf: bool = False) -> float:
     """Hard ceiling per URL including rate-limit wait and text extraction."""
+    if pdf:
+        return (
+            cfg.fetch_pdf_timeout_seconds
+            + cfg.fetch_connect_timeout_seconds
+            + cfg.fetch_pdf_budget_extra_seconds
+        )
     return cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds + 5.0
+
+
+def _extract_text_from_pdf_bytes(
+    data: bytes,
+    *,
+    max_pages: int | None = None,
+) -> str | None:
+    """Write bytes to a temp file and run the Calibre PDF extractor."""
+    pages = max_pages if max_pages is not None else cfg.fetch_pdf_max_pages
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+        tmp.write(data)
+        tmp.flush()
+        sections = extract_pdf(Path(tmp.name), max_pages=pages)
+    if not sections:
+        return None
+    parts = [s["text"] for s in sections if s.get("text", "").strip()]
+    return "\n\n".join(parts) if parts else None
 
 
 # ── Content extraction ────────────────────────────────────────────────────────
@@ -121,6 +165,31 @@ def _extract_text(html: str, url: str) -> str | None:
     return None
 
 
+def _fetch_pdf_result(
+    doc_id: int,
+    url: str,
+    body: bytes,
+    http_status: int,
+) -> FetchResult:
+    if len(body) > cfg.fetch_pdf_max_bytes:
+        return FetchResult(
+            doc_id, url, "unfetchable", None, http_status,
+            f"pdf exceeds {cfg.fetch_pdf_max_bytes} bytes",
+        )
+    if not _is_pdf_bytes(body):
+        return FetchResult(
+            doc_id, url, "unfetchable", None, http_status,
+            "response is not a PDF",
+        )
+    text = _extract_text_from_pdf_bytes(body)
+    if not text:
+        return FetchResult(
+            doc_id, url, "unfetchable", None, http_status,
+            "pdf extraction yielded no text",
+        )
+    return FetchResult(doc_id, url, "fetched", text, http_status, None)
+
+
 # ── Per-URL fetch ─────────────────────────────────────────────────────────────
 
 async def _fetch_one_impl(
@@ -128,15 +197,19 @@ async def _fetch_one_impl(
     doc_id: int,
     url: str,
 ) -> FetchResult:
-    # Skip non-HTML extensions immediately
+    expect_pdf = _url_looks_like_pdf(url)
     path = urlparse(url).path.lower()
-    if any(path.endswith(ext) for ext in _SKIP_EXTENSIONS):
+    if not expect_pdf and any(path.endswith(ext) for ext in _SKIP_EXTENSIONS):
         return FetchResult(doc_id, url, "skipped", None, None, "non-html extension")
 
     await _limiter.wait(url)
 
     try:
-        resp = await client.get(url, follow_redirects=True, timeout=_http_timeout())
+        resp = await client.get(
+            url,
+            follow_redirects=True,
+            timeout=_http_timeout(pdf=expect_pdf),
+        )
     except httpx.TimeoutException:
         return FetchResult(doc_id, url, "unfetchable", None, None, "timeout")
     except httpx.RequestError as exc:
@@ -149,6 +222,11 @@ async def _fetch_one_impl(
         return FetchResult(doc_id, url, "unfetchable", None, http_status, reason)
 
     content_type = resp.headers.get("content-type", "").split(";")[0].strip()
+    body = resp.content
+
+    if expect_pdf or _is_pdf_content_type(content_type) or _is_pdf_bytes(body):
+        return _fetch_pdf_result(doc_id, url, body, http_status)
+
     if content_type and content_type not in _HTML_TYPES:
         return FetchResult(doc_id, url, "skipped", None, http_status,
                            f"non-html content-type: {content_type}")
@@ -166,10 +244,11 @@ async def _fetch_one(
     doc_id: int,
     url: str,
 ) -> FetchResult:
+    pdf = _url_looks_like_pdf(url)
     try:
         return await asyncio.wait_for(
             _fetch_one_impl(client, doc_id, url),
-            timeout=_fetch_budget_seconds(),
+            timeout=_fetch_budget_seconds(pdf=pdf),
         )
     except asyncio.TimeoutError:
         return FetchResult(doc_id, url, "unfetchable", None, None, "timeout")

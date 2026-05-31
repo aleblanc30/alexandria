@@ -16,6 +16,22 @@ def _html_response(status: int = 200, body: str = "<html><body><p>Hello world, t
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status
     resp.text = body
+    resp.content = body.encode("utf-8")
+    resp.headers = {"content-type": content_type}
+    return resp
+
+
+def _pdf_response(
+    status: int = 200,
+    body: bytes | None = None,
+    content_type: str = "application/pdf",
+) -> MagicMock:
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = status
+    if body is None:
+        body = b"%PDF-1.4"
+    resp.content = body
+    resp.text = body.decode("latin-1", errors="replace")
     resp.headers = {"content-type": content_type}
     return resp
 
@@ -63,7 +79,7 @@ class TestFetchOne:
 
     @pytest.mark.asyncio
     async def test_unfetchable_when_overall_budget_exceeded(self, monkeypatch):
-        monkeypatch.setattr("pka.ingestion.fetcher._fetch_budget_seconds", lambda: 0.05)
+        monkeypatch.setattr("pka.ingestion.fetcher._fetch_budget_seconds", lambda **kw: 0.05)
 
         async def slow_fetch(client, doc_id, url):
             await asyncio.sleep(1)
@@ -76,11 +92,49 @@ class TestFetchOne:
         assert result.error_msg == "timeout"
 
     @pytest.mark.asyncio
-    async def test_skipped_for_pdf_url(self):
+    async def test_fetched_for_pdf_url(self, monkeypatch):
         mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = _pdf_response()
+        monkeypatch.setattr(
+            "pka.ingestion.fetcher._extract_text_from_pdf_bytes",
+            lambda data, **kw: "Extracted PDF text with enough content to embed.",
+        )
         result = await _fetch_one(mock_client, doc_id=1, url="https://arxiv.org/paper.pdf")
-        assert result.status == "skipped"
-        mock_client.get.assert_not_called()
+        assert result.status == "fetched"
+        assert result.text is not None
+        mock_client.get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_unfetchable_when_pdf_extraction_empty(self, monkeypatch):
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = _pdf_response()
+        monkeypatch.setattr(
+            "pka.ingestion.fetcher._extract_text_from_pdf_bytes",
+            lambda data, **kw: None,
+        )
+        result = await _fetch_one(mock_client, doc_id=1, url="https://arxiv.org/paper.pdf")
+        assert result.status == "unfetchable"
+        assert "pdf extraction" in (result.error_msg or "").lower()
+
+    @pytest.mark.asyncio
+    async def test_fetched_for_pdf_content_type_without_extension(self, monkeypatch):
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = _pdf_response()
+        monkeypatch.setattr(
+            "pka.ingestion.fetcher._extract_text_from_pdf_bytes",
+            lambda data, **kw: "PDF body from content-type route.",
+        )
+        result = await _fetch_one(mock_client, doc_id=1, url="https://example.com/download")
+        assert result.status == "fetched"
+        assert result.text is not None
+
+    @pytest.mark.asyncio
+    async def test_unfetchable_when_pdf_url_returns_html(self):
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = _html_response(200, "<html><body>Not a PDF</body></html>")
+        result = await _fetch_one(mock_client, doc_id=1, url="https://example.com/missing.pdf")
+        assert result.status == "unfetchable"
+        assert "not a pdf" in (result.error_msg or "").lower()
 
     @pytest.mark.asyncio
     async def test_skipped_for_non_html_content_type(self):
