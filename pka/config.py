@@ -68,8 +68,14 @@ class Settings(BaseSettings):
     ocr_lang: str = "eng"                                  # passed to pytesseract
     clip_model: str = "openai/clip-vit-base-patch32"       # HuggingFace hub id
 
+    # ── Clustering ──────────────────────────────────────────────────────────
+    cluster_space: str = "pca"              # pca | legacy_umap
+    cluster_pca_components: int = 50
+    cluster_label_workers: int = 4
+    cluster_async_labelling: bool = False     # TF-IDF first, LLM relabel in background
+
     # ── Validators ──────────────────────────────────────────────────────────
-    @field_validator("dev", "fetch_wayback_fallback", mode="before")
+    @field_validator("dev", "fetch_wayback_fallback", "cluster_async_labelling", mode="before")
     @classmethod
     def _parse_bool(cls, v: object) -> bool:
         if isinstance(v, bool):

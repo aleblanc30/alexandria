@@ -147,7 +147,13 @@ async def cancel_run(run_id: int, engine=Depends(get_engine)):
 
 
 @router.post("/trigger", status_code=202)
-async def trigger_run(bg: BackgroundTasks, engine=Depends(get_engine)):
+async def trigger_run(
+    bg: BackgroundTasks,
+    engine=Depends(get_engine),
+    skip_labelling: bool = False,
+    async_labelling: bool = False,
+    cluster_space: str | None = None,
+):
     """Kick off a new clustering run in the background."""
     _clustering_preflight()
     if _running_run_id(engine) is not None:
@@ -161,7 +167,12 @@ async def trigger_run(bg: BackgroundTasks, engine=Depends(get_engine)):
 
     def _run() -> None:
         try:
-            result = run_clustering(run_id=run_id)
+            result = run_clustering(
+                run_id=run_id,
+                skip_labelling=skip_labelling,
+                async_labelling=async_labelling or None,
+                cluster_space=cluster_space,
+            )
             log.info(
                 "Clustering run #%d finished (%d clusters, %d noise)",
                 result.run_id, result.n_clusters, result.n_noise,
@@ -180,3 +191,22 @@ async def trigger_run(bg: BackgroundTasks, engine=Depends(get_engine)):
 
     bg.add_task(_run_threaded)
     return {"status": "queued", "run_id": run_id}
+
+
+@router.post("/incremental", status_code=202)
+async def trigger_incremental(bg: BackgroundTasks, engine=Depends(get_engine)):
+    """Assign new docs to active run, or full re-cluster when drift is flagged."""
+    _clustering_preflight()
+    if _running_run_id(engine) is not None:
+        raise HTTPException(409, "A clustering run is already in progress")
+
+    from pka.clustering.lifecycle import run_incremental_clustering
+
+    def _run() -> None:
+        run_incremental_clustering()
+
+    async def _run_threaded() -> None:
+        await asyncio.to_thread(_run)
+
+    bg.add_task(_run_threaded)
+    return {"status": "queued", "mode": "incremental"}

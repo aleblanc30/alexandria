@@ -4,6 +4,7 @@ UMAP, HDBSCAN, and Ollama are all mocked — no GPU or server required.
 Chroma is replaced by the mock_chroma fixture from conftest.py.
 """
 import json
+import sys
 import time
 import numpy as np
 import pytest
@@ -72,7 +73,7 @@ def _mock_umap(monkeypatch) -> None:
     class FakeUMAP:
         def __init__(self, n_components=2, **kw):
             self.n_components = n_components
-        def fit_transform(self, X):
+        def fit_transform(self, X, y=None):
             rng = np.random.default_rng(0)
             return rng.random((len(X), self.n_components)).astype(np.float32)
 
@@ -244,21 +245,30 @@ class TestRunClustering:
         result = run_clustering(min_cluster_size=2)
         for key in (
             "n_clusters", "n_l1_clusters", "n_l2_clusters", "n_noise",
-            "cluster_sizes", "size_max", "size_mean",
+            "cluster_sizes", "size_max", "size_mean", "timings_ms",
         ):
             assert key in result.diagnostics
+
+    def test_timings_ms_has_load_step(self, populated):
+        from pka.clustering.engine import run_clustering
+        result = run_clustering(min_cluster_size=2)
+        timings = result.diagnostics["timings_ms"]
+        assert "load_embeddings_ms" in timings
+        assert timings["load_embeddings_ms"] >= 0
 
     def test_parameters_stored_as_json(self, populated):
         from pka.clustering.engine import run_clustering
         result = run_clustering(min_cluster_size=3)
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(cluster_runs.c.parameters)
+                sa.select(cluster_runs.c.parameters, cluster_runs.c.algorithm)
                 .where(cluster_runs.c.run_id == result.run_id)
             ).fetchone()
         params = json.loads(row[0])
         assert params["min_cluster_size"] == 3
         assert params["hierarchical"] is True
+        assert params["cluster_space"] == "pca"
+        assert row[1] == "HDBSCAN-hierarchical-pca"
 
     def test_empty_vector_store_raises(self, monkeypatch):
         col = MagicMock()
@@ -486,6 +496,69 @@ class TestAdaptiveClusterParams:
         assert 3 <= mcs <= 15
         assert ms >= 2
         assert 5 <= nn <= 30
+
+    def test_small_corpus_minimums(self):
+        from pka.clustering.engine import adaptive_cluster_params
+        mcs, ms, nn = adaptive_cluster_params(5)
+        assert mcs >= 2
+        assert ms >= 2
+        assert nn >= 2
+
+
+class TestParseLlmJson:
+    def test_strips_markdown_fence(self):
+        from pka.clustering.engine import _parse_llm_json
+        raw = '```json\n{"label": "Topic A"}\n```'
+        assert _parse_llm_json(raw)["label"] == "Topic A"
+
+    def test_regex_fallback_for_wrapped_json(self):
+        from pka.clustering.engine import _parse_llm_json
+        raw = 'Here is the result: {"label": "B"} thanks'
+        assert _parse_llm_json(raw)["label"] == "B"
+
+    def test_invalid_json_raises(self):
+        from pka.clustering.engine import _parse_llm_json
+        import pytest
+        with pytest.raises(Exception):
+            _parse_llm_json("not json at all")
+
+
+class TestRunUmapLegacy:
+    def test_legacy_umap_shapes(self, monkeypatch):
+        import numpy as np
+        from pka.clustering.engine import _run_umap_legacy
+
+        matrix = np.random.rand(20, 8).astype(np.float32)
+        mock_reducer = MagicMock()
+        mock_reducer.fit_transform.side_effect = [
+            np.random.rand(20, 5).astype(np.float32),
+            np.random.rand(20, 2).astype(np.float32),
+        ]
+        mock_umap = MagicMock()
+        mock_umap.UMAP.return_value = mock_reducer
+        monkeypatch.setitem(sys.modules, "umap", mock_umap)
+
+        reduced_nd, reduced_2d = _run_umap_legacy(matrix, compute_2d=True)
+        assert reduced_nd.shape == (20, 5)
+        assert reduced_2d is not None
+        assert reduced_2d.shape == (20, 2)
+
+
+class TestIncrementalClustering:
+    def test_no_active_run_triggers_full(self, populated):
+        from pka.clustering.lifecycle import run_incremental_clustering
+        out = run_incremental_clustering(min_cluster_size=2)
+        assert out["action"] == "full_run"
+        assert out["result"] is not None
+
+    def test_assign_only_when_active_and_no_drift(self, populated):
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.lifecycle import accept_run, run_incremental_clustering
+        result = run_clustering(min_cluster_size=2)
+        accept_run(result.run_id)
+        out = run_incremental_clustering(min_cluster_size=2)
+        assert out["action"] == "assign_only"
+        assert out["assigned"] == 0
 
 
 class TestEmbeddingsAvailable:

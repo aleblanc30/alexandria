@@ -403,3 +403,58 @@ def compute_merge_suggestions(run_id: int | None = None) -> list[dict]:
     log.info("%d merge suggestions above threshold %.2f.",
              len(suggestions), MERGE_THRESHOLD)
     return suggestions
+
+
+# ── Incremental update ───────────────────────────────────────────────────────
+
+def run_incremental_clustering(
+    *,
+    label_model: str | None = None,
+    **run_kwargs,
+) -> dict:
+    """
+    Assign new documents to the active run when possible; full re-cluster when
+    drift is flagged or no active run exists.
+    """
+    from pka.clustering.engine import run_clustering
+
+    active = get_active_run_id()
+    if active is None:
+        result = run_clustering(label_model=label_model, **run_kwargs)
+        return {
+            "action":  "full_run",
+            "run_id":  result.run_id,
+            "assigned": 0,
+            "flagged":  0,
+            "result":  result,
+        }
+
+    stats = assign_new_docs(active)
+    drift = compute_drift(active)
+    flagged = [d for d in drift if d["flagged"]]
+
+    if flagged:
+        log.info(
+            "Drift flagged %d L1 cluster(s) — running full re-cluster",
+            len(flagged),
+        )
+        result = run_clustering(label_model=label_model, **run_kwargs)
+        return {
+            "action":   "full_run_drift",
+            "run_id":   result.run_id,
+            "assigned": stats["assigned"],
+            "flagged":  len(flagged),
+            "result":   result,
+        }
+
+    log.info(
+        "Incremental update: assigned %d doc(s) to run #%d (no drift)",
+        stats["assigned"], active,
+    )
+    return {
+        "action":   "assign_only",
+        "run_id":   active,
+        "assigned": stats["assigned"],
+        "flagged":  0,
+        "result":   None,
+    }

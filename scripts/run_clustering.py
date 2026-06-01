@@ -6,13 +6,15 @@ Usage:
     python scripts/run_clustering.py
     python scripts/run_clustering.py --accept          # auto-accept the run
     python scripts/run_clustering.py --skip-labelling  # TF-IDF labels only
+    python scripts/run_clustering.py --async-labelling # TF-IDF first, LLM in background
+    python scripts/run_clustering.py --incremental     # assign new docs; full run on drift
+    python scripts/run_clustering.py --cluster-space legacy_umap
     python scripts/run_clustering.py --min-cluster-size 10 --n-neighbors 20
     python scripts/run_clustering.py --assign-new      # assign unassigned docs only
     python scripts/run_clustering.py --drift           # print drift report
     python scripts/run_clustering.py --merges          # print merge suggestions
 """
 import argparse
-import json
 import logging
 import sys
 from pathlib import Path
@@ -24,6 +26,7 @@ from pka.clustering.engine import run_clustering
 from pka.clustering.lifecycle import (
     accept_run, get_active_run_id,
     assign_new_docs, compute_drift, compute_merge_suggestions,
+    run_incremental_clustering,
 )
 
 logging.basicConfig(
@@ -37,11 +40,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--min-cluster-size", type=int,   default=None)
     parser.add_argument("--min-samples",      type=int,   default=None)
-    parser.add_argument("--n-neighbors",      type=int,   default=15)
+    parser.add_argument("--n-neighbors",      type=int,   default=None)
     parser.add_argument("--min-dist",         type=float, default=0.1)
-    parser.add_argument("--n-components",     type=int,   default=5)
-    parser.add_argument("--label-model",      type=str,   default="llama3")
+    parser.add_argument("--n-components",     type=int,   default=5,
+                        help="Legacy UMAP clustering dims (cluster-space=legacy_umap)")
+    parser.add_argument("--pca-components",   type=int,   default=None)
+    parser.add_argument("--cluster-space",    type=str,   default=None,
+                        choices=["pca", "legacy_umap"])
+    parser.add_argument("--label-model",      type=str,   default=None)
     parser.add_argument("--skip-labelling",   action="store_true")
+    parser.add_argument("--async-labelling",  action="store_true",
+                        help="Persist TF-IDF labels first; LLM relabel in background")
+    parser.add_argument("--incremental",      action="store_true",
+                        help="Assign new docs to active run; full re-run if drift flagged")
     parser.add_argument("--accept",           action="store_true",
                         help="Auto-accept this run without manual review")
     parser.add_argument("--assign-new",       action="store_true",
@@ -81,17 +92,33 @@ def main() -> None:
                      s["label_a"], s["label_b"], s["similarity"])
         return
 
-    # ── Full clustering run ───────────────────────────────────────────────────
-    log.info("Starting clustering pipeline…")
-    result = run_clustering(
+    run_kw = dict(
         min_cluster_size = args.min_cluster_size,
         min_samples      = args.min_samples,
         n_neighbors      = args.n_neighbors,
         min_dist         = args.min_dist,
         n_components     = args.n_components,
+        pca_components   = args.pca_components,
+        cluster_space    = args.cluster_space,
         label_model      = args.label_model,
         skip_labelling   = args.skip_labelling,
+        async_labelling  = args.async_labelling or None,
     )
+
+    if args.incremental:
+        log.info("Starting incremental clustering update…")
+        summary = run_incremental_clustering(**run_kw)
+        log.info("Incremental result: action=%s run_id=%s assigned=%s flagged=%s",
+                 summary["action"], summary["run_id"],
+                 summary["assigned"], summary["flagged"])
+        result = summary.get("result")
+        if result is None:
+            if args.accept and summary.get("run_id"):
+                accept_run(summary["run_id"])
+            return
+    else:
+        log.info("Starting clustering pipeline…")
+        result = run_clustering(**run_kw)
 
     log.info("Run #%d complete:", result.run_id)
     log.info("  Clusters : %d", result.n_clusters)
@@ -100,6 +127,8 @@ def main() -> None:
              result.diagnostics["size_min"],
              result.diagnostics["size_max"],
              result.diagnostics["size_mean"])
+    if result.diagnostics.get("timings_ms"):
+        log.info("  Timings  : %s", result.diagnostics["timings_ms"])
     log.info("Cluster labels:")
     for cid, label in result.cluster_labels.items():
         desc = result.cluster_descriptions.get(cid, "")

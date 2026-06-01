@@ -65,4 +65,6 @@ def ingest_text_block(
         }
         for i, (t, vid) in enumerate(zip(chunk_texts, vector_ids, strict=True))
     ])
+    from pka.clustering.doc_embeddings import refresh_document_embedding
+    refresh_document_embedding(doc_id)
     return {"chunks_added": len(chunk_texts), "skipped": False}
