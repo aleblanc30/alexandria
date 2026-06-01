@@ -23,6 +23,7 @@ documents = sa.Table(
     sa.Column("date_added",   sa.Integer),                 # unix ts from source (when user saved it)
     sa.Column("ingested_at",  sa.Integer),                 # unix ts when PKA first indexed it
     sa.Column("fetch_status", sa.Text, default="pending"), # see pka.constants.FetchStatus
+    sa.Column("item_type",    sa.Text),                    # Zotero itemTypes.typeName
     sa.UniqueConstraint("source", "source_id", name="uq_source_item"),
 )
 

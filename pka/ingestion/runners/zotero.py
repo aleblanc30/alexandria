@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from pka.classification import classify_document, sync_classification_tags
 from pka.connectors.zotero import ZoteroItem, zotero_document_url_or_path, zotero_embed_text
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
@@ -19,6 +20,15 @@ from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_lo
 from pka.ingestion.runners._common import progress_tick, stop_requested
 
 log = logging.getLogger(__name__)
+
+
+def _sync_zotero_classification(doc_id: int, item: ZoteroItem) -> None:
+    tags = classify_document(
+        Source.ZOTERO,
+        item_type=item.item_type,
+        url_or_path=zotero_document_url_or_path(item),
+    )
+    sync_classification_tags(doc_id, tags)
 
 
 def ingest_zotero_items(
@@ -45,9 +55,11 @@ def ingest_zotero_items(
                     FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
                 ),
                 zotero_attachment_key = item.pdf_attachment_key,
+                item_type    = item.item_type,
             )
             insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
             insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
+            _sync_zotero_classification(doc_id, item)
 
             if skip_existing and document_has_chunks(doc_id):
                 stats["skipped"] += 1
@@ -96,11 +108,13 @@ def ingest_zotero_metadata(
                 FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
             ),
             zotero_attachment_key = item.pdf_attachment_key,
+            item_type    = item.item_type,
         )
         if doc_id is None:
             return "skipped"
         insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
         insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
+        _sync_zotero_classification(doc_id, item)
         known[item.source_id] = doc_id
         return "processed"
 
@@ -139,8 +153,10 @@ def ingest_zotero_embed(
                     FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
                 ),
                 zotero_attachment_key = item.pdf_attachment_key,
+                item_type    = item.item_type,
             )
             doc_ids[item.source_id] = doc_id
+            _sync_zotero_classification(doc_id, item)
         result = ingest_text_block(
             doc_id, zotero_embed_text(item), Source.ZOTERO,
             extra_metadata={"title": item.title},

@@ -33,6 +33,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 async def list_documents(
     sources: Annotated[list[Source] | None, Query()] = None,
     source_tags: Annotated[list[str] | None, Query()] = None,
+    general_tags: Annotated[list[str] | None, Query()] = None,
     overlay_tags: Annotated[list[str] | None, Query()] = None,
     cluster_l1_tags: Annotated[list[str] | None, Query()] = None,
     cluster_l2_tags: Annotated[list[str] | None, Query()] = None,
@@ -44,6 +45,7 @@ async def list_documents(
     total, rows = query_list_documents(
         sources=source_vals,
         source_tags=source_tags,
+        general_tags=general_tags,
         overlay_tags=overlay_tags,
         cluster_l1_tags=cluster_l1_tags,
         cluster_l2_tags=cluster_l2_tags,

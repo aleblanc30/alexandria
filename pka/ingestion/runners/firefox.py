@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from pka.classification import classify_document, sync_classification_tags
 from pka.connectors.firefox import FirefoxBookmark
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
@@ -16,6 +17,11 @@ from pka.ingestion.core import ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 
 log = logging.getLogger(__name__)
+
+
+def _sync_firefox_classification(doc_id: int, bm: FirefoxBookmark) -> None:
+    tags = classify_document(Source.FIREFOX, url_or_path=bm.url)
+    sync_classification_tags(doc_id, tags)
 
 
 def ingest_firefox_bookmarks(
@@ -43,6 +49,7 @@ def ingest_firefox_bookmarks(
         insert_source_tags(doc_id, bm.tags, source=Source.FIREFOX)
         if bm.folder_path:
             insert_source_collections(doc_id, [bm.folder_path], source=Source.FIREFOX)
+        _sync_firefox_classification(doc_id, bm)
         known[bm.source_id] = doc_id
         return "processed"
 

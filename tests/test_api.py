@@ -271,6 +271,21 @@ class TestSearch:
         returned_ids = {d["id"] for d in r.json()["documents"]}
         assert returned_ids == {ids[0]}
 
+    def test_search_general_tags_filter(self, client):
+        from pka.classification import sync_classification_tags
+
+        ids = _seed_docs(3)
+        sync_classification_tags(ids[0], ["academic", "paper"])
+        sync_classification_tags(ids[1], ["academic", "preprint"])
+        r = client.post("/search", json={
+            "query": "Document",
+            "mode": "fulltext",
+            "general_tags": ["preprint"],
+        })
+        assert r.status_code == 200
+        returned_ids = {d["id"] for d in r.json()["documents"]}
+        assert returned_ids == {ids[1]}
+
     def test_search_wayback_only_filter(self, client):
         import sqlalchemy as sa
 
@@ -413,6 +428,27 @@ class TestDocuments:
         data = r.json()
         assert data["total"] == 1
         assert data["documents"][0]["id"] == ids[0]
+
+    def test_list_documents_general_tags_filter(self, client):
+        from pka.classification import sync_classification_tags
+
+        ids = _seed_docs(3)
+        sync_classification_tags(ids[0], ["academic", "paper"])
+        sync_classification_tags(ids[1], ["academic", "preprint"])
+        sync_classification_tags(ids[2], [])
+
+        r_all = client.get("/documents", params=[("general_tags", "academic")])
+        assert r_all.status_code == 200
+        assert r_all.json()["total"] == 2
+        assert {d["id"] for d in r_all.json()["documents"]} == {ids[0], ids[1]}
+
+        r_paper = client.get("/documents", params=[("general_tags", "paper")])
+        assert r_paper.json()["total"] == 1
+        assert r_paper.json()["documents"][0]["id"] == ids[0]
+
+        r_preprint = client.get("/documents", params=[("general_tags", "preprint")])
+        assert r_preprint.json()["total"] == 1
+        assert r_preprint.json()["documents"][0]["id"] == ids[1]
 
     def test_list_documents_cluster_l1_l2_tag_filters(self, client, monkeypatch):
         ids = _seed_docs(4)

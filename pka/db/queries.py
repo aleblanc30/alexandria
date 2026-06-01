@@ -72,6 +72,10 @@ def init_db() -> None:
             con.execute(sa.text(
                 "ALTER TABLE documents ADD COLUMN archive_url TEXT"
             ))
+        if "item_type" not in cols:
+            con.execute(sa.text(
+                "ALTER TABLE documents ADD COLUMN item_type TEXT"
+            ))
 
         # Migration: add umap_points to cluster_runs
         cr_cols = [r[1] for r in con.execute(
@@ -122,6 +126,7 @@ def insert_document_if_new(
     date_added: int | None,
     fetch_status: FetchStatus | str = FetchStatus.PENDING,
     zotero_attachment_key: str | None = None,
+    item_type: str | None = None,
 ) -> int | None:
     """Insert a document when ``(source, source_id)`` is not already archived."""
     eng = get_engine()
@@ -139,15 +144,17 @@ def insert_document_if_new(
             sa.text("""
                 INSERT INTO documents
                     (source, source_id, title, url_or_path,
-                     zotero_attachment_key, date_added, ingested_at, fetch_status)
+                     zotero_attachment_key, date_added, ingested_at, fetch_status,
+                     item_type)
                 VALUES
-                    (:source, :sid, :title, :url, :zak, :da, :now, :fs)
+                    (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type)
             """),
             {
                 "source": str(source), "sid": source_id,
                 "title": title, "url": url_or_path,
                 "zak": zotero_attachment_key,
                 "da": date_added, "now": now, "fs": str(fetch_status),
+                "item_type": item_type,
             },
         )
         row = con.execute(
@@ -167,6 +174,7 @@ def upsert_document(
     date_added: int | None,
     fetch_status: FetchStatus | str = FetchStatus.PENDING,
     zotero_attachment_key: str | None = None,
+    item_type: str | None = None,
 ) -> int:
     """Insert a document or update its mutable fields. Returns the document id.
 
@@ -179,13 +187,15 @@ def upsert_document(
         stmt = sa.text("""
             INSERT INTO documents
                 (source, source_id, title, url_or_path,
-                 zotero_attachment_key, date_added, ingested_at, fetch_status)
+                 zotero_attachment_key, date_added, ingested_at, fetch_status,
+                 item_type)
             VALUES
-                (:source, :sid, :title, :url, :zak, :da, :now, :fs)
+                (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type)
             ON CONFLICT(source, source_id) DO UPDATE SET
                 title        = excluded.title,
                 url_or_path  = excluded.url_or_path,
                 fetch_status = excluded.fetch_status,
+                item_type    = COALESCE(excluded.item_type, documents.item_type),
                 zotero_attachment_key = COALESCE(
                     excluded.zotero_attachment_key, documents.zotero_attachment_key
                 ),
@@ -196,6 +206,7 @@ def upsert_document(
             "title": title, "url": url_or_path,
             "zak": zotero_attachment_key,
             "da": date_added, "now": now, "fs": str(fetch_status),
+            "item_type": item_type,
         })
         row = con.execute(
             sa.select(documents.c.id).where(
@@ -224,6 +235,21 @@ def refresh_zotero_attachment_keys(keys_by_source_id: dict[str, str]) -> int:
             )
             updated += result.rowcount or 0
     return updated
+
+
+def update_document_item_type(source: Source | str, source_id: str, item_type: str) -> int:
+    """Set ``item_type`` on an existing document. Returns rows updated."""
+    eng = get_engine()
+    with eng.begin() as con:
+        result = con.execute(
+            sa.update(documents)
+            .where(
+                (documents.c.source == str(source))
+                & (documents.c.source_id == source_id)
+            )
+            .values(item_type=item_type)
+        )
+    return result.rowcount or 0
 
 
 def insert_source_tags(document_id: int, tags: list[str], source: Source | str) -> None:
@@ -498,6 +524,7 @@ def list_documents(
     sources: list[str] | None = None,
     source_tags: list[str] | None = None,
     overlay_tags: list[str] | None = None,
+    general_tags: list[str] | None = None,
     cluster_l1_tags: list[str] | None = None,
     cluster_l2_tags: list[str] | None = None,
     wayback_only: bool = False,
@@ -508,12 +535,14 @@ def list_documents(
     source_filter = [str(s) for s in sources] if sources else None
     source_tag_filter = [str(t) for t in source_tags] if source_tags else None
     overlay_tag_filter = [str(t) for t in overlay_tags] if overlay_tags else None
+    general_tag_filter = [str(t) for t in general_tags] if general_tags else None
     cluster_l1_tag_filter = [str(t) for t in cluster_l1_tags] if cluster_l1_tags else None
     cluster_l2_tag_filter = [str(t) for t in cluster_l2_tags] if cluster_l2_tags else None
     filter_kwargs = {
         "source_filter": source_filter,
         "source_tag_filter": source_tag_filter,
         "overlay_tag_filter": overlay_tag_filter,
+        "general_tag_filter": general_tag_filter,
         "cluster_l1_tag_filter": cluster_l1_tag_filter,
         "cluster_l2_tag_filter": cluster_l2_tag_filter,
         "wayback_only": wayback_only,

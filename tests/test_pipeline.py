@@ -58,6 +58,43 @@ class TestIngestZoteroItems:
             ).fetchone()
         assert row[0] == "test-tag"
 
+    def test_item_type_and_classification_tags(self, mock_chroma):
+        from pka.db.schema import overlay_tags
+
+        ingest_zotero_items([_make_zotero_item()])
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.item_type).where(documents.c.source_id == "Z001")
+            ).fetchone()
+            assert row[0] == "journalArticle"
+            tags = {
+                r[0] for r in con.execute(
+                    sa.select(overlay_tags.c.tag).where(
+                        overlay_tags.c.document_id == con.execute(
+                            sa.select(documents.c.id).where(documents.c.source_id == "Z001")
+                        ).scalar()
+                    )
+                ).fetchall()
+            }
+        assert tags == {"academic", "paper"}
+
+    def test_preprint_classification(self, mock_chroma):
+        from pka.db.schema import overlay_tags
+
+        ingest_zotero_items([_make_zotero_item(item_type="preprint")])
+        with get_engine().connect() as con:
+            doc_id = con.execute(
+                sa.select(documents.c.id).where(documents.c.source_id == "Z001")
+            ).scalar()
+            tags = {
+                r[0] for r in con.execute(
+                    sa.select(overlay_tags.c.tag).where(
+                        overlay_tags.c.document_id == doc_id
+                    )
+                ).fetchall()
+            }
+        assert tags == {"academic", "preprint"}
+
     def test_chunks_created(self, mock_chroma):
         item = _make_zotero_item()
         ingest_zotero_items([item])
@@ -150,6 +187,24 @@ class TestIngestFirefoxBookmarks:
                 sa.select(source_tags.c.tag_string).where(source_tags.c.source == "firefox")
             ).fetchone()
         assert row[0] == "web"
+
+    def test_arxiv_bookmark_classified_as_preprint(self):
+        from pka.db.schema import overlay_tags
+
+        bm = _make_firefox_bookmark(url="https://arxiv.org/abs/2301.00001")
+        ingest_firefox_bookmarks([bm])
+        with get_engine().connect() as con:
+            doc_id = con.execute(
+                sa.select(documents.c.id).where(documents.c.source_id == "F001")
+            ).scalar()
+            tags = {
+                r[0] for r in con.execute(
+                    sa.select(overlay_tags.c.tag).where(
+                        overlay_tags.c.document_id == doc_id
+                    )
+                ).fetchall()
+            }
+        assert tags == {"academic", "preprint"}
 
     def test_resync_skips_existing_bookmark(self):
         bm = _make_firefox_bookmark()
