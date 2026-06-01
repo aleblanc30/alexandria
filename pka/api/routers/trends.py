@@ -7,16 +7,18 @@ from fastapi import APIRouter, Depends, Query
 
 from pka.api.dependencies import get_engine
 from pka.db.schema import cluster_assignments, cluster_runs, clusters, documents
+from pka.trends.kernel import build_kernel_timeline
 
 router = APIRouter(prefix="/trends", tags=["trends"])
 
 
 @router.get("/timeline")
-async def timeline(
-    granularity: str = Query("month", description="month | year"),
-    engine=Depends(get_engine),
-):
-    """Return ``{cluster_label: {period: count}}`` for the interest timeline chart."""
+async def timeline(engine=Depends(get_engine)):
+    """Return kernel-smoothed level-1 cluster timelines for the interest chart.
+
+    Each bookmark contributes a finite-support Gaussian-like kernel (one quarter
+    wide) centered on ``date_added``. Values are sampled at month centers.
+    """
     with engine.connect() as con:
         run = con.execute(
             sa.select(cluster_runs.c.run_id)
@@ -24,7 +26,7 @@ async def timeline(
             .order_by(cluster_runs.c.run_id.desc()).limit(1)
         ).fetchone()
         if not run:
-            return {}
+            return {"timeline": {}, "sizes": {}}
         run_id = run[0]
 
         rows = con.execute(
@@ -38,19 +40,14 @@ async def timeline(
                   clusters.c.cluster_id == cluster_assignments.c.cluster_id)
             .where(
                 (cluster_assignments.c.run_id == run_id) &
+                (cluster_assignments.c.level == 1) &
+                (clusters.c.level == 1) &
                 (documents.c.date_added.is_not(None))
             )
         ).fetchall()
 
-    result: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    for label, ts in rows:
-        if not ts:
-            continue
-        dt = datetime.datetime.utcfromtimestamp(ts)
-        period = dt.strftime("%Y-%m") if granularity == "month" else str(dt.year)
-        result[label or "Unlabelled"][period] += 1
-
-    return {k: dict(v) for k, v in result.items()}
+    timeline_data, sizes = build_kernel_timeline(rows)
+    return {"timeline": timeline_data, "sizes": sizes}
 
 
 @router.get("/sources")

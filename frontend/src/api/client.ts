@@ -224,8 +224,13 @@ export const listTags = (params?: {
 
 // ── Trends ────────────────────────────────────────────────────────────────────
 
-export const trendTimeline = (granularity: 'month' | 'year' = 'month') =>
-  req<Record<string, Record<string, number>>>(`/trends/timeline?granularity=${granularity}`)
+export interface TrendTimelineResponse {
+  timeline: Record<string, Record<string, number>>
+  sizes: Record<string, number>
+}
+
+export const trendTimeline = () =>
+  req<TrendTimelineResponse>('/trends/timeline')
 export const trendSources  = (granularity: 'month' | 'year' = 'month') =>
   req<Record<string, Record<string, number>>>(`/trends/sources?granularity=${granularity}`)
 

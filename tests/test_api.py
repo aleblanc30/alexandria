@@ -801,7 +801,10 @@ class TestTrends:
     def test_timeline_returns_dict(self, client):
         r = client.get("/trends/timeline")
         assert r.status_code == 200
-        assert isinstance(r.json(), dict)
+        data = r.json()
+        assert isinstance(data, dict)
+        assert "timeline" in data
+        assert "sizes" in data
 
     def test_sources_over_time_returns_dict(self, client):
         _seed_docs(3)
@@ -819,18 +822,30 @@ class TestTrends:
     def test_timeline_with_cluster_run(self, client):
         ids = _seed_docs(4)
         _seed_run(ids, n_clusters=2)
-        r = client.get("/trends/timeline?granularity=month")
+        r = client.get("/trends/timeline")
         assert r.status_code == 200
         data = r.json()
-        assert isinstance(data, dict)
-        assert sum(sum(periods.values()) for periods in data.values()) >= 1
+        assert isinstance(data["timeline"], dict)
+        assert isinstance(data["sizes"], dict)
+        assert sum(data["sizes"].values()) >= 1
+        assert any(data["timeline"].values())
 
-    def test_timeline_year_granularity(self, client):
+    def test_timeline_kernel_values_are_floats(self, client):
         ids = _seed_docs(2)
         _seed_run(ids)
-        r = client.get("/trends/timeline?granularity=year")
-        assert r.status_code == 200
-        assert isinstance(r.json(), dict)
+        r = client.get("/trends/timeline")
+        data = r.json()
+        for periods in data["timeline"].values():
+            for value in periods.values():
+                assert isinstance(value, float)
+
+    def test_timeline_excludes_level2_clusters(self, client):
+        ids = _seed_docs(4)
+        _seed_run(ids, n_clusters=2, with_l2=True)
+        data = client.get("/trends/timeline").json()
+        labels = set(data["timeline"].keys())
+        assert "Subcluster 0" not in labels
+        assert labels <= {"Cluster 0", "Cluster 1"}
 
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
