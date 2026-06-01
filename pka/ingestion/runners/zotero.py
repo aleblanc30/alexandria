@@ -39,6 +39,20 @@ def _sync_zotero_card_summary(doc_id: int, item: ZoteroItem, *, dry_run: bool) -
     update_card_summary(doc_id, zotero_card_summary(item))
 
 
+def _zotero_document_kwargs(item: ZoteroItem) -> dict:
+    """Shared column values for inserting/upserting a Zotero document row."""
+    return dict(
+        source=Source.ZOTERO,
+        source_id=item.source_id,
+        title=item.title,
+        url_or_path=zotero_document_url_or_path(item),
+        date_added=item.date_added,
+        fetch_status=FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING,
+        zotero_attachment_key=item.pdf_attachment_key,
+        item_type=item.item_type,
+    )
+
+
 def ingest_zotero_items(
     items: list[ZoteroItem],
     skip_existing: bool = True,
@@ -53,18 +67,7 @@ def ingest_zotero_items(
             break
         failed = False
         try:
-            doc_id = upsert_document(
-                source       = Source.ZOTERO,
-                source_id    = item.source_id,
-                title        = item.title,
-                url_or_path  = zotero_document_url_or_path(item),
-                date_added   = item.date_added,
-                fetch_status = (
-                    FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
-                ),
-                zotero_attachment_key = item.pdf_attachment_key,
-                item_type    = item.item_type,
-            )
+            doc_id = upsert_document(**_zotero_document_kwargs(item))
             insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
             insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
             _sync_zotero_classification(doc_id, item)
@@ -107,18 +110,7 @@ def ingest_zotero_metadata(
     def _persist(item: ZoteroItem) -> MetadataOutcome:
         if dry_run:
             return "dry_run"
-        doc_id = insert_document_if_new(
-            source       = Source.ZOTERO,
-            source_id    = item.source_id,
-            title        = item.title,
-            url_or_path  = zotero_document_url_or_path(item),
-            date_added   = item.date_added,
-            fetch_status = (
-                FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
-            ),
-            zotero_attachment_key = item.pdf_attachment_key,
-            item_type    = item.item_type,
-        )
+        doc_id = insert_document_if_new(**_zotero_document_kwargs(item))
         if doc_id is None:
             return "skipped"
         insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
@@ -153,18 +145,7 @@ def ingest_zotero_embed(
     def _process(item: ZoteroItem) -> tuple[bool, int]:
         doc_id = doc_ids.get(item.source_id)
         if doc_id is None:
-            doc_id = upsert_document(
-                source       = Source.ZOTERO,
-                source_id    = item.source_id,
-                title        = item.title,
-                url_or_path  = zotero_document_url_or_path(item),
-                date_added   = item.date_added,
-                fetch_status = (
-                    FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
-                ),
-                zotero_attachment_key = item.pdf_attachment_key,
-                item_type    = item.item_type,
-            )
+            doc_id = upsert_document(**_zotero_document_kwargs(item))
             doc_ids[item.source_id] = doc_id
             _sync_zotero_classification(doc_id, item)
         _sync_zotero_card_summary(doc_id, item, dry_run=dry_run)

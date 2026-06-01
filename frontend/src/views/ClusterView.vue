@@ -80,6 +80,7 @@
 import { ref, computed, onMounted, reactive } from 'vue'
 import { useClustersStore } from '@/stores/clusters'
 import type { ClusterOut } from '@/api/client'
+import { colorForIndex } from '@/constants/colors'
 import { slugifyTag } from '@/lib/slugifyTag'
 import ScatterPlot from '@/components/ScatterPlot.vue'
 
@@ -89,8 +90,7 @@ const savedLabels     = reactive<Record<number, string>>({})
 const applyingId      = ref<number | null>(null)
 const applyingAll     = ref(false)
 const regeneratingId  = ref<number | null>(null)
-const PALETTE         = ['#378ADD','#7F77DD','#639922','#BA7517','#1D9E75','#D85A30','#D4537E','#888780']
-const colorFor        = (id: number) => PALETTE[id % PALETTE.length]
+const colorFor        = colorForIndex
 const maxCount        = computed(() => Math.max(1, ...store.list.map(c => c.doc_count)))
 
 const l1Clusters = computed(() => store.list.filter(c => (c.level ?? 1) === 1))

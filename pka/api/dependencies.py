@@ -1,10 +1,5 @@
-"""Shared FastAPI dependencies — settings and DB engine."""
-from pka.config import settings as _settings
+"""Shared FastAPI dependencies — DB engine."""
 from pka.db.queries import get_engine as _get_engine
-
-
-def get_settings():
-    return _settings
 
 
 def get_engine():

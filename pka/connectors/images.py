@@ -7,8 +7,7 @@ the ingestion layer (image_pipeline.py).
 Supported formats: JPEG, PNG, WEBP, TIFF, BMP, GIF (first frame only).
 """
 import logging
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 log = logging.getLogger(__name__)

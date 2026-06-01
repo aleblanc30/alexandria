@@ -19,6 +19,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import type { UmapPoint, ClusterOut } from '@/api/client'
+import { colorForIndex } from '@/constants/colors'
 
 const props = defineProps<{ points: UmapPoint[]; clusters: ClusterOut[] }>()
 const canvas  = ref<HTMLCanvasElement>()
@@ -27,13 +28,9 @@ const tooltip = ref<{ x: number; y: number; title: string } | null>(null)
 // Component-scoped axis bounds — see audit patch #12.
 const bounds = ref({ xMin: 0, xMax: 10, yMin: 0, yMax: 10 })
 
-const PALETTE = [
-  '#378ADD','#7F77DD','#639922','#BA7517','#1D9E75',
-  '#D85A30','#D4537E','#888780','#E24B4A','#3DA399',
-]
 function clusterColor(cid: number | null) {
   if (cid == null) return '#ccc'
-  return PALETTE[cid % PALETTE.length]
+  return colorForIndex(cid)
 }
 
 function draw() {

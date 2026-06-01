@@ -5,6 +5,7 @@ import time
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
 
+from pka.api.active_run import fetch_active_run_id
 from pka.api.db_rows import fetchall_mappings, fetchone_mapping
 from pka.api.dependencies import get_engine
 from pka.api.schemas.clusters import (
@@ -46,13 +47,43 @@ def _parent_label_map(con, run_id: int) -> dict[int, str]:
     return {r[0]: r[1] or "" for r in rows}
 
 
-def _active_run(con) -> int | None:
-    row = con.execute(
-        sa.select(cluster_runs.c.run_id)
-        .where(cluster_runs.c.accepted == True)  # noqa: E712
-        .order_by(cluster_runs.c.run_id.desc()).limit(1)
-    ).fetchone()
-    return row[0] if row else None
+def _cluster_doc_count(con, cluster_id: int, run_id: int) -> int:
+    return con.execute(
+        sa.select(sa.func.count()).select_from(cluster_assignments)
+        .where(
+            (cluster_assignments.c.cluster_id == cluster_id)
+            & (cluster_assignments.c.run_id == run_id)
+        )
+    ).scalar() or 0
+
+
+def _cluster_out_by_id(con, cluster_id: int, run_id: int) -> ClusterOut:
+    row = fetchone_mapping(con.execute(
+        sa.select(clusters).where(clusters.c.cluster_id == cluster_id)
+    ))
+    return _cluster_out(
+        row, run_id,
+        parent_labels=_parent_label_map(con, run_id),
+        doc_count=_cluster_doc_count(con, cluster_id, run_id),
+    )
+
+
+def _apply_cluster_label(
+    con, row: dict, run_id: int, *, override: str | None = None,
+) -> tuple[str, int, int] | None:
+    """Slugify the cluster label (or override) and apply it as an overlay tag.
+
+    Returns ``(tag, applied, skipped)`` or ``None`` when no usable tag exists.
+    """
+    cid = row["cluster_id"]
+    raw = (override if override else row["label"]) or ""
+    tag = label_to_tag(raw.strip(), cid)
+    if not tag:
+        return None
+    doc_ids = cluster_document_ids(con, cid, run_id)
+    origin = _cluster_tag_origin(int(row.get("level") or 1))
+    applied, skipped = apply_tag_to_documents(con, doc_ids, tag, origin=origin)
+    return tag, applied, skipped
 
 
 def _cluster_counts(con, run_id: int) -> dict[int, int]:
@@ -99,7 +130,7 @@ def _cluster_out(
 @router.get("", response_model=list[ClusterOut])
 async def list_clusters(engine=Depends(get_engine)):
     with engine.connect() as con:
-        run_id = _active_run(con)
+        run_id = fetch_active_run_id(con)
         if not run_id:
             return []
         rows = fetchall_mappings(con.execute(
@@ -121,7 +152,7 @@ async def apply_all_tags(engine=Depends(get_engine)):
     total_applied = total_skipped = 0
 
     with engine.begin() as con:
-        run_id = _active_run(con)
+        run_id = fetch_active_run_id(con)
         if not run_id:
             raise HTTPException(404, "No active cluster run")
 
@@ -129,15 +160,12 @@ async def apply_all_tags(engine=Depends(get_engine)):
             sa.select(clusters).where(clusters.c.run_id == run_id)
         ))
         for row in rows:
-            cid = row["cluster_id"]
-            tag = label_to_tag(row["label"], cid)
-            if not tag:
+            res = _apply_cluster_label(con, row, run_id)
+            if not res:
                 continue
-            doc_ids = cluster_document_ids(con, cid, run_id)
-            origin = _cluster_tag_origin(int(row.get("level") or 1))
-            applied, skipped = apply_tag_to_documents(con, doc_ids, tag, origin=origin)
+            tag, applied, skipped = res
             results.append(ApplyTagResult(
-                cluster_id=cid, tag=tag, applied=applied, skipped=skipped,
+                cluster_id=row["cluster_id"], tag=tag, applied=applied, skipped=skipped,
             ))
             total_applied += applied
             total_skipped += skipped
@@ -153,7 +181,7 @@ async def apply_all_tags(engine=Depends(get_engine)):
 async def scatter_points(engine=Depends(get_engine)):
     """Return persisted 2-D UMAP coordinates for the active run."""
     with engine.connect() as con:
-        run_id = _active_run(con)
+        run_id = fetch_active_run_id(con)
         if not run_id:
             return []
 
@@ -205,7 +233,7 @@ async def scatter_points(engine=Depends(get_engine)):
 @router.get("/{cluster_id}", response_model=ClusterDetail)
 async def get_cluster(cluster_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
-        run_id = _active_run(con)
+        run_id = fetch_active_run_id(con)
         row = fetchone_mapping(con.execute(
             sa.select(clusters).where(clusters.c.cluster_id == cluster_id)
         ))
@@ -215,13 +243,7 @@ async def get_cluster(cluster_id: int, engine=Depends(get_engine)):
             raise HTTPException(404, "No active cluster run")
         top_tags = top_tags_for_cluster(con, cluster_id, run_id)
         parents = _parent_label_map(con, run_id)
-        n = con.execute(
-            sa.select(sa.func.count()).select_from(cluster_assignments)
-            .where(
-                (cluster_assignments.c.cluster_id == cluster_id)
-                & (cluster_assignments.c.run_id == run_id)
-            )
-        ).scalar() or 0
+        n = _cluster_doc_count(con, cluster_id, run_id)
         base = _cluster_out(row, run_id, parent_labels=parents, doc_count=n)
     return ClusterDetail(**base.model_dump(), top_tags=top_tags)
 
@@ -238,7 +260,7 @@ async def patch_cluster(
         raise HTTPException(400, "Label cannot be empty")
 
     with engine.begin() as con:
-        run_id = _active_run(con)
+        run_id = fetch_active_run_id(con)
         if not run_id:
             raise HTTPException(404, "No active cluster run")
 
@@ -258,25 +280,14 @@ async def patch_cluster(
                 created_at=now,
             )
         )
-        row = fetchone_mapping(con.execute(
-            sa.select(clusters).where(clusters.c.cluster_id == cluster_id)
-        ))
-        parents = _parent_label_map(con, run_id)
-        n = con.execute(
-            sa.select(sa.func.count()).select_from(cluster_assignments)
-            .where(
-                (cluster_assignments.c.cluster_id == cluster_id)
-                & (cluster_assignments.c.run_id == run_id)
-            )
-        ).scalar() or 0
-        return _cluster_out(row, run_id, parent_labels=parents, doc_count=n)
+        return _cluster_out_by_id(con, cluster_id, run_id)
 
 
 @router.post("/{cluster_id}/regenerate-label", response_model=ClusterOut)
 async def regenerate_cluster_label(cluster_id: int, engine=Depends(get_engine)):
     """Re-run LLM cluster labelling for one cluster."""
     with engine.connect() as con:
-        run_id = _active_run(con)
+        run_id = fetch_active_run_id(con)
         if not run_id:
             raise HTTPException(404, "No active cluster run")
         row = fetchone_mapping(con.execute(
@@ -291,18 +302,7 @@ async def regenerate_cluster_label(cluster_id: int, engine=Depends(get_engine)):
         raise HTTPException(404, str(e)) from e
 
     with engine.connect() as con:
-        row = fetchone_mapping(con.execute(
-            sa.select(clusters).where(clusters.c.cluster_id == cluster_id)
-        ))
-        parents = _parent_label_map(con, run_id)
-        n = con.execute(
-            sa.select(sa.func.count()).select_from(cluster_assignments)
-            .where(
-                (cluster_assignments.c.cluster_id == cluster_id)
-                & (cluster_assignments.c.run_id == run_id)
-            )
-        ).scalar() or 0
-        return _cluster_out(row, run_id, parent_labels=parents, doc_count=n)
+        return _cluster_out_by_id(con, cluster_id, run_id)
 
 
 @router.post("/{cluster_id}/apply-tag", response_model=ApplyTagResult)
@@ -313,7 +313,7 @@ async def apply_cluster_tag(
 ):
     """Apply the cluster label (slugified) or an override tag to every document."""
     with engine.begin() as con:
-        run_id = _active_run(con)
+        run_id = fetch_active_run_id(con)
         if not run_id:
             raise HTTPException(404, "No active cluster run")
 
@@ -323,14 +323,12 @@ async def apply_cluster_tag(
         if not row or row["run_id"] != run_id:
             raise HTTPException(404, "Cluster not found")
 
-        raw = (req.tag if req and req.tag else row["label"]) or ""
-        tag = label_to_tag(raw.strip(), cluster_id)
-        if not tag:
+        res = _apply_cluster_label(
+            con, row, run_id, override=(req.tag if req and req.tag else None),
+        )
+        if not res:
             raise HTTPException(400, "No tag available — set a cluster label first")
-
-        doc_ids = cluster_document_ids(con, cluster_id, run_id)
-        origin = _cluster_tag_origin(int(row.get("level") or 1))
-        applied, skipped = apply_tag_to_documents(con, doc_ids, tag, origin=origin)
+        tag, applied, skipped = res
 
     return ApplyTagResult(
         cluster_id=cluster_id, tag=tag, applied=applied, skipped=skipped,
@@ -345,7 +343,7 @@ async def cluster_documents(
     engine=Depends(get_engine),
 ):
     with engine.connect() as con:
-        run_id = _active_run(con)
+        run_id = fetch_active_run_id(con)
         rows = fetchall_mappings(con.execute(
             sa.select(documents)
             .join(cluster_assignments,

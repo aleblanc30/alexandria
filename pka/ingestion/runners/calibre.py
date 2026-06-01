@@ -3,21 +3,17 @@ from __future__ import annotations
 
 import logging
 
-import sqlalchemy as sa
-
 from pka.connectors.calibre import CalibreBook
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
     document_index,
     existing_chunk_count,
-    get_engine,
     insert_document_if_new,
     insert_source_collections,
     insert_source_tags,
     source_ids_with_chunks,
     upsert_document,
 )
-from pka.db.schema import documents
 from pka.ingestion.book_extractor import extract_book_text, metadata_text
 from pka.ingestion.core import ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
@@ -117,17 +113,6 @@ def ingest_calibre_books(
     )
 
 
-def _calibre_doc_id(book: CalibreBook) -> int | None:
-    with get_engine().connect() as con:
-        row = con.execute(
-            sa.select(documents.c.id).where(
-                (documents.c.source == str(Source.CALIBRE)) &
-                (documents.c.source_id == book.source_id)
-            )
-        ).fetchone()
-    return row[0] if row else None
-
-
 def ingest_calibre_fulltext(
     books: list[CalibreBook],
     force: bool = False,
@@ -137,6 +122,7 @@ def ingest_calibre_fulltext(
 ) -> dict:
     """Phase 2: extract and embed full book text."""
     stats = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
+    known = document_index(Source.CALIBRE)
 
     for book in books:
         if (stop := stop_requested(progress_key)):
@@ -150,7 +136,7 @@ def ingest_calibre_fulltext(
             continue
 
         try:
-            doc_id = _calibre_doc_id(book)
+            doc_id = known.get(book.source_id)
             if doc_id is None:
                 log.warning("Book %s not found in DB — run phase 1 first", book.source_id)
                 stats["skipped"] += 1

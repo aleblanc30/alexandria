@@ -73,45 +73,23 @@
       </p>
 
       <div v-else-if="store.viewMode === 'cards'" class="doc-grid">
-        <template v-if="isSearching">
-          <DocGridCard
-            v-for="doc in search.results"
-            :key="doc.id"
-            :doc="toGridItem(doc)"
-            :selected="ui.activeDocId === doc.id"
-            @click="openDoc(doc.id)"
-          />
-        </template>
-        <template v-else>
-          <DocGridCard
-            v-for="doc in store.documents"
-            :key="doc.id"
-            :doc="doc"
-            :selected="ui.activeDocId === doc.id"
-            @click="openDoc(doc.id)"
-          />
-        </template>
+        <DocGridCard
+          v-for="doc in gridDocs"
+          :key="doc.id"
+          :doc="doc"
+          :selected="ui.activeDocId === doc.id"
+          @click="openDoc(doc.id)"
+        />
       </div>
 
       <div v-else class="doc-lines">
-        <template v-if="isSearching">
-          <DocCard
-            v-for="doc in search.results"
-            :key="doc.id"
-            :doc="doc"
-            :selected="ui.activeDocId === doc.id"
-            @click="openDoc(doc.id)"
-          />
-        </template>
-        <template v-else>
-          <DocCard
-            v-for="doc in store.documents"
-            :key="doc.id"
-            :doc="doc"
-            :selected="ui.activeDocId === doc.id"
-            @click="openDoc(doc.id)"
-          />
-        </template>
+        <DocCard
+          v-for="doc in lineDocs"
+          :key="doc.id"
+          :doc="doc"
+          :selected="ui.activeDocId === doc.id"
+          @click="openDoc(doc.id)"
+        />
       </div>
 
       <div v-if="showSentinel" ref="sentinel" class="browse-sentinel">
@@ -133,6 +111,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getDocument } from '@/api/client'
+import type { DocumentListItem, DocumentOut } from '@/api/client'
 import { toGridItem } from '@/lib/docDisplay'
 import { useBrowseStore } from '@/stores/browse'
 import { useSearchStore } from '@/stores/search'
@@ -149,6 +128,14 @@ const sentinel = ref<HTMLElement | null>(null)
 const modes = ['semantic', 'fulltext', 'hybrid'] as const
 
 const isSearching = computed(() => search.query.trim().length > 0)
+
+const gridDocs = computed<DocumentListItem[]>(() =>
+  isSearching.value ? search.results.map(toGridItem) : store.documents,
+)
+
+const lineDocs = computed<(DocumentOut | DocumentListItem)[]>(() =>
+  isSearching.value ? search.results : store.documents,
+)
 
 const resultCount = computed(() =>
   isSearching.value ? search.results.length : store.documents.length,

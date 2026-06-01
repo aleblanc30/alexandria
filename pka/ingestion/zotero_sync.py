@@ -8,6 +8,7 @@ from pka.ingestion import sync_progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.ingestion.runners.zotero import ingest_zotero_embed, ingest_zotero_metadata
+from pka.ingestion.sync_shared import run_full_sync
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +91,6 @@ def sync_zotero(
 ) -> dict:
     """Full sync (metadata + embed). Kept for scripts/tests."""
     meta = sync_zotero_metadata(progress_key=progress_key, dry_run=dry_run)
-    if meta.get("stopped"):
-        return meta
-    return {**meta, **sync_zotero_ingest(progress_key=progress_key, dry_run=dry_run)}
+    return run_full_sync(
+        meta, lambda: sync_zotero_ingest(progress_key=progress_key, dry_run=dry_run),
+    )

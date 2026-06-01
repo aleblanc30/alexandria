@@ -272,26 +272,6 @@ def begin_metadata_sync(source: str, pending: int, baseline: int) -> None:
         state.active_job = "metadata"
 
 
-def activate_phase(source: str, phase: str) -> None:
-    """Mark a phase active without changing corpus totals (metadata re-sync)."""
-    alias = {"fulltext": "embedding", "ingesting": "embedding"}
-    phase = alias.get(phase, phase)
-    with _lock:
-        state = _states.get(source)
-        if not state:
-            state = SyncState(source=source, status="running")
-            _states[source] = state
-        _ensure_standard_phases(state)
-        if phase not in STANDARD_PHASES:
-            raise ValueError(f"Unknown phase: {phase}")
-        state.phase_index = STANDARD_PHASES.index(phase)
-        plan = _phase_map(state)[phase]
-        state.phase = phase
-        state.total = plan.total
-        state.processed = plan.processed
-        state.status = "running"
-
-
 def set_corpus_total(source: str, total: int) -> None:
     """Set shared corpus size on all phases (authoritative job scope)."""
     with _lock:

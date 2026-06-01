@@ -79,6 +79,15 @@ def copy_sqlite_database(
     return dst
 
 
+def dev_sqlite_snapshot(src: Path, dst: Path, *, label: str, refresh: bool = False) -> Path:
+    """Dev one-time snapshot: reuse ``dst`` until ``refresh`` or the file is deleted."""
+    if dst.exists() and not refresh:
+        log.debug("Using dev %s copy: %s", label, dst)
+        return dst
+    log.info("Creating dev %s copy from %s", label, src)
+    return copy_sqlite_database(src, dst)
+
+
 def ensure_sqlite_copy(
     src: Path,
     dst: Path,

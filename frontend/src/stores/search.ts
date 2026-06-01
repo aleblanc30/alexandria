@@ -1,11 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import * as api from '@/api/client'
+import { PAGE_SIZE } from '@/constants/pagination'
+import { buildDocumentFilters } from '@/lib/browseFilters'
 import { useToastStore } from './toast'
 import type { useBrowseStore } from './browse'
-import { resolveGeneralTags } from './browse'
-
-export const SEARCH_PAGE_SIZE = 48
 
 export const useSearchStore = defineStore('search', () => {
   const query       = ref('')
@@ -19,17 +18,11 @@ export const useSearchStore = defineStore('search', () => {
   const includeImgs = ref(false)
 
   function browseSearchBody(browse: ReturnType<typeof useBrowseStore>, offset = 0): api.SearchRequest {
-    const general_tags = resolveGeneralTags(browse.academicFilter, browse.academicKinds)
     return {
       query: query.value,
       mode: mode.value,
-      sources: browse.sources.length ? browse.sources : undefined,
-      source_tags: browse.sourceTags.length ? browse.sourceTags : undefined,
-      general_tags,
-      cluster_l1_tags: browse.level1Tags.length ? browse.level1Tags : undefined,
-      cluster_l2_tags: browse.level2Tags.length ? browse.level2Tags : undefined,
-      wayback_only: browse.waybackOnly || undefined,
-      limit: SEARCH_PAGE_SIZE,
+      ...buildDocumentFilters(browse, { includeSources: true }),
+      limit: PAGE_SIZE,
       offset,
       include_images: includeImgs.value,
     }

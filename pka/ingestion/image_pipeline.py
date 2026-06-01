@@ -17,13 +17,14 @@ import sqlalchemy as sa
 from pka.connectors.images import ImageFile
 from pka.constants import TagOrigin
 from pka.db.queries import get_engine
-from pka.db.schema import image_tags, images
+from pka.db.schema import images
 from pka.ingestion.image_extractor import (
     classify_and_describe,
     clip_embed_image,
     image_search_text,
     ocr_image,
 )
+from pka.ingestion.loops import run_embed_loop, run_metadata_loop
 
 log = logging.getLogger(__name__)
 
@@ -73,52 +74,35 @@ def register_images(
     progress_key: str | None = None,
 ) -> dict:
     """Scan pass: persist image file records without OCR / CLIP / embedding."""
-    stats = {"processed": 0, "skipped": 0, "failed": 0}
+    def _register_one(img: ImageFile) -> str:
+        if _image_already_indexed(img.path):
+            return "skipped"
+        if dry_run:
+            return "dry_run"
+        eng = get_engine()
+        with eng.begin() as con:
+            con.execute(sa.text("""
+                INSERT INTO images
+                    (path, filename, image_type, width, height, file_size,
+                     date_taken, indexed_at)
+                VALUES
+                    (:path, :fname, 'unknown', :w, :h, :sz, :dt, NULL)
+                ON CONFLICT(path) DO NOTHING
+            """), {
+                "path": str(img.path), "fname": img.filename,
+                "w": img.width, "h": img.height, "sz": img.file_size,
+                "dt": img.date_taken,
+            })
+        return "processed"
 
-    for img in image_files:
-        if progress_key:
-            from pka.ingestion.sync_helpers import should_stop
-            if (stop := should_stop(progress_key)):
-                stats["stopped"] = stop
-                break
-        failed = False
-        created = False
-        try:
-            if _image_already_indexed(img.path):
-                stats["skipped"] += 1
-                continue
-            if dry_run:
-                stats["processed"] += 1
-                created = True
-                continue
-
-            now = int(time.time())
-            eng = get_engine()
-            with eng.begin() as con:
-                con.execute(sa.text("""
-                    INSERT INTO images
-                        (path, filename, image_type, width, height, file_size,
-                         date_taken, indexed_at)
-                    VALUES
-                        (:path, :fname, 'unknown', :w, :h, :sz, :dt, NULL)
-                    ON CONFLICT(path) DO NOTHING
-                """), {
-                    "path": str(img.path), "fname": img.filename,
-                    "w": img.width, "h": img.height, "sz": img.file_size,
-                    "dt": img.date_taken,
-                })
-            stats["processed"] += 1
-            created = True
-        except Exception as exc:
-            log.exception("Failed registering image %s: %s", img.path.name, exc)
-            stats["failed"] += 1
-            failed = True
-        finally:
-            if progress_key and failed:
-                from pka.ingestion.sync_progress import advance
-                advance(progress_key, failed=True)
-
-    return stats
+    return run_metadata_loop(
+        image_files,
+        known={},
+        get_source_id=lambda img: str(img.path),
+        persist=_register_one,
+        progress_key=progress_key,
+        skip_when_in_known=False,
+    )
 
 
 def ingest_image(
@@ -254,42 +238,31 @@ def ingest_images(
     dry_run: bool = False,
     progress_key: str | None = None,
 ) -> dict:
-    stats = {"processed": 0, "skipped": 0, "failed": 0, "by_type": {}}
+    by_type: dict[str, int] = {}
 
-    for img in image_files:
-        if progress_key:
-            from pka.ingestion.sync_helpers import should_stop
-            if (stop := should_stop(progress_key)):
-                stats["stopped"] = stop
-                break
-        failed = False
-        try:
-            if skip_existing and _image_already_indexed(img.path):
-                stats["skipped"] += 1
-                continue
+    def _process(img: ImageFile) -> tuple[bool, int]:
+        result = ingest_image(
+            img,
+            vision_model = vision_model,
+            ocr_lang     = ocr_lang,
+            skip_ocr     = skip_ocr,
+            skip_clip    = skip_clip,
+            skip_vision  = skip_vision,
+            dry_run      = dry_run,
+        )
+        t = result["image_type"]
+        by_type[t] = by_type.get(t, 0) + 1
+        return True, 0
 
-            result = ingest_image(
-                img,
-                vision_model = vision_model,
-                ocr_lang     = ocr_lang,
-                skip_ocr     = skip_ocr,
-                skip_clip    = skip_clip,
-                skip_vision  = skip_vision,
-                dry_run      = dry_run,
-            )
-            stats["processed"] += 1
-            t = result["image_type"]
-            stats["by_type"][t] = stats["by_type"].get(t, 0) + 1
-
-        except Exception as exc:
-            log.exception("Failed image %s: %s", img.path.name, exc)
-            stats["failed"] += 1
-            failed = True
-        finally:
-            if progress_key:
-                from pka.ingestion.sync_progress import advance
-                advance(progress_key, failed=failed)
-
+    stats = run_embed_loop(
+        image_files,
+        should_skip=lambda img: skip_existing and _image_already_indexed(img.path) is not None,
+        process=_process,
+        progress_key=progress_key,
+        on_error_log=lambda img, exc: log.exception("Failed image %s: %s", img.path.name, exc),
+    )
+    stats.pop("chunks", None)
+    stats["by_type"] = by_type
     return stats
 
 

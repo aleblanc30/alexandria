@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pka.config import settings as cfg
-from pka.db.sqlite_copy import copy_sqlite_database
+from pka.db.sqlite_copy import dev_sqlite_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -48,19 +48,11 @@ def _find_places_sqlite(firefox_root: Path) -> Path:
     )
 
 
-def _dev_places_copy(src: Path, *, refresh: bool = False) -> Path:
-    """One-time snapshot for dev; reused until ``refresh`` or the file is deleted."""
-    dst = cfg.firefox_places_copy
-    if dst.exists() and not refresh:
-        log.debug("Using dev Firefox places copy: %s", dst)
-        return dst
-    log.info("Creating dev Firefox places copy from %s", src)
-    return copy_sqlite_database(src, dst)
-
-
 def _resolve_places_db(src: Path, *, refresh: bool = False) -> Path:
     if cfg.dev:
-        return _dev_places_copy(src, refresh=refresh)
+        return dev_sqlite_snapshot(
+            src, cfg.firefox_places_copy, label="Firefox places", refresh=refresh,
+        )
     return src
 
 

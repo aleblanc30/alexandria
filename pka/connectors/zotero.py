@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pka.config import settings
-from pka.db.sqlite_copy import copy_sqlite_database
+from pka.db.sqlite_copy import copy_sqlite_database, dev_sqlite_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -69,15 +69,6 @@ def zotero_embed_text(item: ZoteroItem) -> str:
 _FIELD_NAMES: tuple[str, ...] = ("title", "abstractNote", "DOI", "date", "url")
 
 
-def _dev_zotero_copy(src: Path, dst: Path, *, refresh: bool = False) -> Path:
-    """One-time snapshot for dev; reused until ``refresh`` or the file is deleted."""
-    if dst.exists() and not refresh:
-        log.debug("Using dev Zotero copy: %s", dst)
-        return dst
-    log.info("Creating dev Zotero copy from %s", src)
-    return copy_sqlite_database(src, dst)
-
-
 def ensure_zotero_copy(
     zotero_db: Path | None = None,
     copy_path: Path | None = None,
@@ -94,7 +85,7 @@ def ensure_zotero_copy(
     if not src.exists():
         raise FileNotFoundError(f"Zotero database not found: {src}")
     if settings.dev:
-        return _dev_zotero_copy(src, dst, refresh=refresh)
+        return dev_sqlite_snapshot(src, dst, label="Zotero", refresh=refresh)
     return copy_sqlite_database(src, dst)
 
 

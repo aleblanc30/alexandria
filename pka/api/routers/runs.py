@@ -35,6 +35,29 @@ def _clustering_preflight() -> None:
         )
 
 
+def _require_run(con, run_id: int, *, require_running: bool = False) -> str:
+    """Return a run's status, or raise 404 (missing) / 409 (wrong state)."""
+    row = con.execute(
+        sa.select(cluster_runs.c.status).where(cluster_runs.c.run_id == run_id)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Run not found")
+    status = row[0] or "finished"
+    if require_running and status != "running":
+        raise HTTPException(409, "Run is not running")
+    if not require_running and status == "running":
+        raise HTTPException(409, "Run still in progress")
+    return status
+
+
+def _bg_thread(bg: BackgroundTasks, fn) -> None:
+    """Schedule a blocking callable on a background worker thread."""
+    async def _run_threaded() -> None:
+        await asyncio.to_thread(fn)
+
+    bg.add_task(_run_threaded)
+
+
 def _running_run_id(engine) -> int | None:
     with engine.connect() as con:
         row = con.execute(
@@ -77,13 +100,7 @@ async def list_runs(engine=Depends(get_engine)):
 async def run_diagnostics(run_id: int, engine=Depends(get_engine)):
     from pka.clustering.lifecycle import compute_drift, compute_merge_suggestions
     with engine.connect() as con:
-        row = con.execute(
-            sa.select(cluster_runs).where(cluster_runs.c.run_id == run_id)
-        ).fetchone()
-        if not row:
-            raise HTTPException(404, "Run not found")
-        if (row._mapping.get("status") or "finished") == "running":
-            raise HTTPException(409, "Run still in progress")
+        _require_run(con, run_id)
         cluster_rows = con.execute(
             sa.select(clusters.c.cluster_id,
                       sa.func.count(cluster_assignments.c.id).label("n"))
@@ -106,13 +123,7 @@ async def run_diagnostics(run_id: int, engine=Depends(get_engine)):
 @router.post("/{run_id}/accept", status_code=204)
 async def accept_run(run_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
-        row = con.execute(
-            sa.select(cluster_runs.c.status).where(cluster_runs.c.run_id == run_id)
-        ).fetchone()
-        if not row:
-            raise HTTPException(404, "Run not found")
-        if row[0] == "running":
-            raise HTTPException(409, "Run still in progress")
+        _require_run(con, run_id)
     from pka.clustering.lifecycle import accept_run as _accept
     _accept(run_id)
 
@@ -120,13 +131,7 @@ async def accept_run(run_id: int, engine=Depends(get_engine)):
 @router.post("/{run_id}/reject", status_code=204)
 async def reject_run(run_id: int, notes: str = "", engine=Depends(get_engine)):
     with engine.connect() as con:
-        row = con.execute(
-            sa.select(cluster_runs.c.status).where(cluster_runs.c.run_id == run_id)
-        ).fetchone()
-        if not row:
-            raise HTTPException(404, "Run not found")
-        if row[0] == "running":
-            raise HTTPException(409, "Run still in progress")
+        _require_run(con, run_id)
     from pka.clustering.lifecycle import reject_run as _reject
     _reject(run_id, notes=notes)
 
@@ -134,13 +139,7 @@ async def reject_run(run_id: int, notes: str = "", engine=Depends(get_engine)):
 @router.post("/{run_id}/cancel", status_code=202)
 async def cancel_run(run_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
-        row = con.execute(
-            sa.select(cluster_runs.c.status).where(cluster_runs.c.run_id == run_id)
-        ).fetchone()
-        if not row:
-            raise HTTPException(404, "Run not found")
-        if row[0] != "running":
-            raise HTTPException(409, "Run is not running")
+        _require_run(con, run_id, require_running=True)
     from pka.clustering.run_progress import request_cancel
     request_cancel(run_id)
     return {"status": "cancel_requested", "run_id": run_id}
@@ -186,10 +185,7 @@ async def trigger_run(
         finally:
             finish(run_id)
 
-    async def _run_threaded() -> None:
-        await asyncio.to_thread(_run)
-
-    bg.add_task(_run_threaded)
+    _bg_thread(bg, _run)
     return {"status": "queued", "run_id": run_id}
 
 
@@ -202,11 +198,5 @@ async def trigger_incremental(bg: BackgroundTasks, engine=Depends(get_engine)):
 
     from pka.clustering.lifecycle import run_incremental_clustering
 
-    def _run() -> None:
-        run_incremental_clustering()
-
-    async def _run_threaded() -> None:
-        await asyncio.to_thread(_run)
-
-    bg.add_task(_run_threaded)
+    _bg_thread(bg, run_incremental_clustering)
     return {"status": "queued", "mode": "incremental"}

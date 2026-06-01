@@ -39,14 +39,6 @@ def get_engine() -> sa.Engine:
     return _engine
 
 
-def reset_engine() -> None:
-    """Drop the cached engine — used by the test suite when ``data_dir`` changes."""
-    global _engine
-    if _engine is not None:
-        _engine.dispose()
-    _engine = None
-
-
 def init_db() -> None:
     """Create tables and run in-place migrations for backwards compatibility."""
     eng = get_engine()
@@ -411,18 +403,11 @@ def existing_chunk_count(document_id: int) -> int:
     return n or 0
 
 
-_SNIPPET_MAX = 280
-
-
-def _truncate_snippet(text: str | None, max_len: int = _SNIPPET_MAX) -> str:
-    return truncate_summary(text, max_len)
-
-
 def resolve_description(card_summary: str | None, chunk_text: str | None) -> str:
     """Prefer stored card summary; fall back to first-chunk snippet."""
     if card_summary and card_summary.strip():
         return truncate_summary(card_summary)
-    return _truncate_snippet(chunk_text)
+    return truncate_summary(chunk_text)
 
 
 def update_card_summary(doc_id: int, summary: str | None) -> None:
@@ -470,10 +455,22 @@ def document_description(con: sa.Connection, doc_id: int) -> str:
     return resolve_description(card_summary, chunk_map.get(doc_id))
 
 
-def first_chunk_snippet(con: sa.Connection, doc_id: int) -> str:
-    """First-chunk text for a document, collapsed and truncated like browse cards."""
-    chunk_map = _batch_first_chunk_map(con, [doc_id])
-    return _truncate_snippet(chunk_map.get(doc_id))
+def _doc_title_excerpts(
+    con: sa.Connection, ids: list[int],
+) -> dict[int, tuple[str, str]]:
+    """Map doc id -> (title, excerpt), preserving DB row order for ``ids``."""
+    rows = con.execute(
+        sa.select(documents.c.id, documents.c.title, documents.c.card_summary)
+        .where(documents.c.id.in_(ids))
+    ).fetchall()
+    chunk_map = _batch_first_chunk_map(con, ids)
+    return {
+        doc_id: (
+            (title or "").strip() or "Untitled",
+            resolve_description(card_summary, chunk_map.get(doc_id)),
+        )
+        for doc_id, title, card_summary in rows
+    }
 
 
 def sample_cluster_documents(
@@ -484,18 +481,7 @@ def sample_cluster_documents(
     """Return up to ``n`` (title, excerpt) pairs for cluster labelling prompts."""
     if not doc_ids:
         return []
-    ids = doc_ids[:n]
-    rows = con.execute(
-        sa.select(documents.c.id, documents.c.title, documents.c.card_summary)
-        .where(documents.c.id.in_(ids))
-    ).fetchall()
-    chunk_map = _batch_first_chunk_map(con, ids)
-    out: list[tuple[str, str]] = []
-    for doc_id, title, card_summary in rows:
-        title_str = (title or "").strip() or "Untitled"
-        excerpt = resolve_description(card_summary, chunk_map.get(doc_id))
-        out.append((title_str, excerpt))
-    return out
+    return list(_doc_title_excerpts(con, doc_ids[:n]).values())
 
 
 def sample_cluster_documents_for_clusters(
@@ -507,20 +493,34 @@ def sample_cluster_documents_for_clusters(
     all_ids = {did for docs in cluster_docs.values() for did in docs}
     if not all_ids:
         return {cid: [] for cid in cluster_docs}
-    rows = con.execute(
-        sa.select(documents.c.id, documents.c.title, documents.c.card_summary)
-        .where(documents.c.id.in_(all_ids))
-    ).fetchall()
-    chunk_map = _batch_first_chunk_map(con, list(all_ids))
-    by_id: dict[int, tuple[str, str]] = {}
-    for doc_id, title, card_summary in rows:
-        title_str = (title or "").strip() or "Untitled"
-        excerpt = resolve_description(card_summary, chunk_map.get(doc_id))
-        by_id[doc_id] = (title_str, excerpt)
+    by_id = _doc_title_excerpts(con, list(all_ids))
     return {
         cid: [by_id[d] for d in doc_ids if d in by_id][:n]
         for cid, doc_ids in cluster_docs.items()
     }
+
+
+def _norm_filter(values: list | None) -> list[str] | None:
+    """Stringify a browse filter list, or ``None`` when empty."""
+    return [str(v) for v in values] if values else None
+
+
+def _where_source_tag(q: sa.Select, tag: str) -> sa.Select:
+    return q.where(
+        sa.exists(
+            sa.select(source_tags.c.id).where(
+                (source_tags.c.document_id == documents.c.id)
+                & (source_tags.c.tag_string == tag)
+            )
+        )
+    )
+
+
+def _where_overlay_tag(q: sa.Select, tag: str, origin=None) -> sa.Select:
+    cond = (overlay_tags.c.document_id == documents.c.id) & (overlay_tags.c.tag == tag)
+    if origin is not None:
+        cond = cond & (overlay_tags.c.origin == origin)
+    return q.where(sa.exists(sa.select(overlay_tags.c.id).where(cond)))
 
 
 def _apply_document_browse_filters(
@@ -541,59 +541,16 @@ def _apply_document_browse_filters(
             (documents.c.source == str(Source.FIREFOX))
             & documents.c.archive_url.isnot(None)
         )
-    if source_tag_filter:
-        for tag in source_tag_filter:
-            q = q.where(
-                sa.exists(
-                    sa.select(source_tags.c.id).where(
-                        (source_tags.c.document_id == documents.c.id)
-                        & (source_tags.c.tag_string == tag)
-                    )
-                )
-            )
-    if overlay_tag_filter:
-        for tag in overlay_tag_filter:
-            q = q.where(
-                sa.exists(
-                    sa.select(overlay_tags.c.id).where(
-                        (overlay_tags.c.document_id == documents.c.id)
-                        & (overlay_tags.c.tag == tag)
-                    )
-                )
-            )
-    if general_tag_filter:
-        for tag in general_tag_filter:
-            q = q.where(
-                sa.exists(
-                    sa.select(overlay_tags.c.id).where(
-                        (overlay_tags.c.document_id == documents.c.id)
-                        & (overlay_tags.c.tag == tag)
-                        & (overlay_tags.c.origin == TagOrigin.INFERRED)
-                    )
-                )
-            )
-    if cluster_l1_tag_filter:
-        for tag in cluster_l1_tag_filter:
-            q = q.where(
-                sa.exists(
-                    sa.select(overlay_tags.c.id).where(
-                        (overlay_tags.c.document_id == documents.c.id)
-                        & (overlay_tags.c.tag == tag)
-                        & (overlay_tags.c.origin == TagOrigin.CLUSTER_L1)
-                    )
-                )
-            )
-    if cluster_l2_tag_filter:
-        for tag in cluster_l2_tag_filter:
-            q = q.where(
-                sa.exists(
-                    sa.select(overlay_tags.c.id).where(
-                        (overlay_tags.c.document_id == documents.c.id)
-                        & (overlay_tags.c.tag == tag)
-                        & (overlay_tags.c.origin == TagOrigin.CLUSTER_L2)
-                    )
-                )
-            )
+    for tag in source_tag_filter or []:
+        q = _where_source_tag(q, tag)
+    for tag in overlay_tag_filter or []:
+        q = _where_overlay_tag(q, tag)
+    for tag in general_tag_filter or []:
+        q = _where_overlay_tag(q, tag, TagOrigin.INFERRED)
+    for tag in cluster_l1_tag_filter or []:
+        q = _where_overlay_tag(q, tag, TagOrigin.CLUSTER_L1)
+    for tag in cluster_l2_tag_filter or []:
+        q = _where_overlay_tag(q, tag, TagOrigin.CLUSTER_L2)
     return q
 
 
@@ -687,19 +644,13 @@ def list_documents(
     offset: int = 0,
 ) -> tuple[int, list[dict[str, Any]]]:
     """Paginated document browse list with card summary or first-chunk snippet as description."""
-    source_filter = [str(s) for s in sources] if sources else None
-    source_tag_filter = [str(t) for t in source_tags] if source_tags else None
-    overlay_tag_filter = [str(t) for t in overlay_tags] if overlay_tags else None
-    general_tag_filter = [str(t) for t in general_tags] if general_tags else None
-    cluster_l1_tag_filter = [str(t) for t in cluster_l1_tags] if cluster_l1_tags else None
-    cluster_l2_tag_filter = [str(t) for t in cluster_l2_tags] if cluster_l2_tags else None
     filter_kwargs = {
-        "source_filter": source_filter,
-        "source_tag_filter": source_tag_filter,
-        "overlay_tag_filter": overlay_tag_filter,
-        "general_tag_filter": general_tag_filter,
-        "cluster_l1_tag_filter": cluster_l1_tag_filter,
-        "cluster_l2_tag_filter": cluster_l2_tag_filter,
+        "source_filter": _norm_filter(sources),
+        "source_tag_filter": _norm_filter(source_tags),
+        "overlay_tag_filter": _norm_filter(overlay_tags),
+        "general_tag_filter": _norm_filter(general_tags),
+        "cluster_l1_tag_filter": _norm_filter(cluster_l1_tags),
+        "cluster_l2_tag_filter": _norm_filter(cluster_l2_tags),
         "wayback_only": wayback_only,
     }
 
@@ -769,10 +720,10 @@ def list_tags(
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     """List tags with counts, optionally scoped to documents matching browse filters."""
-    source_filter = [str(s) for s in sources] if sources else None
-    source_tag_filter = [str(t) for t in source_tag_filter] if source_tag_filter else None
-    cluster_l1_tag_filter = [str(t) for t in cluster_l1_tag_filter] if cluster_l1_tag_filter else None
-    cluster_l2_tag_filter = [str(t) for t in cluster_l2_tag_filter] if cluster_l2_tag_filter else None
+    source_filter = _norm_filter(sources)
+    source_tag_filter = _norm_filter(source_tag_filter)
+    cluster_l1_tag_filter = _norm_filter(cluster_l1_tag_filter)
+    cluster_l2_tag_filter = _norm_filter(cluster_l2_tag_filter)
     filter_kwargs = {
         "source_filter": source_filter,
         "source_tag_filter": source_tag_filter,

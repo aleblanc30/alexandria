@@ -21,6 +21,13 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 
 
+def require_source(source: str) -> str:
+    """Validate a source name against the known sources, raising 400 otherwise."""
+    if source not in ALL_SOURCES:
+        raise HTTPException(400, f"Unknown source: {source}")
+    return source
+
+
 @router.get("/status")
 async def ingestion_status(engine=Depends(get_engine)):
     return build_ingestion_status(engine)
@@ -29,8 +36,8 @@ async def ingestion_status(engine=Depends(get_engine)):
 @router.get("/sync/progress")
 async def sync_progress(source: str | None = None, engine=Depends(get_engine)):
     """Return live progress for one or all ingestion sync jobs."""
-    if source and source not in ALL_SOURCES:
-        raise HTTPException(400, f"Unknown source: {source}")
+    if source:
+        require_source(source)
     targets = [source] if source else ALL_SOURCES
     for src in targets:
         apply_progress_baselines(engine, src)
@@ -93,65 +100,69 @@ def _seed_baselines(src: str) -> None:
     seed_progress_from_db(get_engine(), src)
 
 
-def _sync_metadata(src: str) -> None:
+def _run_ingestion_job(src: str, *, begin_job: sp.JobKind, error_label: str, run, pre_begin=None) -> None:
+    """Shared metadata/ingest/full job skeleton: init, begin, run handler, finish."""
     from pka.db.queries import get_engine, init_db
 
     init_db()
     _seed_baselines(src)
-    sp.begin_job(src, "metadata", phase="loading")
+    sp.begin_job(src, begin_job, phase="loading")
+    if pre_begin is not None:
+        pre_begin(src)
     try:
-        stats = require_handlers(src).sync_metadata(progress_key=src)
-        _finish_job(src, stats)
+        _finish_job(src, run())
     except Exception as exc:
-        log.exception("Metadata sync failed for %s", src)
+        log.exception("%s failed for %s", error_label, src)
         sp.finish(src, error=str(exc))
         seed_progress_from_db(get_engine(), src)
 
 
-def _sync_ingest(src: str) -> None:
-    from pka.db.queries import get_engine, init_db
+def _ingest_pre_begin(src: str) -> None:
     from pka.ingestion.pending_metadata import source_corpus_size
 
-    init_db()
-    _seed_baselines(src)
-    sp.begin_job(src, "ingest", phase="loading")
     if src == Source.FIREFOX:
         sp.clear_embed_progress(src)
     else:
         sp.begin_ingest(src, source_corpus_size(src))
-    try:
-        stats = require_handlers(src).sync_ingest(progress_key=src)
-        _finish_job(src, stats)
-    except Exception as exc:
-        log.exception("Ingest failed for %s", src)
-        sp.finish(src, error=str(exc))
-        seed_progress_from_db(get_engine(), src)
+
+
+def _sync_metadata(src: str) -> None:
+    _run_ingestion_job(
+        src, begin_job="metadata", error_label="Metadata sync",
+        run=lambda: require_handlers(src).sync_metadata(progress_key=src),
+    )
+
+
+def _sync_ingest(src: str) -> None:
+    _run_ingestion_job(
+        src, begin_job="ingest", error_label="Ingest",
+        run=lambda: require_handlers(src).sync_ingest(progress_key=src),
+        pre_begin=_ingest_pre_begin,
+    )
 
 
 def _sync(src: str) -> None:
     """Background entry point for ``POST /ingestion/sync/{source}`` (full pipeline)."""
-    from pka.db.queries import get_engine, init_db
-
-    init_db()
-    _seed_baselines(src)
-    sp.begin_job(src, "metadata", phase="loading")
-    try:
-        stats = require_handlers(src).sync_full(progress_key=src)
-        _finish_job(src, stats)
-    except Exception as exc:
-        log.exception("Ingestion sync failed for %s", src)
-        sp.finish(src, error=str(exc))
-        seed_progress_from_db(get_engine(), src)
+    _run_ingestion_job(
+        src, begin_job="metadata", error_label="Ingestion sync",
+        run=lambda: require_handlers(src).sync_full(progress_key=src),
+    )
 
 
-def _queue_job(src: str, job: sp.JobKind, force: bool) -> dict:
+_JOB_TARGETS = {
+    "metadata": lambda src: _sync_metadata(src),
+    "ingest": lambda src: _sync_ingest(src),
+    "full": lambda src: _sync(src),
+}
+
+
+def _queue_job(src: str, job: str, force: bool) -> dict:
     if sp.is_running(src) and not force:
         raise HTTPException(409, f"Sync already in progress for {src}")
     if force:
         sp.reset(src)
-    target = _sync_metadata if job == "metadata" else _sync_ingest
     threading.Thread(
-        target=target,
+        target=_JOB_TARGETS[job],
         args=(src,),
         daemon=True,
         name=f"pka-sync-{src}-{job}",
@@ -159,47 +170,27 @@ def _queue_job(src: str, job: sp.JobKind, force: bool) -> dict:
     return {"status": "queued", "source": src, "job": job}
 
 
-async def _run_sync_threaded(src: str) -> None:
-    """Deprecated wrapper — kept for tests that patch ``_sync``."""
-    _sync(src)
-
-
 @router.post("/sync/{source}", status_code=202)
 async def sync_source(source: str, force: bool = False):
-    if source not in ALL_SOURCES:
-        raise HTTPException(400, f"Unknown source: {source}")
-    if sp.is_running(source) and not force:
-        raise HTTPException(409, f"Sync already in progress for {source}")
-    if force:
-        sp.reset(source)
-    sp.begin_job(source, "metadata", phase="starting")
-    threading.Thread(
-        target=_sync,
-        args=(source,),
-        daemon=True,
-        name=f"pka-sync-{source}",
-    ).start()
-    return {"status": "queued", "source": source}
+    require_source(source)
+    return _queue_job(source, "full", force)
 
 
 @router.post("/sync/{source}/metadata", status_code=202)
 async def sync_metadata(source: str, force: bool = False):
-    if source not in ALL_SOURCES:
-        raise HTTPException(400, f"Unknown source: {source}")
+    require_source(source)
     return _queue_job(source, "metadata", force)
 
 
 @router.post("/sync/{source}/ingest", status_code=202)
 async def sync_ingest(source: str, force: bool = False):
-    if source not in ALL_SOURCES:
-        raise HTTPException(400, f"Unknown source: {source}")
+    require_source(source)
     return _queue_job(source, "ingest", force)
 
 
 @router.post("/sync/{source}/pause", status_code=202)
 async def pause_sync(source: str):
-    if source not in ALL_SOURCES:
-        raise HTTPException(400, f"Unknown source: {source}")
+    require_source(source)
     if not sp.request_pause(source):
         raise HTTPException(409, f"No active sync to pause for {source}")
     return {"status": "pause_requested", "source": source}
@@ -207,8 +198,7 @@ async def pause_sync(source: str):
 
 @router.post("/sync/{source}/cancel", status_code=202)
 async def cancel_sync(source: str):
-    if source not in ALL_SOURCES:
-        raise HTTPException(400, f"Unknown source: {source}")
+    require_source(source)
     if not sp.request_cancel(source):
         raise HTTPException(409, f"No active sync to cancel for {source}")
     return {"status": "cancel_requested", "source": source}

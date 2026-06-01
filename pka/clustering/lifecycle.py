@@ -7,17 +7,20 @@ Cluster lifecycle management (spec §5.4):
   - compute_drift()   : per-cluster drift score; flags clusters for split review.
   - compute_merges()  : pairwise centroid similarity; flags merge candidates.
 """
-import json
 import logging
 import time
 
 import numpy as np
 import sqlalchemy as sa
 
+from pka.clustering.vectors import l2_normalize_rows
 from pka.db.queries import get_engine
 from pka.db.schema import (
-    cluster_runs, cluster_assignments, clusters,
-    documents, chunks,
+    chunks,
+    cluster_assignments,
+    cluster_runs,
+    clusters,
+    documents,
 )
 
 log = logging.getLogger(__name__)
@@ -330,9 +333,7 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
             continue
         vecs = np.stack(vecs_list)
 
-        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
-        norms = np.where(norms == 0, 1e-9, norms)
-        vecs_n = vecs / norms
+        vecs_n = l2_normalize_rows(vecs)
 
         c_norm = centroid / (np.linalg.norm(centroid) + 1e-9)
         cosine_sims  = vecs_n @ c_norm
@@ -381,9 +382,7 @@ def compute_merge_suggestions(run_id: int | None = None) -> list[dict]:
 
     cids    = list(centroids.keys())
     matrix  = np.stack([centroids[c] for c in cids]).astype(np.float32)
-    norms   = np.linalg.norm(matrix, axis=1, keepdims=True)
-    norms   = np.where(norms == 0, 1e-9, norms)
-    normed  = matrix / norms
+    normed  = l2_normalize_rows(matrix)
     sim_mat = normed @ normed.T  # (n, n)
 
     suggestions = []

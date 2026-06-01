@@ -1,12 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import * as api from '@/api/client'
+import { usePolling } from '@/composables/usePolling'
 import { formatJobToast } from '@/lib/ingestStats'
+import { notifyError } from '@/lib/notifyError'
 import { useToastStore } from './toast'
-
-function notifyError(e: any) {
-  useToastStore().push(e?.message ?? String(e), 'error')
-}
 
 const POLL_MS = 500
 const SOURCES = ['firefox', 'zotero', 'calibre', 'image'] as const
@@ -19,7 +17,6 @@ export const useIngestionStore = defineStore('ingestion', () => {
   const progress        = ref<Record<string, api.SyncProgress>>({})
   /** Queued locally until the backend reports status=running (avoids poll stopping early). */
   const pendingJob      = ref<Record<string, JobKind>>({})
-  let pollTimer: ReturnType<typeof setInterval> | null = null
   let progressHydrated  = false
   const notified        = new Set<string>()
 
@@ -165,18 +162,7 @@ export const useIngestionStore = defineStore('ingestion', () => {
     } catch { /* ignore transient poll errors */ }
   }
 
-  function startPolling() {
-    if (pollTimer) return
-    pollTimer = setInterval(pollProgress, POLL_MS)
-    void pollProgress()
-  }
-
-  function stopPolling() {
-    if (pollTimer) {
-      clearInterval(pollTimer)
-      pollTimer = null
-    }
-  }
+  const { start: startPolling, stop: stopPolling } = usePolling(pollProgress, POLL_MS)
 
   function clearNotifications(source: string, job: JobKind) {
     for (const status of ['done', 'cancelled', 'error']) {

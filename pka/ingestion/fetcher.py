@@ -369,10 +369,6 @@ def _get_pending(limit: int | None = None) -> list[tuple[int, str]]:
         return [(r[0], r[1]) for r in con.execute(q).fetchall() if r[1]]
 
 
-def pending_firefox_count() -> int:
-    return len(_get_pending())
-
-
 def reset_unfetchable_for_fetch() -> int:
     """Re-queue unfetchable Firefox bookmarks before a fetch run (dev mode only)."""
     if not cfg.dev:
@@ -426,12 +422,6 @@ def _persist_fetch_result(r: FetchResult) -> None:
         ))
 
 
-def _write_results(results: list[FetchResult], fetched_texts: dict[int, str]) -> None:
-    """Persist a batch of fetch results (mostly for tests)."""
-    for r in results:
-        _persist_fetch_result(r)
-
-
 def _empty_embed_stats() -> dict:
     return {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
 
@@ -448,6 +438,84 @@ def _accumulate_embed(embed_stats: dict, outcome: dict) -> bool:
         embed_stats["processed"] += 1
         embed_stats["chunks"] += outcome.get("chunks", 0)
     return False
+
+
+# ── Shared worker pool ────────────────────────────────────────────────────────
+
+async def _run_fetch_workers(
+    work: list[tuple[int, str]],
+    *,
+    concurrency: int | None,
+    progress_key: str | None,
+    advance_phase: str | None = None,
+    on_result: Callable[[int, FetchResult], None] | None = None,
+    embed_fn: Callable[[int, str], dict] | None = None,
+    embed_stats: dict | None = None,
+    dry_run: bool = False,
+) -> tuple[list[FetchResult], str | None]:
+    """Run the per-domain fetch worker pool over ``work`` items.
+
+    Returns ``(results, stopped_reason)``. ``on_result`` runs after each fetch is
+    persisted (used to collect texts). When ``embed_stats`` is provided the embed
+    branch is enabled: each fetched doc is embedded inline via ``embed_fn`` and the
+    outcome merged into ``embed_stats`` (matching ``fetch_and_embed_pending``).
+    """
+    from pka.ingestion.sync_helpers import should_stop
+
+    workers = concurrency if concurrency is not None else cfg.fetch_concurrency
+    sem = asyncio.Semaphore(workers)
+    results: list[FetchResult] = []
+    stopped: str | None = None
+    queue: asyncio.Queue[tuple[int, str] | None] = asyncio.Queue()
+    for item in work:
+        queue.put_nowait(item)
+    for _ in range(workers):
+        queue.put_nowait(None)
+
+    async def worker(client: httpx.AsyncClient) -> None:
+        nonlocal stopped
+        while True:
+            if progress_key and should_stop(progress_key):
+                stopped = should_stop(progress_key)
+                break
+            item = await queue.get()
+            if item is None:
+                break
+            doc_id, url = item
+            failed = False
+            r: FetchResult | None = None
+            try:
+                async with sem:
+                    r = await _fetch_one(client, doc_id, url)
+                    results.append(r)
+                    failed = r.status == "unfetchable"
+                    if on_result:
+                        on_result(doc_id, r)
+                    _persist_fetch_result(r)
+            finally:
+                if progress_key:
+                    from pka.ingestion.sync_progress import advance
+                    advance(progress_key, phase=advance_phase, failed=failed)
+
+            if embed_stats is not None:
+                if progress_key and should_stop(progress_key):
+                    stopped = should_stop(progress_key)
+                    break
+                if embed_fn and r and r.text and not dry_run:
+                    try:
+                        outcome = await asyncio.to_thread(embed_fn, doc_id, r.text)
+                        _accumulate_embed(embed_stats, outcome)
+                    except Exception as exc:
+                        log.exception("Embed failed for doc_id=%d: %s", doc_id, exc)
+                        embed_stats["failed"] += 1
+
+    async with httpx.AsyncClient(
+        headers={"User-Agent": cfg.fetch_user_agent},
+        timeout=_http_timeout(),
+    ) as client:
+        await asyncio.gather(*(worker(client) for _ in range(workers)))
+
+    return results, stopped
 
 
 # ── Public entry points ───────────────────────────────────────────────────────
@@ -479,56 +547,16 @@ async def fetch_and_embed_pending(
         "Fetching and embedding %d URLs (concurrency=%d, timeout=%ss)",
         len(work), workers, cfg.fetch_timeout_seconds,
     )
-    sem = asyncio.Semaphore(workers)
-    results: list[FetchResult] = []
     embed_stats = _empty_embed_stats()
-    stopped: str | None = None
-    queue: asyncio.Queue[tuple[int, str] | None] = asyncio.Queue()
-    for item in work:
-        queue.put_nowait(item)
-    for _ in range(workers):
-        queue.put_nowait(None)
-
-    async def worker(client: httpx.AsyncClient) -> None:
-        nonlocal stopped
-        while True:
-            if progress_key and should_stop(progress_key):
-                stopped = should_stop(progress_key)
-                break
-            item = await queue.get()
-            if item is None:
-                break
-            doc_id, url = item
-            fetch_failed = False
-            r: FetchResult | None = None
-            try:
-                async with sem:
-                    r = await _fetch_one(client, doc_id, url)
-                    results.append(r)
-                    fetch_failed = r.status == "unfetchable"
-                    _persist_fetch_result(r)
-            finally:
-                if progress_key:
-                    from pka.ingestion.sync_progress import advance
-                    advance(progress_key, phase="fetching", failed=fetch_failed)
-
-            if progress_key and should_stop(progress_key):
-                stopped = should_stop(progress_key)
-                break
-
-            if embed_fn and r and r.text and not dry_run:
-                try:
-                    outcome = await asyncio.to_thread(embed_fn, doc_id, r.text)
-                    _accumulate_embed(embed_stats, outcome)
-                except Exception as exc:
-                    log.exception("Embed failed for doc_id=%d: %s", doc_id, exc)
-                    embed_stats["failed"] += 1
-
-    async with httpx.AsyncClient(
-        headers={"User-Agent": cfg.fetch_user_agent},
-        timeout=_http_timeout(),
-    ) as client:
-        await asyncio.gather(*(worker(client) for _ in range(workers)))
+    results, stopped = await _run_fetch_workers(
+        work,
+        concurrency=concurrency,
+        progress_key=progress_key,
+        advance_phase="fetching",
+        embed_fn=embed_fn,
+        embed_stats=embed_stats,
+        dry_run=dry_run,
+    )
 
     stats = {
         "fetched":     sum(1 for r in results if r.status == "fetched"),
@@ -558,8 +586,6 @@ async def fetch_pending(
     Returns stats dict and a {document_id: text} mapping for further ingestion.
     Pass ``limit=None`` to fetch all pending URLs.
     """
-    from pka.ingestion.sync_helpers import should_stop
-
     reset_unfetchable_for_fetch()
 
     workers = concurrency if concurrency is not None else cfg.fetch_concurrency
@@ -572,45 +598,18 @@ async def fetch_pending(
         "Fetching %d pending URLs (concurrency=%d, timeout=%ss)",
         len(pending), workers, cfg.fetch_timeout_seconds,
     )
-    sem = asyncio.Semaphore(workers)
-    results: list[FetchResult] = []
     fetched_texts: dict[int, str] = {}
-    stopped: str | None = None
-    queue: asyncio.Queue[tuple[int, str] | None] = asyncio.Queue()
-    for item in pending:
-        queue.put_nowait(item)
-    for _ in range(workers):
-        queue.put_nowait(None)
 
-    async def worker(client: httpx.AsyncClient) -> None:
-        nonlocal stopped
-        while True:
-            if progress_key and should_stop(progress_key):
-                stopped = should_stop(progress_key)
-                break
-            item = await queue.get()
-            if item is None:
-                break
-            doc_id, url = item
-            failed = False
-            try:
-                async with sem:
-                    r = await _fetch_one(client, doc_id, url)
-                    results.append(r)
-                    if r.text:
-                        fetched_texts[doc_id] = r.text
-                    failed = r.status == "unfetchable"
-                    _persist_fetch_result(r)
-            finally:
-                if progress_key:
-                    from pka.ingestion.sync_progress import advance
-                    advance(progress_key, failed=failed)
+    def _collect_text(doc_id: int, r: FetchResult) -> None:
+        if r.text:
+            fetched_texts[doc_id] = r.text
 
-    async with httpx.AsyncClient(
-        headers={"User-Agent": cfg.fetch_user_agent},
-        timeout=_http_timeout(),
-    ) as client:
-        await asyncio.gather(*(worker(client) for _ in range(workers)))
+    results, stopped = await _run_fetch_workers(
+        pending,
+        concurrency=concurrency,
+        progress_key=progress_key,
+        on_result=_collect_text,
+    )
 
     stats = {
         "fetched":     sum(1 for r in results if r.status == "fetched"),

@@ -5,8 +5,9 @@ from collections import defaultdict
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Query
 
+from pka.api.active_run import fetch_active_run_id
 from pka.api.dependencies import get_engine
-from pka.db.schema import cluster_assignments, cluster_runs, clusters, documents
+from pka.db.schema import cluster_assignments, clusters, documents
 from pka.trends.kernel import build_kernel_timeline
 
 router = APIRouter(prefix="/trends", tags=["trends"])
@@ -20,14 +21,9 @@ async def timeline(engine=Depends(get_engine)):
     wide) centered on ``date_added``. Values are sampled at month centers.
     """
     with engine.connect() as con:
-        run = con.execute(
-            sa.select(cluster_runs.c.run_id)
-            .where(cluster_runs.c.accepted == True)  # noqa: E712
-            .order_by(cluster_runs.c.run_id.desc()).limit(1)
-        ).fetchone()
-        if not run:
+        run_id = fetch_active_run_id(con)
+        if not run_id:
             return {"timeline": {}, "sizes": {}}
-        run_id = run[0]
 
         rows = con.execute(
             sa.select(

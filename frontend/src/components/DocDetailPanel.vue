@@ -36,7 +36,7 @@
             v-if="showWebLink"
             class="btn-xs"
             type="button"
-            @click.stop="openInNewTab(openUrl!)"
+            @click.stop="openLink()"
           >
             Open in new tab
           </button>
@@ -81,8 +81,7 @@ import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { getDocument, patchTags } from '@/api/client'
 import type { DocumentDetail } from '@/api/client'
-import { openInNewTab, resolveOpenUrl } from '@/lib/urls'
-import { canOpenInZotero } from '@/lib/zotero'
+import { useDocLinks } from '@/composables/useDocLinks'
 import SourceBadge from './SourceBadge.vue'
 import ZoteroOpenButton from './ZoteroOpenButton.vue'
 
@@ -91,22 +90,13 @@ const ui  = useUiStore()
 const doc = ref<DocumentDetail | null>(null)
 const newTag = ref('')
 
+const { openUrl, hasWebLink, canZotero, openLink } = useDocLinks(() => doc.value)
+
 const isBrowse = computed(
   () => route.path === '/browse' || route.path.startsWith('/browse/'),
 )
-const openUrl = computed(() => {
-  if (!doc.value) return null
-  return resolveOpenUrl(doc.value.source, doc.value.url_or_path, doc.value.archive_url)
-})
-const showWebLink = computed(
-  () => isBrowse.value && openUrl.value != null,
-)
-const showZotero = computed(
-  () =>
-    isBrowse.value
-    && doc.value != null
-    && canOpenInZotero(doc.value.source, doc.value.source_id),
-)
+const showWebLink = computed(() => isBrowse.value && hasWebLink.value)
+const showZotero = computed(() => isBrowse.value && canZotero.value)
 
 watch(() => ui.activeDocId, async (id) => {
   if (id == null) { doc.value = null; return }

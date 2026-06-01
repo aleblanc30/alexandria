@@ -1,11 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import * as api from '@/api/client'
+import { usePolling } from '@/composables/usePolling'
+import { notifyError } from '@/lib/notifyError'
 import { useToastStore } from './toast'
-
-function notifyError(e: any) {
-  useToastStore().push(e?.message ?? String(e), 'error')
-}
 
 const POLL_MS = 1500
 
@@ -15,7 +13,6 @@ export const useClustersStore = defineStore('clusters', () => {
   const runs        = shallowRef<api.RunOut[]>([])
   const diagnostics = ref<api.DiagnosticsOut | null>(null)
   const loading     = ref(false)
-  let pollTimer: ReturnType<typeof setInterval> | null = null
   const notified    = new Set<string>()
 
   function hasRunningRun(): boolean {
@@ -74,18 +71,7 @@ export const useClustersStore = defineStore('clusters', () => {
     } catch { /* ignore transient poll errors */ }
   }
 
-  function startPolling() {
-    if (pollTimer) return
-    pollTimer = setInterval(pollRuns, POLL_MS)
-    void pollRuns()
-  }
-
-  function stopPolling() {
-    if (pollTimer) {
-      clearInterval(pollTimer)
-      pollTimer = null
-    }
-  }
+  const { start: startPolling, stop: stopPolling } = usePolling(pollRuns, POLL_MS)
 
   async function loadDiagnostics(runId: number) {
     try { diagnostics.value = await api.getDiagnostics(runId) }

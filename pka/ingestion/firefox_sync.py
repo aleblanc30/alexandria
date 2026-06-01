@@ -12,6 +12,7 @@ from pka.ingestion.fetcher import fetch_and_embed_pending, reset_unfetchable_for
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.ingestion.runners.firefox import embed_fetched_text, ingest_firefox_bookmarks
 from pka.ingestion.sync_helpers import should_stop
+from pka.ingestion.sync_shared import run_full_sync
 
 log = logging.getLogger(__name__)
 
@@ -110,12 +111,9 @@ def sync_firefox(
     """Full pipeline (metadata then ingest). Kept for scripts/tests."""
     key = progress_key or "firefox"
     meta = sync_firefox_metadata(progress_key=key, dry_run=dry_run)
-    if meta.get("stopped"):
-        return meta
-    ingest = sync_firefox_ingest(
+    return run_full_sync(meta, lambda: sync_firefox_ingest(
         progress_key=key,
         fetch_limit=fetch_limit,
         fetch_concurrency=fetch_concurrency,
         dry_run=dry_run,
-    )
-    return {**meta, **ingest}
+    ))

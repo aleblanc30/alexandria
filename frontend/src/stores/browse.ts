@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import * as api from '@/api/client'
+import { PAGE_SIZE } from '@/constants/pagination'
+import { buildDocumentFilters, type AcademicKind } from '@/lib/browseFilters'
 import { useSearchStore } from './search'
 import { useToastStore } from './toast'
 
-const PAGE_SIZE = 48
 const VIEW_MODE_KEY = 'pka-browse-view-mode'
 
 export type BrowseViewMode = 'cards' | 'lines'
@@ -17,15 +18,8 @@ function loadViewMode(): BrowseViewMode {
   return 'cards'
 }
 
-export type AcademicKind = 'paper' | 'preprint'
-
-export function resolveGeneralTags(academic: boolean, kinds: AcademicKind[]): string[] | undefined {
-  if (!academic) return undefined
-  if (!kinds.length || (kinds.includes('paper') && kinds.includes('preprint'))) {
-    return ['academic']
-  }
-  return [...kinds]
-}
+export type { AcademicKind } from '@/lib/browseFilters'
+export { resolveGeneralTags } from '@/lib/browseFilters'
 
 export const useBrowseStore = defineStore('browse', () => {
   const sources       = ref<string[]>([])
@@ -55,29 +49,28 @@ export const useBrowseStore = defineStore('browse', () => {
     } catch { /* ignore */ }
   }
 
-  function listParams(offset = 0) {
-    const general_tags = resolveGeneralTags(academicFilter.value, academicKinds.value)
+  function filterState() {
     return {
-      sources: sources.value.length ? sources.value : undefined,
-      source_tags: sourceTags.value.length ? sourceTags.value : undefined,
-      general_tags,
-      cluster_l1_tags: level1Tags.value.length ? level1Tags.value : undefined,
-      cluster_l2_tags: level2Tags.value.length ? level2Tags.value : undefined,
-      wayback_only: waybackOnly.value || undefined,
+      sources: sources.value,
+      sourceTags: sourceTags.value,
+      level1Tags: level1Tags.value,
+      level2Tags: level2Tags.value,
+      academicFilter: academicFilter.value,
+      academicKinds: academicKinds.value,
+      waybackOnly: waybackOnly.value,
+    }
+  }
+
+  function listParams(offset = 0) {
+    return {
+      ...buildDocumentFilters(filterState(), { includeSources: true }),
       limit: PAGE_SIZE,
       offset,
     }
   }
 
   function tagScopeParams() {
-    const general_tags = resolveGeneralTags(academicFilter.value, academicKinds.value)
-    return {
-      source_tags: sourceTags.value.length ? sourceTags.value : undefined,
-      general_tags,
-      cluster_l1_tags: level1Tags.value.length ? level1Tags.value : undefined,
-      cluster_l2_tags: level2Tags.value.length ? level2Tags.value : undefined,
-      wayback_only: waybackOnly.value || undefined,
-    }
+    return buildDocumentFilters(filterState())
   }
 
   async function loadTags() {

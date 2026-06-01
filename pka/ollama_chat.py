@@ -55,7 +55,7 @@ def chat_json(
 
     Returns ``(parsed_dict, error_message)``. *error_message* is set on failure.
     """
-    from pka.clustering.engine import _parse_llm_json
+    from pka.json_utils import parse_llm_json
 
     chosen = resolve_chat_model(model)
     payload: dict[str, Any] = {
@@ -77,7 +77,7 @@ def chat_json(
         content = body.get("message", {}).get("content", "")
         if not content.strip():
             return {}, f"Empty response from model {chosen}"
-        return _parse_llm_json(content), None
+        return parse_llm_json(content), None
     except Exception as exc:
         log.warning("Ollama chat failed (model=%s): %s", chosen, exc)
         return {}, str(exc)

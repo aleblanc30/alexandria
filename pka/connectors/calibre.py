@@ -15,7 +15,7 @@ File layout assumed (Calibre default):
 """
 import logging
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from pka.config import settings as cfg

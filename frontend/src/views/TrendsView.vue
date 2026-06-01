@@ -45,6 +45,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Line } from 'vue-chartjs'
 import { Chart as ChartJS, CategoryScale, LinearScale, LineElement, PointElement, Legend, Tooltip, Filler } from 'chart.js'
 import { trendTimeline } from '@/api/client'
+import { colorForIndex } from '@/constants/colors'
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Legend, Tooltip, Filler)
 
@@ -53,8 +54,6 @@ const clusterSizes = ref<Record<string, number>>({})
 const timelineReady = ref(false)
 const selectedClusters = ref<string[]>([])
 const stackedView = ref(false)
-
-const PALETTE = ['#378ADD', '#7F77DD', '#639922', '#BA7517', '#1D9E75', '#D85A30']
 
 onMounted(async () => {
   const res = await trendTimeline()
@@ -67,7 +66,7 @@ onMounted(async () => {
 const clusterColor = computed(() => {
   const map: Record<string, string> = {}
   Object.keys(timeline.value).sort().forEach((label, i) => {
-    map[label] = PALETTE[i % PALETTE.length]
+    map[label] = colorForIndex(i)
   })
   return map
 })

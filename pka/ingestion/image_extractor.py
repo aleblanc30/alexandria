@@ -11,14 +11,13 @@ calls are batched into a single prompt that returns both classification and
 description, avoiding two round-trips.
 """
 import base64
-import json
 import logging
-import re
 from pathlib import Path
 
 import httpx
 
 from pka.config import settings as cfg
+from pka.json_utils import parse_llm_json as _parse_llm_json
 
 log = logging.getLogger(__name__)
 
@@ -42,24 +41,6 @@ Rules:
 - unknown      : anything else
 
 No markdown, no explanation. Only the JSON object."""
-
-
-_JSON_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.MULTILINE)
-
-
-def _parse_llm_json(raw: str) -> dict:
-    """Strip Markdown code fences and parse JSON.
-
-    Falls back to extracting the first ``{...}`` block if direct parse fails.
-    """
-    cleaned = _JSON_FENCE_RE.sub("", raw).strip()
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        match = re.search(r"\{[^{}]*\}", cleaned, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        raise
 
 
 # ── Image encoding ────────────────────────────────────────────────────────────

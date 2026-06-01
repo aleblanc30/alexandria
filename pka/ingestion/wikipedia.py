@@ -7,7 +7,6 @@ import re
 from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
-import sqlalchemy as sa
 
 from pka.config import settings as cfg
 from pka.ingestion.fetcher import FetchResult, _http_timeout, _limiter

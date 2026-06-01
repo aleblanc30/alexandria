@@ -7,6 +7,7 @@ from pka.ingestion.dev_limits import take
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.ingestion.source_access import try_load_calibre_books
 from pka.ingestion.sync_helpers import should_stop
+from pka.ingestion.sync_shared import EMPTY_STATS, run_full_sync, unavailable_metadata
 from pka.ingestion.runners.calibre import (
     ingest_calibre_books,
     ingest_calibre_fulltext,
@@ -15,18 +16,11 @@ from pka.ingestion.runners.calibre import (
 
 log = logging.getLogger(__name__)
 
-_EMPTY_STATS = {"processed": 0, "skipped": 0, "failed": 0}
-_EMPTY_EMBED = {**_EMPTY_STATS, "chunks": 0}
+_EMPTY_EMBED = {**EMPTY_STATS, "chunks": 0}
 
 
 def _plan_counts(key: str, total: int) -> None:
     sp.set_corpus_total(key, total)
-
-
-def _unavailable_metadata(key: str, baseline: int, reason: str) -> dict:
-    sp.begin_metadata_sync(key, 0, baseline)
-    sp.skip_phase(key, "metadata")
-    return {"metadata": dict(_EMPTY_STATS), "unavailable": reason}
 
 
 def _unavailable_ingest(key: str, reason: str) -> dict:
@@ -51,7 +45,7 @@ def sync_calibre_metadata(
     baseline = archive_document_count(Source.CALIBRE)
     books, unavailable = try_load_calibre_books()
     if unavailable:
-        return _unavailable_metadata(key, baseline, unavailable)
+        return unavailable_metadata(key, baseline, unavailable)
     pending = count_pending_metadata(Source.CALIBRE)
     sp.begin_metadata_sync(key, pending, baseline)
     books = take(books)
@@ -116,8 +110,6 @@ def sync_calibre(
 ) -> dict:
     """Full pipeline. Kept for scripts/tests."""
     meta = sync_calibre_metadata(progress_key=progress_key, dry_run=dry_run)
-    if meta.get("stopped") or meta.get("unavailable"):
-        return meta
-    return {**meta, **sync_calibre_ingest(
+    return run_full_sync(meta, lambda: sync_calibre_ingest(
         progress_key=progress_key, dry_run=dry_run, max_pages=max_pages,
-    )}
+    ))

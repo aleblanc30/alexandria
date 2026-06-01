@@ -1,126 +1,24 @@
 """``/search`` endpoint — semantic, fulltext, and hybrid modes.
 
 The N+1 query problem in the per-document lookup loop is avoided by
-:func:`_batch_doc_rows_to_out`, which collects all required relations
-(``source_tags``, ``overlay_tags``, ``cluster_assignments``) in three
-batched ``IN`` queries.
+:func:`pka.api.document_serialize.documents_out_batch`, which collects all
+required relations (``source_tags``, ``overlay_tags``, ``cluster_assignments``)
+in batched ``IN`` queries.
 """
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends
 
-from pka.api.db_rows import fetchall_mappings, fetchone_mapping
+from pka.api.active_run import fetch_active_run_id
+from pka.api.db_rows import fetchall_mappings
 from pka.api.dependencies import get_engine
-from pka.api.schemas.documents import DocumentOut
+from pka.api.document_serialize import documents_out_batch
+from pka.api.image_hits import clip_hits_to_image_out
 from pka.api.schemas.images import ImageOut
 from pka.api.schemas.search import SearchRequest, SearchResponse
-from pka.db.queries import _batch_first_chunk_map, filter_document_ids, resolve_description
-from pka.db.schema import (
-    cluster_assignments,
-    cluster_runs,
-    clusters,
-    documents,
-    overlay_tags,
-    source_tags,
-)
+from pka.db.queries import filter_document_ids
+from pka.db.schema import cluster_assignments, documents
 
 router = APIRouter(prefix="/search", tags=["search"])
-
-
-def _active_run_id(con) -> int | None:
-    row = con.execute(
-        sa.select(cluster_runs.c.run_id)
-        .where(cluster_runs.c.accepted == True)  # noqa: E712 — SQLA expression
-        .order_by(cluster_runs.c.run_id.desc())
-        .limit(1)
-    ).fetchone()
-    return row[0] if row else None
-
-
-def _batch_doc_rows_to_out(
-    doc_ids_with_sim: list[tuple[int, float | None]],
-    con,
-    run_id: int | None,
-) -> list[DocumentOut]:
-    """Build a list of :class:`DocumentOut` with a single batched query per relation."""
-    if not doc_ids_with_sim:
-        return []
-
-    sim_map = dict(doc_ids_with_sim)
-    doc_ids = list(sim_map.keys())
-
-    # 1. Documents (one query)
-    doc_rows = {
-        r["id"]: r for r in fetchall_mappings(con.execute(
-            sa.select(documents).where(documents.c.id.in_(doc_ids))
-        ))
-    }
-
-    # 2. Source tags (one query)
-    source_tag_map: dict[int, list[str]] = {did: [] for did in doc_ids}
-    for r in con.execute(
-        sa.select(source_tags.c.document_id, source_tags.c.tag_string)
-        .where(source_tags.c.document_id.in_(doc_ids))
-    ).fetchall():
-        source_tag_map[r[0]].append(r[1])
-
-    # 3. Overlay tags (one query)
-    overlay_tag_map: dict[int, list[dict]] = {did: [] for did in doc_ids}
-    for r in con.execute(
-        sa.select(
-            overlay_tags.c.document_id,
-            overlay_tags.c.tag,
-            overlay_tags.c.origin,
-            overlay_tags.c.confidence,
-        ).where(overlay_tags.c.document_id.in_(doc_ids))
-    ).fetchall():
-        overlay_tag_map[r[0]].append(
-            {"tag": r[1], "origin": r[2], "confidence": r[3]}
-        )
-
-    # 4. Cluster assignments + labels (single join)
-    cluster_map: dict[int, tuple[int, str]] = {}
-    if run_id:
-        for r in con.execute(
-            sa.select(
-                cluster_assignments.c.document_id,
-                cluster_assignments.c.cluster_id,
-                clusters.c.label,
-            )
-            .join(clusters, clusters.c.cluster_id == cluster_assignments.c.cluster_id)
-            .where(
-                (cluster_assignments.c.run_id == run_id) &
-                (cluster_assignments.c.document_id.in_(doc_ids)) &
-                (cluster_assignments.c.level == 1)
-            )
-        ).fetchall():
-            cluster_map[r[0]] = (r[1], r[2])
-
-    needs_chunk = [
-        did for did in doc_ids
-        if not (doc_rows[did].get("card_summary") and str(doc_rows[did]["card_summary"]).strip())
-    ]
-    chunk_map = _batch_first_chunk_map(con, needs_chunk)
-
-    out: list[DocumentOut] = []
-    for doc_id, sim in doc_ids_with_sim:
-        row = doc_rows.get(doc_id)
-        if not row:
-            continue
-        cid, clabel = cluster_map.get(doc_id, (None, None))
-        description = resolve_description(row.get("card_summary"), chunk_map.get(doc_id))
-        out.append(DocumentOut(
-            id=doc_id, source=row["source"], source_id=row["source_id"],
-            title=row["title"] or "", url_or_path=row["url_or_path"],
-            archive_url=row.get("archive_url"),
-            zotero_attachment_key=row.get("zotero_attachment_key"),
-            date_added=row["date_added"], fetch_status=row["fetch_status"],
-            source_tags=source_tag_map.get(doc_id, []),
-            overlay_tags=overlay_tag_map.get(doc_id, []),
-            cluster_id=cid, cluster_label=clabel,
-            similarity=sim,
-            description=description,
-        ))
-    return out
 
 
 @router.post("", response_model=SearchResponse)
@@ -148,7 +46,7 @@ async def search(req: SearchRequest, engine=Depends(get_engine)):
             pass
 
     with engine.connect() as con:
-        run_id = _active_run_id(con)
+        run_id = fetch_active_run_id(con)
 
         # ── Fulltext fallback / merge ────────────────────────────────────────
         if req.mode in ("fulltext", "hybrid") or not results:
@@ -228,34 +126,16 @@ async def search(req: SearchRequest, engine=Depends(get_engine)):
         total = len(results)
         page = results[req.offset: req.offset + req.limit]
 
-        docs_out = _batch_doc_rows_to_out(page, con, run_id)
+        docs_out = documents_out_batch(page, con, run_id)
 
         # ── Images ────────────────────────────────────────────────────────────
         images_out: list[ImageOut] = []
         if req.include_images:
-            from pka.db.schema import image_tags as itags_tbl
-            from pka.db.schema import images as images_tbl
             from pka.ingestion.image_pipeline import search_images_by_text
 
-            img_hits = search_images_by_text(req.query, n=10)
-            for h in img_hits:
-                irow = fetchone_mapping(con.execute(
-                    sa.select(images_tbl)
-                    .where(images_tbl.c.clip_vector_id == h["vector_id"])
-                ))
-                if not irow:
-                    continue
-                itags = [r[0] for r in con.execute(
-                    sa.select(itags_tbl.c.tag)
-                    .where(itags_tbl.c.image_id == irow["id"])
-                ).fetchall()]
-                images_out.append(ImageOut(
-                    id=irow["id"], path=irow["path"], filename=irow["filename"],
-                    image_type=irow["image_type"], width=irow["width"],
-                    height=irow["height"], description=irow["description"],
-                    ocr_text=irow["ocr_text"], date_taken=irow["date_taken"],
-                    tags=itags, similarity=1.0 - h["distance"],
-                ))
+            images_out = clip_hits_to_image_out(
+                con, search_images_by_text(req.query, n=10)
+            )
 
     return SearchResponse(
         query=req.query, total=total,
