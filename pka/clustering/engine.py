@@ -1,13 +1,13 @@
 """
-Clustering engine: document-level embeddings → UMAP → HDBSCAN → LLM labels.
+Clustering engine: hierarchical document-level embeddings → UMAP → HDBSCAN → LLM labels.
 
 Pipeline:
   1. Aggregate chunk embeddings per document (mean pooling).
-  2. UMAP: reduce to N-D (for clustering) and 2-D (for visualisation).
-  3. HDBSCAN: assign cluster ids; noise points get id -1.
-  4. LLM labelling: sample titles per cluster → Ollama.
+  2. Global UMAP + HDBSCAN → level-1 clusters.
+  3. Per L1 cluster: local UMAP + HDBSCAN → level-2 sub-clusters.
+  4. LLM labelling for L1 and L2 clusters.
   5. Persist to ``cluster_runs`` (with 2-D coords), ``clusters``,
-     ``cluster_assignments``.
+     ``cluster_assignments`` (level 1 and level 2).
 
 The run is always stored regardless of acceptance. Acceptance is a separate
 UI action that sets ``cluster_runs.accepted = True``.
@@ -38,6 +38,16 @@ _JSON_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.MULTILINE)
 # ── Data structures ───────────────────────────────────────────────────────────
 
 @dataclass
+class L2ClusterBatch:
+    """Level-2 clustering result scoped to one L1 HDBSCAN cluster."""
+    parent_l1_id: int
+    doc_ids: list[int]
+    labels: np.ndarray
+    label_map: dict[int, str]
+    desc_map: dict[int, str]
+
+
+@dataclass
 class ClusterRunResult:
     run_id: int
     n_clusters: int
@@ -46,7 +56,7 @@ class ClusterRunResult:
     cluster_descriptions: dict[int, str]
     umap_2d: np.ndarray                     # shape (n_docs, 2)
     doc_ids: list[int]
-    assignments: dict[int, int]             # {doc_id: hdbscan_label} (-1 = noise)
+    assignments: dict[int, int]             # {doc_id: L1 hdbscan_label} (-1 = noise)
     diagnostics: dict
 
 
@@ -131,38 +141,48 @@ def _run_umap(
     n_components_cluster: int = 5,
     n_neighbors: int = 15,
     min_dist: float = 0.1,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Return ``(reduced_nd, reduced_2d)``."""
+    *,
+    compute_2d: bool = True,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Return ``(reduced_nd, reduced_2d)``. ``reduced_2d`` is None when ``compute_2d=False``."""
     try:
         import umap
     except ImportError as e:
         raise ImportError("umap-learn is required: pip install umap-learn") from e
 
+    n_docs = len(matrix)
+    nn = max(2, min(n_neighbors, max(2, n_docs - 1)))
+    n_comp = min(n_components_cluster, max(2, n_docs - 1))
+
     log.info(
         "Running UMAP (n_neighbors=%d, n_components=%d)…",
-        n_neighbors, n_components_cluster,
+        nn, n_comp,
     )
 
     reducer_nd = umap.UMAP(
-        n_components = n_components_cluster,
-        n_neighbors  = n_neighbors,
+        n_components = n_comp,
+        n_neighbors  = nn,
         min_dist     = min_dist,
         metric       = "cosine",
         random_state = 42,
     )
     reduced_nd = reducer_nd.fit_transform(matrix)
 
-    reducer_2d = umap.UMAP(
-        n_components = 2,
-        n_neighbors  = n_neighbors,
-        min_dist     = min_dist,
-        metric       = "cosine",
-        random_state = 42,
-    )
-    reduced_2d = reducer_2d.fit_transform(matrix)
+    reduced_2d = None
+    if compute_2d:
+        reducer_2d = umap.UMAP(
+            n_components = 2,
+            n_neighbors  = nn,
+            min_dist     = min_dist,
+            metric       = "cosine",
+            random_state = 42,
+        )
+        reduced_2d = reducer_2d.fit_transform(matrix)
 
     log.info("UMAP done. Output shape: %s", reduced_nd.shape)
-    return reduced_nd.astype(np.float32), reduced_2d.astype(np.float32)
+    return reduced_nd.astype(np.float32), (
+        reduced_2d.astype(np.float32) if reduced_2d is not None else None
+    )
 
 
 # ── Step 3: HDBSCAN clustering ────────────────────────────────────────────────
@@ -284,7 +304,7 @@ def create_run_placeholder() -> int:
         res = con.execute(
             cluster_runs.insert().values(
                 timestamp  = now,
-                algorithm  = "HDBSCAN",
+                algorithm  = "HDBSCAN-hierarchical",
                 parameters = json.dumps({}),
                 accepted   = False,
                 status     = "running",
@@ -305,32 +325,61 @@ def set_run_status(run_id: int, status: str, *, notes: str | None = None) -> Non
         )
 
 
-def _write_run_clusters(
+def _label_clusters(
+    cluster_docs: dict[int, list[int]],
+    skip_labelling: bool,
+    chat_model: str | None,
+    run_id: int | None,
+) -> tuple[dict[int, str], dict[int, str]]:
+    from pka.clustering.run_progress import raise_if_cancelled
+
+    label_map: dict[int, str] = {}
+    desc_map: dict[int, str] = {}
+    for cid in sorted(cluster_docs.keys()):
+        if run_id is not None:
+            raise_if_cancelled(run_id)
+        titles = _sample_titles_for_cluster(cluster_docs[cid])
+        if skip_labelling:
+            label_map[cid] = _tfidf_label(titles)
+            desc_map[cid] = ""
+        else:
+            label, desc = _label_cluster_with_llm(titles, chat_model)
+            label_map[cid] = label
+            desc_map[cid] = desc
+            log.debug("Cluster %d → %s", cid, label)
+    return label_map, desc_map
+
+
+def _write_hierarchical_clusters(
     con,
     run_id: int,
     doc_ids: list[int],
-    hdbscan_labels: np.ndarray,
-    cluster_label_map: dict[int, str],
-    cluster_desc_map: dict[int, str],
+    l1_labels: np.ndarray,
+    l1_label_map: dict[int, str],
+    l1_desc_map: dict[int, str],
+    l2_batches: list[L2ClusterBatch],
     now: int,
-) -> tuple[int, int]:
-    unique_cids = sorted(set(hdbscan_labels.tolist()) - {-1})
-    db_cluster_ids: dict[int, int] = {}
+) -> tuple[int, int, int]:
+    """Persist L1/L2 clusters and assignments. Returns (n_l1, n_l2, n_assignments)."""
+    l1_unique = sorted(set(l1_labels.tolist()) - {-1})
+    l1_db_ids: dict[int, int] = {}
 
-    for cid in unique_cids:
+    for cid in l1_unique:
         res2 = con.execute(
             clusters.insert().values(
-                label       = cluster_label_map.get(cid, f"Cluster {cid}"),
-                description = cluster_desc_map.get(cid, ""),
-                created_at  = now,
-                run_id      = run_id,
+                label             = l1_label_map.get(cid, f"Cluster {cid}"),
+                description       = l1_desc_map.get(cid, ""),
+                created_at        = now,
+                run_id            = run_id,
+                level             = 1,
+                parent_cluster_id = None,
             )
         )
-        db_cluster_ids[cid] = res2.inserted_primary_key[0]
+        l1_db_ids[cid] = res2.inserted_primary_key[0]
 
-    assignment_rows = []
-    for doc_id, raw_label in zip(doc_ids, hdbscan_labels.tolist()):
-        db_cid = db_cluster_ids.get(raw_label, -1)
+    assignment_rows: list[dict] = []
+    for doc_id, raw_label in zip(doc_ids, l1_labels.tolist()):
+        db_cid = l1_db_ids.get(raw_label, -1)
         if db_cid == -1:
             continue
         assignment_rows.append({
@@ -339,20 +388,124 @@ def _write_run_clusters(
             "run_id":      run_id,
             "score":       None,
             "assigned_at": now,
+            "level":       1,
         })
+
+    n_l2 = 0
+    for batch in l2_batches:
+        parent_db_id = l1_db_ids.get(batch.parent_l1_id)
+        if parent_db_id is None:
+            continue
+        l2_unique = sorted(set(batch.labels.tolist()) - {-1})
+        l2_db_ids: dict[int, int] = {}
+        for l2_cid in l2_unique:
+            res2 = con.execute(
+                clusters.insert().values(
+                    label             = batch.label_map.get(l2_cid, f"Subcluster {l2_cid}"),
+                    description       = batch.desc_map.get(l2_cid, ""),
+                    created_at        = now,
+                    run_id            = run_id,
+                    level             = 2,
+                    parent_cluster_id = parent_db_id,
+                )
+            )
+            l2_db_ids[l2_cid] = res2.inserted_primary_key[0]
+            n_l2 += 1
+
+        for doc_id, raw_label in zip(batch.doc_ids, batch.labels.tolist()):
+            db_cid = l2_db_ids.get(raw_label, -1)
+            if db_cid == -1:
+                continue
+            assignment_rows.append({
+                "document_id": doc_id,
+                "cluster_id":  db_cid,
+                "run_id":      run_id,
+                "score":       None,
+                "assigned_at": now,
+                "level":       2,
+            })
 
     if assignment_rows:
         con.execute(cluster_assignments.insert(), assignment_rows)
 
-    return len(unique_cids), len(assignment_rows)
+    return len(l1_unique), n_l2, len(assignment_rows)
+
+
+def _run_level2_pass(
+    matrix: np.ndarray,
+    doc_ids: list[int],
+    l1_labels: np.ndarray,
+    *,
+    n_components: int,
+    min_dist: float,
+    skip_labelling: bool,
+    chat_model: str | None,
+    run_id: int | None,
+) -> tuple[list[L2ClusterBatch], int, int]:
+    """Run local UMAP+HDBSCAN inside each L1 cluster. Returns batches, noise, skipped."""
+    from pka.clustering.run_progress import raise_if_cancelled
+
+    doc_id_to_idx = {d: i for i, d in enumerate(doc_ids)}
+    l1_unique = sorted(set(l1_labels.tolist()) - {-1})
+    l2_batches: list[L2ClusterBatch] = []
+    l2_noise = 0
+    l2_skipped = 0
+
+    for l1_cid in l1_unique:
+        member_doc_ids = [
+            doc_ids[i] for i, lbl in enumerate(l1_labels.tolist()) if lbl == l1_cid
+        ]
+        n_sub = len(member_doc_ids)
+        sub_mcs, sub_ms, sub_nn = adaptive_cluster_params(n_sub)
+        if n_sub < sub_mcs:
+            l2_skipped += 1
+            continue
+
+        if run_id is not None:
+            raise_if_cancelled(run_id)
+
+        sub_matrix = matrix[[doc_id_to_idx[d] for d in member_doc_ids]]
+        sub_reduced_nd, _ = _run_umap(
+            sub_matrix,
+            n_components_cluster = min(n_components, max(2, n_sub - 1)),
+            n_neighbors          = sub_nn,
+            min_dist             = min_dist,
+            compute_2d           = False,
+        )
+        l2_labels = _run_hdbscan(sub_reduced_nd, sub_mcs, sub_ms)
+        l2_unique = sorted(set(l2_labels.tolist()) - {-1})
+        l2_noise += int((l2_labels == -1).sum())
+
+        if len(l2_unique) < 2:
+            l2_skipped += 1
+            continue
+
+        l2_cluster_docs: dict[int, list[int]] = {c: [] for c in l2_unique}
+        for doc_id, lbl in zip(member_doc_ids, l2_labels.tolist()):
+            if lbl != -1:
+                l2_cluster_docs[lbl].append(doc_id)
+
+        l2_label_map, l2_desc_map = _label_clusters(
+            l2_cluster_docs, skip_labelling, chat_model, run_id,
+        )
+        l2_batches.append(L2ClusterBatch(
+            parent_l1_id = l1_cid,
+            doc_ids      = member_doc_ids,
+            labels       = l2_labels,
+            label_map    = l2_label_map,
+            desc_map     = l2_desc_map,
+        ))
+
+    return l2_batches, l2_noise, l2_skipped
 
 
 def _finalize_run(
     run_id: int,
     doc_ids: list[int],
-    hdbscan_labels: np.ndarray,
-    cluster_label_map: dict[int, str],
-    cluster_desc_map: dict[int, str],
+    l1_labels: np.ndarray,
+    l1_label_map: dict[int, str],
+    l1_desc_map: dict[int, str],
+    l2_batches: list[L2ClusterBatch],
     algorithm: str,
     params: dict,
     umap_2d: np.ndarray,
@@ -366,7 +519,7 @@ def _finalize_run(
             "doc_id":     int(doc_ids[i]),
             "x":          round(float(umap_2d[i, 0]), 5),
             "y":          round(float(umap_2d[i, 1]), 5),
-            "cluster_id": int(hdbscan_labels[i]),
+            "cluster_id": int(l1_labels[i]),
         }
         for i in range(len(doc_ids))
     ]
@@ -384,22 +537,23 @@ def _finalize_run(
                 umap_points = json.dumps(umap_records),
             )
         )
-        n_clusters, n_assign = _write_run_clusters(
-            con, run_id, doc_ids, hdbscan_labels,
-            cluster_label_map, cluster_desc_map, now,
+        n_l1, n_l2, n_assign = _write_hierarchical_clusters(
+            con, run_id, doc_ids, l1_labels,
+            l1_label_map, l1_desc_map, l2_batches, now,
         )
 
     log.info(
-        "Finalized run #%d (%d clusters, %d assignments, %d UMAP points)",
-        run_id, n_clusters, n_assign, len(umap_records),
+        "Finalized run #%d (%d L1, %d L2 clusters, %d assignments, %d UMAP points)",
+        run_id, n_l1, n_l2, n_assign, len(umap_records),
     )
 
 
 def _persist_run(
     doc_ids: list[int],
-    hdbscan_labels: np.ndarray,
-    cluster_label_map: dict[int, str],
-    cluster_desc_map: dict[int, str],
+    l1_labels: np.ndarray,
+    l1_label_map: dict[int, str],
+    l1_desc_map: dict[int, str],
+    l2_batches: list[L2ClusterBatch],
     algorithm: str,
     params: dict,
     umap_2d: np.ndarray,
@@ -415,7 +569,7 @@ def _persist_run(
             "doc_id":     int(doc_ids[i]),
             "x":          round(float(umap_2d[i, 0]), 5),
             "y":          round(float(umap_2d[i, 1]), 5),
-            "cluster_id": int(hdbscan_labels[i]),   # -1 = noise
+            "cluster_id": int(l1_labels[i]),
         }
         for i in range(len(doc_ids))
     ]
@@ -432,14 +586,14 @@ def _persist_run(
             )
         )
         run_id = res.inserted_primary_key[0]
-        n_clusters, n_assign = _write_run_clusters(
-            con, run_id, doc_ids, hdbscan_labels,
-            cluster_label_map, cluster_desc_map, now,
+        n_l1, n_l2, n_assign = _write_hierarchical_clusters(
+            con, run_id, doc_ids, l1_labels,
+            l1_label_map, l1_desc_map, l2_batches, now,
         )
 
     log.info(
-        "Persisted run #%d (%d clusters, %d assignments, %d UMAP points)",
-        run_id, n_clusters, n_assign, len(umap_records),
+        "Persisted run #%d (%d L1, %d L2 clusters, %d assignments, %d UMAP points)",
+        run_id, n_l1, n_l2, n_assign, len(umap_records),
     )
     return run_id
 
@@ -481,6 +635,7 @@ def run_clustering(
         n_components     = n_components,
         cluster_selection = "leaf",
         adaptive         = min_cluster_size is None,
+        hierarchical     = True,
     )
 
     if run_id is not None:
@@ -492,77 +647,89 @@ def run_clustering(
         n_neighbors          = nn,
         min_dist             = min_dist,
     )
+    assert reduced_2d is not None
 
     if run_id is not None:
         raise_if_cancelled(run_id)
 
-    labels = _run_hdbscan(reduced_nd, mcs, ms)
+    l1_labels = _run_hdbscan(reduced_nd, mcs, ms)
 
-    unique_clusters = sorted(set(labels.tolist()) - {-1})
-    n_clusters = len(unique_clusters)
-    n_noise    = int((labels == -1).sum())
+    l1_unique = sorted(set(l1_labels.tolist()) - {-1})
+    n_l1 = len(l1_unique)
+    n_noise = int((l1_labels == -1).sum())
 
-    cluster_docs: dict[int, list[int]] = {c: [] for c in unique_clusters}
-    for doc_id, lbl in zip(doc_ids, labels.tolist()):
+    l1_cluster_docs: dict[int, list[int]] = {c: [] for c in l1_unique}
+    for doc_id, lbl in zip(doc_ids, l1_labels.tolist()):
         if lbl != -1:
-            cluster_docs[lbl].append(doc_id)
-
-    cluster_label_map: dict[int, str] = {}
-    cluster_desc_map:  dict[int, str] = {}
+            l1_cluster_docs[lbl].append(doc_id)
 
     if not skip_labelling:
-        log.info("Labelling %d clusters via LLM…", n_clusters)
-        for cid in unique_clusters:
-            if run_id is not None:
-                raise_if_cancelled(run_id)
-            titles = _sample_titles_for_cluster(cluster_docs[cid])
-            label, desc = _label_cluster_with_llm(titles, chat_model)
-            cluster_label_map[cid] = label
-            cluster_desc_map[cid]  = desc
-            log.debug("Cluster %d → %s", cid, label)
-    else:
-        for cid in unique_clusters:
-            cluster_label_map[cid] = _tfidf_label(
-                _sample_titles_for_cluster(cluster_docs[cid])
-            )
+        log.info("Labelling %d L1 clusters via LLM…", n_l1)
+    l1_label_map, l1_desc_map = _label_clusters(
+        l1_cluster_docs, skip_labelling, chat_model, run_id,
+    )
 
+    if run_id is not None:
+        raise_if_cancelled(run_id)
+
+    l2_batches, l2_noise, l2_skipped = _run_level2_pass(
+        matrix, doc_ids, l1_labels,
+        n_components = n_components,
+        min_dist     = min_dist,
+        skip_labelling = skip_labelling,
+        chat_model   = chat_model,
+        run_id       = run_id,
+    )
+    n_l2 = sum(
+        len(set(b.labels.tolist()) - {-1}) for b in l2_batches
+    )
+    params["l2_skipped_parents"] = l2_skipped
+
+    algorithm = "HDBSCAN-hierarchical"
     if run_id is not None:
         raise_if_cancelled(run_id)
         _finalize_run(
-            run_id, doc_ids, labels,
-            cluster_label_map, cluster_desc_map,
-            algorithm = "HDBSCAN",
+            run_id, doc_ids, l1_labels,
+            l1_label_map, l1_desc_map, l2_batches,
+            algorithm = algorithm,
             params    = params,
             umap_2d   = reduced_2d,
         )
         persisted_id = run_id
     else:
         persisted_id = _persist_run(
-            doc_ids, labels,
-            cluster_label_map, cluster_desc_map,
-            algorithm = "HDBSCAN",
+            doc_ids, l1_labels,
+            l1_label_map, l1_desc_map, l2_batches,
+            algorithm = algorithm,
             params    = params,
             umap_2d   = reduced_2d,
         )
 
-    sizes = {cid: len(cluster_docs[cid]) for cid in unique_clusters}
+    l1_sizes = {cid: len(l1_cluster_docs[cid]) for cid in l1_unique}
+    n_clusters_total = n_l1 + n_l2
     diagnostics = {
-        "n_clusters":    n_clusters,
-        "n_noise":       n_noise,
-        "cluster_sizes": sizes,
-        "size_min":      min(sizes.values()) if sizes else 0,
-        "size_max":      max(sizes.values()) if sizes else 0,
-        "size_mean":     round(sum(sizes.values()) / len(sizes), 1) if sizes else 0,
+        "n_clusters":      n_clusters_total,
+        "n_l1_clusters":   n_l1,
+        "n_l2_clusters":   n_l2,
+        "n_noise":         n_noise,
+        "n_l2_noise":      l2_noise,
+        "l2_skipped_parents": l2_skipped,
+        "cluster_sizes":   l1_sizes,
+        "size_min":        min(l1_sizes.values()) if l1_sizes else 0,
+        "size_max":        max(l1_sizes.values()) if l1_sizes else 0,
+        "size_mean":       round(sum(l1_sizes.values()) / len(l1_sizes), 1) if l1_sizes else 0,
     }
 
     return ClusterRunResult(
         run_id               = persisted_id,
-        n_clusters           = n_clusters,
+        n_clusters           = n_clusters_total,
         n_noise              = n_noise,
-        cluster_labels       = cluster_label_map,
-        cluster_descriptions = cluster_desc_map,
+        cluster_labels       = l1_label_map,
+        cluster_descriptions = l1_desc_map,
         umap_2d              = reduced_2d,
         doc_ids              = doc_ids,
-        assignments          = {did: int(lbl) for did, lbl in zip(doc_ids, labels.tolist())},
+        assignments          = {
+            did: int(lbl) for did, lbl in zip(doc_ids, l1_labels.tolist())
+        },
         diagnostics          = diagnostics,
     )

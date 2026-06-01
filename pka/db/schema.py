@@ -78,6 +78,12 @@ clusters = sa.Table(
     sa.Column("description", sa.Text),
     sa.Column("created_at",  sa.Integer),
     sa.Column("run_id",      sa.Integer, sa.ForeignKey("cluster_runs.run_id")),
+    sa.Column("level",       sa.Integer, nullable=False, server_default="1"),
+    sa.Column(
+        "parent_cluster_id",
+        sa.Integer,
+        sa.ForeignKey("clusters.cluster_id"),
+    ),
 )
 
 cluster_runs = sa.Table(
@@ -100,6 +106,7 @@ cluster_assignments = sa.Table(
     sa.Column("run_id",      sa.Integer, sa.ForeignKey("cluster_runs.run_id"), nullable=False),
     sa.Column("score",       sa.Float),
     sa.Column("assigned_at", sa.Integer),
+    sa.Column("level",       sa.Integer, nullable=False, server_default="1"),
 )
 
 reading_lists = sa.Table(

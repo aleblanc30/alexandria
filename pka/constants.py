@@ -28,6 +28,8 @@ class TagOrigin(StrEnum):
     INFERRED = "inferred"
     MANUAL = "manual"
     LLM = "llm"
+    CLUSTER_L1 = "cluster_l1"
+    CLUSTER_L2 = "cluster_l2"
 
 
 ALL_SOURCES = [s.value for s in Source]

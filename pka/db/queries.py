@@ -10,7 +10,7 @@ from typing import Any
 import sqlalchemy as sa
 
 from pka.config import settings as cfg
-from pka.constants import FetchStatus, Source
+from pka.constants import FetchStatus, Source, TagOrigin
 from pka.db.schema import (
     chunks,
     documents,
@@ -79,6 +79,28 @@ def init_db() -> None:
             ))
             con.execute(sa.text(
                 "UPDATE cluster_runs SET status = 'finished' WHERE status IS NULL"
+            ))
+
+        # Migration: hierarchical cluster columns
+        cl_cols = [r[1] for r in con.execute(
+            sa.text("PRAGMA table_info(clusters)")
+        ).fetchall()]
+        if cl_cols and "level" not in cl_cols:
+            con.execute(sa.text(
+                "ALTER TABLE clusters ADD COLUMN level INTEGER NOT NULL DEFAULT 1"
+            ))
+        if cl_cols and "parent_cluster_id" not in cl_cols:
+            con.execute(sa.text(
+                "ALTER TABLE clusters ADD COLUMN parent_cluster_id INTEGER "
+                "REFERENCES clusters(cluster_id)"
+            ))
+
+        ca_cols = [r[1] for r in con.execute(
+            sa.text("PRAGMA table_info(cluster_assignments)")
+        ).fetchall()]
+        if ca_cols and "level" not in ca_cols:
+            con.execute(sa.text(
+                "ALTER TABLE cluster_assignments ADD COLUMN level INTEGER NOT NULL DEFAULT 1"
             ))
 
 
@@ -291,6 +313,8 @@ def _apply_document_browse_filters(
     source_filter: list[str] | None,
     source_tag_filter: list[str] | None,
     overlay_tag_filter: list[str] | None,
+    cluster_l1_tag_filter: list[str] | None = None,
+    cluster_l2_tag_filter: list[str] | None = None,
 ) -> sa.Select:
     if source_filter:
         q = q.where(documents.c.source.in_(source_filter))
@@ -314,6 +338,28 @@ def _apply_document_browse_filters(
                     )
                 )
             )
+    if cluster_l1_tag_filter:
+        for tag in cluster_l1_tag_filter:
+            q = q.where(
+                sa.exists(
+                    sa.select(overlay_tags.c.id).where(
+                        (overlay_tags.c.document_id == documents.c.id)
+                        & (overlay_tags.c.tag == tag)
+                        & (overlay_tags.c.origin == TagOrigin.CLUSTER_L1)
+                    )
+                )
+            )
+    if cluster_l2_tag_filter:
+        for tag in cluster_l2_tag_filter:
+            q = q.where(
+                sa.exists(
+                    sa.select(overlay_tags.c.id).where(
+                        (overlay_tags.c.document_id == documents.c.id)
+                        & (overlay_tags.c.tag == tag)
+                        & (overlay_tags.c.origin == TagOrigin.CLUSTER_L2)
+                    )
+                )
+            )
     return q
 
 
@@ -321,6 +367,8 @@ def list_documents(
     sources: list[str] | None = None,
     source_tags: list[str] | None = None,
     overlay_tags: list[str] | None = None,
+    cluster_l1_tags: list[str] | None = None,
+    cluster_l2_tags: list[str] | None = None,
     limit: int = 48,
     offset: int = 0,
 ) -> tuple[int, list[dict[str, Any]]]:
@@ -328,10 +376,14 @@ def list_documents(
     source_filter = [str(s) for s in sources] if sources else None
     source_tag_filter = [str(t) for t in source_tags] if source_tags else None
     overlay_tag_filter = [str(t) for t in overlay_tags] if overlay_tags else None
+    cluster_l1_tag_filter = [str(t) for t in cluster_l1_tags] if cluster_l1_tags else None
+    cluster_l2_tag_filter = [str(t) for t in cluster_l2_tags] if cluster_l2_tags else None
     filter_kwargs = {
         "source_filter": source_filter,
         "source_tag_filter": source_tag_filter,
         "overlay_tag_filter": overlay_tag_filter,
+        "cluster_l1_tag_filter": cluster_l1_tag_filter,
+        "cluster_l2_tag_filter": cluster_l2_tag_filter,
     }
 
     with get_engine().connect() as con:

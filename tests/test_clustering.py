@@ -82,12 +82,18 @@ def _mock_umap(monkeypatch) -> None:
 
 
 def _mock_hdbscan(monkeypatch, n_docs: int, n_clusters: int = 4) -> None:
-    """Return deterministic cluster labels cycling over n_clusters (no noise)."""
-    labels = np.array([i % n_clusters for i in range(n_docs)], dtype=int)
+    """Return deterministic cluster labels; first call = L1, later calls = L2 (2 clusters)."""
+    state = {"call": 0}
 
     class FakeHDBSCAN:
         def __init__(self, **kw): pass
-        def fit_predict(self, X): return labels
+
+        def fit_predict(self, X):
+            state["call"] += 1
+            n = len(X)
+            if state["call"] == 1:
+                return np.array([i % n_clusters for i in range(n)], dtype=int)
+            return np.array([i % 2 for i in range(n)], dtype=int)
 
     fake_mod = MagicMock()
     fake_mod.HDBSCAN = FakeHDBSCAN
@@ -143,7 +149,8 @@ class TestRunClustering:
     def test_correct_cluster_count(self, populated):
         from pka.clustering.engine import run_clustering
         result = run_clustering(min_cluster_size=2)
-        assert result.n_clusters == 4
+        assert result.diagnostics["n_l1_clusters"] == 4
+        assert result.diagnostics["n_l2_clusters"] >= 2
 
     def test_cluster_rows_written(self, populated):
         from pka.clustering.engine import run_clustering
@@ -153,17 +160,52 @@ class TestRunClustering:
                 sa.select(sa.func.count()).select_from(clusters)
                 .where(clusters.c.run_id == result.run_id)
             ).scalar()
-        assert count == 4
+            l1 = con.execute(
+                sa.select(sa.func.count()).select_from(clusters)
+                .where((clusters.c.run_id == result.run_id) & (clusters.c.level == 1))
+            ).scalar()
+            l2 = con.execute(
+                sa.select(sa.func.count()).select_from(clusters)
+                .where((clusters.c.run_id == result.run_id) & (clusters.c.level == 2))
+            ).scalar()
+        assert l1 == 4
+        assert l2 >= 2
+        assert count == l1 + l2
 
     def test_assignments_written_for_all_docs(self, populated):
         from pka.clustering.engine import run_clustering
         result = run_clustering(min_cluster_size=2)
         with get_engine().connect() as con:
-            count = con.execute(
+            l1_count = con.execute(
                 sa.select(sa.func.count()).select_from(cluster_assignments)
-                .where(cluster_assignments.c.run_id == result.run_id)
+                .where(
+                    (cluster_assignments.c.run_id == result.run_id)
+                    & (cluster_assignments.c.level == 1)
+                )
             ).scalar()
-        assert count == N_DOCS
+            l2_count = con.execute(
+                sa.select(sa.func.count()).select_from(cluster_assignments)
+                .where(
+                    (cluster_assignments.c.run_id == result.run_id)
+                    & (cluster_assignments.c.level == 2)
+                )
+            ).scalar()
+        assert l1_count == N_DOCS
+        assert l2_count == N_DOCS
+
+    def test_l2_clusters_have_parent(self, populated):
+        from pka.clustering.engine import run_clustering
+        result = run_clustering(min_cluster_size=2)
+        with get_engine().connect() as con:
+            rows = con.execute(
+                sa.select(clusters.c.parent_cluster_id)
+                .where(
+                    (clusters.c.run_id == result.run_id)
+                    & (clusters.c.level == 2)
+                )
+            ).fetchall()
+        assert rows
+        assert all(r[0] is not None for r in rows)
 
     def test_run_not_accepted_by_default(self, populated):
         from pka.clustering.engine import run_clustering
@@ -200,7 +242,10 @@ class TestRunClustering:
     def test_diagnostics_keys_present(self, populated):
         from pka.clustering.engine import run_clustering
         result = run_clustering(min_cluster_size=2)
-        for key in ("n_clusters", "n_noise", "cluster_sizes", "size_max", "size_mean"):
+        for key in (
+            "n_clusters", "n_l1_clusters", "n_l2_clusters", "n_noise",
+            "cluster_sizes", "size_max", "size_mean",
+        ):
             assert key in result.diagnostics
 
     def test_parameters_stored_as_json(self, populated):
@@ -213,6 +258,7 @@ class TestRunClustering:
             ).fetchone()
         params = json.loads(row[0])
         assert params["min_cluster_size"] == 3
+        assert params["hierarchical"] is True
 
     def test_empty_vector_store_raises(self, monkeypatch):
         col = MagicMock()
@@ -440,3 +486,12 @@ class TestAdaptiveClusterParams:
         assert 3 <= mcs <= 15
         assert ms >= 2
         assert 5 <= nn <= 30
+
+
+class TestEmbeddingsAvailable:
+    def test_numpy_array_not_ambiguous(self):
+        from pka.clustering.lifecycle import _embeddings_available
+        assert _embeddings_available({"embeddings": np.random.rand(3, 8).astype(np.float32)})
+        assert not _embeddings_available({"embeddings": np.array([])})
+        assert not _embeddings_available({})
+        assert not _embeddings_available({"embeddings": None})

@@ -14,9 +14,9 @@
     </section>
 
     <section class="browse-nav-section">
-      <h2 class="browse-nav-heading">Source tags</h2>
+      <h2 class="browse-nav-heading">Level 1 topics</h2>
       <input
-        v-model="sourceQ"
+        v-model="level1Q"
         type="search"
         class="browse-nav-search"
         placeholder="Filter tags…"
@@ -24,23 +24,23 @@
       <div v-if="store.loadingTags" class="browse-nav-hint">Loading…</div>
       <ul v-else class="browse-nav-list">
         <li
-          v-for="t in filteredSourceTags"
+          v-for="t in filteredLevel1Tags"
           :key="t.tag"
           class="browse-nav-item"
-          :class="{ active: store.sourceTags.includes(t.tag) }"
-          @click="store.toggleSourceTag(t.tag)"
+          :class="{ active: store.level1Tags.includes(t.tag) }"
+          @click="store.toggleLevel1Tag(t.tag)"
         >
-          <span class="tag-pill tag-pill--source">{{ t.tag }}</span>
+          <span class="tag-pill tag-pill--cluster_l1">{{ t.tag }}</span>
           <span class="browse-nav-count">{{ t.count }}</span>
         </li>
-        <li v-if="!filteredSourceTags.length" class="browse-nav-hint">No source tags</li>
+        <li v-if="!filteredLevel1Tags.length" class="browse-nav-hint">No level 1 tags</li>
       </ul>
     </section>
 
     <section class="browse-nav-section">
-      <h2 class="browse-nav-heading">Overlay tags</h2>
+      <h2 class="browse-nav-heading">Level 2 subtopics</h2>
       <input
-        v-model="overlayQ"
+        v-model="level2Q"
         type="search"
         class="browse-nav-search"
         placeholder="Filter tags…"
@@ -48,17 +48,16 @@
       <div v-if="store.loadingTags" class="browse-nav-hint">Loading…</div>
       <ul v-else class="browse-nav-list">
         <li
-          v-for="t in filteredOverlayTags"
-          :key="`${t.tag}-${t.origin}`"
+          v-for="t in filteredLevel2Tags"
+          :key="t.tag"
           class="browse-nav-item"
-          :class="{ active: store.overlayTags.includes(t.tag) }"
-          @click="store.toggleOverlayTag(t.tag)"
+          :class="{ active: store.level2Tags.includes(t.tag) }"
+          @click="store.toggleLevel2Tag(t.tag)"
         >
-          <span class="tag-pill" :class="`tag-pill--${t.origin}`">{{ t.tag }}</span>
-          <span class="badge badge-sm" :class="`badge-${t.origin}`">{{ t.origin }}</span>
+          <span class="tag-pill tag-pill--cluster_l2">{{ t.tag }}</span>
           <span class="browse-nav-count">{{ t.count }}</span>
         </li>
-        <li v-if="!filteredOverlayTags.length" class="browse-nav-hint">No overlay tags</li>
+        <li v-if="!filteredLevel2Tags.length" class="browse-nav-hint">No level 2 tags</li>
       </ul>
     </section>
   </aside>
@@ -70,19 +69,19 @@ import { INGESTION_SOURCES, SOURCE_LABELS } from '@/constants/sources'
 import { useBrowseStore } from '@/stores/browse'
 
 const store = useBrowseStore()
-const sourceQ = ref('')
-const overlayQ = ref('')
+const level1Q = ref('')
+const level2Q = ref('')
 
-const filteredSourceTags = computed(() => {
-  const q = sourceQ.value.trim().toLowerCase()
-  if (!q) return store.tagRows.source
-  return store.tagRows.source.filter(t => t.tag.toLowerCase().includes(q))
+const filteredLevel1Tags = computed(() => {
+  const q = level1Q.value.trim().toLowerCase()
+  if (!q) return store.tagRows.level1
+  return store.tagRows.level1.filter(t => t.tag.toLowerCase().includes(q))
 })
 
-const filteredOverlayTags = computed(() => {
-  const q = overlayQ.value.trim().toLowerCase()
-  if (!q) return store.tagRows.overlay
-  return store.tagRows.overlay.filter(t => t.tag.toLowerCase().includes(q))
+const filteredLevel2Tags = computed(() => {
+  const q = level2Q.value.trim().toLowerCase()
+  if (!q) return store.tagRows.level2
+  return store.tagRows.level2.filter(t => t.tag.toLowerCase().includes(q))
 })
 </script>
 
@@ -154,9 +153,5 @@ const filteredOverlayTags = computed(() => {
   font-size: 12px;
   color: var(--hint);
   padding: 8px 2px;
-}
-.badge-sm {
-  font-size: 9px;
-  padding: 1px 5px;
 }
 </style>

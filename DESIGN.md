@@ -80,3 +80,8 @@ runs through `/runs` and lets the operator accept exactly one as the active
 run. Drift detection (`compute_drift`) and merge suggestions
 (`compute_merge_suggestions`) operate against the active run and flag
 clusters that may need to be split or merged, but never act automatically.
+
+Clustering uses **hierarchical HDBSCAN**: a global pass produces level-1
+clusters; each sufficiently large L1 cluster gets a local UMAP+HDBSCAN pass
+for level-2 sub-clusters. Manual “apply tag” writes `overlay_tags` with
+origins `cluster_l1` or `cluster_l2` for browse filtering.

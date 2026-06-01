@@ -34,6 +34,8 @@ async def list_documents(
     sources: Annotated[list[Source] | None, Query()] = None,
     source_tags: Annotated[list[str] | None, Query()] = None,
     overlay_tags: Annotated[list[str] | None, Query()] = None,
+    cluster_l1_tags: Annotated[list[str] | None, Query()] = None,
+    cluster_l2_tags: Annotated[list[str] | None, Query()] = None,
     limit: int = Query(default=48, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
@@ -42,6 +44,8 @@ async def list_documents(
         sources=source_vals,
         source_tags=source_tags,
         overlay_tags=overlay_tags,
+        cluster_l1_tags=cluster_l1_tags,
+        cluster_l2_tags=cluster_l2_tags,
         limit=limit,
         offset=offset,
     )
@@ -89,8 +93,11 @@ async def get_document(doc_id: int, engine=Depends(get_engine)):
         if run_id:
             ca = con.execute(
                 sa.select(cluster_assignments.c.cluster_id)
-                .where((cluster_assignments.c.document_id == doc_id) &
-                       (cluster_assignments.c.run_id == run_id))
+                .where(
+                    (cluster_assignments.c.document_id == doc_id)
+                    & (cluster_assignments.c.run_id == run_id)
+                    & (cluster_assignments.c.level == 1)
+                )
             ).fetchone()
             if ca:
                 cluster_id = ca[0]

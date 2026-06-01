@@ -43,30 +43,50 @@ def _seed_docs(n: int = 3) -> list[int]:
     return ids
 
 
-def _seed_run(doc_ids: list[int], n_clusters: int = 2) -> int:
+def _seed_run(doc_ids: list[int], n_clusters: int = 2, *, with_l2: bool = False) -> int:
     from pka.db.queries import get_engine
     eng = get_engine()
     now = int(time.time())
     with eng.begin() as con:
         run_res = con.execute(
             cluster_runs.insert().values(
-                timestamp=now, algorithm="HDBSCAN",
+                timestamp=now, algorithm="HDBSCAN-hierarchical",
                 parameters="{}", accepted=True, status="finished",
             )
         )
         run_id = run_res.inserted_primary_key[0]
+        l1_ids: list[int] = []
         for i in range(n_clusters):
             cl_res = con.execute(
                 clusters.insert().values(
                     label=f"Cluster {i}", description="",
                     created_at=now, run_id=run_id,
+                    level=1, parent_cluster_id=None,
                 )
             )
             cid = cl_res.inserted_primary_key[0]
+            l1_ids.append(cid)
             for did in doc_ids[i::n_clusters]:
                 con.execute(cluster_assignments.insert().values(
                     document_id=did, cluster_id=cid,
                     run_id=run_id, score=0.9, assigned_at=now,
+                    level=1,
+                ))
+        if with_l2 and l1_ids:
+            parent = l1_ids[0]
+            l2_res = con.execute(
+                clusters.insert().values(
+                    label="Subcluster 0", description="",
+                    created_at=now, run_id=run_id,
+                    level=2, parent_cluster_id=parent,
+                )
+            )
+            l2_id = l2_res.inserted_primary_key[0]
+            for did in doc_ids[0::n_clusters]:
+                con.execute(cluster_assignments.insert().values(
+                    document_id=did, cluster_id=l2_id,
+                    run_id=run_id, score=0.8, assigned_at=now,
+                    level=2,
                 ))
     return run_id
 
@@ -323,6 +343,35 @@ class TestDocuments:
         assert data["total"] == 1
         assert data["documents"][0]["id"] == ids[0]
 
+    def test_list_documents_cluster_l1_l2_tag_filters(self, client, monkeypatch):
+        ids = _seed_docs(4)
+        _seed_run(ids, n_clusters=2, with_l2=True)
+        monkeypatch.setattr(
+            "pka.clustering.tag_suggestions.suggest_tag_with_llm",
+            lambda *a, **k: ("seeded-tag", None),
+        )
+        from pka.clustering import tag_suggestions as ts
+        ts._TAG_CACHE.clear()
+        l1 = next(c for c in client.get("/clusters").json() if c["level"] == 1)
+        l2 = next(c for c in client.get("/clusters").json() if c["level"] == 2)
+        l1_tag = client.post(
+            f"/clusters/{l1['cluster_id']}/apply-tag", json={"tag": "topic-l1"},
+        ).json()["tag"]
+        l2_tag = client.post(
+            f"/clusters/{l2['cluster_id']}/apply-tag", json={"tag": "topic-l2"},
+        ).json()["tag"]
+
+        r1 = client.get("/documents", params=[("cluster_l1_tags", l1_tag)])
+        assert r1.status_code == 200
+        assert r1.json()["total"] >= 1
+
+        r2 = client.get(
+            "/documents",
+            params=[("cluster_l1_tags", l1_tag), ("cluster_l2_tags", l2_tag)],
+        )
+        assert r2.status_code == 200
+        assert r2.json()["total"] >= 1
+
     def test_get_document_200(self, client):
         ids = _seed_docs(1)
         r = client.get(f"/documents/{ids[0]}")
@@ -465,9 +514,9 @@ class TestClusters:
             "pka.clustering.tag_suggestions.suggest_tag_with_llm",
             lambda *a, **k: ("", "offline"),
         )
-        data = client.get("/clusters").json()[0]
+        data = client.get(f"/clusters/{cid}").json()
         assert data["suggested_tag"] == "consensus"
-        assert data["tag_candidates"][0]["source"] == "existing"
+        assert any(c["source"] == "existing" for c in data["tag_candidates"])
 
     def test_regenerate_tag(self, client, monkeypatch):
         ids = _seed_docs(2)
@@ -504,7 +553,25 @@ class TestClusters:
                 .where(overlay_tags.c.tag == data["tag"])
             ).fetchall()
         assert len(rows) >= 1
-        assert all(r[1] == "llm" for r in rows)
+        assert all(r[1] == "cluster_l1" for r in rows)
+
+    def test_apply_l2_tag_uses_cluster_l2_origin(self, client):
+        ids = _seed_docs(4)
+        _seed_run(ids, n_clusters=2, with_l2=True)
+        l2 = next(c for c in client.get("/clusters").json() if c["level"] == 2)
+        r = client.post(
+            f"/clusters/{l2['cluster_id']}/apply-tag", json={"tag": "subtopic-a"},
+        )
+        assert r.status_code == 200
+        from pka.db.queries import get_engine
+        from pka.db.schema import overlay_tags
+        with get_engine().connect() as con:
+            rows = con.execute(
+                sa.select(overlay_tags.c.origin)
+                .where(overlay_tags.c.tag == r.json()["tag"])
+            ).fetchall()
+        assert rows
+        assert all(row[0] == "cluster_l2" for row in rows)
 
     def test_apply_tag_idempotent(self, client):
         ids = _seed_docs(3)

@@ -65,52 +65,105 @@ def get_active_run_id() -> int | None:
 
 # ── Centroid helpers ──────────────────────────────────────────────────────────
 
-def _get_cluster_centroids(run_id: int) -> dict[int, np.ndarray]:
+def _embeddings_available(result: dict) -> bool:
+    """True when Chroma returned at least one embedding (avoids numpy truthiness bugs)."""
+    embs = result.get("embeddings")
+    if embs is None:
+        return False
+    try:
+        return len(embs) > 0
+    except TypeError:
+        return bool(embs)
+
+
+def _doc_mean_embeddings(doc_ids: list[int]) -> dict[int, np.ndarray]:
+    """Mean-pool chunk embeddings per document in a single Chroma fetch."""
+    from pka.storage.vector_store import get_collection
+
+    if not doc_ids:
+        return {}
+
+    col = get_collection()
+    result = col.get(
+        where={"document_id": {"$in": doc_ids}},
+        include=["embeddings", "metadatas"],
+    )
+    if not _embeddings_available(result):
+        return {}
+
+    doc_vecs: dict[int, list[np.ndarray]] = {}
+    metas = result.get("metadatas") or []
+    for emb, meta in zip(result["embeddings"], metas):
+        did = int((meta or {}).get("document_id", -1))
+        if did == -1:
+            continue
+        doc_vecs.setdefault(did, []).append(np.asarray(emb, dtype=np.float32))
+
+    return {
+        did: np.mean(v, axis=0).astype(np.float32)
+        for did, v in doc_vecs.items()
+    }
+
+
+def _get_cluster_centroids(
+    run_id: int,
+    level: int | None = None,
+) -> dict[int, np.ndarray]:
     """
     Compute mean embedding per cluster for the given run.
     Returns {db_cluster_id: centroid_vector}.
     """
-    from pka.storage.vector_store import get_collection
-
     eng = get_engine()
     with eng.connect() as con:
-        rows = con.execute(
-            sa.select(
-                cluster_assignments.c.cluster_id,
-                cluster_assignments.c.document_id,
-            ).where(cluster_assignments.c.run_id == run_id)
-        ).fetchall()
+        q = sa.select(
+            cluster_assignments.c.cluster_id,
+            cluster_assignments.c.document_id,
+        ).where(cluster_assignments.c.run_id == run_id)
+        if level is not None:
+            q = q.where(cluster_assignments.c.level == level)
+        rows = con.execute(q).fetchall()
 
     if not rows:
         return {}
 
-    # Group doc_ids by cluster
     cluster_docs: dict[int, list[int]] = {}
     for cid, did in rows:
         cluster_docs.setdefault(cid, []).append(did)
 
-    col = get_collection()
-    centroids: dict[int, np.ndarray] = {}
+    all_doc_ids = list({did for docs in cluster_docs.values() for did in docs})
+    doc_means = _doc_mean_embeddings(all_doc_ids)
 
+    centroids: dict[int, np.ndarray] = {}
     for cid, doc_ids in cluster_docs.items():
-        # Fetch chunk embeddings for these documents
-        result = col.get(
-            where    = {"document_id": {"$in": doc_ids}},
-            include  = ["embeddings"],
-        )
-        if not result["embeddings"]:
-            continue
-        centroids[cid] = np.mean(result["embeddings"], axis=0).astype(np.float32)
+        vecs = [doc_means[d] for d in doc_ids if d in doc_means]
+        if vecs:
+            centroids[cid] = np.mean(vecs, axis=0).astype(np.float32)
 
     return centroids
+
+
+def _nearest_centroid(
+    doc_vec: np.ndarray,
+    centroids: dict[int, np.ndarray],
+) -> tuple[int | None, float]:
+    if not centroids:
+        return None, 0.0
+    centroid_ids = list(centroids.keys())
+    centroid_matrix = np.stack([centroids[c] for c in centroid_ids])
+    norms = np.linalg.norm(centroid_matrix, axis=1) * np.linalg.norm(doc_vec)
+    norms = np.where(norms == 0, 1e-9, norms)
+    sims = (centroid_matrix @ doc_vec) / norms
+    best = int(np.argmax(sims))
+    return centroid_ids[best], float(sims[best])
 
 
 # ── Assign new documents ──────────────────────────────────────────────────────
 
 def assign_new_docs(run_id: int | None = None) -> dict:
     """
-    Assign documents that have chunks but no cluster assignment in the
+    Assign documents that have chunks but no level-1 cluster assignment in the
     active (or specified) run, using cosine similarity to cluster centroids.
+    Also assigns level-2 when L2 children exist for the chosen L1 parent.
     """
     active_run = run_id or get_active_run_id()
     if active_run is None:
@@ -119,21 +172,30 @@ def assign_new_docs(run_id: int | None = None) -> dict:
 
     eng = get_engine()
 
-    # Documents that already have an assignment in this run
     with eng.connect() as con:
         assigned_ids = set(
             r[0] for r in con.execute(
                 sa.select(cluster_assignments.c.document_id)
-                .where(cluster_assignments.c.run_id == active_run)
+                .where(
+                    (cluster_assignments.c.run_id == active_run)
+                    & (cluster_assignments.c.level == 1)
+                )
             ).fetchall()
         )
 
-        # Documents that have chunks (i.e. have been embedded)
         all_chunked_ids = set(
             r[0] for r in con.execute(
                 sa.select(chunks.c.document_id).distinct()
             ).fetchall()
         )
+
+        l2_parent_rows = con.execute(
+            sa.select(clusters.c.cluster_id, clusters.c.parent_cluster_id)
+            .where(
+                (clusters.c.run_id == active_run)
+                & (clusters.c.level == 2)
+            )
+        ).fetchall()
 
     unassigned = list(all_chunked_ids - assigned_ids)
     if not unassigned:
@@ -142,13 +204,16 @@ def assign_new_docs(run_id: int | None = None) -> dict:
 
     log.info("%d unassigned documents — computing nearest centroids…", len(unassigned))
 
-    centroids = _get_cluster_centroids(active_run)
-    if not centroids:
-        log.warning("No centroids available for run #%d", active_run)
+    l1_centroids = _get_cluster_centroids(active_run, level=1)
+    if not l1_centroids:
+        log.warning("No L1 centroids available for run #%d", active_run)
         return {"assigned": 0}
 
-    centroid_ids   = list(centroids.keys())
-    centroid_matrix = np.stack([centroids[c] for c in centroid_ids])  # (n_clusters, dim)
+    l2_centroids = _get_cluster_centroids(active_run, level=2)
+    l2_by_parent: dict[int, dict[int, np.ndarray]] = {}
+    for cid, parent_id in l2_parent_rows:
+        if parent_id is not None and cid in l2_centroids:
+            l2_by_parent.setdefault(parent_id, {})[cid] = l2_centroids[cid]
 
     from pka.storage.vector_store import get_collection
     col = get_collection()
@@ -160,31 +225,44 @@ def assign_new_docs(run_id: int | None = None) -> dict:
             where   = {"document_id": {"$in": [doc_id]}},
             include = ["embeddings"],
         )
-        if not result["embeddings"]:
+        if not _embeddings_available(result):
             continue
 
         doc_vec = np.mean(result["embeddings"], axis=0).astype(np.float32)
 
-        # Cosine similarity to each centroid
-        norms = np.linalg.norm(centroid_matrix, axis=1) * np.linalg.norm(doc_vec)
-        norms = np.where(norms == 0, 1e-9, norms)
-        sims  = (centroid_matrix @ doc_vec) / norms
-        best  = int(np.argmax(sims))
+        l1_cid, l1_score = _nearest_centroid(doc_vec, l1_centroids)
+        if l1_cid is None:
+            continue
 
         assignment_rows.append({
             "document_id": doc_id,
-            "cluster_id":  centroid_ids[best],
+            "cluster_id":  l1_cid,
             "run_id":      active_run,
-            "score":       float(sims[best]),
+            "score":       l1_score,
             "assigned_at": now,
+            "level":       1,
         })
+
+        child_centroids = l2_by_parent.get(l1_cid, {})
+        if child_centroids:
+            l2_cid, l2_score = _nearest_centroid(doc_vec, child_centroids)
+            if l2_cid is not None:
+                assignment_rows.append({
+                    "document_id": doc_id,
+                    "cluster_id":  l2_cid,
+                    "run_id":      active_run,
+                    "score":       l2_score,
+                    "assigned_at": now,
+                    "level":       2,
+                })
 
     if assignment_rows:
         with eng.begin() as con:
             con.execute(cluster_assignments.insert(), assignment_rows)
 
-    log.info("Assigned %d new documents to existing clusters.", len(assignment_rows))
-    return {"assigned": len(assignment_rows)}
+    n_docs = len({r["document_id"] for r in assignment_rows})
+    log.info("Assigned %d new documents to existing clusters.", n_docs)
+    return {"assigned": n_docs}
 
 
 # ── Drift detection ───────────────────────────────────────────────────────────
@@ -212,17 +290,17 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
             return []
         run_ts = run_row[0]
 
-        # Cluster labels
+        # Level-1 cluster labels only (L2 sub-clusters are not merge/drift targets)
         label_rows = con.execute(
             sa.select(clusters.c.cluster_id, clusters.c.label)
-            .where(clusters.c.run_id == active_run)
+            .where(
+                (clusters.c.run_id == active_run)
+                & (clusters.c.level == 1)
+            )
         ).fetchall()
         label_map = {r[0]: r[1] for r in label_rows}
 
-    centroids = _get_cluster_centroids(active_run)
-
-    from pka.storage.vector_store import get_collection
-    col = get_collection()
+    centroids = _get_cluster_centroids(active_run, level=1)
     results = []
 
     for cid, centroid in centroids.items():
@@ -235,6 +313,7 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
                     .where(
                         (cluster_assignments.c.cluster_id == cid) &
                         (cluster_assignments.c.run_id == active_run) &
+                        (cluster_assignments.c.level == 1) &
                         (documents.c.ingested_at > run_ts)
                     )
                 ).fetchall()
@@ -245,14 +324,12 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
                              "drift_score": 0.0, "n_recent": 0, "flagged": False})
             continue
 
-        result = col.get(
-            where   = {"document_id": {"$in": recent_ids}},
-            include = ["embeddings"],
-        )
-        if not result["embeddings"]:
+        doc_means = _doc_mean_embeddings(recent_ids)
+        vecs_list = [doc_means[d] for d in recent_ids if d in doc_means]
+        if not vecs_list:
             continue
+        vecs = np.stack(vecs_list)
 
-        vecs  = np.array(result["embeddings"], dtype=np.float32)
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
         norms = np.where(norms == 0, 1e-9, norms)
         vecs_n = vecs / norms
@@ -287,7 +364,7 @@ def compute_merge_suggestions(run_id: int | None = None) -> list[dict]:
     if active_run is None:
         return []
 
-    centroids = _get_cluster_centroids(active_run)
+    centroids = _get_cluster_centroids(active_run, level=1)
     if len(centroids) < 2:
         return []
 
@@ -295,7 +372,10 @@ def compute_merge_suggestions(run_id: int | None = None) -> list[dict]:
     with eng.connect() as con:
         label_rows = con.execute(
             sa.select(clusters.c.cluster_id, clusters.c.label)
-            .where(clusters.c.run_id == active_run)
+            .where(
+                (clusters.c.run_id == active_run)
+                & (clusters.c.level == 1)
+            )
         ).fetchall()
     label_map = {r[0]: r[1] for r in label_rows}
 

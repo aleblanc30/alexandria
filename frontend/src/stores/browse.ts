@@ -7,9 +7,9 @@ const PAGE_SIZE = 48
 
 export const useBrowseStore = defineStore('browse', () => {
   const sources       = ref<string[]>([])
-  const sourceTags    = ref<string[]>([])
-  const overlayTags   = ref<string[]>([])
-  const tagRows       = ref<{ source: api.TagRow[]; overlay: api.TagRow[] }>({ source: [], overlay: [] })
+  const level1Tags    = ref<string[]>([])
+  const level2Tags    = ref<string[]>([])
+  const tagRows       = ref<{ level1: api.TagRow[]; level2: api.TagRow[] }>({ level1: [], level2: [] })
   const documents     = shallowRef<api.DocumentListItem[]>([])
   const total         = ref(0)
   const loading       = ref(false)
@@ -20,8 +20,8 @@ export const useBrowseStore = defineStore('browse', () => {
   function listParams(offset = 0) {
     return {
       sources: sources.value.length ? sources.value : undefined,
-      source_tags: sourceTags.value.length ? sourceTags.value : undefined,
-      overlay_tags: overlayTags.value.length ? overlayTags.value : undefined,
+      cluster_l1_tags: level1Tags.value.length ? level1Tags.value : undefined,
+      cluster_l2_tags: level2Tags.value.length ? level2Tags.value : undefined,
       limit: PAGE_SIZE,
       offset,
     }
@@ -31,14 +31,11 @@ export const useBrowseStore = defineStore('browse', () => {
     loadingTags.value = true
     try {
       const scope = sources.value.length ? sources.value : undefined
-      const [sourceRows, allRows] = await Promise.all([
-        api.listTags({ origin: 'source', sources: scope, limit: 200 }),
-        api.listTags({ sources: scope, limit: 200 }),
+      const [level1Rows, level2Rows] = await Promise.all([
+        api.listTags({ origin: 'cluster_l1', sources: scope, limit: 200 }),
+        api.listTags({ origin: 'cluster_l2', sources: scope, limit: 200 }),
       ])
-      tagRows.value = {
-        source: sourceRows,
-        overlay: allRows.filter(t => t.origin !== 'source'),
-      }
+      tagRows.value = { level1: level1Rows, level2: level2Rows }
     } catch (e: any) {
       useToastStore().push(e.message, 'error')
     } finally {
@@ -85,24 +82,24 @@ export const useBrowseStore = defineStore('browse', () => {
     load()
   }
 
-  function toggleSourceTag(tag: string) {
-    const idx = sourceTags.value.indexOf(tag)
-    if (idx === -1) sourceTags.value.push(tag)
-    else sourceTags.value.splice(idx, 1)
+  function toggleLevel1Tag(tag: string) {
+    const idx = level1Tags.value.indexOf(tag)
+    if (idx === -1) level1Tags.value.push(tag)
+    else level1Tags.value.splice(idx, 1)
     load()
   }
 
-  function toggleOverlayTag(tag: string) {
-    const idx = overlayTags.value.indexOf(tag)
-    if (idx === -1) overlayTags.value.push(tag)
-    else overlayTags.value.splice(idx, 1)
+  function toggleLevel2Tag(tag: string) {
+    const idx = level2Tags.value.indexOf(tag)
+    if (idx === -1) level2Tags.value.push(tag)
+    else level2Tags.value.splice(idx, 1)
     load()
   }
 
   return {
     sources,
-    sourceTags,
-    overlayTags,
+    level1Tags,
+    level2Tags,
     tagRows,
     documents,
     total,
@@ -114,7 +111,7 @@ export const useBrowseStore = defineStore('browse', () => {
     loadTags,
     loadMore,
     toggleSource,
-    toggleSourceTag,
-    toggleOverlayTag,
+    toggleLevel1Tag,
+    toggleLevel2Tag,
   }
 })

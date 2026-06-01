@@ -15,6 +15,9 @@ class ClusterOut(BaseModel):
     description: str | None
     run_id: int
     doc_count: int
+    level: int = 1
+    parent_cluster_id: int | None = None
+    parent_label: str | None = None
     suggested_tag: str
     tag_candidates: list[TagCandidateOut]
     llm_error: str | None = None

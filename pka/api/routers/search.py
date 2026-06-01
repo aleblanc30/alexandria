@@ -88,7 +88,8 @@ def _batch_doc_rows_to_out(
             .join(clusters, clusters.c.cluster_id == cluster_assignments.c.cluster_id)
             .where(
                 (cluster_assignments.c.run_id == run_id) &
-                (cluster_assignments.c.document_id.in_(doc_ids))
+                (cluster_assignments.c.document_id.in_(doc_ids)) &
+                (cluster_assignments.c.level == 1)
             )
         ).fetchall():
             cluster_map[r[0]] = (r[1], r[2])

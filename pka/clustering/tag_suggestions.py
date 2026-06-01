@@ -107,9 +107,9 @@ def _coverage_candidates(
 
 
 def pick_suggested_tag(candidates: list[TagCandidate]) -> str:
-    """LLM first, then high-coverage existing tags."""
+    """LLM first, then slugified label, then high-coverage existing tags."""
     for c in candidates:
-        if c.source == "llm":
+        if c.source in ("llm", "label"):
             return c.tag
     for c in candidates:
         if c.source == "existing" and c.coverage >= COVERAGE_THRESHOLD:
@@ -126,6 +126,7 @@ def build_tag_suggestions(
     label_model: str | None = None,
     max_candidates: int = 3,
     refresh: bool = False,
+    use_llm: bool = True,
 ) -> TagSuggestionResult:
     """Build tag candidates: LLM (default) plus coverage-based existing tags."""
     cache_key = (cluster_id, run_id)
@@ -136,23 +137,28 @@ def build_tag_suggestions(
     n_docs = len(doc_ids)
     coverage = _coverage_candidates(con, doc_ids, n_docs) if n_docs else []
 
-    titles = titles_for_cluster(con, cluster_id, run_id)
-    existing_tag_names = [c.tag for c in coverage]
-    llm_tag, llm_error = suggest_tag_with_llm(
-        titles, existing_tag_names, label or "", label_model,
-    )
+    llm_tag, llm_error = "", None
+    if use_llm:
+        titles = titles_for_cluster(con, cluster_id, run_id)
+        existing_tag_names = [c.tag for c in coverage]
+        llm_tag, llm_error = suggest_tag_with_llm(
+            titles, existing_tag_names, label or "", label_model,
+        )
+    else:
+        llm_tag = slugify_tag(label or "") or f"cluster-{cluster_id}"
 
     merged: dict[str, TagCandidate] = {}
     if llm_tag:
+        source = "llm" if use_llm else "label"
         merged[_norm_key(llm_tag)] = TagCandidate(
-            tag=llm_tag, source="llm", coverage=0.0, doc_count=0,
+            tag=llm_tag, source=source, coverage=0.0, doc_count=0,
         )
     for c in coverage:
         key = _norm_key(c.tag)
         if key and key not in merged:
             merged[key] = c
 
-    # LLM candidate first, then existing by coverage
+    # Primary candidate first, then existing by coverage
     ordered: list[TagCandidate] = []
     if llm_tag:
         ordered.append(merged[_norm_key(llm_tag)])
@@ -238,6 +244,7 @@ def apply_tag_to_documents(
             .where(
                 (overlay_tags.c.document_id == doc_id)
                 & (overlay_tags.c.tag == tag)
+                & (overlay_tags.c.origin == str(origin))
             )
         ).scalar()
         if existing:
