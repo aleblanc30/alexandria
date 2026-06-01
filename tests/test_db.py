@@ -6,11 +6,13 @@ No Ollama or HTTP calls are made.
 import pytest
 import sqlalchemy as sa
 
+from pka.constants import FetchStatus
 from pka.db.queries import (
     init_db, get_engine,
     insert_document_if_new,
     upsert_document, insert_source_tags, insert_source_collections,
     insert_chunks, document_has_chunks, document_index, source_ids_with_chunks,
+    firefox_ingest_queue,
 )
 from pka.db.schema import documents, source_tags, source_collections, chunks
 
@@ -188,3 +190,58 @@ class TestChunks:
 
     def test_insert_empty_chunks_no_error(self):
         insert_chunks([])   # should not raise
+
+
+class TestFirefoxIngestQueue:
+    def test_returns_pending_urls(self):
+        d1 = upsert_document(
+            "firefox", "p1", "T", "https://pending.example", None,
+            fetch_status=FetchStatus.PENDING,
+        )
+        queue = firefox_ingest_queue()
+        assert (d1, "https://pending.example") in queue
+
+    def test_includes_fetched_orphans_without_chunks(self):
+        orphan = upsert_document(
+            "firefox", "o1", "T", "https://orphan.example", None,
+            fetch_status=FetchStatus.FETCHED,
+        )
+        embedded = upsert_document(
+            "firefox", "e1", "T", "https://embedded.example", None,
+            fetch_status=FetchStatus.FETCHED,
+        )
+        insert_chunks([
+            {
+                "document_id": embedded,
+                "chunk_index": 0,
+                "text": "already embedded text chunk content here",
+                "token_count": 5,
+                "vector_id": "v-orphan-test",
+            },
+        ])
+        queue = firefox_ingest_queue()
+        urls = dict(queue)
+        assert urls[orphan] == "https://orphan.example"
+        assert embedded not in urls
+
+    def test_no_duplicate_document_ids(self):
+        upsert_document(
+            "firefox", "p1", "T", "https://a.example", None,
+            fetch_status=FetchStatus.PENDING,
+        )
+        orphan = upsert_document(
+            "firefox", "o1", "T", "https://b.example", None,
+            fetch_status=FetchStatus.FETCHED,
+        )
+        queue = firefox_ingest_queue()
+        ids = [doc_id for doc_id, _ in queue]
+        assert len(ids) == len(set(ids))
+        assert orphan in ids
+
+    def test_respects_limit(self):
+        for i in range(5):
+            upsert_document(
+                "firefox", f"lim{i}", "T", f"https://lim{i}.example", None,
+                fetch_status=FetchStatus.PENDING,
+            )
+        assert len(firefox_ingest_queue(limit=2)) == 2

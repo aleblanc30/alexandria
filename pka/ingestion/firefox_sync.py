@@ -1,15 +1,17 @@
 """Firefox sync — metadata and ingest (fetch + embed) as separate jobs."""
 import asyncio
 import logging
+from functools import partial
 
 from pka.connectors.firefox import load_bookmarks
 from pka.constants import Source
-from pka.ingestion.fetcher import fetch_pending, _get_pending, reset_unfetchable_for_fetch
+from pka.db.queries import firefox_ingest_queue
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.dev_limits import take
+from pka.ingestion.fetcher import fetch_and_embed_pending, reset_unfetchable_for_fetch
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
+from pka.ingestion.runners.firefox import embed_fetched_text, ingest_firefox_bookmarks
 from pka.ingestion.sync_helpers import should_stop
-from pka.ingestion.runners.firefox import ingest_fetched_texts, ingest_firefox_bookmarks
 
 log = logging.getLogger(__name__)
 
@@ -41,24 +43,6 @@ def sync_firefox_metadata(
     return {"metadata": stats, "stopped": stats.get("stopped")}
 
 
-def _run_embed_phase(
-    key: str,
-    texts: dict[int, str],
-    *,
-    dry_run: bool,
-    stats: dict,
-) -> None:
-    if texts and not dry_run:
-        sp.set_phase(key, "embedding", len(texts))
-        stats["embed"] = ingest_fetched_texts(
-            texts, dry_run=dry_run, progress_key=key,
-        )
-        log.info("Firefox embed: %s", stats["embed"])
-    else:
-        sp.skip_phase(key, "embedding")
-        stats["embed"] = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
-
-
 def sync_firefox_ingest(
     progress_key: str | None = None,
     fetch_limit: int | None = None,
@@ -70,31 +54,44 @@ def sync_firefox_ingest(
 
     reset_unfetchable_for_fetch()
 
-    pending = _get_pending(fetch_limit)
-    n_pending = len(pending)
+    work = firefox_ingest_queue(fetch_limit)
+    n_work = len(work)
     n_bm = len(take(load_bookmarks()))
     _plan_counts(n_bm)
 
-    if n_pending == 0:
+    if n_work == 0:
         sp.skip_phase(key, "fetching")
         sp.skip_phase(key, "embedding")
-        stats["fetch"] = {"fetched": 0, "skipped": 0, "unfetchable": 0, "texts": {}}
+        stats["fetch"] = {"fetched": 0, "skipped": 0, "unfetchable": 0}
         stats["embed"] = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
         return stats
 
-    sp.set_phase(key, "fetching", n_pending)
-    fetch_stats = asyncio.run(fetch_pending(
+    sp.set_phase(key, "fetching", n_work)
+    sp.set_phase(key, "embedding", n_work)
+
+    embed_fn = None if dry_run else partial(
+        embed_fetched_text,
+        skip_existing=True,
+        dry_run=dry_run,
+    )
+    result = asyncio.run(fetch_and_embed_pending(
         limit=fetch_limit,
         concurrency=fetch_concurrency,
         progress_key=key,
+        embed_fn=embed_fn,
+        dry_run=dry_run,
     ))
-    stats["fetch"] = {k: v for k, v in fetch_stats.items() if k != "texts"}
+
+    stats["fetch"] = {
+        k: v for k, v in result.items() if k not in ("embed", "stopped")
+    }
+    stats["embed"] = result.get("embed") or {
+        "processed": 0, "skipped": 0, "failed": 0, "chunks": 0,
+    }
     log.info("Firefox fetch: %s", stats["fetch"])
+    log.info("Firefox embed: %s", stats["embed"])
 
-    texts = fetch_stats.get("texts") or {}
-    _run_embed_phase(key, texts, dry_run=dry_run, stats=stats)
-
-    if stop := fetch_stats.get("stopped"):
+    if stop := result.get("stopped"):
         stats["stopped"] = stop
     elif should_stop(key):
         stats["stopped"] = should_stop(key)

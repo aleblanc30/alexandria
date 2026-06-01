@@ -345,6 +345,52 @@ def document_ids_with_chunks(source: Source | str | None = None) -> set[int]:
     return {row[0] for row in rows}
 
 
+def firefox_ingest_queue(limit: int | None = None) -> list[tuple[int, str]]:
+    """Pending Firefox URLs plus fetched docs missing chunks (orphan backfill).
+
+    Pending rows come first; duplicates by document id are dropped (pending wins).
+    """
+    eng = get_engine()
+    has_url = documents.c.url_or_path.isnot(None) & (documents.c.url_or_path != "")
+    with eng.connect() as con:
+        pending_rows = [
+            (r[0], r[1])
+            for r in con.execute(
+                sa.select(documents.c.id, documents.c.url_or_path).where(
+                    (documents.c.source == str(Source.FIREFOX))
+                    & (documents.c.fetch_status == str(FetchStatus.PENDING))
+                    & has_url
+                )
+            ).fetchall()
+        ]
+        orphan_rows = [
+            (r[0], r[1])
+            for r in con.execute(
+                sa.select(documents.c.id, documents.c.url_or_path).where(
+                    (documents.c.source == str(Source.FIREFOX))
+                    & (documents.c.fetch_status == str(FetchStatus.FETCHED))
+                    & has_url
+                    & ~sa.exists(
+                        sa.select(chunks.c.id).where(
+                            chunks.c.document_id == documents.c.id
+                        )
+                    )
+                )
+            ).fetchall()
+        ]
+
+    seen: set[int] = set()
+    out: list[tuple[int, str]] = []
+    for doc_id, url in pending_rows + orphan_rows:
+        if doc_id in seen:
+            continue
+        seen.add(doc_id)
+        out.append((doc_id, url))
+    if limit is not None:
+        out = out[:limit]
+    return out
+
+
 def existing_chunk_count(document_id: int) -> int:
     """Number of chunks already stored for ``document_id`` (used by two-phase ingestion)."""
     with get_engine().connect() as con:

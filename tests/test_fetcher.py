@@ -8,6 +8,7 @@ from pka.constants import FetchStatus
 from pka.ingestion.fetcher import (
     _fetch_one,
     bookmark_url_unfetchable_reason,
+    fetch_and_embed_pending,
     fetch_pending,
     FetchResult,
     reset_unfetchable_for_fetch,
@@ -317,6 +318,60 @@ class TestFetchPending:
         stats = await fetch_pending(progress_key="firefox-fetch")
         assert stats.get("stopped") == "cancel"
         assert stats["fetched"] <= 3
+
+
+class TestFetchAndEmbedPending:
+    @pytest.mark.asyncio
+    async def test_calls_embed_fn_after_each_successful_fetch(self, monkeypatch):
+        d1 = upsert_document("firefox", "F30", "T", "https://embed.example", None)
+        embed_calls: list[tuple[int, str]] = []
+
+        def embed_fn(doc_id: int, text: str) -> dict:
+            embed_calls.append((doc_id, text))
+            return {"processed": True, "chunks": 2, "skipped": False, "failed": False}
+
+        async def fake_fetch(client, doc_id, url):
+            return FetchResult(
+                doc_id,
+                url,
+                "fetched",
+                "Enough extracted text to form a valid chunk for embedding.",
+                200,
+                None,
+            )
+
+        monkeypatch.setattr("pka.db.queries.firefox_ingest_queue", lambda limit: [(d1, "https://embed.example")])
+        monkeypatch.setattr("pka.ingestion.fetcher._fetch_one", fake_fetch)
+
+        stats = await fetch_and_embed_pending(limit=None, embed_fn=embed_fn)
+
+        assert embed_calls == [(d1, "Enough extracted text to form a valid chunk for embedding.")]
+        assert stats["fetched"] == 1
+        assert stats["embed"]["processed"] == 1
+        assert stats["embed"]["chunks"] == 2
+        assert "texts" not in stats
+
+    @pytest.mark.asyncio
+    async def test_includes_orphans_in_work_queue(self, monkeypatch):
+        orphan = upsert_document(
+            "firefox", "F31", "T", "https://orphan.example", None,
+            fetch_status=FetchStatus.FETCHED,
+        )
+        embed_calls: list[int] = []
+
+        def embed_fn(doc_id: int, text: str) -> dict:
+            embed_calls.append(doc_id)
+            return {"processed": True, "chunks": 1, "skipped": False, "failed": False}
+
+        async def fake_fetch(client, doc_id, url):
+            return FetchResult(doc_id, url, "fetched", "Recovered orphan page text content.", 200, None)
+
+        monkeypatch.setattr("pka.ingestion.fetcher._fetch_one", fake_fetch)
+
+        stats = await fetch_and_embed_pending(limit=None, embed_fn=embed_fn)
+
+        assert embed_calls == [orphan]
+        assert stats["embed"]["processed"] == 1
 
 
 class TestExtractText:

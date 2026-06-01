@@ -70,8 +70,11 @@ Calibre and Firefox follow a two-phase pattern:
   Chunk indices are offset past the phase-1 chunks via `existing_chunk_count()`
   so the two passes coexist in a single document.
 
-Phase-2 work is gated behind `--fulltext` (Calibre) or runs asynchronously
-through `pka.ingestion.fetcher.fetch_pending()` (Firefox). When a Firefox URL
+Phase-2 work is gated behind `--fulltext` (Calibre) or runs through
+`pka.ingestion.fetcher.fetch_and_embed_pending()` (Firefox). Each worker
+fetches one URL, persists fetch metadata, embeds immediately, then moves on—
+extracted text is not batched in RAM. Docs marked `fetched` but missing
+chunks are re-queued automatically on the next ingest run. When a Firefox URL
 returns HTTP 404, the fetcher can fall back to the closest Internet Archive
 snapshot (`fetch_wayback_fallback`, default on).
 

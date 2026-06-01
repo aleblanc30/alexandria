@@ -68,13 +68,15 @@ class TestFirefoxSync:
             "pka.ingestion.firefox_sync.load_bookmarks",
             lambda: [_firefox_bm()],
         )
-        monkeypatch.setattr("pka.ingestion.firefox_sync._get_pending", lambda limit: [])
+        monkeypatch.setattr("pka.ingestion.firefox_sync.firefox_ingest_queue", lambda limit: [])
         monkeypatch.setattr(
             "pka.ingestion.firefox_sync.ingest_firefox_bookmarks",
             lambda bookmarks, **kw: {"processed": 1, "skipped": 0, "failed": 0},
         )
-        fetch_mock = MagicMock()
-        monkeypatch.setattr("pka.ingestion.firefox_sync.fetch_pending", fetch_mock)
+        fetch_embed_mock = MagicMock()
+        monkeypatch.setattr(
+            "pka.ingestion.firefox_sync.fetch_and_embed_pending", fetch_embed_mock,
+        )
 
         from pka.ingestion.firefox_sync import sync_firefox
         sp.begin("firefox")
@@ -82,7 +84,7 @@ class TestFirefoxSync:
 
         assert stats["fetch"]["fetched"] == 0
         assert stats["embed"]["processed"] == 0
-        fetch_mock.assert_not_called()
+        fetch_embed_mock.assert_not_called()
 
     def test_runs_fetch_and_embed(self, monkeypatch):
         _mock_pending_counts(monkeypatch, "pka.ingestion.firefox_sync", pending=1)
@@ -95,7 +97,7 @@ class TestFirefoxSync:
             lambda: [_firefox_bm()],
         )
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync._get_pending",
+            "pka.ingestion.firefox_sync.firefox_ingest_queue",
             lambda limit: [(42, "https://example.com/page")],
         )
         monkeypatch.setattr(
@@ -103,21 +105,22 @@ class TestFirefoxSync:
             lambda bookmarks, **kw: {"processed": 1, "skipped": 0, "failed": 0},
         )
 
-        async def fake_fetch(**kw):
+        async def fake_fetch_embed(**kw):
             return {
-                "fetched": 1, "skipped": 0, "unfetchable": 0,
-                "texts": {42: "Fetched page text with enough content to embed."},
+                "fetched": 1,
+                "skipped": 0,
+                "unfetchable": 0,
+                "embed": {"processed": 1, "skipped": 0, "failed": 0, "chunks": 2},
             }
 
-        monkeypatch.setattr("pka.ingestion.firefox_sync.fetch_pending", fake_fetch)
-        embed = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0, "chunks": 2})
-        monkeypatch.setattr("pka.ingestion.firefox_sync.ingest_fetched_texts", embed)
+        monkeypatch.setattr(
+            "pka.ingestion.firefox_sync.fetch_and_embed_pending", fake_fetch_embed,
+        )
 
         from pka.ingestion.firefox_sync import sync_firefox
         sp.begin("firefox")
         stats = sync_firefox(progress_key="firefox")
 
-        embed.assert_called_once()
         assert stats["fetch"]["fetched"] == 1
         assert stats["embed"]["processed"] == 1
 
@@ -132,33 +135,32 @@ class TestFirefoxSync:
             lambda: [_firefox_bm()],
         )
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync._get_pending",
-            lambda limit: order.append("pending") or [(1, "https://en.wikipedia.org/wiki/Python")],
+            "pka.ingestion.firefox_sync.firefox_ingest_queue",
+            lambda limit: order.append("queue") or [(1, "https://en.wikipedia.org/wiki/Python")],
         )
-        async def fake_fetch(**kw):
+
+        async def fake_fetch_embed(**kw):
             return {
                 "fetched": 1,
                 "skipped": 0,
                 "unfetchable": 0,
-                "texts": {1: "Wikipedia article text with enough content."},
+                "embed": {"processed": 1, "skipped": 0, "failed": 0, "chunks": 1},
             }
 
-        fetch_mock = MagicMock(side_effect=fake_fetch)
-        monkeypatch.setattr("pka.ingestion.firefox_sync.fetch_pending", fetch_mock)
+        fetch_embed_mock = MagicMock(side_effect=fake_fetch_embed)
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.ingest_fetched_texts",
-            MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0, "chunks": 1}),
+            "pka.ingestion.firefox_sync.fetch_and_embed_pending", fetch_embed_mock,
         )
 
         from pka.ingestion.firefox_sync import sync_firefox_ingest
 
         stats = sync_firefox_ingest()
 
-        assert order == ["reset", "pending"]
-        fetch_mock.assert_called_once()
+        assert order == ["reset", "queue"]
+        fetch_embed_mock.assert_called_once()
         assert stats["fetch"]["fetched"] == 1
 
-    def test_stops_after_fetch_when_cancelled(self, monkeypatch):
+    def test_stops_when_cancelled(self, monkeypatch):
         _mock_pending_counts(monkeypatch, "pka.ingestion.firefox_sync", pending=1)
         monkeypatch.setattr(
             "pka.ingestion.firefox_sync.reset_unfetchable_for_fetch",
@@ -169,7 +171,7 @@ class TestFirefoxSync:
             lambda: [_firefox_bm()],
         )
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync._get_pending",
+            "pka.ingestion.firefox_sync.firefox_ingest_queue",
             lambda limit: [(1, "https://example.com")],
         )
         monkeypatch.setattr(
@@ -177,21 +179,26 @@ class TestFirefoxSync:
             lambda bookmarks, **kw: {"processed": 1, "skipped": 0, "failed": 0},
         )
 
-        async def fake_fetch(**kw):
-            return {"fetched": 0, "skipped": 0, "unfetchable": 0, "texts": {}, "stopped": "cancel"}
+        async def fake_fetch_embed(**kw):
+            return {
+                "fetched": 0,
+                "skipped": 0,
+                "unfetchable": 0,
+                "embed": {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0},
+                "stopped": "cancel",
+            }
 
-        monkeypatch.setattr("pka.ingestion.firefox_sync.fetch_pending", fake_fetch)
-        embed = MagicMock()
-        monkeypatch.setattr("pka.ingestion.firefox_sync.ingest_fetched_texts", embed)
+        monkeypatch.setattr(
+            "pka.ingestion.firefox_sync.fetch_and_embed_pending", fake_fetch_embed,
+        )
 
         from pka.ingestion.firefox_sync import sync_firefox
         sp.begin("firefox")
         stats = sync_firefox(progress_key="firefox")
 
         assert stats["stopped"] == "cancel"
-        embed.assert_not_called()
 
-    def test_embeds_partial_texts_when_fetch_cancelled(self, monkeypatch):
+    def test_embeds_before_stop_when_cancelled_mid_run(self, monkeypatch):
         monkeypatch.setattr(
             "pka.ingestion.firefox_sync.reset_unfetchable_for_fetch",
             lambda: 0,
@@ -201,7 +208,7 @@ class TestFirefoxSync:
             lambda: [_firefox_bm()],
         )
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync._get_pending",
+            "pka.ingestion.firefox_sync.firefox_ingest_queue",
             lambda limit: [(1, "https://example.com")],
         )
         monkeypatch.setattr(
@@ -209,22 +216,23 @@ class TestFirefoxSync:
             lambda bookmarks, **kw: {"processed": 1, "skipped": 0, "failed": 0},
         )
 
-        async def fake_fetch(**kw):
+        async def fake_fetch_embed(**kw):
             return {
-                "fetched": 1, "skipped": 0, "unfetchable": 0,
-                "texts": {1: "Partial page text with enough content to embed."},
+                "fetched": 1,
+                "skipped": 0,
+                "unfetchable": 0,
+                "embed": {"processed": 1, "skipped": 0, "failed": 0, "chunks": 1},
                 "stopped": "cancel",
             }
 
-        monkeypatch.setattr("pka.ingestion.firefox_sync.fetch_pending", fake_fetch)
-        embed = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0, "chunks": 1})
-        monkeypatch.setattr("pka.ingestion.firefox_sync.ingest_fetched_texts", embed)
+        monkeypatch.setattr(
+            "pka.ingestion.firefox_sync.fetch_and_embed_pending", fake_fetch_embed,
+        )
 
         from pka.ingestion.firefox_sync import sync_firefox_ingest
         sp.begin("firefox")
         stats = sync_firefox_ingest(progress_key="firefox")
 
-        embed.assert_called_once()
         assert stats["stopped"] == "cancel"
         assert stats["embed"]["processed"] == 1
 
@@ -238,15 +246,15 @@ class TestFirefoxSync:
             "pka.ingestion.firefox_sync.ingest_firefox_bookmarks",
             lambda bookmarks, **kw: {"processed": 0, "stopped": "cancel"},
         )
-        get_pending = MagicMock()
-        monkeypatch.setattr("pka.ingestion.firefox_sync._get_pending", get_pending)
+        get_queue = MagicMock()
+        monkeypatch.setattr("pka.ingestion.firefox_sync.firefox_ingest_queue", get_queue)
 
         from pka.ingestion.firefox_sync import sync_firefox
         sp.begin("firefox")
         stats = sync_firefox(progress_key="firefox")
 
         assert stats["stopped"] == "cancel"
-        get_pending.assert_not_called()
+        get_queue.assert_not_called()
 
 
 class TestZoteroSync:

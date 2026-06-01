@@ -69,13 +69,44 @@ def ingest_firefox_bookmarks(
     )
 
 
+def embed_fetched_text(
+    doc_id: int,
+    text: str,
+    *,
+    skip_existing: bool = True,
+    dry_run: bool = False,
+    chunked: set[int] | None = None,
+) -> dict:
+    """Chunk + embed one fetched document. Used by the interleaved fetch worker."""
+    if skip_existing:
+        if chunked is not None and doc_id in chunked:
+            return {"processed": False, "chunks": 0, "skipped": True, "failed": False}
+        if chunked is None and doc_id in document_ids_with_chunks(Source.FIREFOX):
+            return {"processed": False, "chunks": 0, "skipped": True, "failed": False}
+    try:
+        result = ingest_text_block(doc_id, text, Source.FIREFOX, dry_run=dry_run)
+        if result["skipped"]:
+            return {"processed": False, "chunks": 0, "skipped": True, "failed": False}
+        if chunked is not None:
+            chunked.add(doc_id)
+        return {
+            "processed": True,
+            "chunks": result["chunks_added"],
+            "skipped": False,
+            "failed": False,
+        }
+    except Exception:
+        log.exception("Failed embedding doc_id=%d", doc_id)
+        return {"processed": False, "chunks": 0, "skipped": False, "failed": True}
+
+
 def ingest_fetched_texts(
     fetched_texts: dict[int, str],
     skip_existing: bool = True,
     dry_run: bool = False,
     progress_key: str | None = None,
 ) -> dict:
-    """Phase 2: chunk + embed text returned by :mod:`pka.ingestion.fetcher`."""
+    """Phase 2 batch: chunk + embed a mapping of fetched texts."""
     chunked = document_ids_with_chunks(Source.FIREFOX) if skip_existing else set()
     pairs = list(fetched_texts.items())
 
@@ -85,11 +116,18 @@ def ingest_fetched_texts(
 
     def _process(pair: tuple[int, str]) -> tuple[bool, int]:
         doc_id, text = pair
-        result = ingest_text_block(doc_id, text, Source.FIREFOX, dry_run=dry_run)
-        if result["skipped"]:
+        outcome = embed_fetched_text(
+            doc_id,
+            text,
+            skip_existing=skip_existing,
+            dry_run=dry_run,
+            chunked=chunked,
+        )
+        if outcome["failed"]:
+            raise RuntimeError(f"embed failed for doc_id={doc_id}")
+        if outcome["skipped"]:
             return False, 0
-        chunked.add(doc_id)
-        return True, result["chunks_added"]
+        return True, outcome["chunks"]
 
     return run_embed_loop(
         pairs,
