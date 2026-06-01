@@ -363,6 +363,44 @@ def _apply_document_browse_filters(
     return q
 
 
+def _browse_tag_maps(
+    con: sa.Connection,
+    doc_ids: list[int],
+) -> tuple[dict[int, list[str]], dict[int, list[str]], dict[int, list[str]]]:
+    """Batch-fetch source and cluster overlay tags for browse list items."""
+    source_map: dict[int, list[str]] = {doc_id: [] for doc_id in doc_ids}
+    l1_map: dict[int, list[str]] = {doc_id: [] for doc_id in doc_ids}
+    l2_map: dict[int, list[str]] = {doc_id: [] for doc_id in doc_ids}
+    if not doc_ids:
+        return source_map, l1_map, l2_map
+
+    for doc_id, tag in con.execute(
+        sa.select(source_tags.c.document_id, source_tags.c.tag_string).where(
+            source_tags.c.document_id.in_(doc_ids)
+        )
+    ):
+        source_map[doc_id].append(tag)
+
+    for doc_id, tag, origin in con.execute(
+        sa.select(
+            overlay_tags.c.document_id,
+            overlay_tags.c.tag,
+            overlay_tags.c.origin,
+        ).where(
+            overlay_tags.c.document_id.in_(doc_ids),
+            overlay_tags.c.origin.in_(
+                [TagOrigin.CLUSTER_L1, TagOrigin.CLUSTER_L2]
+            ),
+        )
+    ):
+        if origin == TagOrigin.CLUSTER_L1:
+            l1_map[doc_id].append(tag)
+        else:
+            l2_map[doc_id].append(tag)
+
+    return source_map, l1_map, l2_map
+
+
 def list_documents(
     sources: list[str] | None = None,
     source_tags: list[str] | None = None,
@@ -426,6 +464,7 @@ def list_documents(
                 )
             ).fetchall()
             snippet_map = {r[0]: r[1] for r in chunk_rows}
+        source_map, l1_map, l2_map = _browse_tag_maps(con, doc_ids)
 
     items = [
         {
@@ -433,6 +472,9 @@ def list_documents(
             "source": source,
             "title": title or "",
             "description": _truncate_snippet(snippet_map.get(doc_id)),
+            "source_tags": source_map.get(doc_id, []),
+            "cluster_l1_tags": l1_map.get(doc_id, []),
+            "cluster_l2_tags": l2_map.get(doc_id, []),
         }
         for doc_id, source, title in rows
     ]

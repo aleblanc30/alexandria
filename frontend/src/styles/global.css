@@ -218,8 +218,10 @@ input:focus { border-color: rgba(0,0,0,.3) }
   border: 0.5px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 14px;
-  max-height: calc(100vh - 80px);
+  height: calc(100vh - 80px);
   overflow: hidden;
+  position: sticky;
+  top: 16px;
 }
 .browse-content { min-width: 0 }
 

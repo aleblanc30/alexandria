@@ -274,9 +274,12 @@ class TestDocuments:
             "text": "First chunk body text.", "token_count": 4, "vector_id": "v0",
         }])
         doc = client.get("/documents").json()["documents"][0]
-        for key in ("id", "source", "title", "description"):
+        for key in ("id", "source", "title", "description", "source_tags", "cluster_l1_tags", "cluster_l2_tags"):
             assert key in doc
         assert doc["description"] == "First chunk body text."
+        assert doc["source_tags"] == []
+        assert doc["cluster_l1_tags"] == []
+        assert doc["cluster_l2_tags"] == []
 
     def test_list_documents_snippet_truncation(self, client):
         ids = _seed_docs(1)
@@ -451,6 +454,30 @@ class TestTags:
         tags = [t["tag"] for t in r.json()]
         assert "firefox-only" in tags
         assert "zotero-only" not in tags
+
+    def test_filter_by_cluster_l1_l2_origin(self, client, monkeypatch):
+        ids = _seed_docs(4)
+        _seed_run(ids, n_clusters=2, with_l2=True)
+        monkeypatch.setattr(
+            "pka.clustering.tag_suggestions.suggest_tag_with_llm",
+            lambda *a, **k: ("seeded-tag", None),
+        )
+        from pka.clustering import tag_suggestions as ts
+        ts._TAG_CACHE.clear()
+        l1 = next(c for c in client.get("/clusters").json() if c["level"] == 1)
+        l2 = next(c for c in client.get("/clusters").json() if c["level"] == 2)
+        l1_tag = client.post(
+            f"/clusters/{l1['cluster_id']}/apply-tag", json={"tag": "topic-l1"},
+        ).json()["tag"]
+        l2_tag = client.post(
+            f"/clusters/{l2['cluster_id']}/apply-tag", json={"tag": "topic-l2"},
+        ).json()["tag"]
+
+        l1_tags = [t["tag"] for t in client.get("/tags?origin=cluster_l1").json()]
+        l2_tags = [t["tag"] for t in client.get("/tags?origin=cluster_l2").json()]
+        assert l1_tag in l1_tags
+        assert l2_tag in l2_tags
+        assert l2_tag not in l1_tags
 
 
 # ── Clusters ──────────────────────────────────────────────────────────────────

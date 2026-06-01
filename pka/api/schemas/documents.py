@@ -38,6 +38,9 @@ class DocumentListItem(BaseModel):
     source: str
     title: str
     description: str
+    source_tags: list[str] = []
+    cluster_l1_tags: list[str] = []
+    cluster_l2_tags: list[str] = []
 
 
 class DocumentListResponse(BaseModel):

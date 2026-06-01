@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Query
 
 from pka.api.dependencies import get_engine
-from pka.constants import Source
+from pka.constants import Source, TagOrigin
 from pka.db.schema import documents, overlay_tags, source_tags
 
 router = APIRouter(prefix="/tags", tags=["tags"])
@@ -13,7 +13,10 @@ router = APIRouter(prefix="/tags", tags=["tags"])
 
 @router.get("")
 async def list_tags(
-    origin: str | None = Query(None, description="source | inferred | manual | llm"),
+    origin: str | None = Query(
+        None,
+        description="source | inferred | manual | llm | cluster_l1 | cluster_l2",
+    ),
     sources: Annotated[list[Source] | None, Query()] = None,
     q: str | None = Query(None),
     limit: int = 100,
@@ -58,7 +61,14 @@ async def list_tags(
         if not origin or origin == "source":
             rows += [{"tag": r[0], "origin": r[1], "count": r[2]}
                      for r in con.execute(src_q).fetchall()]
-        if not origin or origin in ("inferred", "manual", "llm"):
+        overlay_origins = {
+            str(TagOrigin.INFERRED),
+            str(TagOrigin.MANUAL),
+            str(TagOrigin.LLM),
+            str(TagOrigin.CLUSTER_L1),
+            str(TagOrigin.CLUSTER_L2),
+        }
+        if not origin or origin in overlay_origins:
             rows += [{"tag": r[0], "origin": r[1], "count": r[2]}
                      for r in con.execute(ov_q).fetchall()
                      if not origin or r[1] == origin]

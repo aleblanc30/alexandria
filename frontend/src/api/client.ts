@@ -60,6 +60,9 @@ export interface DocumentDetail extends DocumentOut {
 }
 export interface DocumentListItem {
   id: number; source: string; title: string; description: string
+  source_tags: string[]
+  cluster_l1_tags: string[]
+  cluster_l2_tags: string[]
 }
 export interface DocumentListResponse { total: number; documents: DocumentListItem[] }
 export interface SearchRequest {
