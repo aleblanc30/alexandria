@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 
-from pka.db.queries import init_db, upsert_document, insert_chunks
+from pka.db.queries import init_db, upsert_document, insert_chunks, update_card_summary
 from pka.db.schema import reading_lists, cluster_runs, clusters, cluster_assignments
 import sqlalchemy as sa
 
@@ -137,6 +137,15 @@ class TestSearch:
         r = client.post("/search", json={"query": "Document 0", "mode": "fulltext"})
         titles = [d["title"] for d in r.json()["documents"]]
         assert any("Document 0" in t for t in titles)
+
+    def test_search_includes_description(self, client):
+        ids = _seed_docs(1)
+        update_card_summary(ids[0], "Searchable card summary.")
+        r = client.post("/search", json={"query": "Document 0", "mode": "fulltext"})
+        docs = r.json()["documents"]
+        assert len(docs) >= 1
+        match = next(d for d in docs if d["id"] == ids[0])
+        assert match["description"] == "Searchable card summary."
 
     def test_source_filter_applied(self, client):
         _seed_docs()
@@ -343,14 +352,24 @@ class TestDocuments:
 
     def test_list_documents_snippet_truncation(self, client):
         ids = _seed_docs(1)
-        long_text = "word " * 50
+        long_text = "word " * 70
         insert_chunks([{
             "document_id": ids[0], "chunk_index": 0,
-            "text": long_text, "token_count": 50, "vector_id": "v0",
+            "text": long_text, "token_count": 70, "vector_id": "v0",
         }])
         doc = client.get("/documents").json()["documents"][0]
-        assert len(doc["description"]) <= 161
+        assert len(doc["description"]) <= 281
         assert doc["description"].endswith("…")
+
+    def test_list_documents_prefers_card_summary(self, client):
+        ids = _seed_docs(1)
+        insert_chunks([{
+            "document_id": ids[0], "chunk_index": 0,
+            "text": "Test Paper by Alice", "token_count": 4, "vector_id": "v0",
+        }])
+        update_card_summary(ids[0], "This is the abstract for the paper.")
+        doc = client.get("/documents").json()["documents"][0]
+        assert doc["description"] == "This is the abstract for the paper."
 
     def test_list_documents_uses_first_chunk(self, client):
         ids = _seed_docs(1)
@@ -498,6 +517,16 @@ class TestDocuments:
         }])
         data = client.get(f"/documents/{ids[0]}").json()
         assert data["description"] == "First chunk body text."
+
+    def test_get_document_prefers_card_summary(self, client):
+        ids = _seed_docs(1)
+        insert_chunks([{
+            "document_id": ids[0], "chunk_index": 0,
+            "text": "Title chunk only", "token_count": 3, "vector_id": "v0",
+        }])
+        update_card_summary(ids[0], "Stored card summary.")
+        data = client.get(f"/documents/{ids[0]}").json()
+        assert data["description"] == "Stored card summary."
 
     def test_get_document_with_cluster(self, client):
         ids = _seed_docs(4)

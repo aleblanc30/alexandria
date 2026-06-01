@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from pka.card_summary import zotero_card_summary
 from pka.classification import classify_document, sync_classification_tags
 from pka.connectors.zotero import ZoteroItem, zotero_document_url_or_path, zotero_embed_text
 from pka.constants import FetchStatus, Source
@@ -13,6 +14,7 @@ from pka.db.queries import (
     insert_source_collections,
     insert_source_tags,
     source_ids_with_chunks,
+    update_card_summary,
     upsert_document,
 )
 from pka.ingestion.core import ingest_text_block
@@ -29,6 +31,12 @@ def _sync_zotero_classification(doc_id: int, item: ZoteroItem) -> None:
         url_or_path=zotero_document_url_or_path(item),
     )
     sync_classification_tags(doc_id, tags)
+
+
+def _sync_zotero_card_summary(doc_id: int, item: ZoteroItem, *, dry_run: bool) -> None:
+    if dry_run:
+        return
+    update_card_summary(doc_id, zotero_card_summary(item))
 
 
 def ingest_zotero_items(
@@ -60,6 +68,7 @@ def ingest_zotero_items(
             insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
             insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
             _sync_zotero_classification(doc_id, item)
+            _sync_zotero_card_summary(doc_id, item, dry_run=dry_run)
 
             if skip_existing and document_has_chunks(doc_id):
                 stats["skipped"] += 1
@@ -115,6 +124,7 @@ def ingest_zotero_metadata(
         insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
         insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
         _sync_zotero_classification(doc_id, item)
+        _sync_zotero_card_summary(doc_id, item, dry_run=dry_run)
         known[item.source_id] = doc_id
         return "processed"
 
@@ -138,7 +148,7 @@ def ingest_zotero_embed(
     embedded = source_ids_with_chunks(Source.ZOTERO) if skip_existing else set()
 
     def _should_skip(item: ZoteroItem) -> bool:
-        return skip_existing and item.source_id in embedded
+        return False
 
     def _process(item: ZoteroItem) -> tuple[bool, int]:
         doc_id = doc_ids.get(item.source_id)
@@ -157,6 +167,9 @@ def ingest_zotero_embed(
             )
             doc_ids[item.source_id] = doc_id
             _sync_zotero_classification(doc_id, item)
+        _sync_zotero_card_summary(doc_id, item, dry_run=dry_run)
+        if skip_existing and item.source_id in embedded:
+            return False, 0
         result = ingest_text_block(
             doc_id, zotero_embed_text(item), Source.ZOTERO,
             extra_metadata={"title": item.title},

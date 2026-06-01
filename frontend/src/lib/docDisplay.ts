@@ -6,7 +6,7 @@ export function toGridItem(doc: DocumentOut): DocumentListItem {
     source: doc.source,
     source_id: doc.source_id,
     title: doc.title,
-    description: '',
+    description: doc.description ?? '',
     url_or_path: doc.url_or_path,
     archive_url: doc.archive_url,
     zotero_attachment_key: doc.zotero_attachment_key,
@@ -32,4 +32,9 @@ export function docYear(doc: DocumentOut | DocumentListItem): string {
 export function docSimilarity(doc: DocumentOut | DocumentListItem): number | null {
   if ('similarity' in doc) return doc.similarity
   return null
+}
+
+export function docDescription(doc: DocumentOut | DocumentListItem): string {
+  if ('description' in doc && doc.description) return doc.description
+  return ''
 }

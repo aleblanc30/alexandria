@@ -13,7 +13,7 @@ from pka.api.dependencies import get_engine
 from pka.api.schemas.documents import DocumentOut
 from pka.api.schemas.images import ImageOut
 from pka.api.schemas.search import SearchRequest, SearchResponse
-from pka.db.queries import filter_document_ids
+from pka.db.queries import _batch_first_chunk_map, filter_document_ids, resolve_description
 from pka.db.schema import (
     cluster_assignments,
     cluster_runs,
@@ -95,12 +95,19 @@ def _batch_doc_rows_to_out(
         ).fetchall():
             cluster_map[r[0]] = (r[1], r[2])
 
+    needs_chunk = [
+        did for did in doc_ids
+        if not (doc_rows[did].get("card_summary") and str(doc_rows[did]["card_summary"]).strip())
+    ]
+    chunk_map = _batch_first_chunk_map(con, needs_chunk)
+
     out: list[DocumentOut] = []
     for doc_id, sim in doc_ids_with_sim:
         row = doc_rows.get(doc_id)
         if not row:
             continue
         cid, clabel = cluster_map.get(doc_id, (None, None))
+        description = resolve_description(row.get("card_summary"), chunk_map.get(doc_id))
         out.append(DocumentOut(
             id=doc_id, source=row["source"], source_id=row["source_id"],
             title=row["title"] or "", url_or_path=row["url_or_path"],
@@ -111,6 +118,7 @@ def _batch_doc_rows_to_out(
             overlay_tags=overlay_tag_map.get(doc_id, []),
             cluster_id=cid, cluster_label=clabel,
             similarity=sim,
+            description=description,
         ))
     return out
 

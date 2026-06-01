@@ -56,6 +56,7 @@ export interface DocumentOut  {
   source_tags: string[]; overlay_tags: TagOut[]
   cluster_id: number | null; cluster_label: string | null
   similarity: number | null
+  description: string
 }
 export interface DocumentDetail extends DocumentOut {
   description: string

@@ -9,6 +9,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
+from pka.card_summary import truncate_summary
 from pka.config import settings as cfg
 from pka.constants import FetchStatus, Source, TagOrigin
 from pka.db.schema import (
@@ -75,6 +76,14 @@ def init_db() -> None:
         if "item_type" not in cols:
             con.execute(sa.text(
                 "ALTER TABLE documents ADD COLUMN item_type TEXT"
+            ))
+        if "card_summary" not in cols:
+            con.execute(sa.text(
+                "ALTER TABLE documents ADD COLUMN card_summary TEXT"
+            ))
+        if "doc_embedding" not in cols:
+            con.execute(sa.text(
+                "ALTER TABLE documents ADD COLUMN doc_embedding BLOB"
             ))
 
         # Migration: add umap_points to cluster_runs
@@ -402,27 +411,69 @@ def existing_chunk_count(document_id: int) -> int:
     return n or 0
 
 
-_SNIPPET_MAX = 160
+_SNIPPET_MAX = 280
 
 
 def _truncate_snippet(text: str | None, max_len: int = _SNIPPET_MAX) -> str:
-    if not text:
-        return ""
-    collapsed = " ".join(text.split())
-    if len(collapsed) <= max_len:
-        return collapsed
-    return collapsed[:max_len].rstrip() + "…"
+    return truncate_summary(text, max_len)
+
+
+def resolve_description(card_summary: str | None, chunk_text: str | None) -> str:
+    """Prefer stored card summary; fall back to first-chunk snippet."""
+    if card_summary and card_summary.strip():
+        return truncate_summary(card_summary)
+    return _truncate_snippet(chunk_text)
+
+
+def update_card_summary(doc_id: int, summary: str | None) -> None:
+    """Set or clear the card excerpt for a document."""
+    with get_engine().begin() as con:
+        con.execute(
+            sa.update(documents)
+            .where(documents.c.id == doc_id)
+            .values(card_summary=summary)
+        )
+
+
+def _batch_first_chunk_map(con: sa.Connection, doc_ids: list[int]) -> dict[int, str]:
+    if not doc_ids:
+        return {}
+    min_idx = (
+        sa.select(
+            chunks.c.document_id,
+            sa.func.min(chunks.c.chunk_index).label("min_idx"),
+        )
+        .where(chunks.c.document_id.in_(doc_ids))
+        .group_by(chunks.c.document_id)
+        .subquery()
+    )
+    chunk_rows = con.execute(
+        sa.select(chunks.c.document_id, chunks.c.text)
+        .select_from(
+            chunks.join(
+                min_idx,
+                (chunks.c.document_id == min_idx.c.document_id)
+                & (chunks.c.chunk_index == min_idx.c.min_idx),
+            )
+        )
+    ).fetchall()
+    return {r[0]: r[1] for r in chunk_rows}
+
+
+def document_description(con: sa.Connection, doc_id: int) -> str:
+    """Card description for a single document (summary or first chunk)."""
+    row = con.execute(
+        sa.select(documents.c.card_summary).where(documents.c.id == doc_id)
+    ).fetchone()
+    card_summary = row[0] if row else None
+    chunk_map = _batch_first_chunk_map(con, [doc_id])
+    return resolve_description(card_summary, chunk_map.get(doc_id))
 
 
 def first_chunk_snippet(con: sa.Connection, doc_id: int) -> str:
     """First-chunk text for a document, collapsed and truncated like browse cards."""
-    row = con.execute(
-        sa.select(chunks.c.text)
-        .where(chunks.c.document_id == doc_id)
-        .order_by(chunks.c.chunk_index)
-        .limit(1)
-    ).fetchone()
-    return _truncate_snippet(row[0] if row else None)
+    chunk_map = _batch_first_chunk_map(con, [doc_id])
+    return _truncate_snippet(chunk_map.get(doc_id))
 
 
 def _apply_document_browse_filters(
@@ -588,7 +639,7 @@ def list_documents(
     limit: int = 48,
     offset: int = 0,
 ) -> tuple[int, list[dict[str, Any]]]:
-    """Paginated document browse list with first-chunk snippet as description."""
+    """Paginated document browse list with card summary or first-chunk snippet as description."""
     source_filter = [str(s) for s in sources] if sources else None
     source_tag_filter = [str(t) for t in source_tags] if source_tags else None
     overlay_tag_filter = [str(t) for t in overlay_tags] if overlay_tags else None
@@ -621,6 +672,7 @@ def list_documents(
                 documents.c.url_or_path,
                 documents.c.archive_url,
                 documents.c.zotero_attachment_key,
+                documents.c.card_summary,
             ),
             **filter_kwargs,
         ).order_by(
@@ -633,26 +685,11 @@ def list_documents(
         doc_ids = [r[0] for r in rows]
         snippet_map: dict[int, str] = {}
         if doc_ids:
-            min_idx = (
-                sa.select(
-                    chunks.c.document_id,
-                    sa.func.min(chunks.c.chunk_index).label("min_idx"),
-                )
-                .where(chunks.c.document_id.in_(doc_ids))
-                .group_by(chunks.c.document_id)
-                .subquery()
-            )
-            chunk_rows = con.execute(
-                sa.select(chunks.c.document_id, chunks.c.text)
-                .select_from(
-                    chunks.join(
-                        min_idx,
-                        (chunks.c.document_id == min_idx.c.document_id)
-                        & (chunks.c.chunk_index == min_idx.c.min_idx),
-                    )
-                )
-            ).fetchall()
-            snippet_map = {r[0]: r[1] for r in chunk_rows}
+            needs_chunk = [
+                r[0] for r in rows if not (r[7] and str(r[7]).strip())
+            ]
+            if needs_chunk:
+                snippet_map = _batch_first_chunk_map(con, needs_chunk)
         source_map, l1_map, l2_map = _browse_tag_maps(con, doc_ids)
 
     items = [
@@ -661,7 +698,7 @@ def list_documents(
             "source": source,
             "source_id": source_id,
             "title": title or "",
-            "description": _truncate_snippet(snippet_map.get(doc_id)),
+            "description": resolve_description(card_summary, snippet_map.get(doc_id)),
             "url_or_path": url_or_path,
             "archive_url": archive_url,
             "zotero_attachment_key": zotero_attachment_key,
@@ -669,7 +706,7 @@ def list_documents(
             "cluster_l1_tags": l1_map.get(doc_id, []),
             "cluster_l2_tags": l2_map.get(doc_id, []),
         }
-        for doc_id, source, source_id, title, url_or_path, archive_url, zotero_attachment_key in rows
+        for doc_id, source, source_id, title, url_or_path, archive_url, zotero_attachment_key, card_summary in rows
     ]
     return total, items
 

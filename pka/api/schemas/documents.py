@@ -23,6 +23,7 @@ class DocumentOut(BaseModel):
     cluster_id: int | None
     cluster_label: str | None
     similarity: float | None = None   # only present in search results
+    description: str = ""
 
 
 class DocumentDetail(DocumentOut):

@@ -1,6 +1,7 @@
 <template>
   <div class="card" :class="{ selected }" @click="$emit('click')">
     <div class="title">{{ doc.title || 'Untitled' }}</div>
+    <div v-if="description" class="desc">{{ description }}</div>
     <div class="meta">
       <SourceBadge :source="doc.source" />
       <span v-if="cluster" class="badge badge--cluster">{{ cluster }}</span>
@@ -16,7 +17,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { DocumentListItem, DocumentOut } from '@/api/client'
-import { clusterLabel, docSimilarity, docYear } from '@/lib/docDisplay'
+import { clusterLabel, docDescription, docSimilarity, docYear } from '@/lib/docDisplay'
 import SourceBadge from './SourceBadge.vue'
 
 const props = defineProps<{ doc: DocumentOut | DocumentListItem; selected?: boolean }>()
@@ -25,12 +26,14 @@ defineEmits(['click'])
 const cluster = computed(() => clusterLabel(props.doc))
 const year = computed(() => docYear(props.doc))
 const similarity = computed(() => docSimilarity(props.doc))
+const description = computed(() => docDescription(props.doc))
 </script>
 <style scoped>
 .card        { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 12px 16px; cursor: pointer; transition: border-color .1s; margin-bottom: 8px }
 .card:hover  { border-color: rgba(0,0,0,.22) }
 .card.selected { border-color: #85B7EB; background: #F4F9FE }
 .title       { font-size: 13px; font-weight: 500; margin-bottom: 5px }
+.desc        { font-size: 11px; color: var(--muted); line-height: 1.45; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden }
 .meta        { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px }
 .hint        { color: var(--hint) }
 .tags        { flex: 1 }

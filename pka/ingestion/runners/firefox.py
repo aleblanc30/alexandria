@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from pka.card_summary import body_excerpt
 from pka.classification import classify_document, sync_classification_tags
 from pka.connectors.firefox import FirefoxBookmark
 from pka.constants import FetchStatus, Source
@@ -12,6 +13,7 @@ from pka.db.queries import (
     insert_document_if_new,
     insert_source_collections,
     insert_source_tags,
+    update_card_summary,
 )
 from pka.ingestion.core import ingest_text_block
 from pka.ingestion.fetcher import bookmark_url_unfetchable_reason
@@ -87,6 +89,8 @@ def embed_fetched_text(
         result = ingest_text_block(doc_id, text, Source.FIREFOX, dry_run=dry_run)
         if result["skipped"]:
             return {"processed": False, "chunks": 0, "skipped": True, "failed": False}
+        if not dry_run:
+            update_card_summary(doc_id, body_excerpt(text))
         if chunked is not None:
             chunked.add(doc_id)
         return {

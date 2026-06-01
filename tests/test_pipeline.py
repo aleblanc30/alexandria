@@ -162,6 +162,26 @@ class TestIngestZoteroItems:
         assert stats["processed"] == 1
         assert stats["chunks"] >= 1
 
+    def test_card_summary_stores_abstract(self, mock_chroma):
+        ingest_zotero_items([_make_zotero_item()])
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.card_summary).where(documents.c.source_id == "Z001")
+            ).fetchone()
+        assert "abstract with enough words" in row[0]
+
+    def test_card_summary_updates_on_resync_without_rechunk(self, mock_chroma):
+        item = _make_zotero_item()
+        ingest_zotero_items([item])
+        updated = _make_zotero_item(abstract="Updated abstract for card display.")
+        stats = ingest_zotero_items([updated], skip_existing=True)
+        assert stats["skipped"] == 1
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.card_summary).where(documents.c.source_id == "Z001")
+            ).fetchone()
+        assert row[0] == "Updated abstract for card display."
+
 
 class TestIngestFirefoxBookmarks:
     def test_document_written_to_db(self):
@@ -256,6 +276,26 @@ class TestIngestFetchedTexts:
     def test_empty_texts_dict_returns_zero_processed(self, mock_chroma):
         stats = ingest_fetched_texts({})
         assert stats["processed"] == 0
+
+    def test_card_summary_stores_body_excerpt(self, mock_chroma):
+        from pka.db.queries import upsert_document as ud
+
+        doc_id = ud("firefox", "F010", "Page", "https://x.com", None)
+        body = (
+            "Intro line one with enough words.\n"
+            "Intro line two continues the article.\n"
+            "Third paragraph adds more context here.\n"
+            "Fourth paragraph should not appear in the card excerpt."
+        )
+        ingest_fetched_texts({doc_id: body})
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.card_summary).where(documents.c.id == doc_id)
+            ).fetchone()
+        assert row[0] is not None
+        assert "Intro line one" in row[0]
+        assert "Intro line two" in row[0]
+        assert "Fourth paragraph should not appear" not in row[0]
 
 
 class TestPipelineStop:

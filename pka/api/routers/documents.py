@@ -14,7 +14,7 @@ from pka.api.schemas.documents import (
     TagPatchRequest,
 )
 from pka.constants import Source, TagOrigin
-from pka.db.queries import first_chunk_snippet, list_documents as query_list_documents
+from pka.db.queries import document_description, list_documents as query_list_documents
 from pka.db.schema import (
     chunks,
     cluster_assignments,
@@ -92,7 +92,7 @@ async def get_document(doc_id: int, engine=Depends(get_engine)):
             sa.select(sa.func.count()).select_from(chunks)
             .where(chunks.c.document_id == doc_id)
         ).scalar() or 0
-        description = first_chunk_snippet(con, doc_id)
+        description = document_description(con, doc_id)
 
         cluster_id = cluster_label = None
         if run_id:
