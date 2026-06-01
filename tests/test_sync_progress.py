@@ -19,8 +19,8 @@ def test_pipeline_overall_percent():
         sp.advance("firefox")
     snap = sp.snapshot("firefox")["firefox"]
     assert snap["overall_processed"] == 5
-    assert snap["overall_total"] == 30
-    assert snap["percent"] == 17
+    assert snap["overall_total"] == 20  # metadata + fetching only (no embed phase)
+    assert snap["percent"] == 25
 
 
 def test_skip_phase_marks_complete():
@@ -95,8 +95,8 @@ def test_shared_total_and_processed_order():
     snap = sp.snapshot("firefox")["firefox"]
     totals = [p["total"] for p in snap["phase_details"]]
     processed = [p["processed"] for p in snap["phase_details"]]
-    assert totals == [100, 100, 100]
-    assert processed[0] >= processed[1] >= processed[2]
+    assert totals == [100, 100, 0]
+    assert processed == [100, 60, 0]
 
 
 def test_fetching_total_matches_metadata_after_set_phase():
@@ -151,6 +151,18 @@ def test_embedding_overflow_does_not_inflate_metadata():
     assert snap["phase_details"][0]["processed"] == 10
     assert snap["phase_details"][1]["processed"] == 10
     assert snap["phase_details"][2]["processed"] == 10
+
+
+def test_clear_embed_progress_fetch_advance_no_inflate():
+    sp.begin("firefox")
+    sp.set_phase("firefox", "fetching", 10)
+    sp.clear_embed_progress("firefox")
+    sp.advance("firefox", phase="fetching")
+    fetch = sp.snapshot("firefox")["firefox"]["phase_details"][1]
+    embed = sp.snapshot("firefox")["firefox"]["phase_details"][2]
+    assert fetch["processed"] == 1
+    assert embed["total"] == 0
+    assert embed["processed"] == 0
 
 
 def test_fetch_breakdown_from_hydrate():

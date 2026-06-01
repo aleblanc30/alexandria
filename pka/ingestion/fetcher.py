@@ -517,18 +517,12 @@ async def fetch_and_embed_pending(
                 break
 
             if embed_fn and r and r.text and not dry_run:
-                embed_failed = False
                 try:
                     outcome = await asyncio.to_thread(embed_fn, doc_id, r.text)
-                    embed_failed = _accumulate_embed(embed_stats, outcome)
+                    _accumulate_embed(embed_stats, outcome)
                 except Exception as exc:
                     log.exception("Embed failed for doc_id=%d: %s", doc_id, exc)
                     embed_stats["failed"] += 1
-                    embed_failed = True
-                finally:
-                    if progress_key:
-                        from pka.ingestion.sync_progress import advance
-                        advance(progress_key, phase="embedding", failed=embed_failed)
 
     async with httpx.AsyncClient(
         headers={"User-Agent": cfg.fetch_user_agent},

@@ -1053,11 +1053,13 @@ class TestIngestion:
         assert r.status_code == 200
         data = r.json()["firefox"]
         assert data["overall_processed"] == 1
-        assert data["overall_total"] == 6  # 3 phases × corpus size 2
+        assert data["overall_total"] == 4  # metadata + fetching (Firefox skips embed phase)
         assert len(data["phase_details"]) == 3
-        assert all(p["total"] == 2 for p in data["phase_details"])
-        processed = [p["processed"] for p in data["phase_details"]]
-        assert processed[0] >= processed[1] >= processed[2]
+        assert data["phase_details"][0]["total"] == 2
+        assert data["phase_details"][1]["total"] == 2
+        assert data["phase_details"][2]["total"] == 0
+        assert data["phase_details"][0]["processed"] == 1
+        assert data["phase_details"][2]["processed"] == 0
         sp.reset("firefox")
 
     def test_sync_metadata_queued(self, client, monkeypatch):

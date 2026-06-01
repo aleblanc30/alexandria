@@ -77,7 +77,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PhaseDetail, SyncProgress } from '@/api/client'
-import { SOURCE_COLORS, SOURCE_LABELS, ingestJobLabel, sourceHasFetchPhase, type IngestionSource } from '@/constants/sources'
+import { SOURCE_COLORS, SOURCE_LABELS, ingestJobLabel, sourceHasFetchPhase, sourceSkipsEmbedPhase, type IngestionSource } from '@/constants/sources'
 import { ingestStatsSummary } from '@/lib/ingestStats'
 import { useIngestionStore } from '@/stores/ingestion'
 
@@ -105,9 +105,14 @@ function defaultPhases(): PhaseDetail[] {
 
 const phaseList = computed(() => {
   const p = progressFor()
-  const phases = p?.phase_details?.length ? p.phase_details : defaultPhases()
-  if (sourceHasFetchPhase(props.source)) return phases
-  return phases.filter(ph => ph.name !== 'fetching')
+  let phases = p?.phase_details?.length ? p.phase_details : defaultPhases()
+  if (sourceSkipsEmbedPhase(props.source)) {
+    phases = phases.filter(ph => ph.name !== 'embedding')
+  }
+  if (!sourceHasFetchPhase(props.source)) {
+    phases = phases.filter(ph => ph.name !== 'fetching')
+  }
+  return phases
 })
 
 const ingestSummary = computed(() => ingestStatsSummary(props.source, st.value))
@@ -124,6 +129,7 @@ const jobError = computed((): string | null => {
 })
 
 function phaseLabel(name: string): string {
+  if (name === 'fetching' && sourceHasFetchPhase(props.source)) return 'Fetch & embed'
   return PHASE_LABELS[name] ?? name
 }
 

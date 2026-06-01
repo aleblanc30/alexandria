@@ -90,25 +90,38 @@ def _normalize_phases(state: SyncState) -> None:
     Each item moves metadata → fetching → embedding, so every phase shares the
     same total (corpus size) while processed counts decrease downstream.
     Downstream progress must never inflate upstream phases.
+
+    Firefox fetch+embed is interleaved; embedding progress is not tracked.
     """
+    from pka.constants import Source
+
     _ensure_standard_phases(state)
     meta, fetch, embed = state.phases
+    skip_embed = state.source == Source.FIREFOX
 
-    corpus = max(meta.total, fetch.total, embed.total)
+    corpus = max(meta.total, fetch.total, 0 if skip_embed else embed.total)
     if corpus > 0:
-        meta.total = fetch.total = embed.total = corpus
+        meta.total = fetch.total = corpus
+        if not skip_embed:
+            embed.total = corpus
 
     if meta.total:
         meta.processed = min(meta.processed, meta.total)
 
     # Downstream progress implies upstream stages completed, but never
     # raise metadata/fetching because embedding overshot its total.
-    fetch.processed = max(fetch.processed, embed.processed, fetch.success + fetch.failure)
+    if skip_embed:
+        fetch.processed = max(fetch.processed, fetch.success + fetch.failure)
+    else:
+        fetch.processed = max(fetch.processed, embed.processed, fetch.success + fetch.failure)
     if fetch.total:
         upper = meta.processed if meta.processed else fetch.total
         fetch.processed = min(fetch.processed, upper, fetch.total)
 
-    if embed.total:
+    if skip_embed:
+        embed.total = 0
+        embed.processed = 0
+    elif embed.total:
         embed.processed = min(embed.processed, fetch.processed, embed.total)
 
 
@@ -179,7 +192,12 @@ def _apply_db_counts(
     _ensure_standard_phases(state)
     proc = processed or {}
     phase_map = _phase_map(state)
+    from pka.constants import Source
+
+    skip_embed = state.source == Source.FIREFOX
     for name in STANDARD_PHASES:
+        if skip_embed and name == "embedding":
+            continue
         plan = phase_map[name]
         if update_totals and name in totals:
             plan.total = totals[name]
@@ -334,6 +352,17 @@ def set_phase(source: str, phase: str, total: int) -> None:
         state.total = plan.total
         state.processed = plan.processed
         state.status = "running"
+        _normalize_phases(state)
+
+
+def clear_embed_progress(source: str) -> None:
+    """Stop tracking embedding progress for Firefox (interleaved fetch+embed)."""
+    with _lock:
+        state = _states.get(source)
+        if not state:
+            state = SyncState(source=source)
+            _states[source] = state
+        _ensure_standard_phases(state)
         _normalize_phases(state)
 
 

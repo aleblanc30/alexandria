@@ -24,6 +24,11 @@ export function sourceHasFetchPhase(source: IngestionSource): boolean {
   return source === 'firefox'
 }
 
+/** Sources that embed inline during fetch (no separate embedding progress bar). */
+export function sourceSkipsEmbedPhase(source: IngestionSource): boolean {
+  return source === 'firefox'
+}
+
 export function ingestJobLabel(source: IngestionSource): string {
   return sourceHasFetchPhase(source) ? 'Fetch & embed' : 'Embed'
 }

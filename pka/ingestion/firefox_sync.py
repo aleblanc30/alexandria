@@ -61,13 +61,13 @@ def sync_firefox_ingest(
 
     if n_work == 0:
         sp.skip_phase(key, "fetching")
-        sp.skip_phase(key, "embedding")
+        sp.clear_embed_progress(key)
         stats["fetch"] = {"fetched": 0, "skipped": 0, "unfetchable": 0}
         stats["embed"] = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
         return stats
 
     sp.set_phase(key, "fetching", n_work)
-    sp.set_phase(key, "embedding", n_work)
+    sp.clear_embed_progress(key)
 
     embed_fn = None if dry_run else partial(
         embed_fetched_text,

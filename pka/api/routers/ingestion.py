@@ -115,7 +115,9 @@ def _sync_ingest(src: str) -> None:
     init_db()
     _seed_baselines(src)
     sp.begin_job(src, "ingest", phase="loading")
-    if src != Source.FIREFOX:
+    if src == Source.FIREFOX:
+        sp.clear_embed_progress(src)
+    else:
         sp.begin_ingest(src, source_corpus_size(src))
     try:
         stats = require_handlers(src).sync_ingest(progress_key=src)
