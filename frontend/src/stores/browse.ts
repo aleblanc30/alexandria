@@ -7,6 +7,7 @@ const PAGE_SIZE = 48
 
 export const useBrowseStore = defineStore('browse', () => {
   const sources       = ref<string[]>([])
+  const waybackOnly   = ref(false)
   const sourceTags    = ref<string[]>([])
   const level1Tags    = ref<string[]>([])
   const level2Tags    = ref<string[]>([])
@@ -28,6 +29,7 @@ export const useBrowseStore = defineStore('browse', () => {
       source_tags: sourceTags.value.length ? sourceTags.value : undefined,
       cluster_l1_tags: level1Tags.value.length ? level1Tags.value : undefined,
       cluster_l2_tags: level2Tags.value.length ? level2Tags.value : undefined,
+      wayback_only: waybackOnly.value || undefined,
       limit: PAGE_SIZE,
       offset,
     }
@@ -38,6 +40,7 @@ export const useBrowseStore = defineStore('browse', () => {
       source_tags: sourceTags.value.length ? sourceTags.value : undefined,
       cluster_l1_tags: level1Tags.value.length ? level1Tags.value : undefined,
       cluster_l2_tags: level2Tags.value.length ? level2Tags.value : undefined,
+      wayback_only: waybackOnly.value || undefined,
     }
   }
 
@@ -94,8 +97,22 @@ export const useBrowseStore = defineStore('browse', () => {
     const idx = sources.value.indexOf(s)
     if (idx === -1) sources.value.push(s)
     else sources.value.splice(idx, 1)
+    if (waybackOnly.value && s === 'firefox' && idx !== -1) {
+      waybackOnly.value = false
+    }
     loadTags()
     load()
+  }
+
+  function toggleWayback() {
+    waybackOnly.value = !waybackOnly.value
+    if (waybackOnly.value) {
+      sources.value = ['firefox']
+    } else {
+      sources.value = []
+    }
+    loadTags()
+    void load()
   }
 
   function toggleSourceTag(tag: string) {
@@ -124,6 +141,7 @@ export const useBrowseStore = defineStore('browse', () => {
 
   return {
     sources,
+    waybackOnly,
     sourceTags,
     level1Tags,
     level2Tags,
@@ -138,6 +156,7 @@ export const useBrowseStore = defineStore('browse', () => {
     loadTags,
     loadMore,
     toggleSource,
+    toggleWayback,
     toggleSourceTag,
     toggleLevel1Tag,
     toggleLevel2Tag,

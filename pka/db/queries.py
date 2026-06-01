@@ -68,6 +68,10 @@ def init_db() -> None:
             con.execute(sa.text(
                 "ALTER TABLE documents ADD COLUMN zotero_attachment_key TEXT"
             ))
+        if "archive_url" not in cols:
+            con.execute(sa.text(
+                "ALTER TABLE documents ADD COLUMN archive_url TEXT"
+            ))
 
         # Migration: add umap_points to cluster_runs
         cr_cols = [r[1] for r in con.execute(
@@ -346,9 +350,15 @@ def _apply_document_browse_filters(
     overlay_tag_filter: list[str] | None,
     cluster_l1_tag_filter: list[str] | None = None,
     cluster_l2_tag_filter: list[str] | None = None,
+    wayback_only: bool = False,
 ) -> sa.Select:
     if source_filter:
         q = q.where(documents.c.source.in_(source_filter))
+    if wayback_only:
+        q = q.where(
+            (documents.c.source == str(Source.FIREFOX))
+            & documents.c.archive_url.isnot(None)
+        )
     if source_tag_filter:
         for tag in source_tag_filter:
             q = q.where(
@@ -438,6 +448,7 @@ def list_documents(
     overlay_tags: list[str] | None = None,
     cluster_l1_tags: list[str] | None = None,
     cluster_l2_tags: list[str] | None = None,
+    wayback_only: bool = False,
     limit: int = 48,
     offset: int = 0,
 ) -> tuple[int, list[dict[str, Any]]]:
@@ -453,6 +464,7 @@ def list_documents(
         "overlay_tag_filter": overlay_tag_filter,
         "cluster_l1_tag_filter": cluster_l1_tag_filter,
         "cluster_l2_tag_filter": cluster_l2_tag_filter,
+        "wayback_only": wayback_only,
     }
 
     with get_engine().connect() as con:
@@ -469,6 +481,7 @@ def list_documents(
                 documents.c.source_id,
                 documents.c.title,
                 documents.c.url_or_path,
+                documents.c.archive_url,
                 documents.c.zotero_attachment_key,
             ),
             **filter_kwargs,
@@ -512,12 +525,13 @@ def list_documents(
             "title": title or "",
             "description": _truncate_snippet(snippet_map.get(doc_id)),
             "url_or_path": url_or_path,
+            "archive_url": archive_url,
             "zotero_attachment_key": zotero_attachment_key,
             "source_tags": source_map.get(doc_id, []),
             "cluster_l1_tags": l1_map.get(doc_id, []),
             "cluster_l2_tags": l2_map.get(doc_id, []),
         }
-        for doc_id, source, source_id, title, url_or_path, zotero_attachment_key in rows
+        for doc_id, source, source_id, title, url_or_path, archive_url, zotero_attachment_key in rows
     ]
     return total, items
 
@@ -528,6 +542,7 @@ def list_tags(
     source_tag_filter: list[str] | None = None,
     cluster_l1_tag_filter: list[str] | None = None,
     cluster_l2_tag_filter: list[str] | None = None,
+    wayback_only: bool = False,
     q: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
@@ -542,6 +557,7 @@ def list_tags(
         "overlay_tag_filter": None,
         "cluster_l1_tag_filter": cluster_l1_tag_filter,
         "cluster_l2_tag_filter": cluster_l2_tag_filter,
+        "wayback_only": wayback_only,
     }
     has_doc_scope = any(
         (
@@ -549,6 +565,7 @@ def list_tags(
             source_tag_filter,
             cluster_l1_tag_filter,
             cluster_l2_tag_filter,
+            wayback_only,
         )
     )
 

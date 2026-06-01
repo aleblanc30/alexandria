@@ -47,7 +47,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { DocumentListItem } from '@/api/client'
-import { openInNewTab, resolveHttpUrl } from '@/lib/urls'
+import { openInNewTab, resolveOpenUrl } from '@/lib/urls'
 import { canOpenInZotero } from '@/lib/zotero'
 import SourceBadge from './SourceBadge.vue'
 import ZoteroOpenButton from './ZoteroOpenButton.vue'
@@ -55,7 +55,9 @@ import ZoteroOpenButton from './ZoteroOpenButton.vue'
 const props = defineProps<{ doc: DocumentListItem; selected?: boolean }>()
 defineEmits<{ click: [] }>()
 
-const openUrl = computed(() => resolveHttpUrl(props.doc.source, props.doc.url_or_path))
+const openUrl = computed(() =>
+  resolveOpenUrl(props.doc.source, props.doc.url_or_path, props.doc.archive_url),
+)
 const hasWebLink = computed(() => openUrl.value != null)
 const showZotero = computed(() => canOpenInZotero(props.doc.source, props.doc.source_id))
 

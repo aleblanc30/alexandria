@@ -8,12 +8,22 @@
 
       <p class="results-meta">
         <template v-if="store.loading">Loading…</template>
-        <template v-else>{{ store.total.toLocaleString() }} documents</template>
+        <template v-else>
+          {{ store.total.toLocaleString() }} document{{ store.total === 1 ? '' : 's' }}
+          <span v-if="store.waybackOnly" class="hint"> · Wayback archive</span>
+        </template>
       </p>
 
       <div v-if="store.loading && !store.documents.length" class="browse-loading">
         Loading documents…
       </div>
+
+      <p
+        v-else-if="!store.loading && store.documents.length === 0"
+        class="browse-empty hint"
+      >
+        No documents match the current filters.
+      </p>
 
       <div v-else class="doc-grid">
         <DocGridCard
@@ -93,6 +103,10 @@ onUnmounted(() => observer?.disconnect())
   font-size: 13px;
   color: var(--hint);
   padding: 24px 0;
+}
+.browse-empty {
+  padding: 24px 0;
+  font-size: 13px;
 }
 .browse-sentinel {
   display: flex;

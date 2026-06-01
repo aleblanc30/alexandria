@@ -76,7 +76,7 @@ import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { getDocument, patchTags } from '@/api/client'
 import type { DocumentDetail } from '@/api/client'
-import { openInNewTab, resolveHttpUrl } from '@/lib/urls'
+import { openInNewTab, resolveOpenUrl } from '@/lib/urls'
 import { canOpenInZotero } from '@/lib/zotero'
 import SourceBadge from './SourceBadge.vue'
 import ZoteroOpenButton from './ZoteroOpenButton.vue'
@@ -91,7 +91,7 @@ const isBrowse = computed(
 )
 const openUrl = computed(() => {
   if (!doc.value) return null
-  return resolveHttpUrl(doc.value.source, doc.value.url_or_path)
+  return resolveOpenUrl(doc.value.source, doc.value.url_or_path, doc.value.archive_url)
 })
 const showWebLink = computed(
   () => isBrowse.value && openUrl.value != null,

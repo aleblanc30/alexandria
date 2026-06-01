@@ -33,11 +33,22 @@ export function resolveHttpUrl(
   return null
 }
 
+/** URL to open in the browser; prefers a Wayback snapshot when present. */
+export function resolveOpenUrl(
+  source: string,
+  urlOrPath: string | null | undefined,
+  archiveUrl?: string | null,
+): string | null {
+  if (archiveUrl && isHttpUrl(archiveUrl)) return archiveUrl.trim()
+  return resolveHttpUrl(source, urlOrPath)
+}
+
 export function hasOpenableUrl(
   source: string,
   urlOrPath: string | null | undefined,
+  archiveUrl?: string | null,
 ): boolean {
-  return resolveHttpUrl(source, urlOrPath) != null
+  return resolveOpenUrl(source, urlOrPath, archiveUrl) != null
 }
 
 export function openInNewTab(url: string): void {

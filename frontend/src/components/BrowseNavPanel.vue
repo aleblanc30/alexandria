@@ -10,6 +10,13 @@
           :class="{ active: store.sources.includes(src) }"
           @click="store.toggleSource(src)"
         >{{ SOURCE_LABELS[src] }}</span>
+        <span class="chip-sep" />
+        <span
+          class="chip"
+          :class="{ active: store.waybackOnly }"
+          title="Firefox bookmarks recovered from the Internet Archive"
+          @click="store.toggleWayback()"
+        >Wayback</span>
       </div>
     </section>
 
@@ -141,6 +148,13 @@ const filteredLevel2Tags = computed(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: center;
+}
+.browse-nav-chips .chip-sep {
+  width: 0.5px;
+  height: 16px;
+  background: var(--border);
+  flex-shrink: 0;
 }
 .browse-nav-search {
   width: 100%;

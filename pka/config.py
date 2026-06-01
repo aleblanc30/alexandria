@@ -56,15 +56,19 @@ class Settings(BaseSettings):
     fetch_pdf_max_bytes: int = 50_000_000     # reject larger PDF downloads
     fetch_pdf_timeout_seconds: float = 120.0  # read timeout for .pdf bookmark URLs
     fetch_pdf_budget_extra_seconds: float = 30.0  # extraction slack on top of PDF timeouts
+    fetch_wayback_fallback: bool = True  # on HTTP 404, query archive.org for a snapshot
+    fetch_wayback_extra_budget_seconds: float = 15.0  # extra time for availability + snapshot
+    fetch_wikipedia_retry_delay_seconds: float = 2.0  # pause between Wikipedia API retries
+    fetch_wikipedia_max_retries: int = 2  # retries after the first Wikipedia API attempt
 
     # ── Images ──────────────────────────────────────────────────────────────
     ocr_lang: str = "eng"                                  # passed to pytesseract
     clip_model: str = "openai/clip-vit-base-patch32"       # HuggingFace hub id
 
     # ── Validators ──────────────────────────────────────────────────────────
-    @field_validator("dev", mode="before")
+    @field_validator("dev", "fetch_wayback_fallback", mode="before")
     @classmethod
-    def _parse_dev(cls, v: object) -> bool:
+    def _parse_bool(cls, v: object) -> bool:
         if isinstance(v, bool):
             return v
         if v is None:

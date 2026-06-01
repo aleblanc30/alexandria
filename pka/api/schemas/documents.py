@@ -14,6 +14,7 @@ class DocumentOut(BaseModel):
     source_id: str
     title: str
     url_or_path: str | None
+    archive_url: str | None = None
     zotero_attachment_key: str | None = None
     date_added: int | None
     fetch_status: str
@@ -41,6 +42,7 @@ class DocumentListItem(BaseModel):
     title: str
     description: str
     url_or_path: str | None = None
+    archive_url: str | None = None
     zotero_attachment_key: str | None = None
     source_tags: list[str] = []
     cluster_l1_tags: list[str] = []

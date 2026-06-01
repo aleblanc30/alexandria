@@ -36,6 +36,7 @@ async def list_documents(
     overlay_tags: Annotated[list[str] | None, Query()] = None,
     cluster_l1_tags: Annotated[list[str] | None, Query()] = None,
     cluster_l2_tags: Annotated[list[str] | None, Query()] = None,
+    wayback_only: bool = Query(default=False),
     limit: int = Query(default=48, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
@@ -46,6 +47,7 @@ async def list_documents(
         overlay_tags=overlay_tags,
         cluster_l1_tags=cluster_l1_tags,
         cluster_l2_tags=cluster_l2_tags,
+        wayback_only=wayback_only,
         limit=limit,
         offset=offset,
     )
@@ -110,6 +112,7 @@ async def get_document(doc_id: int, engine=Depends(get_engine)):
     return DocumentDetail(
         id=doc_id, source=row["source"], source_id=row["source_id"],
         title=row["title"] or "", url_or_path=row["url_or_path"],
+        archive_url=row.get("archive_url"),
         zotero_attachment_key=row.get("zotero_attachment_key"),
         date_added=row["date_added"], fetch_status=row["fetch_status"],
         source_tags=stags, overlay_tags=otags,

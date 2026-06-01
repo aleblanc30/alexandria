@@ -8,6 +8,8 @@ Strategy:
   - Remote PDFs: download bytes, extract via book_extractor.extract_pdf, embed
   - Other non-HTML targets (EPUB, torrents, …) flagged as "skipped"
   - Auth failures, timeouts, 4xx/5xx → status "unfetchable", logged to fetch_log
+  - HTTP 404 with ``fetch_wayback_fallback`` enabled → query archive.org for a snapshot
+  - ``*.wikipedia.org`` URLs → MediaWiki Action API (with retries) instead of HTML scrape
 
 Previously skipped PDF bookmarks stay ``fetch_status=skipped`` until reset manually, e.g.::
 
@@ -51,6 +53,7 @@ class FetchResult:
     text: str | None    # extracted main text (if fetched)
     http_status: int | None
     error_msg: str | None
+    archive_url: str | None = None  # Wayback snapshot URL when content came from archive.org
 
 
 # ── Rate limiting (simple per-domain token bucket) ───────────────────────────
@@ -98,15 +101,19 @@ def _http_timeout(*, pdf: bool = False) -> httpx.Timeout:
     return httpx.Timeout(connect=connect, read=read, write=connect, pool=connect)
 
 
-def _fetch_budget_seconds(*, pdf: bool = False) -> float:
+def _fetch_budget_seconds(*, pdf: bool = False, wayback: bool = False) -> float:
     """Hard ceiling per URL including rate-limit wait and text extraction."""
     if pdf:
-        return (
+        base = (
             cfg.fetch_pdf_timeout_seconds
             + cfg.fetch_connect_timeout_seconds
             + cfg.fetch_pdf_budget_extra_seconds
         )
-    return cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds + 5.0
+    else:
+        base = cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds + 5.0
+    if wayback and cfg.fetch_wayback_fallback:
+        base += cfg.fetch_wayback_extra_budget_seconds
+    return base
 
 
 def _extract_text_from_pdf_bytes(
@@ -197,6 +204,17 @@ async def _fetch_one_impl(
     doc_id: int,
     url: str,
 ) -> FetchResult:
+    from pka.ingestion.wikipedia import (
+        fetch_wikipedia_with_retries,
+        is_wikipedia_special,
+        parse_wikipedia_url,
+    )
+
+    if is_wikipedia_special(url):
+        return FetchResult(doc_id, url, "skipped", None, None, "wikipedia special page")
+    if parse_wikipedia_url(url) is not None:
+        return await fetch_wikipedia_with_retries(client, doc_id, url)
+
     expect_pdf = _url_looks_like_pdf(url)
     path = urlparse(url).path.lower()
     if not expect_pdf and any(path.endswith(ext) for ext in _SKIP_EXTENSIONS):
@@ -216,6 +234,13 @@ async def _fetch_one_impl(
         return FetchResult(doc_id, url, "unfetchable", None, None, str(exc))
 
     http_status = resp.status_code
+
+    if http_status == 404 and cfg.fetch_wayback_fallback:
+        from pka.ingestion.wayback import fetch_via_wayback
+
+        wayback = await fetch_via_wayback(client, doc_id, url)
+        if wayback and wayback.status == "fetched":
+            return wayback
 
     if http_status >= 400:
         reason = f"HTTP {http_status}"
@@ -245,10 +270,11 @@ async def _fetch_one(
     url: str,
 ) -> FetchResult:
     pdf = _url_looks_like_pdf(url)
+    wayback = cfg.fetch_wayback_fallback
     try:
         return await asyncio.wait_for(
             _fetch_one_impl(client, doc_id, url),
-            timeout=_fetch_budget_seconds(pdf=pdf),
+            timeout=_fetch_budget_seconds(pdf=pdf, wayback=wayback),
         )
     except asyncio.TimeoutError:
         return FetchResult(doc_id, url, "unfetchable", None, None, "timeout")
@@ -278,10 +304,13 @@ def _persist_fetch_result(r: FetchResult) -> None:
     eng = get_engine()
     now = int(time.time())
     with eng.begin() as con:
+        update_values: dict = {"fetch_status": r.status}
+        if r.status == "fetched":
+            update_values["archive_url"] = r.archive_url
         con.execute(
             documents.update()
             .where(documents.c.id == r.document_id)
-            .values(fetch_status=r.status)
+            .values(**update_values)
         )
         con.execute(fetch_log.insert().values(
             document_id = r.document_id,

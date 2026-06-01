@@ -71,7 +71,9 @@ Calibre and Firefox follow a two-phase pattern:
   so the two passes coexist in a single document.
 
 Phase-2 work is gated behind `--fulltext` (Calibre) or runs asynchronously
-through `pka.ingestion.fetcher.fetch_pending()` (Firefox).
+through `pka.ingestion.fetcher.fetch_pending()` (Firefox). When a Firefox URL
+returns HTTP 404, the fetcher can fall back to the closest Internet Archive
+snapshot (`fetch_wayback_fallback`, default on).
 
 ## 4. Cluster lifecycle
 

@@ -276,7 +276,7 @@ class TestDocuments:
         doc = client.get("/documents").json()["documents"][0]
         for key in (
             "id", "source", "source_id", "title", "description", "url_or_path",
-            "zotero_attachment_key",
+            "archive_url", "zotero_attachment_key",
             "source_tags", "cluster_l1_tags", "cluster_l2_tags",
         ):
             assert key in doc
@@ -310,6 +310,29 @@ class TestDocuments:
         r = client.get("/documents?sources=zotero")
         docs = r.json()["documents"]
         assert all(d["source"] == "zotero" for d in docs)
+
+    def test_list_documents_wayback_only_filter(self, client):
+        import sqlalchemy as sa
+
+        from pka.db.queries import get_engine
+        from pka.db.schema import documents as docs_table
+
+        ids = _seed_docs(3)
+        snapshot = "https://web.archive.org/web/20190603190145/https://example.com/1"
+        with get_engine().begin() as con:
+            con.execute(
+                docs_table.update()
+                .where(docs_table.c.id == ids[1])
+                .values(archive_url=snapshot)
+            )
+
+        r = client.get("/documents?wayback_only=true")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] == 1
+        assert len(data["documents"]) == 1
+        assert data["documents"][0]["source"] == "firefox"
+        assert data["documents"][0]["archive_url"] == snapshot
 
     def test_list_documents_pagination(self, client):
         _seed_docs(5)

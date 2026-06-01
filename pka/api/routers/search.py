@@ -103,6 +103,7 @@ def _batch_doc_rows_to_out(
         out.append(DocumentOut(
             id=doc_id, source=row["source"], source_id=row["source_id"],
             title=row["title"] or "", url_or_path=row["url_or_path"],
+            archive_url=row.get("archive_url"),
             zotero_attachment_key=row.get("zotero_attachment_key"),
             date_added=row["date_added"], fetch_status=row["fetch_status"],
             source_tags=source_tag_map.get(doc_id, []),

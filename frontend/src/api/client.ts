@@ -50,7 +50,8 @@ async function req<T>(
 export interface TagOut       { tag: string; origin: string; confidence: number | null }
 export interface DocumentOut  {
   id: number; source: string; source_id: string; title: string
-  url_or_path: string | null; zotero_attachment_key: string | null
+  url_or_path: string | null; archive_url: string | null
+  zotero_attachment_key: string | null
   date_added: number | null; fetch_status: string
   source_tags: string[]; overlay_tags: TagOut[]
   cluster_id: number | null; cluster_label: string | null
@@ -61,7 +62,7 @@ export interface DocumentDetail extends DocumentOut {
 }
 export interface DocumentListItem {
   id: number; source: string; source_id: string; title: string; description: string
-  url_or_path: string | null
+  url_or_path: string | null; archive_url: string | null
   zotero_attachment_key: string | null
   source_tags: string[]
   cluster_l1_tags: string[]
@@ -156,6 +157,7 @@ export const listDocuments = (params?: {
   overlay_tags?: string[]
   cluster_l1_tags?: string[]
   cluster_l2_tags?: string[]
+  wayback_only?: boolean
   limit?: number
   offset?: number
 }) => {
@@ -165,6 +167,7 @@ export const listDocuments = (params?: {
   params?.overlay_tags?.forEach(t => qs.append('overlay_tags', t))
   params?.cluster_l1_tags?.forEach(t => qs.append('cluster_l1_tags', t))
   params?.cluster_l2_tags?.forEach(t => qs.append('cluster_l2_tags', t))
+  if (params?.wayback_only) qs.set('wayback_only', 'true')
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.offset != null) qs.set('offset', String(params.offset))
   const query = qs.toString()
@@ -210,6 +213,7 @@ export const listTags = (params?: {
   source_tags?: string[]
   cluster_l1_tags?: string[]
   cluster_l2_tags?: string[]
+  wayback_only?: boolean
   q?: string
   limit?: number
 }) => {
@@ -219,6 +223,7 @@ export const listTags = (params?: {
   params?.source_tags?.forEach(t => qs.append('source_tags', t))
   params?.cluster_l1_tags?.forEach(t => qs.append('cluster_l1_tags', t))
   params?.cluster_l2_tags?.forEach(t => qs.append('cluster_l2_tags', t))
+  if (params?.wayback_only) qs.set('wayback_only', 'true')
   if (params?.q) qs.set('q', params.q)
   if (params?.limit != null) qs.set('limit', String(params.limit))
   const query = qs.toString()

@@ -20,6 +20,7 @@ async def list_tags(
     source_tags: Annotated[list[str] | None, Query()] = None,
     cluster_l1_tags: Annotated[list[str] | None, Query()] = None,
     cluster_l2_tags: Annotated[list[str] | None, Query()] = None,
+    wayback_only: bool = Query(default=False),
     q: str | None = Query(None),
     limit: int = 100,
     engine=Depends(get_engine),
@@ -32,6 +33,7 @@ async def list_tags(
         source_tag_filter=source_tags,
         cluster_l1_tag_filter=cluster_l1_tags,
         cluster_l2_tag_filter=cluster_l2_tags,
+        wayback_only=wayback_only,
         q=q,
         limit=limit,
     )
