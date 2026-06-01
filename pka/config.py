@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     fetch_wayback_extra_budget_seconds: float = 15.0  # extra time for availability + snapshot
     fetch_wikipedia_retry_delay_seconds: float = 2.0  # pause between Wikipedia API retries
     fetch_wikipedia_max_retries: int = 2  # retries after the first Wikipedia API attempt
+    fetch_user_agent: str = (
+        "PKA/0.2 (local personal knowledge archive; +https://www.mediawiki.org/wiki/API:Etiquette)"
+    )
 
     # ── Images ──────────────────────────────────────────────────────────────
     ocr_lang: str = "eng"                                  # passed to pytesseract

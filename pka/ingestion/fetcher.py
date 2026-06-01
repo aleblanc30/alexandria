@@ -101,7 +101,12 @@ def _http_timeout(*, pdf: bool = False) -> httpx.Timeout:
     return httpx.Timeout(connect=connect, read=read, write=connect, pool=connect)
 
 
-def _fetch_budget_seconds(*, pdf: bool = False, wayback: bool = False) -> float:
+def _fetch_budget_seconds(
+    *,
+    pdf: bool = False,
+    wayback: bool = False,
+    wikipedia: bool = False,
+) -> float:
     """Hard ceiling per URL including rate-limit wait and text extraction."""
     if pdf:
         base = (
@@ -113,6 +118,10 @@ def _fetch_budget_seconds(*, pdf: bool = False, wayback: bool = False) -> float:
         base = cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds + 5.0
     if wayback and cfg.fetch_wayback_fallback:
         base += cfg.fetch_wayback_extra_budget_seconds
+    if wikipedia:
+        attempts = cfg.fetch_wikipedia_max_retries + 1
+        base += attempts * (cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds)
+        base += cfg.fetch_wikipedia_max_retries * cfg.fetch_wikipedia_retry_delay_seconds
     return base
 
 
@@ -269,12 +278,17 @@ async def _fetch_one(
     doc_id: int,
     url: str,
 ) -> FetchResult:
+    from pka.ingestion.wikipedia import parse_wikipedia_url
+
     pdf = _url_looks_like_pdf(url)
     wayback = cfg.fetch_wayback_fallback
+    wikipedia = parse_wikipedia_url(url) is not None
     try:
         return await asyncio.wait_for(
             _fetch_one_impl(client, doc_id, url),
-            timeout=_fetch_budget_seconds(pdf=pdf, wayback=wayback),
+            timeout=_fetch_budget_seconds(
+                pdf=pdf, wayback=wayback, wikipedia=wikipedia,
+            ),
         )
     except asyncio.TimeoutError:
         return FetchResult(doc_id, url, "unfetchable", None, None, "timeout")
@@ -297,6 +311,27 @@ def _get_pending(limit: int | None = None) -> list[tuple[int, str]]:
 
 def pending_firefox_count() -> int:
     return len(_get_pending())
+
+
+def reset_unfetchable_for_fetch() -> int:
+    """Re-queue unfetchable Firefox bookmarks before a fetch run (dev mode only)."""
+    if not cfg.dev:
+        return 0
+
+    eng = get_engine()
+    with eng.begin() as con:
+        result = con.execute(
+            documents.update()
+            .where(
+                (documents.c.source == str(Source.FIREFOX))
+                & (documents.c.fetch_status == str(FetchStatus.UNFETCHABLE))
+            )
+            .values(fetch_status=str(FetchStatus.PENDING))
+        )
+        count = result.rowcount or 0
+    if count > 0:
+        log.info("Re-queued %d previously unfetchable URLs (dev mode)", count)
+    return count
 
 
 def _persist_fetch_result(r: FetchResult) -> None:
@@ -339,6 +374,8 @@ async def fetch_pending(
     Pass ``limit=None`` to fetch all pending URLs.
     """
     from pka.ingestion.sync_helpers import should_stop
+
+    reset_unfetchable_for_fetch()
 
     workers = concurrency if concurrency is not None else cfg.fetch_concurrency
     pending = _get_pending(limit)
@@ -385,7 +422,7 @@ async def fetch_pending(
                     advance(progress_key, failed=failed)
 
     async with httpx.AsyncClient(
-        headers={"User-Agent": "PKA/0.2 (personal knowledge archive; local-only)"},
+        headers={"User-Agent": cfg.fetch_user_agent},
         timeout=_http_timeout(),
     ) as client:
         await asyncio.gather(*(worker(client) for _ in range(workers)))

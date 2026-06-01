@@ -4,7 +4,8 @@ import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pka.db.queries import init_db, upsert_document
-from pka.ingestion.fetcher import _fetch_one, fetch_pending, FetchResult
+from pka.constants import FetchStatus
+from pka.ingestion.fetcher import _fetch_one, fetch_pending, FetchResult, reset_unfetchable_for_fetch
 
 
 @pytest.fixture(autouse=True)
@@ -149,6 +150,22 @@ class TestFetchOne:
         mock_client.get.return_value = _html_response(404)
         result = await _fetch_one(mock_client, doc_id=42, url="https://x.com")
         assert result.document_id == 42
+
+    @pytest.mark.asyncio
+    async def test_non_wikipedia_uses_direct_fetch(self):
+        url = "https://example.com/page"
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = _html_response(200)
+
+        result = await _fetch_one(mock_client, doc_id=1, url=url)
+
+        assert result.status == "fetched"
+        mock_client.get.assert_called_once_with(
+            url,
+            follow_redirects=True,
+            timeout=mock_client.get.call_args.kwargs["timeout"],
+        )
+        assert "/w/api.php" not in mock_client.get.call_args.args[0]
 
 
 class TestFetchPending:
@@ -321,4 +338,70 @@ class TestExtractText:
         result = await _fetch_one(mock_client, doc_id=1, url="https://example.com")
         assert result.status == "unfetchable"
         assert "no text" in (result.error_msg or "").lower()
+
+
+class TestResetUnfetchableForFetch:
+    def test_does_not_reset_when_not_dev(self, monkeypatch):
+        monkeypatch.setattr("pka.config.settings.dev", False)
+        wiki_id = upsert_document(
+            "firefox", "F-WIKI", "Wiki", "https://en.wikipedia.org/wiki/Python", None,
+        )
+        other_id = upsert_document(
+            "firefox", "F-403", "Blocked", "https://example.com/blocked", None,
+        )
+        import sqlalchemy as sa
+        from pka.db.queries import get_engine
+        from pka.db.schema import documents as docs_table
+
+        with get_engine().begin() as con:
+            con.execute(
+                docs_table.update()
+                .where(docs_table.c.id.in_([wiki_id, other_id]))
+                .values(fetch_status=str(FetchStatus.UNFETCHABLE))
+            )
+
+        count = reset_unfetchable_for_fetch()
+
+        assert count == 0
+        with get_engine().connect() as con:
+            rows = {
+                r[0]: r[1]
+                for r in con.execute(
+                    sa.select(docs_table.c.id, docs_table.c.fetch_status).where(
+                        docs_table.c.id.in_([wiki_id, other_id])
+                    )
+                ).fetchall()
+            }
+        assert rows[wiki_id] == str(FetchStatus.UNFETCHABLE)
+        assert rows[other_id] == str(FetchStatus.UNFETCHABLE)
+
+    def test_resets_all_unfetchable_in_dev(self, monkeypatch):
+        monkeypatch.setattr("pka.config.settings.dev", True)
+        wiki_id = upsert_document(
+            "firefox", "F-WIKI2", "Wiki", "https://en.wikipedia.org/wiki/Go", None,
+        )
+        other_id = upsert_document(
+            "firefox", "F-403B", "Blocked", "https://example.com/gone", None,
+        )
+        import sqlalchemy as sa
+        from pka.db.queries import get_engine
+        from pka.db.schema import documents as docs_table
+
+        with get_engine().begin() as con:
+            con.execute(
+                docs_table.update()
+                .where(docs_table.c.id.in_([wiki_id, other_id]))
+                .values(fetch_status=str(FetchStatus.UNFETCHABLE))
+            )
+
+        count = reset_unfetchable_for_fetch()
+
+        assert count == 2
+        with get_engine().connect() as con:
+            rows = con.execute(
+                sa.select(docs_table.c.fetch_status).where(
+                    docs_table.c.id.in_([wiki_id, other_id])
+                )
+            ).fetchall()
+        assert all(r[0] == str(FetchStatus.PENDING) for r in rows)
 

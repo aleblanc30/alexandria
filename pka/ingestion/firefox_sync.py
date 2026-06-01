@@ -4,7 +4,7 @@ import logging
 
 from pka.connectors.firefox import load_bookmarks
 from pka.constants import Source
-from pka.ingestion.fetcher import fetch_pending, _get_pending
+from pka.ingestion.fetcher import fetch_pending, _get_pending, reset_unfetchable_for_fetch
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
@@ -67,6 +67,9 @@ def sync_firefox_ingest(
 ) -> dict:
     key = progress_key or "firefox"
     stats: dict = {}
+
+    reset_unfetchable_for_fetch()
+
     pending = _get_pending(fetch_limit)
     n_pending = len(pending)
     n_bm = len(take(load_bookmarks()))
