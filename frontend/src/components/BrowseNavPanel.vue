@@ -13,7 +13,7 @@
       </div>
     </section>
 
-    <section class="browse-nav-section browse-nav-section--tags">
+    <section class="browse-nav-section">
       <h2 class="browse-nav-heading">Source tags</h2>
       <input
         v-model="sourceQ"
@@ -22,22 +22,23 @@
         placeholder="Filter tags…"
       />
       <div v-if="store.loadingTags" class="browse-nav-hint">Loading…</div>
-      <ul v-else class="browse-nav-list">
-        <li
+      <div v-else class="browse-nav-tags">
+        <button
           v-for="t in filteredSourceTags"
           :key="t.tag"
-          class="browse-nav-item"
+          type="button"
+          class="browse-nav-tag-btn tag-pill tag-pill--source"
           :class="{ active: store.sourceTags.includes(t.tag) }"
           @click="store.toggleSourceTag(t.tag)"
         >
-          <span class="tag-pill tag-pill--source">#{{ t.tag }}</span>
-          <span class="browse-nav-count">{{ t.count }}</span>
-        </li>
-        <li v-if="!filteredSourceTags.length" class="browse-nav-hint">No source tags</li>
-      </ul>
+          <span class="browse-nav-tag-label">#{{ t.tag }}</span>
+          <span class="browse-nav-tag-count">{{ t.count }}</span>
+        </button>
+        <p v-if="!filteredSourceTags.length" class="browse-nav-hint">No source tags</p>
+      </div>
     </section>
 
-    <section class="browse-nav-section browse-nav-section--tags">
+    <section class="browse-nav-section">
       <h2 class="browse-nav-heading">Level 1 topics</h2>
       <input
         v-model="level1Q"
@@ -46,22 +47,23 @@
         placeholder="Filter tags…"
       />
       <div v-if="store.loadingTags" class="browse-nav-hint">Loading…</div>
-      <ul v-else class="browse-nav-list">
-        <li
+      <div v-else class="browse-nav-tags">
+        <button
           v-for="t in filteredLevel1Tags"
           :key="t.tag"
-          class="browse-nav-item"
+          type="button"
+          class="browse-nav-tag-btn tag-pill tag-pill--cluster_l1"
           :class="{ active: store.level1Tags.includes(t.tag) }"
           @click="store.toggleLevel1Tag(t.tag)"
         >
-          <span class="tag-pill tag-pill--cluster_l1">{{ t.tag }}</span>
-          <span class="browse-nav-count">{{ t.count }}</span>
-        </li>
-        <li v-if="!filteredLevel1Tags.length" class="browse-nav-hint">No level 1 tags</li>
-      </ul>
+          <span class="browse-nav-tag-label">{{ t.tag }}</span>
+          <span class="browse-nav-tag-count">{{ t.count }}</span>
+        </button>
+        <p v-if="!filteredLevel1Tags.length" class="browse-nav-hint">No level 1 tags</p>
+      </div>
     </section>
 
-    <section class="browse-nav-section browse-nav-section--tags">
+    <section class="browse-nav-section">
       <h2 class="browse-nav-heading">Level 2 subtopics</h2>
       <input
         v-model="level2Q"
@@ -70,19 +72,20 @@
         placeholder="Filter tags…"
       />
       <div v-if="store.loadingTags" class="browse-nav-hint">Loading…</div>
-      <ul v-else class="browse-nav-list">
-        <li
+      <div v-else class="browse-nav-tags">
+        <button
           v-for="t in filteredLevel2Tags"
           :key="t.tag"
-          class="browse-nav-item"
+          type="button"
+          class="browse-nav-tag-btn tag-pill tag-pill--cluster_l2"
           :class="{ active: store.level2Tags.includes(t.tag) }"
           @click="store.toggleLevel2Tag(t.tag)"
         >
-          <span class="tag-pill tag-pill--cluster_l2">{{ t.tag }}</span>
-          <span class="browse-nav-count">{{ t.count }}</span>
-        </li>
-        <li v-if="!filteredLevel2Tags.length" class="browse-nav-hint">No level 2 tags</li>
-      </ul>
+          <span class="browse-nav-tag-label">{{ t.tag }}</span>
+          <span class="browse-nav-tag-count">{{ t.count }}</span>
+        </button>
+        <p v-if="!filteredLevel2Tags.length" class="browse-nav-hint">No level 2 tags</p>
+      </div>
     </section>
   </aside>
 </template>
@@ -120,19 +123,12 @@ const filteredLevel2Tags = computed(() => {
 .browse-nav {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-  overflow: hidden;
+  gap: 16px;
 }
 .browse-nav-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  flex: 0 0 auto;
-}
-.browse-nav-section--tags {
-  flex: 1 1 0;
-  min-height: 0;
 }
 .browse-nav-heading {
   font-size: 10px;
@@ -154,37 +150,47 @@ const filteredLevel2Tags = computed(() => {
   font-size: 12px;
   background: var(--surface);
 }
-.browse-nav-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  min-height: 72px;
-  flex: 1 1 0;
-  border: 0.5px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-.browse-nav-item {
+.browse-nav-tags {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 10px;
-  border-bottom: 0.5px solid var(--border);
-  cursor: pointer;
-  font-size: 12px;
+  flex-wrap: wrap;
+  gap: 5px;
 }
-.browse-nav-item:last-child { border-bottom: none }
-.browse-nav-item:hover { background: #fafaf8 }
-.browse-nav-item.active { background: #f0ede8 }
-.browse-nav-count {
-  margin-left: auto;
+.browse-nav-tag-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: border-color .12s, box-shadow .12s;
+}
+.browse-nav-tag-btn:hover {
+  border-color: rgba(0, 0, 0, .14);
+}
+.browse-nav-tag-btn.active {
+  border-color: rgba(0, 0, 0, .28);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .06);
+}
+.browse-nav-tag-label {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browse-nav-tag-count {
   font-size: 10px;
-  color: var(--hint);
+  font-weight: 400;
+  opacity: .72;
+  font-variant-numeric: tabular-nums;
 }
 .browse-nav-hint {
   font-size: 12px;
   color: var(--hint);
-  padding: 8px 2px;
+  margin: 0;
+  padding: 2px 0;
 }
 </style>
