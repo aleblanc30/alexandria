@@ -1,10 +1,11 @@
 """Calibre sync — metadata and ingest (embed + fulltext) as separate jobs."""
 import logging
 
-from pka.connectors.calibre import load_books
 from pka.constants import Source
 from pka.ingestion import sync_progress as sp
+from pka.ingestion.dev_limits import take
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
+from pka.ingestion.source_access import try_load_calibre_books
 from pka.ingestion.sync_helpers import should_stop
 from pka.ingestion.runners.calibre import (
     ingest_calibre_books,
@@ -13,6 +14,26 @@ from pka.ingestion.runners.calibre import (
 )
 
 log = logging.getLogger(__name__)
+
+_EMPTY_STATS = {"processed": 0, "skipped": 0, "failed": 0}
+_EMPTY_EMBED = {**_EMPTY_STATS, "chunks": 0}
+
+
+def _unavailable_metadata(key: str, baseline: int, reason: str) -> dict:
+    sp.begin_metadata_sync(key, 0, baseline)
+    sp.skip_phase(key, "metadata")
+    return {"metadata": dict(_EMPTY_STATS), "unavailable": reason}
+
+
+def _unavailable_ingest(key: str, reason: str) -> dict:
+    sp.set_corpus_total(key, 0)
+    sp.skip_phase(key, "fetching")
+    sp.skip_phase(key, "embedding")
+    return {
+        "metadata_embed": dict(_EMPTY_EMBED),
+        "fulltext": dict(_EMPTY_EMBED),
+        "unavailable": reason,
+    }
 
 
 def sync_calibre_metadata(
@@ -24,9 +45,12 @@ def sync_calibre_metadata(
     init_db()
     key = progress_key or "calibre"
     baseline = archive_document_count(Source.CALIBRE)
+    books, unavailable = try_load_calibre_books()
+    if unavailable:
+        return _unavailable_metadata(key, baseline, unavailable)
     pending = count_pending_metadata(Source.CALIBRE)
     sp.begin_metadata_sync(key, pending, baseline)
-    books = load_books()
+    books = take(books)
     stats = ingest_calibre_metadata(books, dry_run=dry_run, progress_key=key)
     log.info("Calibre metadata: %s", stats)
     return {"metadata": stats, "stopped": stats.get("stopped")}
@@ -38,7 +62,10 @@ def sync_calibre_ingest(
     max_pages: int | None = None,
 ) -> dict:
     key = progress_key or "calibre"
-    books = load_books()
+    books, unavailable = try_load_calibre_books()
+    if unavailable:
+        return _unavailable_ingest(key, unavailable)
+    books = take(books)
     n = len(books)
     n_files = sum(
         1 for b in books if b.preferred_path and b.preferred_path.exists()
@@ -57,7 +84,7 @@ def sync_calibre_ingest(
         return stats
 
     if n_files == 0:
-        stats["fulltext"] = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
+        stats["fulltext"] = dict(_EMPTY_EMBED)
         return stats
 
     file_books = [
@@ -85,7 +112,7 @@ def sync_calibre(
 ) -> dict:
     """Full pipeline. Kept for scripts/tests."""
     meta = sync_calibre_metadata(progress_key=progress_key, dry_run=dry_run)
-    if meta.get("stopped"):
+    if meta.get("stopped") or meta.get("unavailable"):
         return meta
     return {**meta, **sync_calibre_ingest(
         progress_key=progress_key, dry_run=dry_run, max_pages=max_pages,

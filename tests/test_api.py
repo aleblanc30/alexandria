@@ -732,6 +732,18 @@ class TestIngestion:
         assert "total" in data
         assert data["total"] >= 3
 
+    def test_status_reports_unavailable_sources(self, client):
+        r = client.get("/ingestion/status")
+        assert r.status_code == 200
+        data = r.json()
+        unavailable = data.get("source_unavailable", {})
+        assert "calibre" in unavailable
+        assert "image" in unavailable
+        assert unavailable["calibre"] is not None
+        assert unavailable["image"] is not None
+        assert "metadata.db" in unavailable["calibre"]
+        assert "Image folder not found" in unavailable["image"]
+
     def test_unfetchable_returns_list(self, client):
         r = client.get("/ingestion/unfetchable")
         assert r.status_code == 200

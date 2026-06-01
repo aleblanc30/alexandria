@@ -227,7 +227,10 @@ class TestCalibreSync:
     def test_runs_metadata_and_fulltext(self, monkeypatch, tmp_path):
         _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=1)
         books = [_calibre_book(tmp_path, with_file=True)]
-        monkeypatch.setattr("pka.ingestion.calibre_sync.load_books", lambda: books)
+        monkeypatch.setattr(
+            "pka.ingestion.calibre_sync.try_load_calibre_books",
+            lambda: (books, None),
+        )
         reg = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0})
         meta = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0, "chunks": 1})
         full = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0, "chunks": 5})
@@ -248,8 +251,8 @@ class TestCalibreSync:
     def test_skips_fulltext_when_no_files(self, monkeypatch, tmp_path):
         _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=1)
         monkeypatch.setattr(
-            "pka.ingestion.calibre_sync.load_books",
-            lambda: [_calibre_book(tmp_path, with_file=False)],
+            "pka.ingestion.calibre_sync.try_load_calibre_books",
+            lambda: ([_calibre_book(tmp_path, with_file=False)], None),
         )
         monkeypatch.setattr(
             "pka.ingestion.calibre_sync.ingest_calibre_metadata",
@@ -272,8 +275,8 @@ class TestCalibreSync:
     def test_stops_after_metadata_when_cancelled(self, monkeypatch, tmp_path):
         _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=1)
         monkeypatch.setattr(
-            "pka.ingestion.calibre_sync.load_books",
-            lambda: [_calibre_book(tmp_path, with_file=True)],
+            "pka.ingestion.calibre_sync.try_load_calibre_books",
+            lambda: ([_calibre_book(tmp_path, with_file=True)], None),
         )
         reg = MagicMock(return_value={"processed": 0, "stopped": "cancel"})
         monkeypatch.setattr("pka.ingestion.calibre_sync.ingest_calibre_metadata", reg)
@@ -295,8 +298,8 @@ class TestImageSync:
         _mock_pending_counts(monkeypatch, "pka.ingestion.image_sync", pending=1)
         img = _image_file(tmp_path)
         monkeypatch.setattr(
-            "pka.ingestion.image_sync.scan_images",
-            lambda folder: [img],
+            "pka.ingestion.image_sync.try_scan_images",
+            lambda: ([img], None),
         )
         reg = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0})
         ingest = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0, "by_type": {}})
@@ -310,6 +313,45 @@ class TestImageSync:
         reg.assert_called_once()
         ingest.assert_called_once()
         assert stats["ingest"]["processed"] == 1
+
+
+class TestUnavailableSources:
+    def test_calibre_metadata_unavailable(self, monkeypatch):
+        _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=0)
+        reason = "Calibre metadata.db not found at /missing/metadata.db"
+        monkeypatch.setattr(
+            "pka.ingestion.calibre_sync.try_load_calibre_books",
+            lambda: ([], reason),
+        )
+        reg = MagicMock()
+        monkeypatch.setattr("pka.ingestion.calibre_sync.ingest_calibre_metadata", reg)
+
+        from pka.ingestion.calibre_sync import sync_calibre_metadata
+        from pka.api.routers import ingestion as ing
+
+        sp.reset("calibre")
+        ing._sync_metadata("calibre")
+        snap = sp.snapshot("calibre")["calibre"]
+        assert snap["status"] == "done"
+        reg.assert_not_called()
+
+    def test_image_ingest_unavailable(self, monkeypatch):
+        reason = "Image folder not found: /missing"
+        monkeypatch.setattr(
+            "pka.ingestion.image_sync.try_scan_images",
+            lambda: ([], reason),
+        )
+        ingest = MagicMock()
+        monkeypatch.setattr("pka.ingestion.image_sync.ingest_images", ingest)
+
+        from pka.ingestion.image_sync import sync_images_ingest
+        from pka.api.routers import ingestion as ing
+
+        sp.reset("image")
+        ing._sync_ingest("image")
+        snap = sp.snapshot("image")["image"]
+        assert snap["status"] == "done"
+        ingest.assert_not_called()
 
 
 class TestPipelineStop:

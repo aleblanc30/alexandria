@@ -9,6 +9,7 @@ from pka.constants import ALL_SOURCES, FetchStatus, Source
 from pka.db.schema import chunks, documents, images
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.pending_metadata import count_pending_metadata
+from pka.ingestion.source_access import calibre_available, images_available
 
 log = logging.getLogger(__name__)
 
@@ -103,8 +104,8 @@ def build_ingestion_status(engine) -> dict:
             by_source[src] = n
             try:
                 pending_metadata_by_source[src] = count_pending_metadata(src)
-            except Exception:
-                log.exception("Pending metadata count failed for %s", src)
+            except Exception as exc:
+                log.warning("Pending metadata count failed for %s: %s", src, exc)
                 pending_metadata_by_source[src] = 0
             if src == Source.FIREFOX:
                 rows = con.execute(
@@ -129,6 +130,8 @@ def build_ingestion_status(engine) -> dict:
             sa.select(sa.func.count()).select_from(documents)
             .where(documents.c.fetch_status == str(FetchStatus.PENDING))
         ).scalar()
+    calibre_ok, calibre_msg = calibre_available()
+    images_ok, images_msg = images_available()
     return {
         "total": total,
         "by_source": by_source,
@@ -136,4 +139,8 @@ def build_ingestion_status(engine) -> dict:
         "fetch_by_source": fetch_by_source,
         "unfetchable": unfetchable,
         "pending": pending,
+        "source_unavailable": {
+            Source.CALIBRE: None if calibre_ok else calibre_msg,
+            Source.IMAGE: None if images_ok else images_msg,
+        },
     }

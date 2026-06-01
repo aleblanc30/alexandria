@@ -10,6 +10,7 @@ function notifyError(e: any) {
 const POLL_MS = 500
 const SOURCES = ['firefox', 'zotero', 'calibre', 'image'] as const
 type JobKind = 'metadata' | 'ingest'
+type Source = typeof SOURCES[number]
 
 function formatJobToast(src: string, p: api.SyncProgress): string {
   const job = p.active_job === 'metadata' ? 'metadata sync' : 'ingest'
@@ -27,6 +28,7 @@ export const useIngestionStore = defineStore('ingestion', () => {
   /** Queued locally until the backend reports status=running (avoids poll stopping early). */
   const pendingJob      = ref<Record<string, JobKind>>({})
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  let progressHydrated  = false
   const notified        = new Set<string>()
 
   function isMetadataRunning(src: string): boolean {
@@ -43,6 +45,13 @@ export const useIngestionStore = defineStore('ingestion', () => {
 
   function isAnyJobRunning(): boolean {
     return SOURCES.some(src => isMetadataRunning(src) || isIngestRunning(src))
+  }
+
+  function activeSources(): Source[] {
+    return SOURCES.filter(src => {
+      if (src in pendingJob.value) return true
+      return progress.value[src]?.status === 'running'
+    })
   }
 
   function markPending(source: string, job: JobKind) {
@@ -64,51 +73,88 @@ export const useIngestionStore = defineStore('ingestion', () => {
     return { metaActive, ingestActive }
   }
 
-  function syncPolling(snap: Record<string, api.SyncProgress>) {
-    const anyRunning = Object.values(snap).some(p => p.status === 'running')
-    const hasPending = Object.keys(pendingJob.value).length > 0
-    if (anyRunning || hasPending) startPolling()
+  function syncPolling() {
+    if (activeSources().length > 0) startPolling()
     else stopPolling()
   }
 
-  function applyProgressSnapshot(snap: Record<string, api.SyncProgress>) {
-    progress.value = snap
+  function applyProgressSnapshot(
+    snap: Record<string, api.SyncProgress>,
+    { merge = false }: { merge?: boolean } = {},
+  ) {
+    progress.value = merge ? { ...progress.value, ...snap } : snap
     for (const [src, p] of Object.entries(snap)) {
       if (p.status === 'running' || p.status === 'done' || p.status === 'cancelled'
           || p.status === 'error' || p.status === 'paused') {
         clearPending(src)
       }
     }
-    syncPolling(snap)
+    syncPolling()
   }
 
-  async function load() {
+  async function fetchProgressForActiveSources(): Promise<Record<string, api.SyncProgress> | null> {
+    const targets = activeSources()
+    if (targets.length === 0) return null
+
+    const merged: Record<string, api.SyncProgress> = {}
+    for (const src of targets) {
+      const snap = await api.syncProgress(src)
+      Object.assign(merged, snap)
+    }
+    return merged
+  }
+
+  async function load(force = false) {
+    const jobsActive = activeSources().length > 0
+    const needProgress = force || jobsActive || !progressHydrated
+
     try {
       status.value = await api.ingestionStatus()
     } catch (e) { notifyError(e) }
+
+    if (needProgress) {
+      try {
+        const snap = jobsActive
+          ? await fetchProgressForActiveSources()
+          : await api.syncProgress()
+        if (snap) {
+          applyProgressSnapshot(snap, { merge: jobsActive })
+          progressHydrated = true
+        }
+      } catch { /* progress hydrate is non-critical */ }
+    }
+
     try {
       unfetchable.value = await api.unfetchableUrls()
     } catch { /* unfetchable list is non-critical */ }
-    try {
-      const snap = await api.syncProgress()
-      applyProgressSnapshot(snap)
-    } catch { /* progress hydrate is non-critical */ }
   }
 
   async function pollProgress() {
+    if (activeSources().length === 0) {
+      stopPolling()
+      return
+    }
+
     try {
-      const snap = await api.syncProgress()
-      applyProgressSnapshot(snap)
+      const snap = await fetchProgressForActiveSources()
+      if (!snap) {
+        stopPolling()
+        return
+      }
+
+      applyProgressSnapshot(snap, { merge: true })
+
       const anyRunning = Object.values(snap).some(p => p.status === 'running')
       if (anyRunning) {
         try { status.value = await api.ingestionStatus() } catch { /* non-critical */ }
       }
+
       for (const [src, p] of Object.entries(snap)) {
         const noteKey = `${src}:${p.active_job ?? 'any'}:${p.status}`
         if (p.status === 'done' && !notified.has(noteKey)) {
           notified.add(noteKey)
           useToastStore().push(formatJobToast(src, p), 'info')
-          await load()
+          await load(true)
         } else if (p.status === 'cancelled' && !notified.has(noteKey)) {
           notified.add(noteKey)
           useToastStore().push(
@@ -117,11 +163,11 @@ export const useIngestionStore = defineStore('ingestion', () => {
               : `${src} stopped (${p.overall_processed} items processed)`,
             'info',
           )
-          await load()
+          await load(true)
         } else if (p.status === 'error' && !notified.has(noteKey)) {
           notified.add(noteKey)
           useToastStore().push(`${src} failed: ${p.error ?? 'unknown error'}`, 'error', 8000)
-          await load()
+          await load(true)
         }
       }
     } catch { /* ignore transient poll errors */ }
@@ -166,7 +212,7 @@ export const useIngestionStore = defineStore('ingestion', () => {
         notifyError(e)
       }
       clearPending(source)
-      syncPolling(progress.value)
+      syncPolling()
     }
   }
 

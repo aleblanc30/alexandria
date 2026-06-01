@@ -5,6 +5,7 @@
       <div class="source-info">
         <div class="source-name">{{ SOURCE_LABELS[source] }}</div>
         <div class="source-count">{{ st?.by_source[source] ?? 0 }} documents</div>
+        <div v-if="unavailableHint" class="source-unavailable hint">{{ unavailableHint }}</div>
         <div v-if="fetchSummary" class="fetch-summary hint">{{ fetchSummary }}</div>
         <div class="phase-bars">
           <div
@@ -119,6 +120,11 @@ const fetchSummary = computed((): string | null => {
   ]
   if ((fb.pending ?? 0) > 0) parts.push(`${fb.pending} pending`)
   return parts.join(' · ')
+})
+
+const unavailableHint = computed((): string | null => {
+  const msg = st.value?.source_unavailable?.[props.source]
+  return msg ?? null
 })
 
 const jobError = computed((): string | null => {

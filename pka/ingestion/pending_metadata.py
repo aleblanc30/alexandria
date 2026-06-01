@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 
-from pka.config import settings
 from pka.constants import Source
 from pka.db.queries import document_index, get_engine
 from pka.db.schema import documents, images
+from pka.ingestion.dev_limits import take
+from pka.ingestion.source_access import try_load_calibre_books, try_scan_images
 
 
 def archive_document_count(source: Source | str) -> int:
@@ -31,28 +32,33 @@ def count_pending_metadata(source: Source | str) -> int:
         from pka.connectors.firefox import load_bookmarks
 
         known = set(document_index(Source.FIREFOX))
-        return sum(1 for bm in load_bookmarks() if bm.source_id not in known)
+        return sum(
+            1 for bm in take(load_bookmarks()) if bm.source_id not in known
+        )
 
     if src == Source.ZOTERO:
         from pka.connectors.zotero import ensure_zotero_copy, load_item_keys
 
         dst = ensure_zotero_copy()
-        keys = load_item_keys(copy_path=dst, skip_copy=True)
+        keys = set(take(sorted(load_item_keys(copy_path=dst, skip_copy=True))))
         known = set(document_index(Source.ZOTERO))
         return sum(1 for key in keys if key not in known)
 
     if src == Source.CALIBRE:
-        from pka.connectors.calibre import load_books
-
+        books, unavailable = try_load_calibre_books()
+        if unavailable:
+            return 0
         known = set(document_index(Source.CALIBRE))
-        return sum(1 for book in load_books() if book.source_id not in known)
+        return sum(1 for book in take(books) if book.source_id not in known)
 
     if src == Source.IMAGE:
-        from pka.connectors.images import scan_images
         from pka.ingestion.image_pipeline import _image_already_indexed
 
+        images, unavailable = try_scan_images()
+        if unavailable:
+            return 0
         pending = 0
-        for img in scan_images(settings.images_dir):
+        for img in take(images):
             if _image_already_indexed(img.path) is None:
                 pending += 1
         return pending

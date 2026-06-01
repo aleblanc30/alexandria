@@ -20,6 +20,7 @@ def get_source_handlers() -> dict[str, SourceHandlers]:
         sync_calibre_ingest,
         sync_calibre_metadata,
     )
+    from pka.ingestion.dev_limits import effective_ingestion_limit
     from pka.ingestion.firefox_sync import (
         sync_firefox,
         sync_firefox_ingest,
@@ -45,10 +46,12 @@ def get_source_handlers() -> dict[str, SourceHandlers]:
         Source.FIREFOX: SourceHandlers(
             sync_metadata=sync_firefox_metadata,
             sync_ingest=lambda *, progress_key=None, **__: sync_firefox_ingest(
-                progress_key=progress_key, fetch_limit=None,
+                progress_key=progress_key,
+                fetch_limit=effective_ingestion_limit(),
             ),
             sync_full=lambda *, progress_key=None, **__: sync_firefox(
-                progress_key=progress_key, fetch_limit=None,
+                progress_key=progress_key,
+                fetch_limit=effective_ingestion_limit(),
             ),
         ),
         Source.CALIBRE: SourceHandlers(

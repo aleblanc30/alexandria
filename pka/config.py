@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # ── Output paths ────────────────────────────────────────────────────────
     data_dir: Path = Path("data")
     dev: bool = False  # PKA_DEV=1 — dev API + one-time Firefox places snapshot
+    dev_ingestion_limit: int = 100  # max docs per source when dev=True
 
     @property
     def archive_db(self) -> Path:

@@ -6,6 +6,7 @@ from pka.connectors.firefox import load_bookmarks
 from pka.constants import Source
 from pka.ingestion.fetcher import fetch_pending, _get_pending
 from pka.ingestion import sync_progress as sp
+from pka.ingestion.dev_limits import take
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.ingestion.sync_helpers import should_stop
 from pka.ingestion.runners.firefox import ingest_fetched_texts, ingest_firefox_bookmarks
@@ -29,7 +30,7 @@ def sync_firefox_metadata(
 
     init_db()
     key = progress_key or "firefox"
-    bookmarks = load_bookmarks()
+    bookmarks = take(load_bookmarks())
     baseline = archive_document_count(Source.FIREFOX)
     pending = count_pending_metadata(Source.FIREFOX)
     sp.begin_metadata_sync(key, pending, baseline)
@@ -68,7 +69,7 @@ def sync_firefox_ingest(
     stats: dict = {}
     pending = _get_pending(fetch_limit)
     n_pending = len(pending)
-    n_bm = len(load_bookmarks())
+    n_bm = len(take(load_bookmarks()))
     _plan_counts(n_bm)
 
     if n_pending == 0:

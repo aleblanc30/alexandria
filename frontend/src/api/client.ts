@@ -75,7 +75,11 @@ export interface ImageOut {
   date_taken: number | null; tags: string[]; similarity: number | null
 }
 export interface SearchResponse { query: string; total: number; documents: DocumentOut[]; images: ImageOut[] }
-export interface ClusterOut    { cluster_id: number; label: string; description: string | null; run_id: number; doc_count: number; suggested_tag: string; tag_candidates: TagCandidate[]; llm_error?: string | null }
+export interface ClusterOut    {
+  cluster_id: number; label: string; description: string | null; run_id: number; doc_count: number
+  level: number; parent_cluster_id: number | null; parent_label: string | null
+  suggested_tag: string; tag_candidates: TagCandidate[]; llm_error?: string | null
+}
 export interface TagCandidate  { tag: string; source: string; coverage: number; doc_count: number }
 export interface ClusterDetail extends ClusterOut { top_tags: string[] }
 export interface ApplyTagResult { cluster_id: number; tag: string; applied: number; skipped: number }
@@ -91,6 +95,7 @@ export interface IngestionStatus {
   by_source: Record<string, number>
   pending_metadata_by_source?: Record<string, number>
   fetch_by_source?: Record<string, Record<string, number>>
+  source_unavailable?: Record<string, string | null>
   unfetchable: number
   pending: number
 }
@@ -143,6 +148,8 @@ export const listDocuments = (params?: {
   sources?: string[]
   source_tags?: string[]
   overlay_tags?: string[]
+  cluster_l1_tags?: string[]
+  cluster_l2_tags?: string[]
   limit?: number
   offset?: number
 }) => {
@@ -150,6 +157,8 @@ export const listDocuments = (params?: {
   params?.sources?.forEach(s => qs.append('sources', s))
   params?.source_tags?.forEach(t => qs.append('source_tags', t))
   params?.overlay_tags?.forEach(t => qs.append('overlay_tags', t))
+  params?.cluster_l1_tags?.forEach(t => qs.append('cluster_l1_tags', t))
+  params?.cluster_l2_tags?.forEach(t => qs.append('cluster_l2_tags', t))
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.offset != null) qs.set('offset', String(params.offset))
   const query = qs.toString()
