@@ -180,6 +180,15 @@ class TestIngestFirefoxBookmarks:
             ).fetchone()
         assert row[0] == "pending"
 
+    def test_local_file_url_marked_unfetchable(self):
+        bm = _make_firefox_bookmark(url="file:///C:/Users/foo.pdf")
+        ingest_firefox_bookmarks([bm])
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.fetch_status).where(documents.c.source_id == "F001")
+            ).fetchone()
+        assert row[0] == "unfetchable"
+
     def test_tags_written(self):
         ingest_firefox_bookmarks([_make_firefox_bookmark()])
         with get_engine().connect() as con:

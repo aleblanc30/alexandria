@@ -7,9 +7,11 @@ Strategy:
   - trafilatura for main-content extraction; readability-lxml as fallback
   - Remote PDFs: download bytes, extract via book_extractor.extract_pdf, embed
   - Other non-HTML targets (EPUB, torrents, …) flagged as "skipped"
+  - Local ``file:`` URLs and bare filesystem paths → "unfetchable" (no HTTP fetch)
   - Auth failures, timeouts, 4xx/5xx → status "unfetchable", logged to fetch_log
   - HTTP 404 with ``fetch_wayback_fallback`` enabled → query archive.org for a snapshot
   - ``*.wikipedia.org`` URLs → MediaWiki Action API (with retries) instead of HTML scrape
+  - Amazon book product pages → title + editorial summary extracted for browse cards
 
 Previously skipped PDF bookmarks stay ``fetch_status=skipped`` until reset manually, e.g.::
 
@@ -18,6 +20,7 @@ Previously skipped PDF bookmarks stay ``fetch_status=skipped`` until reset manua
 """
 import asyncio
 import logging
+import re
 import tempfile
 import threading
 import time
@@ -44,6 +47,10 @@ _PDF_MAGIC = b"%PDF"
 # Extensions that are not HTML and should be skipped (PDF handled separately)
 _SKIP_EXTENSIONS = {".epub", ".torrent", ".zip", ".gz", ".mp4", ".mp3"}
 
+# Windows drive letters (C:, C\:, C:/…) and UNC paths — not HTTP fetch targets
+_LOCAL_PATH_RE = re.compile(r"^[A-Za-z](?:[/\\])?:", re.ASCII)
+_UNC_PATH_RE = re.compile(r"^\\\\")
+
 
 @dataclass
 class FetchResult:
@@ -54,6 +61,7 @@ class FetchResult:
     http_status: int | None
     error_msg: str | None
     archive_url: str | None = None  # Wayback snapshot URL when content came from archive.org
+    title: str | None = None       # when set, overrides documents.title on persist
 
 
 # ── Rate limiting (simple per-domain token bucket) ───────────────────────────
@@ -80,6 +88,39 @@ class _DomainRateLimiter:
 
 
 _limiter = _DomainRateLimiter(rps=1.0)   # 1 req/s per domain
+
+
+def _looks_like_local_path(value: str) -> bool:
+    s = value.strip()
+    if not s:
+        return False
+    if _UNC_PATH_RE.match(s):
+        return True
+    if _LOCAL_PATH_RE.match(s):
+        return True
+    # Absolute unix path without a scheme (file:///… is handled via scheme=file).
+    return s.startswith("/") and not s.startswith("//")
+
+
+def bookmark_url_unfetchable_reason(url: str) -> str | None:
+    """Return an error reason when a bookmark cannot be fetched over HTTP(S)."""
+    raw = (url or "").strip()
+    if not raw:
+        return "empty url"
+    parsed = urlparse(raw)
+    scheme = parsed.scheme.lower()
+    if scheme in ("http", "https"):
+        return None
+    if scheme == "file":
+        return "local file url"
+    if len(scheme) == 1 and scheme.isalpha():
+        return "local file path"
+    if scheme:
+        return f"unsupported url scheme: {scheme}"
+    candidate = parsed.path or raw
+    if _looks_like_local_path(candidate) or _looks_like_local_path(raw):
+        return "local file path"
+    return "missing http(s) scheme"
 
 
 def _url_looks_like_pdf(url: str) -> bool:
@@ -219,6 +260,9 @@ async def _fetch_one_impl(
         parse_wikipedia_url,
     )
 
+    if reason := bookmark_url_unfetchable_reason(url):
+        return FetchResult(doc_id, url, "unfetchable", None, None, reason)
+
     if is_wikipedia_special(url):
         return FetchResult(doc_id, url, "skipped", None, None, "wikipedia special page")
     if parse_wikipedia_url(url) is not None:
@@ -264,6 +308,21 @@ async def _fetch_one_impl(
     if content_type and content_type not in _HTML_TYPES:
         return FetchResult(doc_id, url, "skipped", None, http_status,
                            f"non-html content-type: {content_type}")
+
+    from pka.ingestion.amazon import extract_amazon_book, is_amazon_book_url
+
+    if is_amazon_book_url(url):
+        book = extract_amazon_book(resp.text)
+        if book:
+            return FetchResult(
+                doc_id,
+                url,
+                "fetched",
+                book.summary,
+                http_status,
+                "fetched via amazon book handler",
+                title=book.title,
+            )
 
     text = _extract_text(resp.text, url)
     if not text:
@@ -320,12 +379,21 @@ def reset_unfetchable_for_fetch() -> int:
 
     eng = get_engine()
     with eng.begin() as con:
-        result = con.execute(
-            documents.update()
-            .where(
+        rows = con.execute(
+            sa.select(documents.c.id, documents.c.url_or_path).where(
                 (documents.c.source == str(Source.FIREFOX))
                 & (documents.c.fetch_status == str(FetchStatus.UNFETCHABLE))
             )
+        ).fetchall()
+        requeue_ids = [
+            row[0] for row in rows
+            if row[1] and bookmark_url_unfetchable_reason(row[1]) is None
+        ]
+        if not requeue_ids:
+            return 0
+        result = con.execute(
+            documents.update()
+            .where(documents.c.id.in_(requeue_ids))
             .values(fetch_status=str(FetchStatus.PENDING))
         )
         count = result.rowcount or 0
@@ -342,6 +410,8 @@ def _persist_fetch_result(r: FetchResult) -> None:
         update_values: dict = {"fetch_status": r.status}
         if r.status == "fetched":
             update_values["archive_url"] = r.archive_url
+        if r.title:
+            update_values["title"] = r.title
         con.execute(
             documents.update()
             .where(documents.c.id == r.document_id)

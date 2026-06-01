@@ -14,6 +14,7 @@ from pka.db.queries import (
     insert_source_tags,
 )
 from pka.ingestion.core import ingest_text_block
+from pka.ingestion.fetcher import bookmark_url_unfetchable_reason
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 
 log = logging.getLogger(__name__)
@@ -36,13 +37,18 @@ def ingest_firefox_bookmarks(
     def _persist(bm: FirefoxBookmark) -> MetadataOutcome:
         if dry_run:
             return "dry_run"
+        fetch_status = (
+            FetchStatus.UNFETCHABLE
+            if bookmark_url_unfetchable_reason(bm.url)
+            else FetchStatus.PENDING
+        )
         doc_id = insert_document_if_new(
             source       = Source.FIREFOX,
             source_id    = bm.source_id,
             title        = bm.title,
             url_or_path  = bm.url,
             date_added   = bm.date_added,
-            fetch_status = FetchStatus.PENDING,
+            fetch_status = fetch_status,
         )
         if doc_id is None:
             return "skipped"

@@ -5,7 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from pka.db.queries import init_db, upsert_document
 from pka.constants import FetchStatus
-from pka.ingestion.fetcher import _fetch_one, fetch_pending, FetchResult, reset_unfetchable_for_fetch
+from pka.ingestion.fetcher import (
+    _fetch_one,
+    bookmark_url_unfetchable_reason,
+    fetch_pending,
+    FetchResult,
+    reset_unfetchable_for_fetch,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -37,7 +43,42 @@ def _pdf_response(
     return resp
 
 
+class TestBookmarkUrlUnfetchableReason:
+    @pytest.mark.parametrize(
+        "url,reason",
+        [
+            ("file:///C:/Users/foo.pdf", "local file url"),
+            ("file:///home/user/doc.html", "local file url"),
+            ("C:", "local file path"),
+            ("C\\:", "local file path"),
+            ("C:/Users/foo.pdf", "local file path"),
+            ("\\\\server\\share\\doc.pdf", "local file path"),
+            ("/home/user/doc.html", "local file path"),
+            ("https://example.com/page", None),
+            ("http://example.com/page", None),
+        ],
+    )
+    def test_detects_non_http_urls(self, url, reason):
+        assert bookmark_url_unfetchable_reason(url) == reason
+
+
 class TestFetchOne:
+    @pytest.mark.asyncio
+    async def test_unfetchable_local_file_url_without_http(self):
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        result = await _fetch_one(mock_client, doc_id=1, url="file:///C:/Users/foo.pdf")
+        assert result.status == "unfetchable"
+        assert result.error_msg == "local file url"
+        mock_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unfetchable_windows_drive_path(self):
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        result = await _fetch_one(mock_client, doc_id=1, url="C\\:")
+        assert result.status == "unfetchable"
+        assert "local file path" in (result.error_msg or "")
+        mock_client.get.assert_not_called()
+
     @pytest.mark.asyncio
     async def test_fetched_status_on_200(self):
         mock_client = AsyncMock(spec=httpx.AsyncClient)
@@ -383,6 +424,9 @@ class TestResetUnfetchableForFetch:
         other_id = upsert_document(
             "firefox", "F-403B", "Blocked", "https://example.com/gone", None,
         )
+        local_id = upsert_document(
+            "firefox", "F-LOCAL", "Local", "file:///C:/Users/foo.pdf", None,
+        )
         import sqlalchemy as sa
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
@@ -390,7 +434,7 @@ class TestResetUnfetchableForFetch:
         with get_engine().begin() as con:
             con.execute(
                 docs_table.update()
-                .where(docs_table.c.id.in_([wiki_id, other_id]))
+                .where(docs_table.c.id.in_([wiki_id, other_id, local_id]))
                 .values(fetch_status=str(FetchStatus.UNFETCHABLE))
             )
 
@@ -398,10 +442,15 @@ class TestResetUnfetchableForFetch:
 
         assert count == 2
         with get_engine().connect() as con:
-            rows = con.execute(
-                sa.select(docs_table.c.fetch_status).where(
-                    docs_table.c.id.in_([wiki_id, other_id])
-                )
-            ).fetchall()
-        assert all(r[0] == str(FetchStatus.PENDING) for r in rows)
+            rows = {
+                r[0]: r[1]
+                for r in con.execute(
+                    sa.select(docs_table.c.id, docs_table.c.fetch_status).where(
+                        docs_table.c.id.in_([wiki_id, other_id, local_id])
+                    )
+                ).fetchall()
+            }
+        assert rows[wiki_id] == str(FetchStatus.PENDING)
+        assert rows[other_id] == str(FetchStatus.PENDING)
+        assert rows[local_id] == str(FetchStatus.UNFETCHABLE)
 
