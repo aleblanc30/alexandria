@@ -58,6 +58,7 @@ export interface DocumentOut  {
   similarity: number | null
 }
 export interface DocumentDetail extends DocumentOut {
+  description: string
   chunks_count: number; collections: string[]
 }
 export interface DocumentListItem {

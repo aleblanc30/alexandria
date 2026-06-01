@@ -368,6 +368,17 @@ def _truncate_snippet(text: str | None, max_len: int = _SNIPPET_MAX) -> str:
     return collapsed[:max_len].rstrip() + "…"
 
 
+def first_chunk_snippet(con: sa.Connection, doc_id: int) -> str:
+    """First-chunk text for a document, collapsed and truncated like browse cards."""
+    row = con.execute(
+        sa.select(chunks.c.text)
+        .where(chunks.c.document_id == doc_id)
+        .order_by(chunks.c.chunk_index)
+        .limit(1)
+    ).fetchone()
+    return _truncate_snippet(row[0] if row else None)
+
+
 def _apply_document_browse_filters(
     q: sa.Select,
     *,

@@ -13,6 +13,11 @@
     </div>
 
     <div v-if="doc" class="panel-body">
+      <section v-if="doc.description" class="section">
+        <div class="section-label">Summary</div>
+        <p class="panel-summary">{{ doc.description }}</p>
+      </section>
+
       <section class="section">
         <div class="section-label">Metadata</div>
         <div class="meta-grid">
@@ -146,6 +151,7 @@ async function addTag() {
 .add-tag input  { flex: 1; padding: 5px 8px; border: 0.5px solid var(--border); border-radius: var(--radius); font-size: 12px }
 .add-tag button { padding: 4px 10px; font-size: 11px; border: 0.5px solid var(--border); border-radius: var(--radius); background: #f5f4f0; cursor: pointer }
 .hint-text   { font-size: 12px; color: var(--muted) }
+.panel-summary { font-size: 13px; color: var(--muted); line-height: 1.45; margin: 0 }
 .score-bar   { height: 6px; background: #E6F1FB; border-radius: 3px; overflow: hidden; margin-bottom: 4px }
 .score-fill  { height: 100%; background: #378ADD; border-radius: 3px }
 </style>

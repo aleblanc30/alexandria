@@ -26,6 +26,7 @@ class DocumentOut(BaseModel):
 
 
 class DocumentDetail(DocumentOut):
+    description: str = ""
     chunks_count: int
     collections: list[str]
 

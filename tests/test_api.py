@@ -490,6 +490,15 @@ class TestDocuments:
         for key in ("id", "title", "source", "source_tags", "overlay_tags", "chunks_count"):
             assert key in data
 
+    def test_get_document_description(self, client):
+        ids = _seed_docs(1)
+        insert_chunks([{
+            "document_id": ids[0], "chunk_index": 0,
+            "text": "First chunk body text.", "token_count": 4, "vector_id": "v0",
+        }])
+        data = client.get(f"/documents/{ids[0]}").json()
+        assert data["description"] == "First chunk body text."
+
     def test_get_document_with_cluster(self, client):
         ids = _seed_docs(4)
         run_id = _seed_run(ids, n_clusters=2)
