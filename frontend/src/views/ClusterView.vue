@@ -11,7 +11,7 @@
         :disabled="applyingAll"
         @click="applyAll"
       >
-        {{ applyingAll ? 'Applying…' : 'Apply all tag suggestions' }}
+        {{ applyingAll ? 'Applying…' : 'Apply all labels as tags' }}
       </button>
     </div>
 
@@ -37,53 +37,39 @@
             {{ c.level === 2 ? 'Level 2' : 'Level 1' }}
           </div>
           <div v-if="c.level === 2 && c.parent_label" class="cluster-parent">{{ c.parent_label }}</div>
-          <div class="cluster-name">{{ c.label }}</div>
-          <div class="cluster-desc">{{ c.description }}</div>
+
+          <div class="cluster-label-row">
+            <input
+              v-model="labelEdits[c.cluster_id]"
+              class="cluster-label-input"
+              :class="{ 'cluster-label-input--dirty': isDirty(c.cluster_id) }"
+              type="text"
+              @blur="saveLabel(c)"
+              @keydown.enter="($event.target as HTMLInputElement)?.blur()"
+            />
+            <button
+              type="button"
+              class="btn-xs"
+              :disabled="regeneratingId === c.cluster_id"
+              @click.stop="regenerateOne(c)"
+            >
+              {{ regeneratingId === c.cluster_id ? '…' : 'Regenerate label' }}
+            </button>
+            <button
+              type="button"
+              class="btn-xs btn-xs--ok"
+              :disabled="applyingId === c.cluster_id"
+              @click.stop="applyOne(c)"
+            >
+              {{ applyingId === c.cluster_id ? '…' : 'Apply as tag' }}
+            </button>
+          </div>
+
+          <div v-if="c.description" class="cluster-desc">{{ c.description }}</div>
           <div class="cluster-count">{{ c.doc_count }} documents</div>
           <div class="cluster-bar-bg">
             <div class="cluster-bar-fill"
                  :style="{ width: (c.doc_count / maxCount * 100) + '%', background: colorFor(group.l1.cluster_id) }" />
-          </div>
-
-          <div class="cluster-tag-section" @click.stop>
-            <div class="cluster-tag-label">Tag suggestions</div>
-            <div v-if="c.tag_candidates?.length" class="cluster-candidates">
-              <button
-                v-for="candidate in c.tag_candidates"
-                :key="candidate.tag + candidate.source"
-                type="button"
-                class="candidate-chip"
-                :class="{ 'candidate-chip--active': tagEdits[c.cluster_id] === candidate.tag }"
-                @click="selectCandidate(c, candidate.tag)"
-              >
-                <span>#{{ candidate.tag }}</span>
-                <span class="candidate-meta">{{ candidateLabel(candidate) }}</span>
-              </button>
-            </div>
-            <p v-if="c.llm_error" class="cluster-llm-error">{{ c.llm_error }}</p>
-            <p v-else-if="!c.tag_candidates?.length" class="hint-text">No tag suggestions yet</p>
-
-            <div class="cluster-tag-row">
-              <input
-                v-model="tagEdits[c.cluster_id]"
-                class="cluster-tag-input"
-                :placeholder="c.suggested_tag"
-              />
-              <button
-                class="btn-xs"
-                :disabled="regeneratingId === c.cluster_id"
-                @click="regenerateOne(c)"
-              >
-                {{ regeneratingId === c.cluster_id ? '…' : 'Regenerate' }}
-              </button>
-              <button
-                class="btn-xs btn-xs--ok"
-                :disabled="applyingId === c.cluster_id"
-                @click="applyOne(c)"
-              >
-                {{ applyingId === c.cluster_id ? '…' : 'Apply' }}
-              </button>
-            </div>
           </div>
         </div>
       </section>
@@ -93,11 +79,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive } from 'vue'
 import { useClustersStore } from '@/stores/clusters'
-import type { ClusterOut, TagCandidate } from '@/api/client'
+import type { ClusterOut } from '@/api/client'
+import { slugifyTag } from '@/lib/slugifyTag'
 import ScatterPlot from '@/components/ScatterPlot.vue'
 
 const store           = useClustersStore()
-const tagEdits        = reactive<Record<number, string>>({})
+const labelEdits      = reactive<Record<number, string>>({})
+const savedLabels     = reactive<Record<number, string>>({})
 const applyingId      = ref<number | null>(null)
 const applyingAll     = ref(false)
 const regeneratingId  = ref<number | null>(null)
@@ -125,32 +113,34 @@ const groupedClusters = computed(() => {
   }))
 })
 
-function syncEdits(clusters: ClusterOut[]) {
+function syncLabels(clusters: ClusterOut[]) {
   for (const c of clusters) {
-    tagEdits[c.cluster_id] = c.suggested_tag
+    labelEdits[c.cluster_id] = c.label
+    savedLabels[c.cluster_id] = c.label
   }
 }
 
-function candidateLabel(candidate: TagCandidate) {
-  if (candidate.source === 'existing' && candidate.coverage > 0) {
-    return `${Math.round(candidate.coverage * 100)}%`
+function isDirty(clusterId: number): boolean {
+  return (labelEdits[clusterId] ?? '') !== (savedLabels[clusterId] ?? '')
+}
+
+async function saveLabel(c: ClusterOut) {
+  const next = (labelEdits[c.cluster_id] ?? '').trim()
+  if (!next || next === savedLabels[c.cluster_id]) return
+  try {
+    const updated = await store.patchClusterLabel(c.cluster_id, next)
+    labelEdits[c.cluster_id] = updated.label
+    savedLabels[c.cluster_id] = updated.label
+  } catch {
+    labelEdits[c.cluster_id] = savedLabels[c.cluster_id]
   }
-  if (candidate.source === 'llm') return 'AI'
-  return candidate.source
-}
-
-function selectCandidate(c: ClusterOut, tag: string) {
-  tagEdits[c.cluster_id] = tag
-}
-
-function tagFor(c: ClusterOut) {
-  return (tagEdits[c.cluster_id] || c.suggested_tag).trim()
 }
 
 async function applyOne(c: ClusterOut) {
   applyingId.value = c.cluster_id
   try {
-    await store.applyTag(c.cluster_id, tagFor(c))
+    const tag = slugifyTag(labelEdits[c.cluster_id] || c.label)
+    await store.applyTag(c.cluster_id, tag)
   } finally {
     applyingId.value = null
   }
@@ -159,14 +149,22 @@ async function applyOne(c: ClusterOut) {
 async function regenerateOne(c: ClusterOut) {
   regeneratingId.value = c.cluster_id
   try {
-    const updated = await store.regenerateTag(c.cluster_id)
-    tagEdits[c.cluster_id] = updated.suggested_tag
+    const updated = await store.regenerateLabel(c.cluster_id)
+    labelEdits[c.cluster_id] = updated.label
+    savedLabels[c.cluster_id] = updated.label
   } finally {
     regeneratingId.value = null
   }
 }
 
 async function applyAll() {
+  const dirty = store.list.some(c => isDirty(c.cluster_id))
+  if (dirty) {
+    const ok = window.confirm(
+      'Some cluster labels have unsaved edits. Apply all uses saved labels in the database only. Continue?',
+    )
+    if (!ok) return
+  }
   applyingAll.value = true
   try {
     await store.applyAllTags()
@@ -178,7 +176,7 @@ async function applyAll() {
 onMounted(async () => {
   await store.loadClusters()
   await store.loadScatter()
-  syncEdits(store.list)
+  syncLabels(store.list)
 })
 </script>
 <style scoped>
@@ -210,5 +208,32 @@ onMounted(async () => {
   font-size: 11px;
   color: var(--hint);
   margin-bottom: 4px;
+}
+.cluster-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.cluster-label-input {
+  flex: 1;
+  min-width: 160px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 4px 8px;
+  background: transparent;
+}
+.cluster-label-input:hover,
+.cluster-label-input:focus {
+  border-color: var(--border);
+  background: var(--surface);
+  outline: none;
+}
+.cluster-label-input--dirty {
+  border-color: #378ADD;
 }
 </style>

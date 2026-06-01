@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     cluster_pca_components: int = 50
     cluster_label_workers: int = 4
     cluster_async_labelling: bool = False     # TF-IDF first, LLM relabel in background
+    cluster_regenerate_temperature: float = 0.85  # higher on manual Regenerate label (Ollama)
 
     # ── Validators ──────────────────────────────────────────────────────────
     @field_validator("dev", "fetch_wayback_fallback", "cluster_async_labelling", mode="before")

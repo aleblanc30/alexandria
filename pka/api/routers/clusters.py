@@ -1,5 +1,6 @@
 """``/clusters`` — list, detail, document membership, and 2-D scatter layout."""
 import json
+import time
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,17 +13,17 @@ from pka.api.schemas.clusters import (
     ApplyTagResult,
     ClusterDetail,
     ClusterOut,
-    TagCandidateOut,
+    ClusterPatchRequest,
     UmapPoint,
 )
-from pka.constants import TagOrigin
-from pka.clustering.tag_suggestions import (
-    TagCandidate,
+from pka.clustering.cluster_tags import (
     apply_tag_to_documents,
-    build_tag_suggestions,
     cluster_document_ids,
+    label_to_tag,
     top_tags_for_cluster,
 )
+from pka.clustering.engine import relabel_single_cluster
+from pka.constants import TagOrigin
 from pka.db.schema import (
     cluster_assignments,
     cluster_runs,
@@ -54,12 +55,6 @@ def _active_run(con) -> int | None:
     return row[0] if row else None
 
 
-def _candidate_out(c: TagCandidate) -> TagCandidateOut:
-    return TagCandidateOut(
-        tag=c.tag, source=c.source, coverage=c.coverage, doc_count=c.doc_count,
-    )
-
-
 def _cluster_counts(con, run_id: int) -> dict[int, int]:
     rows = con.execute(
         sa.select(
@@ -73,33 +68,24 @@ def _cluster_counts(con, run_id: int) -> dict[int, int]:
 
 
 def _cluster_out(
-    con,
     row: dict,
     run_id: int,
     *,
-    refresh: bool = False,
     parent_labels: dict[int, str] | None = None,
     doc_counts: dict[int, int] | None = None,
-    use_llm: bool = True,
+    doc_count: int | None = None,
 ) -> ClusterOut:
-    n = (doc_counts or {}).get(row["cluster_id"])
+    cid = row["cluster_id"]
+    n = doc_count
     if n is None:
-        n = con.execute(
-            sa.select(sa.func.count()).select_from(cluster_assignments)
-            .where((cluster_assignments.c.cluster_id == row["cluster_id"]) &
-                   (cluster_assignments.c.run_id == run_id))
-        ).scalar() or 0
-    result = build_tag_suggestions(
-        con, row["cluster_id"], run_id, row["label"],
-        refresh=refresh, use_llm=use_llm,
-    )
+        n = (doc_counts or {}).get(cid, 0)
     level = int(row.get("level") or 1)
     parent_id = row.get("parent_cluster_id")
     parent_label = None
     if parent_id and parent_labels:
         parent_label = parent_labels.get(parent_id)
     return ClusterOut(
-        cluster_id=row["cluster_id"],
+        cluster_id=cid,
         label=row["label"] or "",
         description=row["description"],
         run_id=run_id,
@@ -107,9 +93,6 @@ def _cluster_out(
         level=level,
         parent_cluster_id=parent_id,
         parent_label=parent_label,
-        suggested_tag=result.suggested_tag,
-        tag_candidates=[_candidate_out(c) for c in result.candidates],
-        llm_error=result.llm_error,
     )
 
 
@@ -125,12 +108,7 @@ async def list_clusters(engine=Depends(get_engine)):
         parents = _parent_label_map(con, run_id)
         counts = _cluster_counts(con, run_id)
         out = [
-            _cluster_out(
-                con, r, run_id,
-                parent_labels=parents,
-                doc_counts=counts,
-                use_llm=False,
-            )
+            _cluster_out(r, run_id, parent_labels=parents, doc_counts=counts)
             for r in rows
         ]
     return sorted(out, key=lambda x: (x.level, x.parent_cluster_id or 0, -x.doc_count))
@@ -138,7 +116,7 @@ async def list_clusters(engine=Depends(get_engine)):
 
 @router.post("/apply-all-tags", response_model=ApplyAllTagsResult)
 async def apply_all_tags(engine=Depends(get_engine)):
-    """Apply each cluster's suggested tag to all documents in that cluster."""
+    """Apply each cluster's stored label as an overlay tag on its documents."""
     results: list[ApplyTagResult] = []
     total_applied = total_skipped = 0
 
@@ -152,10 +130,7 @@ async def apply_all_tags(engine=Depends(get_engine)):
         ))
         for row in rows:
             cid = row["cluster_id"]
-            suggestion = build_tag_suggestions(
-                con, cid, run_id, row["label"], use_llm=False,
-            )
-            tag = suggestion.suggested_tag
+            tag = label_to_tag(row["label"], cid)
             if not tag:
                 continue
             doc_ids = cluster_document_ids(con, cid, run_id)
@@ -240,33 +215,28 @@ async def get_cluster(cluster_id: int, engine=Depends(get_engine)):
             raise HTTPException(404, "No active cluster run")
         top_tags = top_tags_for_cluster(con, cluster_id, run_id)
         parents = _parent_label_map(con, run_id)
-        base = _cluster_out(con, row, run_id, parent_labels=parents)
+        n = con.execute(
+            sa.select(sa.func.count()).select_from(cluster_assignments)
+            .where(
+                (cluster_assignments.c.cluster_id == cluster_id)
+                & (cluster_assignments.c.run_id == run_id)
+            )
+        ).scalar() or 0
+        base = _cluster_out(row, run_id, parent_labels=parents, doc_count=n)
     return ClusterDetail(**base.model_dump(), top_tags=top_tags)
 
 
-@router.post("/{cluster_id}/regenerate-tag", response_model=ClusterOut)
-async def regenerate_cluster_tag(cluster_id: int, engine=Depends(get_engine)):
-    """Re-run the LLM tag suggestion for one cluster."""
-    with engine.connect() as con:
-        run_id = _active_run(con)
-        if not run_id:
-            raise HTTPException(404, "No active cluster run")
-        row = fetchone_mapping(con.execute(
-            sa.select(clusters).where(clusters.c.cluster_id == cluster_id)
-        ))
-        if not row or row["run_id"] != run_id:
-            raise HTTPException(404, "Cluster not found")
-        parents = _parent_label_map(con, run_id)
-        return _cluster_out(con, row, run_id, refresh=True, parent_labels=parents)
-
-
-@router.post("/{cluster_id}/apply-tag", response_model=ApplyTagResult)
-async def apply_cluster_tag(
+@router.patch("/{cluster_id}", response_model=ClusterOut)
+async def patch_cluster(
     cluster_id: int,
-    req: ApplyTagRequest | None = None,
+    req: ClusterPatchRequest,
     engine=Depends(get_engine),
 ):
-    """Apply the suggested tag (or an override) to every document in the cluster."""
+    """Persist a manually edited cluster label (and optional description)."""
+    label = req.label.strip()
+    if not label:
+        raise HTTPException(400, "Label cannot be empty")
+
     with engine.begin() as con:
         run_id = _active_run(con)
         if not run_id:
@@ -278,12 +248,85 @@ async def apply_cluster_tag(
         if not row or row["run_id"] != run_id:
             raise HTTPException(404, "Cluster not found")
 
-        suggestion = build_tag_suggestions(con, cluster_id, run_id, row["label"], use_llm=False)
-        default_tag = suggestion.suggested_tag
-        tag = (req.tag.strip() if req and req.tag else default_tag).strip()
+        now = int(time.time())
+        con.execute(
+            clusters.update()
+            .where(clusters.c.cluster_id == cluster_id)
+            .values(
+                label=label,
+                description=req.description,
+                created_at=now,
+            )
+        )
+        row = fetchone_mapping(con.execute(
+            sa.select(clusters).where(clusters.c.cluster_id == cluster_id)
+        ))
+        parents = _parent_label_map(con, run_id)
+        n = con.execute(
+            sa.select(sa.func.count()).select_from(cluster_assignments)
+            .where(
+                (cluster_assignments.c.cluster_id == cluster_id)
+                & (cluster_assignments.c.run_id == run_id)
+            )
+        ).scalar() or 0
+        return _cluster_out(row, run_id, parent_labels=parents, doc_count=n)
+
+
+@router.post("/{cluster_id}/regenerate-label", response_model=ClusterOut)
+async def regenerate_cluster_label(cluster_id: int, engine=Depends(get_engine)):
+    """Re-run LLM cluster labelling for one cluster."""
+    with engine.connect() as con:
+        run_id = _active_run(con)
+        if not run_id:
+            raise HTTPException(404, "No active cluster run")
+        row = fetchone_mapping(con.execute(
+            sa.select(clusters).where(clusters.c.cluster_id == cluster_id)
+        ))
+        if not row or row["run_id"] != run_id:
+            raise HTTPException(404, "Cluster not found")
+
+    try:
+        relabel_single_cluster(cluster_id, run_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+
+    with engine.connect() as con:
+        row = fetchone_mapping(con.execute(
+            sa.select(clusters).where(clusters.c.cluster_id == cluster_id)
+        ))
+        parents = _parent_label_map(con, run_id)
+        n = con.execute(
+            sa.select(sa.func.count()).select_from(cluster_assignments)
+            .where(
+                (cluster_assignments.c.cluster_id == cluster_id)
+                & (cluster_assignments.c.run_id == run_id)
+            )
+        ).scalar() or 0
+        return _cluster_out(row, run_id, parent_labels=parents, doc_count=n)
+
+
+@router.post("/{cluster_id}/apply-tag", response_model=ApplyTagResult)
+async def apply_cluster_tag(
+    cluster_id: int,
+    req: ApplyTagRequest | None = None,
+    engine=Depends(get_engine),
+):
+    """Apply the cluster label (slugified) or an override tag to every document."""
+    with engine.begin() as con:
+        run_id = _active_run(con)
+        if not run_id:
+            raise HTTPException(404, "No active cluster run")
+
+        row = fetchone_mapping(con.execute(
+            sa.select(clusters).where(clusters.c.cluster_id == cluster_id)
+        ))
+        if not row or row["run_id"] != run_id:
+            raise HTTPException(404, "Cluster not found")
+
+        raw = (req.tag if req and req.tag else row["label"]) or ""
+        tag = label_to_tag(raw.strip(), cluster_id)
         if not tag:
-            detail = suggestion.llm_error or "No tag suggestion available"
-            raise HTTPException(400, detail)
+            raise HTTPException(400, "No tag available — set a cluster label first")
 
         doc_ids = cluster_document_ids(con, cluster_id, run_id)
         origin = _cluster_tag_origin(int(row.get("level") or 1))

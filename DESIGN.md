@@ -86,7 +86,9 @@ run. Drift detection (`compute_drift`) and merge suggestions
 (`compute_merge_suggestions`) operate against the active run and flag
 clusters that may need to be split or merged, but never act automatically.
 
-Clustering uses **hierarchical HDBSCAN**: a global pass produces level-1
-clusters; each sufficiently large L1 cluster gets a local UMAP+HDBSCAN pass
-for level-2 sub-clusters. Manual “apply tag” writes `overlay_tags` with
-origins `cluster_l1` or `cluster_l2` for browse filtering.
+Clustering uses **hierarchical HDBSCAN** (PCA space by default): level-2
+subclusters are labelled via LLM from document titles plus content excerpts
+(`card_summary` or first chunk); level-1 labels summarize L2 child labels when
+subclusters exist, otherwise the same title+content sampling. The cluster explorer
+lets you edit labels inline, regenerate via LLM, and apply the stored label as
+an overlay tag (`cluster_l1` / `cluster_l2` origins) for browse filtering.

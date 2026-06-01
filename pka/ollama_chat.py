@@ -44,7 +44,13 @@ def resolve_chat_model(explicit: str | None = None) -> str:
     return cfg.chat_model or "llama3"
 
 
-def chat_json(prompt: str, model: str | None = None, timeout: float = 90) -> tuple[dict[str, Any], str | None]:
+def chat_json(
+    prompt: str,
+    model: str | None = None,
+    timeout: float = 90,
+    *,
+    temperature: float | None = None,
+) -> tuple[dict[str, Any], str | None]:
     """Send a chat prompt and parse a JSON object from the reply.
 
     Returns ``(parsed_dict, error_message)``. *error_message* is set on failure.
@@ -52,15 +58,18 @@ def chat_json(prompt: str, model: str | None = None, timeout: float = 90) -> tup
     from pka.clustering.engine import _parse_llm_json
 
     chosen = resolve_chat_model(model)
+    payload: dict[str, Any] = {
+        "model": chosen,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+    }
+    if temperature is not None:
+        payload["options"] = {"temperature": temperature}
     try:
         import httpx
         resp = httpx.post(
             f"{cfg.ollama_base_url}/api/chat",
-            json={
-                "model": chosen,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-            },
+            json=payload,
             timeout=timeout,
         )
         resp.raise_for_status()

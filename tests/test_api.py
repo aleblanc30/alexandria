@@ -74,20 +74,22 @@ def _seed_run(doc_ids: list[int], n_clusters: int = 2, *, with_l2: bool = False)
                 ))
         if with_l2 and l1_ids:
             parent = l1_ids[0]
-            l2_res = con.execute(
-                clusters.insert().values(
-                    label="Subcluster 0", description="",
-                    created_at=now, run_id=run_id,
-                    level=2, parent_cluster_id=parent,
+            parent_docs = doc_ids[0::n_clusters]
+            for sub_idx in range(2):
+                l2_res = con.execute(
+                    clusters.insert().values(
+                        label=f"Subcluster {sub_idx}", description="",
+                        created_at=now, run_id=run_id,
+                        level=2, parent_cluster_id=parent,
+                    )
                 )
-            )
-            l2_id = l2_res.inserted_primary_key[0]
-            for did in doc_ids[0::n_clusters]:
-                con.execute(cluster_assignments.insert().values(
-                    document_id=did, cluster_id=l2_id,
-                    run_id=run_id, score=0.8, assigned_at=now,
-                    level=2,
-                ))
+                l2_id = l2_res.inserted_primary_key[0]
+                for did in parent_docs[sub_idx::2]:
+                    con.execute(cluster_assignments.insert().values(
+                        document_id=did, cluster_id=l2_id,
+                        run_id=run_id, score=0.8, assigned_at=now,
+                        level=2,
+                    ))
     return run_id
 
 
@@ -469,15 +471,9 @@ class TestDocuments:
         assert r_preprint.json()["total"] == 1
         assert r_preprint.json()["documents"][0]["id"] == ids[1]
 
-    def test_list_documents_cluster_l1_l2_tag_filters(self, client, monkeypatch):
+    def test_list_documents_cluster_l1_l2_tag_filters(self, client):
         ids = _seed_docs(4)
         _seed_run(ids, n_clusters=2, with_l2=True)
-        monkeypatch.setattr(
-            "pka.clustering.tag_suggestions.suggest_tag_with_llm",
-            lambda *a, **k: ("seeded-tag", None),
-        )
-        from pka.clustering import tag_suggestions as ts
-        ts._TAG_CACHE.clear()
         l1 = next(c for c in client.get("/clusters").json() if c["level"] == 1)
         l2 = next(c for c in client.get("/clusters").json() if c["level"] == 2)
         l1_tag = client.post(
@@ -621,15 +617,9 @@ class TestTags:
         restored = [t["tag"] for t in client.get("/tags?origin=source").json()]
         assert set(restored) >= {"ml", "python"}
 
-    def test_filter_by_cluster_l1_l2_origin(self, client, monkeypatch):
+    def test_filter_by_cluster_l1_l2_origin(self, client):
         ids = _seed_docs(4)
         _seed_run(ids, n_clusters=2, with_l2=True)
-        monkeypatch.setattr(
-            "pka.clustering.tag_suggestions.suggest_tag_with_llm",
-            lambda *a, **k: ("seeded-tag", None),
-        )
-        from pka.clustering import tag_suggestions as ts
-        ts._TAG_CACHE.clear()
         l1 = next(c for c in client.get("/clusters").json() if c["level"] == 1)
         l2 = next(c for c in client.get("/clusters").json() if c["level"] == 2)
         l1_tag = client.post(
@@ -649,15 +639,6 @@ class TestTags:
 # ── Clusters ──────────────────────────────────────────────────────────────────
 
 class TestClusters:
-    @pytest.fixture(autouse=True)
-    def _mock_llm_tags(self, monkeypatch):
-        from pka.clustering import tag_suggestions as ts
-        ts._TAG_CACHE.clear()
-        monkeypatch.setattr(
-            "pka.clustering.tag_suggestions.suggest_tag_with_llm",
-            lambda *a, **k: ("suggested-tag", None),
-        )
-
     def test_returns_empty_without_active_run(self, client):
         r = client.get("/clusters")
         assert r.status_code == 200
@@ -669,9 +650,8 @@ class TestClusters:
         r = client.get("/clusters")
         data = r.json()
         assert len(data) == 2
-        assert all("suggested_tag" in c for c in data)
-        assert all("tag_candidates" in c for c in data)
-        assert isinstance(data[0]["tag_candidates"], list)
+        for key in ("cluster_id", "label", "level", "doc_count"):
+            assert key in data[0]
 
     def test_cluster_detail_200(self, client):
         ids = _seed_docs(4)
@@ -682,50 +662,61 @@ class TestClusters:
         assert r.status_code == 200
         data = r.json()
         assert "top_tags" in data
-        assert "suggested_tag" in data
-        assert "tag_candidates" in data
+        assert "label" in data
 
-    def test_suggested_tag_prefers_existing_coverage(self, client, monkeypatch):
-        ids = _seed_docs(3)
+    def test_patch_cluster_label(self, client):
+        ids = _seed_docs(2)
         _seed_run(ids, n_clusters=1)
         cid = client.get("/clusters").json()[0]["cluster_id"]
-        from pka.db.queries import get_engine
-        from pka.db.schema import clusters, source_tags
-        from pka.clustering import tag_suggestions as ts
-        with get_engine().begin() as con:
-            con.execute(
-                clusters.update()
-                .where(clusters.c.cluster_id == cid)
-                .values(label="Miscellaneous research")
-            )
-            for did in ids[:2]:
-                con.execute(source_tags.insert().values(
-                    document_id=did, tag_string="consensus", source="zotero",
-                ))
-        ts._TAG_CACHE.clear()
-        monkeypatch.setattr(
-            "pka.clustering.tag_suggestions.suggest_tag_with_llm",
-            lambda *a, **k: ("", "offline"),
-        )
-        data = client.get(f"/clusters/{cid}").json()
-        assert data["suggested_tag"] == "consensus"
-        assert any(c["source"] == "existing" for c in data["tag_candidates"])
+        r = client.patch(f"/clusters/{cid}", json={"label": "Custom Topic Name"})
+        assert r.status_code == 200
+        assert r.json()["label"] == "Custom Topic Name"
+        listed = client.get("/clusters").json()
+        assert next(c for c in listed if c["cluster_id"] == cid)["label"] == "Custom Topic Name"
 
-    def test_regenerate_tag(self, client, monkeypatch):
+    def test_regenerate_label(self, client, monkeypatch):
         ids = _seed_docs(2)
         _seed_run(ids, n_clusters=1)
         cid = client.get("/clusters").json()[0]["cluster_id"]
         monkeypatch.setattr(
-            "pka.clustering.tag_suggestions.suggest_tag_with_llm",
-            lambda *a, **k: ("llm-topic", None),
+            "pka.clustering.engine._label_cluster_with_llm",
+            lambda samples, model=None, **kw: ("Regenerated Topic", "A description."),
         )
-        from pka.clustering import tag_suggestions as ts
-        ts._TAG_CACHE.clear()
-        r = client.post(f"/clusters/{cid}/regenerate-tag")
+        r = client.post(f"/clusters/{cid}/regenerate-label")
         assert r.status_code == 200
-        data = r.json()
-        assert data["suggested_tag"] == "llm-topic"
-        assert any(c["source"] == "llm" for c in data["tag_candidates"])
+        assert r.json()["label"] == "Regenerated Topic"
+        assert r.json()["description"] == "A description."
+
+    def test_regenerate_label_passes_temperature(self, client, monkeypatch):
+        captured: dict = {}
+
+        def fake_chat_json(prompt, model=None, timeout=90, *, temperature=None):
+            captured["temperature"] = temperature
+            return {"label": "New Label", "description": "New desc"}, None
+
+        monkeypatch.setattr("pka.ollama_chat.chat_json", fake_chat_json)
+        ids = _seed_docs(2)
+        _seed_run(ids, n_clusters=1)
+        cid = client.get("/clusters").json()[0]["cluster_id"]
+        r = client.post(f"/clusters/{cid}/regenerate-label")
+        assert r.status_code == 200
+        assert captured.get("temperature") == 0.85
+
+    def test_apply_tag_uses_cluster_label(self, client):
+        ids = _seed_docs(3)
+        _seed_run(ids, n_clusters=1)
+        cid = client.get("/clusters").json()[0]["cluster_id"]
+        from pka.db.queries import get_engine
+        from pka.db.schema import clusters
+        with get_engine().begin() as con:
+            con.execute(
+                clusters.update()
+                .where(clusters.c.cluster_id == cid)
+                .values(label="Distributed Systems")
+            )
+        r = client.post(f"/clusters/{cid}/apply-tag", json={})
+        assert r.status_code == 200
+        assert r.json()["tag"] == "distributed-systems"
 
     def test_apply_tag_to_cluster(self, client):
         ids = _seed_docs(4)

@@ -1,12 +1,5 @@
 """Cluster, run, diagnostics, and UMAP response models."""
-from pydantic import BaseModel
-
-
-class TagCandidateOut(BaseModel):
-    tag: str
-    source: str
-    coverage: float
-    doc_count: int
+from pydantic import BaseModel, Field
 
 
 class ClusterOut(BaseModel):
@@ -18,13 +11,15 @@ class ClusterOut(BaseModel):
     level: int = 1
     parent_cluster_id: int | None = None
     parent_label: str | None = None
-    suggested_tag: str
-    tag_candidates: list[TagCandidateOut]
-    llm_error: str | None = None
 
 
 class ClusterDetail(ClusterOut):
     top_tags: list[str]
+
+
+class ClusterPatchRequest(BaseModel):
+    label: str = Field(..., min_length=1)
+    description: str | None = None
 
 
 class ApplyTagRequest(BaseModel):

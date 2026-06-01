@@ -476,6 +476,53 @@ def first_chunk_snippet(con: sa.Connection, doc_id: int) -> str:
     return _truncate_snippet(chunk_map.get(doc_id))
 
 
+def sample_cluster_documents(
+    con: sa.Connection,
+    doc_ids: list[int],
+    n: int = 8,
+) -> list[tuple[str, str]]:
+    """Return up to ``n`` (title, excerpt) pairs for cluster labelling prompts."""
+    if not doc_ids:
+        return []
+    ids = doc_ids[:n]
+    rows = con.execute(
+        sa.select(documents.c.id, documents.c.title, documents.c.card_summary)
+        .where(documents.c.id.in_(ids))
+    ).fetchall()
+    chunk_map = _batch_first_chunk_map(con, ids)
+    out: list[tuple[str, str]] = []
+    for doc_id, title, card_summary in rows:
+        title_str = (title or "").strip() or "Untitled"
+        excerpt = resolve_description(card_summary, chunk_map.get(doc_id))
+        out.append((title_str, excerpt))
+    return out
+
+
+def sample_cluster_documents_for_clusters(
+    con: sa.Connection,
+    cluster_docs: dict[int, list[int]],
+    n: int = 8,
+) -> dict[int, list[tuple[str, str]]]:
+    """Batch sample (title, excerpt) per cluster id."""
+    all_ids = {did for docs in cluster_docs.values() for did in docs}
+    if not all_ids:
+        return {cid: [] for cid in cluster_docs}
+    rows = con.execute(
+        sa.select(documents.c.id, documents.c.title, documents.c.card_summary)
+        .where(documents.c.id.in_(all_ids))
+    ).fetchall()
+    chunk_map = _batch_first_chunk_map(con, list(all_ids))
+    by_id: dict[int, tuple[str, str]] = {}
+    for doc_id, title, card_summary in rows:
+        title_str = (title or "").strip() or "Untitled"
+        excerpt = resolve_description(card_summary, chunk_map.get(doc_id))
+        by_id[doc_id] = (title_str, excerpt)
+    return {
+        cid: [by_id[d] for d in doc_ids if d in by_id][:n]
+        for cid, doc_ids in cluster_docs.items()
+    }
+
+
 def _apply_document_browse_filters(
     q: sa.Select,
     *,

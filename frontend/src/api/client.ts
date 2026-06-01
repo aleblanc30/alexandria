@@ -90,10 +90,9 @@ export interface SearchResponse { query: string; total: number; documents: Docum
 export interface ClusterOut    {
   cluster_id: number; label: string; description: string | null; run_id: number; doc_count: number
   level: number; parent_cluster_id: number | null; parent_label: string | null
-  suggested_tag: string; tag_candidates: TagCandidate[]; llm_error?: string | null
 }
-export interface TagCandidate  { tag: string; source: string; coverage: number; doc_count: number }
 export interface ClusterDetail extends ClusterOut { top_tags: string[] }
+export interface ClusterPatchRequest { label: string; description?: string | null }
 export interface ApplyTagResult { cluster_id: number; tag: string; applied: number; skipped: number }
 export interface ApplyAllTagsResult { clusters: ApplyTagResult[]; total_applied: number; total_skipped: number }
 export interface UmapPoint     { doc_id: number; x: number; y: number; cluster_id: number | null; title: string }
@@ -196,8 +195,10 @@ export const applyClusterTag = (id: number, tag?: string) =>
     method: 'POST',
     body: JSON.stringify(tag ? { tag } : {}),
   })
-export const regenerateClusterTag = (id: number) =>
-  req<ClusterOut>(`/clusters/${id}/regenerate-tag`, { method: 'POST', body: '{}' })
+export const patchCluster = (id: number, body: ClusterPatchRequest) =>
+  req<ClusterOut>(`/clusters/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+export const regenerateClusterLabel = (id: number) =>
+  req<ClusterOut>(`/clusters/${id}/regenerate-label`, { method: 'POST', body: '{}' })
 export const applyAllClusterTags = () =>
   req<ApplyAllTagsResult>('/clusters/apply-all-tags', { method: 'POST', body: '{}' })
 

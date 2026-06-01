@@ -4,8 +4,9 @@ Clustering engine: PCA-reduced embeddings → HDBSCAN → supervised UMAP viz �
 Default pipeline (``cluster_space=pca``):
   1. Aggregate chunk embeddings per document (mean pooling; SQLite cache when available).
   2. PCA → 50d; hold ``pca_matrix`` for L1 and L2 HDBSCAN (cosine metric).
-  3. Supervised UMAP → 2d scatter (``y`` = L1 labels; noise = -1).
-  4. LLM labelling for L1 and L2 clusters.
+  3. L2 subclusters labelled via LLM from document title + content excerpts.
+  4. L1 labels from L2 child labels when subclusters exist, else title + content.
+  5. Supervised UMAP → 2d scatter (``y`` = L1 labels; noise = -1).
 
 Legacy ``cluster_space=legacy_umap`` retains the old UMAP→HDBSCAN path for comparison.
 """
@@ -24,12 +25,15 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import normalize
 
 from pka.config import settings as cfg
-from pka.db.queries import get_engine
+from pka.db.queries import (
+    get_engine,
+    sample_cluster_documents,
+    sample_cluster_documents_for_clusters,
+)
 from pka.db.schema import (
     cluster_assignments,
     cluster_runs,
     clusters,
-    documents,
 )
 
 log = logging.getLogger(__name__)
@@ -354,72 +358,122 @@ def _run_hdbscan(
 
 # ── Step 5: LLM cluster labelling ─────────────────────────────────────────────
 
-def _sample_titles_for_cluster(
-    doc_ids_in_cluster: list[int],
-    n: int = 8,
-) -> list[str]:
-    eng = get_engine()
-    with eng.connect() as con:
-        rows = con.execute(
-            sa.select(documents.c.title)
-            .where(documents.c.id.in_(doc_ids_in_cluster))
-            .limit(n)
-        ).fetchall()
-    return [r[0] for r in rows if r[0]]
+DocSample = tuple[str, str]  # (title, excerpt)
 
 
-def _sample_titles_for_clusters(
-    cluster_docs: dict[int, list[int]],
-    n: int = 8,
-) -> dict[int, list[str]]:
-    """Batch-fetch titles for all clusters in one query."""
-    all_ids = {did for docs in cluster_docs.values() for did in docs}
-    if not all_ids:
-        return {cid: [] for cid in cluster_docs}
-    eng = get_engine()
-    with eng.connect() as con:
-        rows = con.execute(
-            sa.select(documents.c.id, documents.c.title)
-            .where(documents.c.id.in_(all_ids))
-        ).fetchall()
-    title_by_id = {r[0]: r[1] for r in rows if r[1]}
-    return {
-        cid: [title_by_id[d] for d in doc_ids if d in title_by_id][:n]
-        for cid, doc_ids in cluster_docs.items()
-    }
+def _format_doc_sample_lines(samples: list[DocSample]) -> str:
+    lines: list[str] = []
+    for title, excerpt in samples:
+        if excerpt.strip():
+            lines.append(f"- Title: {title}\n  Excerpt: {excerpt}")
+        else:
+            lines.append(f"- Title: {title}")
+    return "\n".join(lines)
 
 
-def _label_cluster_with_llm(titles: list[str], model: str | None = None) -> tuple[str, str]:
+def _regenerate_prompt_suffix(previous_label: str | None) -> str:
+    if not previous_label or not previous_label.strip():
+        return (
+            "\nProvide a fresh topic label and description; avoid generic placeholders.\n"
+        )
+    return (
+        f"\nThe current label is \"{previous_label.strip()}\".\n"
+        "Provide a fresh alternative label and description (not identical wording).\n"
+    )
+
+
+def _label_cluster_with_llm(
+    samples: list[DocSample],
+    model: str | None = None,
+    *,
+    temperature: float | None = None,
+    previous_label: str | None = None,
+) -> tuple[str, str]:
     """Call Ollama for a short label and one-sentence description."""
-    if not titles:
+    if not samples:
         return "Unlabelled", ""
 
     from pka.ollama_chat import chat_json
 
     prompt = (
         "You are labelling a topic cluster from a research library.\n"
-        "Below are sample document titles from the cluster:\n\n"
-        + "\n".join(f"- {t}" for t in titles)
-        + "\n\nRespond with ONLY valid JSON in this exact format:\n"
+        "Below are sample documents from the cluster (title and excerpt when available).\n"
+        "Use both title and excerpt when present.\n\n"
+        + _format_doc_sample_lines(samples)
+        + (_regenerate_prompt_suffix(previous_label) if previous_label is not None else "")
+        + "\nRespond with ONLY valid JSON in this exact format:\n"
         '{"label": "<3-5 word topic name>", "description": "<one sentence>"}\n'
         "No explanation, no markdown, just the JSON object."
     )
 
-    parsed, err = chat_json(prompt, model=model)
+    parsed, err = chat_json(prompt, model=model, temperature=temperature)
     if err:
         log.warning("LLM labelling failed: %s — using fallback", err)
-        return _tfidf_label(titles), ""
+        return _tfidf_label(samples), ""
     return parsed.get("label", "Unlabelled"), parsed.get("description", "")
 
 
-def _tfidf_label(titles: list[str], n_words: int = 4) -> str:
+def _label_parent_from_children_with_llm(
+    child_labels: list[str],
+    child_descriptions: list[str],
+    model: str | None = None,
+    *,
+    temperature: float | None = None,
+    previous_label: str | None = None,
+) -> tuple[str, str]:
+    if not child_labels:
+        return "Unlabelled", ""
+
+    from pka.ollama_chat import chat_json
+
+    lines: list[str] = []
+    for label, desc in zip(child_labels, child_descriptions, strict=False):
+        if desc.strip():
+            lines.append(f"- {label}: {desc}")
+        else:
+            lines.append(f"- {label}")
+
+    prompt = (
+        "You are naming a broad parent topic that groups several sub-clusters "
+        "in a research library.\n"
+        "Below are labels (and descriptions) of sub-clusters (do not rename them):\n\n"
+        + "\n".join(lines)
+        + (_regenerate_prompt_suffix(previous_label) if previous_label is not None else "")
+        + "\nRespond with ONLY valid JSON in this exact format:\n"
+        '{"label": "<3-5 word broader topic name>", "description": "<one sentence>"}\n'
+        "No explanation, no markdown, just the JSON object."
+    )
+
+    parsed, err = chat_json(prompt, model=model, temperature=temperature)
+    if err:
+        log.warning("LLM parent labelling failed: %s — using fallback", err)
+        return _tfidf_label_from_strings(child_labels), ""
+    return parsed.get("label", "Unlabelled"), parsed.get("description", "")
+
+
+def _tfidf_label(samples: list[DocSample], n_words: int = 4) -> str:
     from collections import Counter
     stopwords = {
         "the", "a", "an", "of", "in", "and", "to", "for", "with", "on",
         "is", "are", "by", "from", "at", "as", "that", "this", "its", "it",
     }
     words: list[str] = []
-    for t in titles:
+    for title, excerpt in samples:
+        combined = f"{title} {excerpt}"
+        words.extend(re.findall(r"[a-z]{3,}", combined.lower()))
+    freq = Counter(w for w in words if w not in stopwords)
+    top = [w for w, _ in freq.most_common(n_words)]
+    return " / ".join(top) if top else "Unlabelled"
+
+
+def _tfidf_label_from_strings(texts: list[str], n_words: int = 4) -> str:
+    from collections import Counter
+    stopwords = {
+        "the", "a", "an", "of", "in", "and", "to", "for", "with", "on",
+        "is", "are", "by", "from", "at", "as", "that", "this", "its", "it",
+    }
+    words: list[str] = []
+    for t in texts:
         words.extend(re.findall(r"[a-z]{3,}", t.lower()))
     freq = Counter(w for w in words if w not in stopwords)
     top = [w for w, _ in freq.most_common(n_words)]
@@ -428,13 +482,13 @@ def _tfidf_label(titles: list[str], n_words: int = 4) -> str:
 
 def _label_one_cluster(
     cid: int,
-    titles: list[str],
+    samples: list[DocSample],
     skip_labelling: bool,
     chat_model: str | None,
 ) -> tuple[int, str, str]:
     if skip_labelling:
-        return cid, _tfidf_label(titles), ""
-    label, desc = _label_cluster_with_llm(titles, chat_model)
+        return cid, _tfidf_label(samples), ""
+    label, desc = _label_cluster_with_llm(samples, chat_model)
     return cid, label, desc
 
 
@@ -444,12 +498,16 @@ def _label_clusters(
     chat_model: str | None,
     run_id: int | None,
 ) -> tuple[dict[int, str], dict[int, str]]:
+    """Label clusters from document title + content samples (L2 subclusters)."""
     from pka.clustering.run_progress import raise_if_cancelled
 
     if not cluster_docs:
         return {}, {}
 
-    titles_map = _sample_titles_for_clusters(cluster_docs)
+    eng = get_engine()
+    with eng.connect() as con:
+        samples_map = sample_cluster_documents_for_clusters(con, cluster_docs)
+
     label_map: dict[int, str] = {}
     desc_map: dict[int, str] = {}
     workers = 1 if skip_labelling else max(1, cfg.cluster_label_workers)
@@ -460,7 +518,7 @@ def _label_clusters(
             if run_id is not None:
                 raise_if_cancelled(run_id)
             cid, label, desc = _label_one_cluster(
-                cid, titles_map[cid], skip_labelling, chat_model,
+                cid, samples_map[cid], skip_labelling, chat_model,
             )
             label_map[cid] = label
             desc_map[cid] = desc
@@ -469,7 +527,7 @@ def _label_clusters(
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(
-                _label_one_cluster, cid, titles_map[cid], skip_labelling, chat_model,
+                _label_one_cluster, cid, samples_map[cid], skip_labelling, chat_model,
             ): cid
             for cid in cids
         }
@@ -483,61 +541,243 @@ def _label_clusters(
     return label_map, desc_map
 
 
-def relabel_run_clusters(
-    run_id: int,
-    label_model: str | None = None,
-) -> None:
-    """Phase B: replace TF-IDF placeholder labels with LLM labels for an existing run."""
-    from pka.ollama_chat import resolve_chat_model
+def _label_l1_clusters(
+    l1_cluster_docs: dict[int, list[int]],
+    l2_batches: list[L2ClusterBatch],
+    skip_labelling: bool,
+    chat_model: str | None,
+    run_id: int | None,
+) -> tuple[dict[int, str], dict[int, str]]:
+    """L1 labels from L2 children when available, else title+content on L1 docs."""
+    from pka.clustering.run_progress import raise_if_cancelled
 
+    batch_by_parent = {b.parent_l1_id: b for b in l2_batches}
+    label_map: dict[int, str] = {}
+    desc_map: dict[int, str] = {}
     eng = get_engine()
-    chat_model = resolve_chat_model(label_model)
 
     with eng.connect() as con:
-        cluster_rows = con.execute(
-            sa.select(
-                clusters.c.cluster_id,
-                clusters.c.level,
-                clusters.c.parent_cluster_id,
-            ).where(clusters.c.run_id == run_id)
-        ).fetchall()
-        if not cluster_rows:
-            return
+        fallback_samples = sample_cluster_documents_for_clusters(con, l1_cluster_docs)
 
-        cluster_docs: dict[int, list[int]] = {}
-        for row in cluster_rows:
-            db_cid = row[0]
-            level = row[1]
-            assign_rows = con.execute(
+    for l1_cid in sorted(l1_cluster_docs.keys()):
+        if run_id is not None:
+            raise_if_cancelled(run_id)
+        batch = batch_by_parent.get(l1_cid)
+        if batch and batch.label_map:
+            child_labels = [batch.label_map[c] for c in sorted(batch.label_map)]
+            child_descs = [batch.desc_map.get(c, "") for c in sorted(batch.label_map)]
+            if skip_labelling:
+                label_map[l1_cid] = _tfidf_label_from_strings(child_labels)
+                desc_map[l1_cid] = ""
+            else:
+                label, desc = _label_parent_from_children_with_llm(
+                    child_labels, child_descs, chat_model,
+                )
+                label_map[l1_cid] = label
+                desc_map[l1_cid] = desc
+        else:
+            samples = fallback_samples.get(l1_cid, [])
+            if skip_labelling:
+                label_map[l1_cid] = _tfidf_label(samples)
+                desc_map[l1_cid] = ""
+            else:
+                label, desc = _label_cluster_with_llm(samples, chat_model)
+                label_map[l1_cid] = label
+                desc_map[l1_cid] = desc
+    return label_map, desc_map
+
+
+def _label_cluster_from_docs(
+    doc_ids: list[int],
+    skip_labelling: bool,
+    chat_model: str | None,
+    *,
+    temperature: float | None = None,
+    previous_label: str | None = None,
+) -> tuple[str, str]:
+    eng = get_engine()
+    with eng.connect() as con:
+        samples = sample_cluster_documents(con, doc_ids)
+    if skip_labelling:
+        return _tfidf_label(samples), ""
+    return _label_cluster_with_llm(
+        samples, chat_model, temperature=temperature, previous_label=previous_label,
+    )
+
+
+def _label_l1_db_cluster_from_children(
+    con,
+    cluster_id: int,
+    run_id: int,
+    chat_model: str | None,
+    *,
+    temperature: float | None = None,
+    previous_label: str | None = None,
+) -> tuple[str, str]:
+    child_rows = con.execute(
+        sa.select(clusters.c.label, clusters.c.description)
+        .where(
+            (clusters.c.parent_cluster_id == cluster_id)
+            & (clusters.c.run_id == run_id)
+            & (clusters.c.level == 2)
+        )
+    ).fetchall()
+    if len(child_rows) >= 2:
+        child_labels = [r[0] or "" for r in child_rows]
+        child_descs = [r[1] or "" for r in child_rows]
+        return _label_parent_from_children_with_llm(
+            child_labels,
+            child_descs,
+            chat_model,
+            temperature=temperature,
+            previous_label=previous_label,
+        )
+    return "", ""
+
+
+def relabel_single_cluster(
+    cluster_id: int,
+    run_id: int,
+    *,
+    label_model: str | None = None,
+    skip_labelling: bool = False,
+) -> tuple[str, str]:
+    """Re-run labelling for one persisted cluster; returns (label, description).
+
+    Uses higher Ollama temperature and asks for a fresh label. L2 subcluster
+    names in the database are never changed when regenerating an L1 parent.
+    """
+    from pka.ollama_chat import resolve_chat_model
+
+    chat_model = resolve_chat_model(label_model)
+    regen_temp = cfg.cluster_regenerate_temperature
+    eng = get_engine()
+
+    with eng.connect() as con:
+        row = con.execute(
+            sa.select(clusters.c.level, clusters.c.label).where(
+                (clusters.c.cluster_id == cluster_id)
+                & (clusters.c.run_id == run_id)
+            )
+        ).fetchone()
+        if not row:
+            raise ValueError(f"Cluster {cluster_id} not found in run {run_id}")
+
+        level = int(row[0] or 1)
+        previous_label = row[1] or ""
+        doc_ids = [
+            r[0]
+            for r in con.execute(
                 sa.select(cluster_assignments.c.document_id)
                 .where(
-                    (cluster_assignments.c.cluster_id == db_cid)
+                    (cluster_assignments.c.cluster_id == cluster_id)
                     & (cluster_assignments.c.run_id == run_id)
                     & (cluster_assignments.c.level == level)
                 )
             ).fetchall()
-            doc_ids = [r[0] for r in assign_rows]
-            if doc_ids:
-                cluster_docs[db_cid] = doc_ids
+        ]
 
-    # Use db cluster ids as keys; labelling doesn't care about raw HDBSCAN ids
-    label_map, desc_map = _label_clusters(
-        cluster_docs, skip_labelling=False, chat_model=chat_model, run_id=run_id,
-    )
+        label, desc = "", ""
+        if level == 2:
+            label, desc = _label_cluster_from_docs(
+                doc_ids,
+                skip_labelling,
+                chat_model,
+                temperature=regen_temp,
+                previous_label=previous_label,
+            )
+        else:
+            label, desc = _label_l1_db_cluster_from_children(
+                con,
+                cluster_id,
+                run_id,
+                chat_model,
+                temperature=regen_temp,
+                previous_label=previous_label,
+            )
+            if not label:
+                label, desc = _label_cluster_from_docs(
+                    doc_ids,
+                    skip_labelling,
+                    chat_model,
+                    temperature=regen_temp,
+                    previous_label=previous_label,
+                )
 
     now = int(time.time())
     with eng.begin() as con:
-        for db_cid, label in label_map.items():
+        con.execute(
+            clusters.update()
+            .where(clusters.c.cluster_id == cluster_id)
+            .values(label=label, description=desc, created_at=now)
+        )
+    log.info("Relabelled cluster #%d → %s", cluster_id, label)
+    return label, desc
+
+
+def relabel_run_clusters(
+    run_id: int,
+    label_model: str | None = None,
+) -> None:
+    """Replace placeholder labels with LLM labels (L2 first, then L1 from children)."""
+    from pka.ollama_chat import resolve_chat_model
+
+    eng = get_engine()
+    chat_model = resolve_chat_model(label_model)
+    now = int(time.time())
+
+    updates: list[tuple[int, str, str]] = []
+
+    with eng.connect() as con:
+        l2_rows = con.execute(
+            sa.select(clusters.c.cluster_id)
+            .where((clusters.c.run_id == run_id) & (clusters.c.level == 2))
+        ).fetchall()
+        for (cid,) in l2_rows:
+            doc_ids = [
+                r[0]
+                for r in con.execute(
+                    sa.select(cluster_assignments.c.document_id)
+                    .where(
+                        (cluster_assignments.c.cluster_id == cid)
+                        & (cluster_assignments.c.run_id == run_id)
+                        & (cluster_assignments.c.level == 2)
+                    )
+                ).fetchall()
+            ]
+            label, desc = _label_cluster_from_docs(doc_ids, False, chat_model)
+            updates.append((cid, label, desc))
+
+        l1_rows = con.execute(
+            sa.select(clusters.c.cluster_id)
+            .where((clusters.c.run_id == run_id) & (clusters.c.level == 1))
+        ).fetchall()
+        for (cid,) in l1_rows:
+            label, desc = _label_l1_db_cluster_from_children(con, cid, run_id, chat_model)
+            if not label:
+                doc_ids = [
+                    r[0]
+                    for r in con.execute(
+                        sa.select(cluster_assignments.c.document_id)
+                        .where(
+                            (cluster_assignments.c.cluster_id == cid)
+                            & (cluster_assignments.c.run_id == run_id)
+                            & (cluster_assignments.c.level == 1)
+                        )
+                    ).fetchall()
+                ]
+                label, desc = _label_cluster_from_docs(doc_ids, False, chat_model)
+            updates.append((cid, label, desc))
+
+    with eng.begin() as con:
+        for cid, label, desc in updates:
             con.execute(
                 clusters.update()
-                .where(clusters.c.cluster_id == db_cid)
-                .values(
-                    label       = label,
-                    description = desc_map.get(db_cid, ""),
-                    created_at  = now,
-                )
+                .where(clusters.c.cluster_id == cid)
+                .values(label=label, description=desc, created_at=now)
             )
-    log.info("Relabelled %d clusters for run #%d", len(label_map), run_id)
+
+    log.info("Relabelled %d clusters for run #%d", len(updates), run_id)
 
 
 # ── Step 6: persist to DB ─────────────────────────────────────────────────────
@@ -924,12 +1164,6 @@ def _run_pca_pipeline(
     n_noise = int((l1_labels == -1).sum())
     l1_cluster_docs = _build_cluster_docs(doc_ids, l1_labels)
 
-    t0 = time.perf_counter()
-    l1_label_map, l1_desc_map = _label_clusters(
-        l1_cluster_docs, skip_labelling, chat_model, run_id,
-    )
-    timer.record("label_l1_ms", t0)
-
     if run_id is not None:
         from pka.clustering.run_progress import raise_if_cancelled
         raise_if_cancelled(run_id)
@@ -943,6 +1177,12 @@ def _run_pca_pipeline(
         hdbscan_metric="cosine",
     )
     timer.record("hdbscan_l2_ms", t0)
+
+    t0 = time.perf_counter()
+    l1_label_map, l1_desc_map = _label_l1_clusters(
+        l1_cluster_docs, l2_batches, skip_labelling, chat_model, run_id,
+    )
+    timer.record("label_l1_ms", t0)
 
     t0 = time.perf_counter()
     reduced_2d = _run_supervised_umap(pca_matrix, l1_labels, nn, min_dist)
@@ -1008,15 +1248,6 @@ def _run_legacy_pipeline(
     n_noise = int((l1_labels == -1).sum())
     l1_cluster_docs = _build_cluster_docs(doc_ids, l1_labels)
 
-    if not skip_labelling:
-        log.info("Labelling %d L1 clusters via LLM…", n_l1)
-
-    t0 = time.perf_counter()
-    l1_label_map, l1_desc_map = _label_clusters(
-        l1_cluster_docs, skip_labelling, chat_model, run_id,
-    )
-    timer.record("label_l1_ms", t0)
-
     if run_id is not None:
         from pka.clustering.run_progress import raise_if_cancelled
         raise_if_cancelled(run_id)
@@ -1031,6 +1262,12 @@ def _run_legacy_pipeline(
         run_id=run_id,
     )
     timer.record("hdbscan_l2_ms", t0)
+
+    t0 = time.perf_counter()
+    l1_label_map, l1_desc_map = _label_l1_clusters(
+        l1_cluster_docs, l2_batches, skip_labelling, chat_model, run_id,
+    )
+    timer.record("label_l1_ms", t0)
 
     params = dict(
         cluster_space     = "legacy_umap",

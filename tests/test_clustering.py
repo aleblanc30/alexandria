@@ -568,3 +568,53 @@ class TestEmbeddingsAvailable:
         assert not _embeddings_available({"embeddings": np.array([])})
         assert not _embeddings_available({})
         assert not _embeddings_available({"embeddings": None})
+
+
+class TestClusterLabellingSamples:
+    def test_sample_cluster_documents_uses_card_summary(self):
+        from pka.db.queries import get_engine, sample_cluster_documents, update_card_summary
+
+        doc_id = upsert_document("zotero", "Z001", "Paper Title", None, int(time.time()))
+        update_card_summary(doc_id, "Abstract about neural networks.")
+        with get_engine().connect() as con:
+            samples = sample_cluster_documents(con, [doc_id])
+        assert len(samples) == 1
+        assert samples[0][0] == "Paper Title"
+        assert "neural" in samples[0][1].lower()
+
+    def test_label_cluster_prompt_includes_excerpt(self, monkeypatch):
+        from pka.clustering.engine import _label_cluster_with_llm
+
+        captured: list[str] = []
+
+        def fake_chat_json(prompt, model=None, timeout=90, *, temperature=None):
+            captured.append(prompt)
+            return {"label": "AI Topic", "description": "Desc."}, None
+
+        monkeypatch.setattr("pka.ollama_chat.chat_json", fake_chat_json)
+        _label_cluster_with_llm([("Title One", "Excerpt about graphs.")])
+        assert "Excerpt: Excerpt about graphs" in captured[0]
+        assert "Title: Title One" in captured[0]
+
+    def test_l1_from_l2_children(self, monkeypatch):
+        from pka.clustering.engine import L2ClusterBatch, _label_l1_clusters
+        import numpy as np
+
+        monkeypatch.setattr(
+            "pka.clustering.engine._label_parent_from_children_with_llm",
+            lambda labels, descs, model=None: ("Parent Topic", "Parent desc."),
+        )
+        l2_batches = [
+            L2ClusterBatch(
+                parent_l1_id=0,
+                doc_ids=[1, 2],
+                labels=np.array([0, 1]),
+                label_map={0: "Child A", 1: "Child B"},
+                desc_map={0: "a", 1: "b"},
+            ),
+        ]
+        label_map, desc_map = _label_l1_clusters(
+            {0: [1, 2]}, l2_batches, skip_labelling=False, chat_model=None, run_id=None,
+        )
+        assert label_map[0] == "Parent Topic"
+        assert desc_map[0] == "Parent desc."

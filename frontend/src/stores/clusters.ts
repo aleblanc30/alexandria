@@ -27,6 +27,12 @@ export const useClustersStore = defineStore('clusters', () => {
     else stopPolling()
   }
 
+  function updateClusterInList(updated: api.ClusterOut) {
+    list.value = list.value.map(c =>
+      c.cluster_id === updated.cluster_id ? { ...c, ...updated } : c,
+    )
+  }
+
   async function loadClusters() {
     loading.value = true
     try { list.value = await api.listClusters() }
@@ -148,11 +154,25 @@ export const useClustersStore = defineStore('clusters', () => {
     }
   }
 
-  async function regenerateTag(clusterId: number) {
+  async function patchClusterLabel(clusterId: number, label: string) {
     try {
-      const updated = await api.regenerateClusterTag(clusterId)
-      list.value = list.value.map(c => c.cluster_id === clusterId ? updated : c)
-      useToastStore().push(`Updated suggestion: #${updated.suggested_tag}`, 'info')
+      const updated = await api.patchCluster(clusterId, { label })
+      updateClusterInList(updated)
+      return updated
+    } catch (e) {
+      notifyError(e)
+      throw e
+    }
+  }
+
+  async function regenerateLabel(clusterId: number) {
+    try {
+      const updated = await api.regenerateClusterLabel(clusterId)
+      updateClusterInList(updated)
+      const detail = updated.description
+        ? `${updated.label} — ${updated.description}`
+        : updated.label
+      useToastStore().push(`Regenerated: ${detail}`, 'info', 6000)
       return updated
     } catch (e) {
       notifyError(e)
@@ -163,7 +183,8 @@ export const useClustersStore = defineStore('clusters', () => {
   return {
     list, scatter, runs, diagnostics, loading,
     loadClusters, loadScatter, loadRuns, loadDiagnostics,
-    accept, reject, trigger, cancel, applyTag, applyAllTags, regenerateTag,
+    accept, reject, trigger, cancel,
+    applyTag, applyAllTags, patchClusterLabel, regenerateLabel,
     stopPolling, hasRunningRun,
   }
 })
