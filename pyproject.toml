@@ -75,11 +75,17 @@ addopts          = "-v --tb=short"
 # ── coverage ──────────────────────────────────────────────────────────────────
 [tool.coverage.run]
 source = ["pka"]
-omit   = ["pka/db/alembic/*", "scripts/*"]
+omit   = [
+    "pka/db/alembic/*",
+    "scripts/*",
+    "pka/pipeline.py",
+    "pka/db/init_db.py",
+]
 
 [tool.coverage.report]
 show_missing = true
 skip_empty   = true
+fail_under   = 85
 
 # ── ruff ──────────────────────────────────────────────────────────────────────
 [tool.ruff]

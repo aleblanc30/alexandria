@@ -1,4 +1,6 @@
 """Tests for dev-mode ingestion limits."""
+from types import SimpleNamespace
+
 from pka.ingestion import dev_limits
 
 
@@ -29,7 +31,10 @@ class TestDevLimits:
         monkeypatch.setattr(dev_limits.settings, "dev", True)
         monkeypatch.setattr(dev_limits.settings, "dev_ingestion_limit", 100)
 
-        items = [object() for _ in range(150)]
+        items = [
+            SimpleNamespace(source_id=f"k{i}", pdf_attachment_key=None)
+            for i in range(150)
+        ]
         seen: list = []
 
         monkeypatch.setattr(

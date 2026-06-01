@@ -112,6 +112,12 @@ pytest --cov=pka --cov-report=term-missing
 All external calls (Ollama chat/vision, ChromaDB, HTTP) are mocked at the module
 boundary by fixtures in `tests/conftest.py`. No real services are touched.
 
+Frontend unit tests (Vitest, pure TS helpers):
+
+```bash
+cd frontend && npm run test
+```
+
 ## Configuration
 
 All settings can be overridden via the `PKA_` environment-variable prefix or

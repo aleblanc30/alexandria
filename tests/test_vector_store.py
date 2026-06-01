@@ -86,3 +86,93 @@ class TestVectorStore:
                 .where(chunks.c.vector_id == "dead")
             ).scalar()
         assert count == 0
+
+    def test_vector_count_from_collection(self, real_chroma):
+        real_chroma.upsert_chunks(
+            ids=["v1"],
+            texts=["one"],
+            metadatas=[{"document_id": 1, "source": "zotero", "chunk_index": 0}],
+        )
+        assert real_chroma.vector_count() >= 1
+
+    def test_vector_count_falls_back_to_sqlite(self, real_chroma, monkeypatch):
+        from pka.db.queries import init_db, insert_chunks, upsert_document
+
+        init_db()
+        doc_id = upsert_document("zotero", "VC1", "Title", None, None)
+        insert_chunks([{
+            "document_id": doc_id,
+            "chunk_index": 0,
+            "text": "chunk text",
+            "token_count": 2,
+            "vector_id": None,
+        }])
+
+        def _boom():
+            raise RuntimeError("chroma down")
+
+        col = real_chroma.get_collection()
+        monkeypatch.setattr(col, "count", _boom)
+        monkeypatch.setattr(real_chroma, "get_collection", lambda: col)
+        assert real_chroma.vector_count() == 1
+
+    def test_drop_document_collection_clears_vectors(self, real_chroma):
+        real_chroma.upsert_chunks(
+            ids=["gone"],
+            texts=["text"],
+            metadatas=[{"document_id": 1, "source": "zotero", "chunk_index": 0}],
+        )
+        real_chroma.drop_document_collection()
+        assert real_chroma.get_collection().count() == 0
+
+    def test_rebuild_from_chunks(self, real_chroma):
+        from pka.db.queries import init_db, insert_chunks, upsert_document
+        from pka.db.schema import chunks
+        import sqlalchemy as sa
+
+        init_db()
+        doc_id = upsert_document("zotero", "RB1", "Rebuild doc", None, None)
+        insert_chunks([{
+            "document_id": doc_id,
+            "chunk_index": 0,
+            "text": "rebuild me",
+            "token_count": 2,
+            "vector_id": None,
+        }])
+        stats = real_chroma.rebuild_from_chunks(batch_size=8)
+        assert stats["chunks"] == 1
+        assert stats["processed"] == 1
+        from pka.db.queries import get_engine
+
+        with get_engine().connect() as con:
+            vid = con.execute(
+                sa.select(chunks.c.vector_id).where(chunks.c.document_id == doc_id)
+            ).scalar()
+        assert vid is not None
+        assert real_chroma.get_collection().count() == 1
+
+    def test_rebuild_empty_returns_zero(self, real_chroma):
+        from pka.db.queries import init_db
+
+        init_db()
+        assert real_chroma.rebuild_from_chunks() == {"chunks": 0, "processed": 0}
+
+    def test_fetch_embedding_batch_splits_on_error(self, real_chroma, monkeypatch):
+        real_chroma.upsert_chunks(
+            ids=["good"],
+            texts=["ok"],
+            metadatas=[{"document_id": 1, "source": "zotero", "chunk_index": 0}],
+        )
+        col = real_chroma.get_collection()
+        real_get = col.get
+
+        def flaky_get(*args, **kwargs):
+            ids = kwargs.get("ids") or (args[0] if args else [])
+            if ids and len(ids) > 1:
+                raise RuntimeError("batch fail")
+            return real_get(*args, **kwargs)
+
+        monkeypatch.setattr(col, "get", flaky_get)
+        found, corrupt = real_chroma.fetch_embeddings_by_ids(["good", "bad-id"])
+        assert "good" in found
+        assert "bad-id" in corrupt

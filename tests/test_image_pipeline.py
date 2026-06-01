@@ -271,6 +271,83 @@ class TestSearchImagesByText:
         assert search_images_by_text("query") == []
 
 
+class TestRegisterImages:
+    def _make_image_file(self, path: Path) -> "ImageFile":
+        from pka.connectors.images import ImageFile
+        PILImage.new("RGB", (50, 50)).save(path)
+        return ImageFile(path, path.name, 50, 50, 200, int(time.time()), {})
+
+    def test_registers_new_image(self, tmp_path):
+        from pka.ingestion.image_pipeline import register_images
+        img = self._make_image_file(tmp_path / "new.jpg")
+        stats = register_images([img])
+        assert stats["processed"] == 1
+        assert stats["skipped"] == 0
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(images.c.filename).where(images.c.path == str(img.path))
+            ).fetchone()
+        assert row is not None
+
+    def test_skips_existing_path(self, tmp_path):
+        from pka.ingestion.image_pipeline import register_images
+        img = self._make_image_file(tmp_path / "dup.jpg")
+        register_images([img])
+        stats = register_images([img])
+        assert stats["skipped"] == 1
+        assert stats["processed"] == 0
+
+    def test_dry_run_counts_without_db_row(self, tmp_path):
+        from pka.ingestion.image_pipeline import register_images
+        img = self._make_image_file(tmp_path / "dry.jpg")
+        stats = register_images([img], dry_run=True)
+        assert stats["processed"] == 1
+        with get_engine().connect() as con:
+            count = con.execute(
+                sa.select(sa.func.count()).select_from(images)
+            ).scalar()
+        assert count == 0
+
+    def test_stops_on_cancel(self, tmp_path):
+        from pka.ingestion import sync_progress as sp
+        from pka.ingestion.image_pipeline import register_images
+        sp.begin("image")
+        sp.set_phase("image", "ingesting", 5)
+        sp.request_cancel("image")
+        imgs = [self._make_image_file(tmp_path / f"c{i}.jpg") for i in range(3)]
+        stats = register_images(imgs, progress_key="image")
+        assert stats.get("stopped") == "cancel"
+        assert stats["processed"] == 0
+
+    def test_failure_ticks_progress(self, tmp_path, monkeypatch):
+        from pka.ingestion import sync_progress as sp
+        from pka.ingestion.image_pipeline import register_images
+
+        class _BrokenEngine:
+            def begin(self):
+                raise RuntimeError("db error")
+
+        monkeypatch.setattr(
+            "pka.ingestion.image_pipeline.get_engine",
+            lambda: _BrokenEngine(),
+        )
+        sp.begin("image")
+        sp.set_phase("image", "ingesting", 1)
+        img = self._make_image_file(tmp_path / "fail.jpg")
+        stats = register_images([img], progress_key="image")
+        assert stats["failed"] == 1
+
+
+class TestClipCollectionCache:
+    def test_clip_collection_cached(self, isolated_settings):
+        import pka.ingestion.image_pipeline as ip
+        ip.reset_clip_collection()
+        col_a = ip._get_clip_collection()
+        col_b = ip._get_clip_collection()
+        assert col_a is col_b
+        ip.reset_clip_collection()
+
+
 class TestIngestImagesStop:
     def test_stops_on_cancel(self, tmp_path, all_mocks):
         from pka.ingestion import sync_progress as sp

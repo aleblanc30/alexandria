@@ -191,8 +191,21 @@ def mock_chroma(monkeypatch):
             "metadatas": [[i["meta"] for i in items]],
         }
 
+    def _get(ids=None, include=None, **kwargs):
+        ids = ids or []
+        metadatas = [store[vid]["meta"] for vid in ids if vid in store]
+        embeddings = [store[vid]["emb"] for vid in ids if vid in store]
+        out: dict = {"ids": [vid for vid in ids if vid in store]}
+        if include:
+            if "metadatas" in include:
+                out["metadatas"] = metadatas
+            if "embeddings" in include:
+                out["embeddings"] = embeddings
+        return out
+
     col.upsert.side_effect = _upsert
     col.query.side_effect  = _query
+    col.get.side_effect    = _get
     col.count.return_value = 0
 
     import pka.storage.vector_store as vs

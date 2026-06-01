@@ -13,7 +13,11 @@ from pka.db.queries import (
     upsert_document, insert_source_tags, insert_source_collections,
     insert_chunks, document_has_chunks, document_index, source_ids_with_chunks,
     firefox_ingest_queue,
+    resolve_description, filter_document_ids, list_documents,
+    update_document_item_type, update_card_summary,
 )
+from pka.constants import TagOrigin
+from pka.db.schema import overlay_tags
 from pka.db.schema import documents, source_tags, source_collections, chunks
 
 
@@ -245,3 +249,73 @@ class TestFirefoxIngestQueue:
                 fetch_status=FetchStatus.PENDING,
             )
         assert len(firefox_ingest_queue(limit=2)) == 2
+
+
+class TestResolveDescription:
+    def test_prefers_card_summary(self):
+        assert resolve_description("Card text here", "chunk fallback") == "Card text here"
+
+    def test_falls_back_to_chunk_snippet(self):
+        long_chunk = "word " * 200
+        desc = resolve_description(None, long_chunk)
+        assert len(desc) <= 300
+        assert "word" in desc
+
+
+class TestFilterDocumentIds:
+    def test_no_filters_returns_all(self):
+        doc_id = upsert_document("zotero", "F1", "T", None, None)
+        with get_engine().connect() as con:
+            result = filter_document_ids(con, [doc_id])
+        assert result == {doc_id}
+
+    def test_source_filter(self):
+        zid = upsert_document("zotero", "FZ", "Z", None, None)
+        fid = upsert_document("firefox", "FF", "F", None, None)
+        with get_engine().connect() as con:
+            result = filter_document_ids(con, [zid, fid], source_filter=["zotero"])
+        assert result == {zid}
+
+
+class TestListDocuments:
+    def test_filters_by_source(self):
+        upsert_document("zotero", "L1", "Zotero doc", None, None)
+        upsert_document("firefox", "L2", "Firefox doc", None, None)
+        _total, rows = list_documents(sources=["zotero"])
+        assert all(r["source"] == "zotero" for r in rows)
+
+    def test_overlay_tag_filter(self):
+        doc_id = upsert_document("zotero", "OT1", "Tagged", None, None)
+        with get_engine().begin() as con:
+            con.execute(overlay_tags.insert(), [{
+                "document_id": doc_id,
+                "tag": "ml-topic",
+                "origin": TagOrigin.INFERRED,
+                "confidence": 0.9,
+            }])
+        total, rows = list_documents(overlay_tags=["ml-topic"])
+        assert total == 1
+        assert rows[0]["id"] == doc_id
+
+
+class TestUpdateDocumentItemType:
+    def test_updates_existing_row(self):
+        upsert_document("zotero", "IT1", "Paper", None, None)
+        n = update_document_item_type("zotero", "IT1", "journalArticle")
+        assert n == 1
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.item_type).where(documents.c.source_id == "IT1")
+            ).fetchone()
+        assert row[0] == "journalArticle"
+
+
+class TestUpdateCardSummary:
+    def test_stores_summary(self):
+        doc_id = upsert_document("zotero", "CS1", "Card", None, None)
+        update_card_summary(doc_id, "Short excerpt")
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.card_summary).where(documents.c.id == doc_id)
+            ).fetchone()
+        assert row[0] == "Short excerpt"

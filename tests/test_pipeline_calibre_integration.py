@@ -17,8 +17,9 @@ def fresh_db():
 
 
 def _make_book(**overrides) -> CalibreBook:
+    sid = overrides.pop("source_id", "B001")
     defaults = dict(
-        source_id="B001", title="Test Book",
+        source_id=sid, title="Test Book",
         authors=["Author A"],
         description="A solid description with multiple sentences. Enough to chunk.",
         publisher="Pub", series=None, series_index=None,
@@ -76,3 +77,39 @@ def test_fulltext_pass_offsets_chunk_indices(
     # Strictly increasing, no duplicates
     assert indices == sorted(indices)
     assert len(set(indices)) == len(indices)
+
+
+def test_metadata_only_registers_without_chunks(mock_chroma):
+    from pka.ingestion.runners.calibre import ingest_calibre_metadata
+
+    book = _make_book()
+    stats = ingest_calibre_metadata([book])
+    assert stats["processed"] == 1
+    with get_engine().connect() as con:
+        doc_id = con.execute(
+            sa.select(documents.c.id).where(documents.c.source_id == "B001")
+        ).scalar()
+    assert not document_has_chunks(doc_id)
+
+
+def test_metadata_skips_known_books(mock_chroma):
+    from pka.ingestion.runners.calibre import ingest_calibre_metadata
+
+    book = _make_book()
+    ingest_calibre_metadata([book])
+    stats = ingest_calibre_metadata([book])
+    assert stats["skipped"] == 1
+
+
+def test_embed_stops_on_cancel(mock_chroma):
+    from pka.ingestion import sync_progress as sp
+    from pka.ingestion.runners.calibre import ingest_calibre_books
+
+    sp.begin("calibre")
+    sp.set_phase("calibre", "embedding", 2)
+    sp.request_cancel("calibre")
+    stats = ingest_calibre_books(
+        [_make_book(source_id="C1"), _make_book(source_id="C2")],
+        progress_key="calibre",
+    )
+    assert stats.get("stopped") == "cancel"

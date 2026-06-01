@@ -1150,6 +1150,29 @@ class TestIngestion:
         r = client.get("/ingestion/sync/progress?source=invalid")
         assert r.status_code == 400
 
+    def test_rebuild_vectors_queued(self, client, monkeypatch):
+        from pka.api.routers import ingestion as ing
+
+        ing._rebuild_running = False
+        monkeypatch.setattr(
+            "pka.storage.vector_store.rebuild_from_chunks",
+            lambda **kw: {"chunks": 0, "processed": 0},
+        )
+        r = client.post("/ingestion/rebuild-vectors")
+        assert r.status_code == 202
+        assert r.json()["status"] == "queued"
+        ing._rebuild_running = False
+
+    def test_rebuild_vectors_409_when_busy(self, client):
+        from pka.api.routers import ingestion as ing
+
+        ing._rebuild_running = True
+        try:
+            r = client.post("/ingestion/rebuild-vectors")
+            assert r.status_code == 409
+        finally:
+            ing._rebuild_running = False
+
     def test_sync_routes_zotero_via_sync_fn(self, monkeypatch):
         from pka.ingestion import sync_progress as sp
         from pka.api.routers import ingestion as ing
