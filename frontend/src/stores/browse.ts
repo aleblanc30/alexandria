@@ -33,14 +33,23 @@ export const useBrowseStore = defineStore('browse', () => {
     }
   }
 
+  function tagScopeParams() {
+    return {
+      source_tags: sourceTags.value.length ? sourceTags.value : undefined,
+      cluster_l1_tags: level1Tags.value.length ? level1Tags.value : undefined,
+      cluster_l2_tags: level2Tags.value.length ? level2Tags.value : undefined,
+    }
+  }
+
   async function loadTags() {
     loadingTags.value = true
     try {
       const scope = sources.value.length ? sources.value : undefined
+      const tagScope = tagScopeParams()
       const [sourceRows, level1Rows, level2Rows] = await Promise.all([
-        api.listTags({ origin: 'source', sources: scope, limit: 200 }),
-        api.listTags({ origin: 'cluster_l1', sources: scope, limit: 200 }),
-        api.listTags({ origin: 'cluster_l2', sources: scope, limit: 200 }),
+        api.listTags({ origin: 'source', sources: scope, ...tagScope, limit: 200 }),
+        api.listTags({ origin: 'cluster_l1', sources: scope, ...tagScope, limit: 200 }),
+        api.listTags({ origin: 'cluster_l2', sources: scope, ...tagScope, limit: 200 }),
       ])
       tagRows.value = { source: sourceRows, level1: level1Rows, level2: level2Rows }
     } catch (e: any) {
@@ -93,6 +102,7 @@ export const useBrowseStore = defineStore('browse', () => {
     const idx = sourceTags.value.indexOf(tag)
     if (idx === -1) sourceTags.value.push(tag)
     else sourceTags.value.splice(idx, 1)
+    loadTags()
     load()
   }
 
@@ -100,6 +110,7 @@ export const useBrowseStore = defineStore('browse', () => {
     const idx = level1Tags.value.indexOf(tag)
     if (idx === -1) level1Tags.value.push(tag)
     else level1Tags.value.splice(idx, 1)
+    loadTags()
     load()
   }
 
@@ -107,6 +118,7 @@ export const useBrowseStore = defineStore('browse', () => {
     const idx = level2Tags.value.indexOf(tag)
     if (idx === -1) level2Tags.value.push(tag)
     else level2Tags.value.splice(idx, 1)
+    loadTags()
     load()
   }
 

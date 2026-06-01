@@ -479,3 +479,93 @@ def list_documents(
         for doc_id, source, title in rows
     ]
     return total, items
+
+
+def list_tags(
+    origin: str | None = None,
+    sources: list[str] | None = None,
+    source_tag_filter: list[str] | None = None,
+    cluster_l1_tag_filter: list[str] | None = None,
+    cluster_l2_tag_filter: list[str] | None = None,
+    q: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """List tags with counts, optionally scoped to documents matching browse filters."""
+    source_filter = [str(s) for s in sources] if sources else None
+    source_tag_filter = [str(t) for t in source_tag_filter] if source_tag_filter else None
+    cluster_l1_tag_filter = [str(t) for t in cluster_l1_tag_filter] if cluster_l1_tag_filter else None
+    cluster_l2_tag_filter = [str(t) for t in cluster_l2_tag_filter] if cluster_l2_tag_filter else None
+    filter_kwargs = {
+        "source_filter": source_filter,
+        "source_tag_filter": source_tag_filter,
+        "overlay_tag_filter": None,
+        "cluster_l1_tag_filter": cluster_l1_tag_filter,
+        "cluster_l2_tag_filter": cluster_l2_tag_filter,
+    }
+    has_doc_scope = any(
+        (
+            source_filter,
+            source_tag_filter,
+            cluster_l1_tag_filter,
+            cluster_l2_tag_filter,
+        )
+    )
+
+    with get_engine().connect() as con:
+        doc_scope = None
+        if has_doc_scope:
+            doc_scope = _apply_document_browse_filters(
+                sa.select(documents.c.id),
+                **filter_kwargs,
+            )
+
+        src_q = (
+            sa.select(
+                source_tags.c.tag_string.label("tag"),
+                sa.literal("source").label("origin"),
+                sa.func.count(source_tags.c.id).label("n"),
+            )
+            .select_from(source_tags)
+            .group_by(source_tags.c.tag_string)
+        )
+        if doc_scope is not None:
+            src_q = src_q.where(source_tags.c.document_id.in_(doc_scope))
+        if q:
+            src_q = src_q.where(source_tags.c.tag_string.ilike(f"%{q}%"))
+
+        ov_q = (
+            sa.select(
+                overlay_tags.c.tag.label("tag"),
+                overlay_tags.c.origin.label("origin"),
+                sa.func.count(overlay_tags.c.id).label("n"),
+            )
+            .select_from(overlay_tags)
+            .group_by(overlay_tags.c.tag, overlay_tags.c.origin)
+        )
+        if doc_scope is not None:
+            ov_q = ov_q.where(overlay_tags.c.document_id.in_(doc_scope))
+        if q:
+            ov_q = ov_q.where(overlay_tags.c.tag.ilike(f"%{q}%"))
+
+        rows: list[dict[str, Any]] = []
+        if not origin or origin == "source":
+            rows += [
+                {"tag": r[0], "origin": r[1], "count": r[2]}
+                for r in con.execute(src_q).fetchall()
+            ]
+        overlay_origins = {
+            str(TagOrigin.INFERRED),
+            str(TagOrigin.MANUAL),
+            str(TagOrigin.LLM),
+            str(TagOrigin.CLUSTER_L1),
+            str(TagOrigin.CLUSTER_L2),
+        }
+        if not origin or origin in overlay_origins:
+            rows += [
+                {"tag": r[0], "origin": r[1], "count": r[2]}
+                for r in con.execute(ov_q).fetchall()
+                if not origin or r[1] == origin
+            ]
+
+        rows.sort(key=lambda x: -x["count"])
+        return rows[:limit]

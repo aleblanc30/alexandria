@@ -201,10 +201,21 @@ export const cancelRun       = (id: number) =>
 
 // ── Tags ──────────────────────────────────────────────────────────────────────
 
-export const listTags = (params?: { origin?: string; sources?: string[]; q?: string; limit?: number }) => {
+export const listTags = (params?: {
+  origin?: string
+  sources?: string[]
+  source_tags?: string[]
+  cluster_l1_tags?: string[]
+  cluster_l2_tags?: string[]
+  q?: string
+  limit?: number
+}) => {
   const qs = new URLSearchParams()
   if (params?.origin) qs.set('origin', params.origin)
   params?.sources?.forEach(s => qs.append('sources', s))
+  params?.source_tags?.forEach(t => qs.append('source_tags', t))
+  params?.cluster_l1_tags?.forEach(t => qs.append('cluster_l1_tags', t))
+  params?.cluster_l2_tags?.forEach(t => qs.append('cluster_l2_tags', t))
   if (params?.q) qs.set('q', params.q)
   if (params?.limit != null) qs.set('limit', String(params.limit))
   const query = qs.toString()

@@ -455,6 +455,30 @@ class TestTags:
         assert "firefox-only" in tags
         assert "zotero-only" not in tags
 
+    def test_filter_by_selected_tags_shows_cooccurring_only(self, client):
+        from pka.db.queries import insert_source_tags
+
+        ids = _seed_docs(3)
+        insert_source_tags(ids[0], ["ml", "python"], source="zotero")
+        insert_source_tags(ids[1], ["ml"], source="firefox")
+        insert_source_tags(ids[2], ["python"], source="calibre")
+
+        all_source = [t["tag"] for t in client.get("/tags?origin=source").json()]
+        assert set(all_source) >= {"ml", "python"}
+
+        scoped = client.get("/tags", params=[("origin", "source"), ("source_tags", "python")])
+        scoped_tags = [t["tag"] for t in scoped.json()]
+        assert "python" in scoped_tags
+        assert "ml" in scoped_tags
+        assert len(scoped_tags) == 2
+
+        ml_only = client.get("/tags", params=[("origin", "source"), ("source_tags", "ml")])
+        ml_tags = [t["tag"] for t in ml_only.json()]
+        assert set(ml_tags) == {"ml", "python"}
+
+        restored = [t["tag"] for t in client.get("/tags?origin=source").json()]
+        assert set(restored) >= {"ml", "python"}
+
     def test_filter_by_cluster_l1_l2_origin(self, client, monkeypatch):
         ids = _seed_docs(4)
         _seed_run(ids, n_clusters=2, with_l2=True)
