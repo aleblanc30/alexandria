@@ -26,7 +26,7 @@ def _make_zotero_item(**overrides) -> ZoteroItem:
             "An abstract with enough words to form a chunk that exceeds the "
             "minimum character threshold for embedding and persistence."
         ),
-        year=2023, doi="10.1/test", item_type="journalArticle",
+        year=2023, doi="10.1/test", url=None, item_type="journalArticle",
         collections=["CS"], tags=["test-tag"], pdf_path=None, date_added=1700000000,
     )
     return ZoteroItem(**{**defaults, **overrides})

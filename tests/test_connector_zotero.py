@@ -1,6 +1,11 @@
 import pytest
 from pathlib import Path
-from pka.connectors.zotero import load_items, ZoteroItem, zotero_embed_text
+from pka.connectors.zotero import (
+    ZoteroItem,
+    load_items,
+    zotero_document_url_or_path,
+    zotero_embed_text,
+)
 
 
 class TestLoadItems:
@@ -84,10 +89,31 @@ class TestLoadItems:
         assert ann.item_type == "annotation"
         assert "highlighted passage" in (ann.highlight_text or "")
 
+    def test_zotero_document_url_or_path_prefers_http_url(self, tmp_path):
+        pdf = tmp_path / "paper.pdf"
+        pdf.write_bytes(b"%PDF")
+        item = ZoteroItem(
+            source_id="X", title="T", authors=[], abstract=None, year=None,
+            doi="10.1/xyz", url="https://journal.example/article",
+            item_type="journalArticle", collections=[], tags=[],
+            pdf_path=pdf, date_added=None,
+        )
+        assert zotero_document_url_or_path(item) == "https://journal.example/article"
+
+    def test_zotero_document_url_or_path_pdf_without_url(self, tmp_path):
+        pdf = tmp_path / "paper.pdf"
+        pdf.write_bytes(b"%PDF")
+        item = ZoteroItem(
+            source_id="X", title="T", authors=[], abstract=None, year=None,
+            doi=None, url=None, item_type="journalArticle", collections=[], tags=[],
+            pdf_path=pdf, date_added=None,
+        )
+        assert zotero_document_url_or_path(item) == str(pdf)
+
     def test_zotero_embed_text_includes_authors(self):
         item = ZoteroItem(
             source_id="X", title="Short title", authors=["Ada Lovelace"],
-            abstract=None, year=None, doi=None, item_type="journalArticle",
+            abstract=None, year=None, doi=None, url=None, item_type="journalArticle",
             collections=[], tags=[], pdf_path=None, date_added=None,
         )
         text = zotero_embed_text(item)
@@ -97,7 +123,7 @@ class TestLoadItems:
     def test_zotero_embed_text_uses_highlight_for_annotations(self):
         item = ZoteroItem(
             source_id="A", title="", authors=[], abstract=None, year=None,
-            doi=None, item_type="annotation", collections=[], tags=[],
+            doi=None, url=None, item_type="annotation", collections=[], tags=[],
             pdf_path=None, date_added=None,
             highlight_text="Important PDF highlight text here.",
         )

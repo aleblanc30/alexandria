@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from pka.connectors.zotero import ZoteroItem, zotero_embed_text
+from pka.connectors.zotero import ZoteroItem, zotero_document_url_or_path, zotero_embed_text
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
     document_has_chunks,
@@ -39,7 +39,7 @@ def ingest_zotero_items(
                 source       = Source.ZOTERO,
                 source_id    = item.source_id,
                 title        = item.title,
-                url_or_path  = str(item.pdf_path) if item.pdf_path else item.doi,
+                url_or_path  = zotero_document_url_or_path(item),
                 date_added   = item.date_added,
                 fetch_status = (
                     FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
@@ -89,7 +89,7 @@ def ingest_zotero_metadata(
             source       = Source.ZOTERO,
             source_id    = item.source_id,
             title        = item.title,
-            url_or_path  = str(item.pdf_path) if item.pdf_path else item.doi,
+            url_or_path  = zotero_document_url_or_path(item),
             date_added   = item.date_added,
             fetch_status = (
                 FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
@@ -131,7 +131,7 @@ def ingest_zotero_embed(
                 source       = Source.ZOTERO,
                 source_id    = item.source_id,
                 title        = item.title,
-                url_or_path  = str(item.pdf_path) if item.pdf_path else item.doi,
+                url_or_path  = zotero_document_url_or_path(item),
                 date_added   = item.date_added,
                 fetch_status = (
                     FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING

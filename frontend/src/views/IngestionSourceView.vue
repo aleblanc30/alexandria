@@ -12,6 +12,15 @@
       <div class="table-wrap">
         <div v-for="u in ingest.unfetchable.slice(0, 50)" :key="u.id" class="unfetch-row">
           <span class="unfetch-url">{{ u.url }}</span>
+          <button
+            v-if="isHttpUrl(u.url)"
+            class="btn-xs unfetch-open"
+            type="button"
+            title="Open in new tab"
+            @click="openInNewTab(u.url)"
+          >
+            Open
+          </button>
           <span class="err-badge">{{ u.http_status ?? 'timeout' }}</span>
           <span class="hint">{{ u.error }}</span>
         </div>
@@ -26,6 +35,7 @@ import { useRoute, useRouter } from 'vue-router'
 import IngestionSourcePanel from '@/components/IngestionSourcePanel.vue'
 import { SOURCE_LABELS, isIngestionSource, type IngestionSource } from '@/constants/sources'
 import { useIngestionStore } from '@/stores/ingestion'
+import { isHttpUrl, openInNewTab } from '@/lib/urls'
 
 const route = useRoute()
 const router = useRouter()

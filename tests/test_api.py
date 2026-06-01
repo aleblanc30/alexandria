@@ -274,7 +274,10 @@ class TestDocuments:
             "text": "First chunk body text.", "token_count": 4, "vector_id": "v0",
         }])
         doc = client.get("/documents").json()["documents"][0]
-        for key in ("id", "source", "title", "description", "source_tags", "cluster_l1_tags", "cluster_l2_tags"):
+        for key in (
+            "id", "source", "title", "description", "url_or_path",
+            "source_tags", "cluster_l1_tags", "cluster_l2_tags",
+        ):
             assert key in doc
         assert doc["description"] == "First chunk body text."
         assert doc["source_tags"] == []

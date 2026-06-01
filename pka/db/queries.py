@@ -432,7 +432,12 @@ def list_documents(
         total = con.execute(count_q).scalar() or 0
 
         page_q = _apply_document_browse_filters(
-            sa.select(documents.c.id, documents.c.source, documents.c.title),
+            sa.select(
+                documents.c.id,
+                documents.c.source,
+                documents.c.title,
+                documents.c.url_or_path,
+            ),
             **filter_kwargs,
         ).order_by(
             documents.c.date_added.is_(None),
@@ -472,11 +477,12 @@ def list_documents(
             "source": source,
             "title": title or "",
             "description": _truncate_snippet(snippet_map.get(doc_id)),
+            "url_or_path": url_or_path,
             "source_tags": source_map.get(doc_id, []),
             "cluster_l1_tags": l1_map.get(doc_id, []),
             "cluster_l2_tags": l2_map.get(doc_id, []),
         }
-        for doc_id, source, title in rows
+        for doc_id, source, title, url_or_path in rows
     ]
     return total, items
 

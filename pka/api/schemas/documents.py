@@ -38,6 +38,7 @@ class DocumentListItem(BaseModel):
     source: str
     title: str
     description: str
+    url_or_path: str | None = None
     source_tags: list[str] = []
     cluster_l1_tags: list[str] = []
     cluster_l2_tags: list[str] = []

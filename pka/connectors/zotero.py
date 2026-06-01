@@ -24,12 +24,28 @@ class ZoteroItem:
     abstract: str | None
     year: int | None
     doi: str | None
+    url: str | None         # Zotero item URL field (article page, etc.)
     item_type: str          # journalArticle, book, webpage, ...
     collections: list[str]  # Zotero collection names
     tags: list[str]         # Zotero tag strings (verbatim)
     pdf_path: Path | None   # path to attached PDF, if any
     date_added: int | None  # unix timestamp
     highlight_text: str | None = None  # PDF highlight/comment (annotation items)
+
+
+def zotero_document_url_or_path(item: ZoteroItem) -> str | None:
+    """Value stored on documents.url_or_path — prefer a browser-openable URL when present."""
+    raw_url = (item.url or "").strip()
+    if raw_url.lower().startswith(("http://", "https://")):
+        return raw_url
+    if item.pdf_path:
+        return str(item.pdf_path)
+    doi = (item.doi or "").strip()
+    if doi:
+        return doi
+    if raw_url:
+        return raw_url
+    return None
 
 
 def zotero_embed_text(item: ZoteroItem) -> str:
@@ -264,6 +280,7 @@ def load_items(
                 abstract    = fields.get("abstractNote"),
                 year        = _parse_year(fields.get("date")),
                 doi         = fields.get("DOI"),
+                url         = fields.get("url"),
                 item_type   = typeName,
                 collections = collections,
                 tags        = tags,

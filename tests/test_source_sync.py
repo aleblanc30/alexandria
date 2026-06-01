@@ -31,7 +31,7 @@ def _firefox_bm() -> FirefoxBookmark:
 def _zotero_item(**overrides) -> ZoteroItem:
     defaults = dict(
         source_id="Z1", title="Paper", authors=[], abstract="Abstract text.",
-        year=2024, doi=None, item_type="journalArticle",
+        year=2024, doi=None, url=None, item_type="journalArticle",
         collections=[], tags=[], pdf_path=None, date_added=1700000000,
     )
     return ZoteroItem(**{**defaults, **overrides})

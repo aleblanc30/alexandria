@@ -21,6 +21,12 @@
           <span class="mkey">Fetch</span><span>{{ doc.fetch_status }}</span>
           <span class="mkey">Chunks</span><span>{{ doc.chunks_count }}</span>
         </div>
+        <div v-if="showWebLink" class="link-row">
+          <span class="link-url" :title="openUrl!">{{ openUrl }}</span>
+          <button class="btn-xs" type="button" @click.stop="openInNewTab(openUrl!)">
+            Open in new tab
+          </button>
+        </div>
       </section>
 
       <section class="section">
@@ -50,15 +56,29 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { getDocument, patchTags } from '@/api/client'
 import type { DocumentDetail } from '@/api/client'
+import { openInNewTab, resolveHttpUrl } from '@/lib/urls'
 import SourceBadge from './SourceBadge.vue'
 
+const route = useRoute()
 const ui  = useUiStore()
 const doc = ref<DocumentDetail | null>(null)
 const newTag = ref('')
+
+const isBrowse = computed(
+  () => route.path === '/browse' || route.path.startsWith('/browse/'),
+)
+const openUrl = computed(() => {
+  if (!doc.value) return null
+  return resolveHttpUrl(doc.value.source, doc.value.url_or_path)
+})
+const showWebLink = computed(
+  () => isBrowse.value && openUrl.value != null,
+)
 
 watch(() => ui.activeDocId, async (id) => {
   if (id == null) { doc.value = null; return }
@@ -89,6 +109,8 @@ async function addTag() {
 .section-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--hint); font-weight: 500; margin-bottom: 8px }
 .meta-grid   { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font-size: 12px; background: #f5f4f0; border-radius: var(--radius); padding: 10px }
 .mkey        { color: var(--muted) }
+.link-row    { display: flex; align-items: center; gap: 8px; margin-top: 8px }
+.link-url    { flex: 1; min-width: 0; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .tag-wrap    { display: flex; flex-wrap: wrap; gap: 5px }
 .tag         { padding: 3px 9px; border-radius: 10px; font-size: 11px; cursor: pointer }
 .tag--source   { background: #F1EFE8; color: #5F5E5A }
