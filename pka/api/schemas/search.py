@@ -9,6 +9,11 @@ from pka.constants import Source
 class SearchRequest(BaseModel):
     query: str
     sources: list[Source] = []          # [] = all
+    source_tags: list[str] = []
+    general_tags: list[str] = []
+    cluster_l1_tags: list[str] = []
+    cluster_l2_tags: list[str] = []
+    wayback_only: bool = False
     cluster_ids: list[int] = []
     tags: list[str] = []
     date_from: int | None = None

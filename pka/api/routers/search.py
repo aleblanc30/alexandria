@@ -13,6 +13,7 @@ from pka.api.dependencies import get_engine
 from pka.api.schemas.documents import DocumentOut
 from pka.api.schemas.images import ImageOut
 from pka.api.schemas.search import SearchRequest, SearchResponse
+from pka.db.queries import filter_document_ids
 from pka.db.schema import (
     cluster_assignments,
     cluster_runs,
@@ -153,6 +154,27 @@ async def search(req: SearchRequest, engine=Depends(get_engine)):
             for row in rows:
                 if row["id"] not in existing_ids:
                     results.append((row["id"], None))
+
+        # ── Browse-style filters (sources, tags, wayback) ─────────────────────
+        if results and (
+            req.sources
+            or req.source_tags
+            or req.general_tags
+            or req.cluster_l1_tags
+            or req.cluster_l2_tags
+            or req.wayback_only
+        ):
+            allowed = filter_document_ids(
+                con,
+                [doc_id for doc_id, _ in results],
+                source_filter=[str(s) for s in req.sources] if req.sources else None,
+                source_tag_filter=req.source_tags or None,
+                general_tag_filter=req.general_tags or None,
+                cluster_l1_tag_filter=req.cluster_l1_tags or None,
+                cluster_l2_tag_filter=req.cluster_l2_tags or None,
+                wayback_only=req.wayback_only,
+            )
+            results = [(doc_id, sim) for doc_id, sim in results if doc_id in allowed]
 
         # ── Filters: cluster_ids, tags, date range, fetch_status ─────────────
         if req.cluster_ids or req.tags or req.date_from or req.date_to or req.fetch_status:

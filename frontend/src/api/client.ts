@@ -70,7 +70,10 @@ export interface DocumentListItem {
 }
 export interface DocumentListResponse { total: number; documents: DocumentListItem[] }
 export interface SearchRequest {
-  query: string; sources?: string[]; cluster_ids?: number[]; tags?: string[]
+  query: string; sources?: string[]; source_tags?: string[]
+  general_tags?: string[]
+  cluster_l1_tags?: string[]; cluster_l2_tags?: string[]; wayback_only?: boolean
+  cluster_ids?: number[]; tags?: string[]
   date_from?: number; date_to?: number; fetch_status?: string
   mode?: 'semantic' | 'fulltext' | 'hybrid'; limit?: number; offset?: number
   include_images?: boolean
@@ -154,6 +157,7 @@ export const getDocument = (id: number) =>
 export const listDocuments = (params?: {
   sources?: string[]
   source_tags?: string[]
+  general_tags?: string[]
   overlay_tags?: string[]
   cluster_l1_tags?: string[]
   cluster_l2_tags?: string[]
@@ -164,6 +168,7 @@ export const listDocuments = (params?: {
   const qs = new URLSearchParams()
   params?.sources?.forEach(s => qs.append('sources', s))
   params?.source_tags?.forEach(t => qs.append('source_tags', t))
+  params?.general_tags?.forEach(t => qs.append('general_tags', t))
   params?.overlay_tags?.forEach(t => qs.append('overlay_tags', t))
   params?.cluster_l1_tags?.forEach(t => qs.append('cluster_l1_tags', t))
   params?.cluster_l2_tags?.forEach(t => qs.append('cluster_l2_tags', t))

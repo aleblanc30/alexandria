@@ -255,6 +255,47 @@ class TestSearch:
         assert r.status_code == 200
         assert len(r.json()["documents"]) >= 1
 
+    def test_search_source_tags_filter(self, client):
+        from pka.db.queries import insert_source_tags
+
+        ids = _seed_docs(3)
+        insert_source_tags(ids[0], ["ml", "python"], source="zotero")
+        insert_source_tags(ids[1], ["ml"], source="firefox")
+        insert_source_tags(ids[2], ["python"], source="calibre")
+        r = client.post("/search", json={
+            "query": "Document",
+            "mode": "fulltext",
+            "source_tags": ["ml", "python"],
+        })
+        assert r.status_code == 200
+        returned_ids = {d["id"] for d in r.json()["documents"]}
+        assert returned_ids == {ids[0]}
+
+    def test_search_wayback_only_filter(self, client):
+        import sqlalchemy as sa
+
+        from pka.db.queries import get_engine
+        from pka.db.schema import documents as docs_table
+
+        ids = _seed_docs(3)
+        snapshot = "https://web.archive.org/web/20190603190145/https://example.com/1"
+        with get_engine().begin() as con:
+            con.execute(
+                docs_table.update()
+                .where(docs_table.c.id == ids[1])
+                .values(archive_url=snapshot)
+            )
+        r = client.post("/search", json={
+            "query": "Document",
+            "mode": "fulltext",
+            "wayback_only": True,
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] == 1
+        assert data["documents"][0]["id"] == ids[1]
+        assert data["documents"][0]["archive_url"] == snapshot
+
 
 # ── Documents ─────────────────────────────────────────────────────────────────
 

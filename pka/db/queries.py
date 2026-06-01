@@ -348,6 +348,7 @@ def _apply_document_browse_filters(
     source_filter: list[str] | None,
     source_tag_filter: list[str] | None,
     overlay_tag_filter: list[str] | None,
+    general_tag_filter: list[str] | None = None,
     cluster_l1_tag_filter: list[str] | None = None,
     cluster_l2_tag_filter: list[str] | None = None,
     wayback_only: bool = False,
@@ -379,6 +380,17 @@ def _apply_document_browse_filters(
                     )
                 )
             )
+    if general_tag_filter:
+        for tag in general_tag_filter:
+            q = q.where(
+                sa.exists(
+                    sa.select(overlay_tags.c.id).where(
+                        (overlay_tags.c.document_id == documents.c.id)
+                        & (overlay_tags.c.tag == tag)
+                        & (overlay_tags.c.origin == TagOrigin.INFERRED)
+                    )
+                )
+            )
     if cluster_l1_tag_filter:
         for tag in cluster_l1_tag_filter:
             q = q.where(
@@ -402,6 +414,46 @@ def _apply_document_browse_filters(
                 )
             )
     return q
+
+
+def filter_document_ids(
+    con: sa.Connection,
+    doc_ids: list[int],
+    *,
+    source_filter: list[str] | None = None,
+    source_tag_filter: list[str] | None = None,
+    general_tag_filter: list[str] | None = None,
+    cluster_l1_tag_filter: list[str] | None = None,
+    cluster_l2_tag_filter: list[str] | None = None,
+    wayback_only: bool = False,
+) -> set[int]:
+    """Return document ids from ``doc_ids`` that match browse-style filters."""
+    if not doc_ids:
+        return set()
+    has_filters = any(
+        (
+            source_filter,
+            source_tag_filter,
+            general_tag_filter,
+            cluster_l1_tag_filter,
+            cluster_l2_tag_filter,
+            wayback_only,
+        )
+    )
+    if not has_filters:
+        return set(doc_ids)
+    q = sa.select(documents.c.id).where(documents.c.id.in_(doc_ids))
+    q = _apply_document_browse_filters(
+        q,
+        source_filter=source_filter,
+        source_tag_filter=source_tag_filter,
+        overlay_tag_filter=None,
+        general_tag_filter=general_tag_filter,
+        cluster_l1_tag_filter=cluster_l1_tag_filter,
+        cluster_l2_tag_filter=cluster_l2_tag_filter,
+        wayback_only=wayback_only,
+    )
+    return {row[0] for row in con.execute(q).fetchall()}
 
 
 def _browse_tag_maps(

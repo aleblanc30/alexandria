@@ -16,7 +16,6 @@
       </div>
 
       <div v-if="showFull" class="nav-section">Explore</div>
-      <RouterLink to="/search"   class="nav-item" title="Search"><IconSearch /><span v-if="showFull" class="nav-label">Search</span></RouterLink>
       <RouterLink to="/browse"   class="nav-item" title="Browse"><IconBrowse /><span v-if="showFull" class="nav-label">Browse</span></RouterLink>
       <RouterLink to="/clusters" class="nav-item" title="Clusters"><IconCluster /><span v-if="showFull" class="nav-label">Clusters</span></RouterLink>
       <RouterLink to="/trends"   class="nav-item" title="Trends"><IconTrend /><span v-if="showFull" class="nav-label">Trends</span></RouterLink>
@@ -53,7 +52,6 @@ const props = defineProps<{ collapsed?: boolean; overlay?: boolean }>()
 
 const showFull = computed(() => props.overlay || !props.collapsed)
 
-const IconSearch  = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg>` }
 const IconBrowse  = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>` }
 const IconCluster = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="8" r="2.5"/><circle cx="11" cy="5" r="2.5"/><circle cx="11" cy="11" r="2.5"/><line x1="7.5" y1="7" x2="9" y2="6"/><line x1="7.5" y1="9" x2="9" y2="10"/></svg>` }
 const IconTrend   = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2,12 6,7 9,9 14,3"/></svg>` }

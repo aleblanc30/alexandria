@@ -1,21 +1,30 @@
 <template>
   <div class="card" :class="{ selected }" @click="$emit('click')">
-    <div class="title">{{ doc.title }}</div>
+    <div class="title">{{ doc.title || 'Untitled' }}</div>
     <div class="meta">
       <SourceBadge :source="doc.source" />
-      <span v-if="doc.cluster_label" class="badge badge--cluster">{{ doc.cluster_label }}</span>
-      <span class="hint">{{ doc.date_added ? new Date(doc.date_added * 1000).getFullYear() : '' }}</span>
+      <span v-if="cluster" class="badge badge--cluster">{{ cluster }}</span>
+      <span v-if="year" class="hint">{{ year }}</span>
       <span class="hint tags">{{ doc.source_tags.slice(0,3).map(t => '#' + t).join(' ') }}</span>
-      <span v-if="doc.similarity != null" class="sim">{{ Math.round(doc.similarity * 100) }}%</span>
+      <span v-if="similarity != null" class="sim">{{ Math.round(similarity * 100) }}%</span>
     </div>
-    <div class="score-bar"><div class="score-fill" :style="{ width: (doc.similarity ?? 0) * 100 + '%' }" /></div>
+    <div v-if="similarity != null" class="score-bar">
+      <div class="score-fill" :style="{ width: similarity * 100 + '%' }" />
+    </div>
   </div>
 </template>
 <script setup lang="ts">
-import type { DocumentOut } from '@/api/client'
+import { computed } from 'vue'
+import type { DocumentListItem, DocumentOut } from '@/api/client'
+import { clusterLabel, docSimilarity, docYear } from '@/lib/docDisplay'
 import SourceBadge from './SourceBadge.vue'
-defineProps<{ doc: DocumentOut; selected?: boolean }>()
+
+const props = defineProps<{ doc: DocumentOut | DocumentListItem; selected?: boolean }>()
 defineEmits(['click'])
+
+const cluster = computed(() => clusterLabel(props.doc))
+const year = computed(() => docYear(props.doc))
+const similarity = computed(() => docSimilarity(props.doc))
 </script>
 <style scoped>
 .card        { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 12px 16px; cursor: pointer; transition: border-color .1s; margin-bottom: 8px }
