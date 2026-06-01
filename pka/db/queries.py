@@ -64,6 +64,10 @@ def init_db() -> None:
                 "UPDATE documents SET ingested_at = date_added "
                 "WHERE ingested_at IS NULL"
             ))
+        if "zotero_attachment_key" not in cols:
+            con.execute(sa.text(
+                "ALTER TABLE documents ADD COLUMN zotero_attachment_key TEXT"
+            ))
 
         # Migration: add umap_points to cluster_runs
         cr_cols = [r[1] for r in con.execute(
@@ -113,6 +117,7 @@ def insert_document_if_new(
     url_or_path: str | None,
     date_added: int | None,
     fetch_status: FetchStatus | str = FetchStatus.PENDING,
+    zotero_attachment_key: str | None = None,
 ) -> int | None:
     """Insert a document when ``(source, source_id)`` is not already archived."""
     eng = get_engine()
@@ -130,13 +135,14 @@ def insert_document_if_new(
             sa.text("""
                 INSERT INTO documents
                     (source, source_id, title, url_or_path,
-                     date_added, ingested_at, fetch_status)
+                     zotero_attachment_key, date_added, ingested_at, fetch_status)
                 VALUES
-                    (:source, :sid, :title, :url, :da, :now, :fs)
+                    (:source, :sid, :title, :url, :zak, :da, :now, :fs)
             """),
             {
                 "source": str(source), "sid": source_id,
                 "title": title, "url": url_or_path,
+                "zak": zotero_attachment_key,
                 "da": date_added, "now": now, "fs": str(fetch_status),
             },
         )
@@ -156,6 +162,7 @@ def upsert_document(
     url_or_path: str | None,
     date_added: int | None,
     fetch_status: FetchStatus | str = FetchStatus.PENDING,
+    zotero_attachment_key: str | None = None,
 ) -> int:
     """Insert a document or update its mutable fields. Returns the document id.
 
@@ -168,18 +175,22 @@ def upsert_document(
         stmt = sa.text("""
             INSERT INTO documents
                 (source, source_id, title, url_or_path,
-                 date_added, ingested_at, fetch_status)
+                 zotero_attachment_key, date_added, ingested_at, fetch_status)
             VALUES
-                (:source, :sid, :title, :url, :da, :now, :fs)
+                (:source, :sid, :title, :url, :zak, :da, :now, :fs)
             ON CONFLICT(source, source_id) DO UPDATE SET
                 title        = excluded.title,
                 url_or_path  = excluded.url_or_path,
                 fetch_status = excluded.fetch_status,
+                zotero_attachment_key = COALESCE(
+                    excluded.zotero_attachment_key, documents.zotero_attachment_key
+                ),
                 ingested_at  = COALESCE(documents.ingested_at, excluded.ingested_at)
         """)
         con.execute(stmt, {
             "source": str(source), "sid": source_id,
             "title": title, "url": url_or_path,
+            "zak": zotero_attachment_key,
             "da": date_added, "now": now, "fs": str(fetch_status),
         })
         row = con.execute(
@@ -189,6 +200,26 @@ def upsert_document(
             )
         ).fetchone()
     return row[0]
+
+
+def refresh_zotero_attachment_keys(keys_by_source_id: dict[str, str]) -> int:
+    """Backfill ``zotero_attachment_key`` for archived Zotero rows after connector load."""
+    if not keys_by_source_id:
+        return 0
+    eng = get_engine()
+    updated = 0
+    with eng.begin() as con:
+        for source_id, attachment_key in keys_by_source_id.items():
+            result = con.execute(
+                sa.update(documents)
+                .where(
+                    (documents.c.source == Source.ZOTERO)
+                    & (documents.c.source_id == source_id)
+                )
+                .values(zotero_attachment_key=attachment_key)
+            )
+            updated += result.rowcount or 0
+    return updated
 
 
 def insert_source_tags(document_id: int, tags: list[str], source: Source | str) -> None:
@@ -435,8 +466,10 @@ def list_documents(
             sa.select(
                 documents.c.id,
                 documents.c.source,
+                documents.c.source_id,
                 documents.c.title,
                 documents.c.url_or_path,
+                documents.c.zotero_attachment_key,
             ),
             **filter_kwargs,
         ).order_by(
@@ -475,14 +508,16 @@ def list_documents(
         {
             "id": doc_id,
             "source": source,
+            "source_id": source_id,
             "title": title or "",
             "description": _truncate_snippet(snippet_map.get(doc_id)),
             "url_or_path": url_or_path,
+            "zotero_attachment_key": zotero_attachment_key,
             "source_tags": source_map.get(doc_id, []),
             "cluster_l1_tags": l1_map.get(doc_id, []),
             "cluster_l2_tags": l2_map.get(doc_id, []),
         }
-        for doc_id, source, title, url_or_path in rows
+        for doc_id, source, source_id, title, url_or_path, zotero_attachment_key in rows
     ]
     return total, items
 

@@ -110,6 +110,7 @@ async def get_document(doc_id: int, engine=Depends(get_engine)):
     return DocumentDetail(
         id=doc_id, source=row["source"], source_id=row["source_id"],
         title=row["title"] or "", url_or_path=row["url_or_path"],
+        zotero_attachment_key=row.get("zotero_attachment_key"),
         date_added=row["date_added"], fetch_status=row["fetch_status"],
         source_tags=stags, overlay_tags=otags,
         cluster_id=cluster_id, cluster_label=cluster_label,

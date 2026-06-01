@@ -89,6 +89,13 @@ class TestLoadItems:
         assert ann.item_type == "annotation"
         assert "highlighted passage" in (ann.highlight_text or "")
 
+    def test_pdf_attachment_key_loaded(self, zotero_db, tmp_path):
+        items = load_items(zotero_db=zotero_db, copy_path=tmp_path / "copy.sqlite")
+        with_pdf = [i for i in items if i.pdf_path]
+        assert with_pdf, "fixture should include at least one PDF attachment"
+        assert all(i.pdf_attachment_key for i in with_pdf)
+        assert len(with_pdf[0].pdf_attachment_key or "") == 8
+
     def test_zotero_document_url_or_path_prefers_http_url(self, tmp_path):
         pdf = tmp_path / "paper.pdf"
         pdf.write_bytes(b"%PDF")

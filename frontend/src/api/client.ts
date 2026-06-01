@@ -50,7 +50,8 @@ async function req<T>(
 export interface TagOut       { tag: string; origin: string; confidence: number | null }
 export interface DocumentOut  {
   id: number; source: string; source_id: string; title: string
-  url_or_path: string | null; date_added: number | null; fetch_status: string
+  url_or_path: string | null; zotero_attachment_key: string | null
+  date_added: number | null; fetch_status: string
   source_tags: string[]; overlay_tags: TagOut[]
   cluster_id: number | null; cluster_label: string | null
   similarity: number | null
@@ -59,8 +60,9 @@ export interface DocumentDetail extends DocumentOut {
   chunks_count: number; collections: string[]
 }
 export interface DocumentListItem {
-  id: number; source: string; title: string; description: string
+  id: number; source: string; source_id: string; title: string; description: string
   url_or_path: string | null
+  zotero_attachment_key: string | null
   source_tags: string[]
   cluster_l1_tags: string[]
   cluster_l2_tags: string[]

@@ -34,6 +34,7 @@ class ZoteroItem:
     pdf_path: Path | None   # path to attached PDF, if any
     date_added: int | None  # unix timestamp
     highlight_text: str | None = None  # PDF highlight/comment (annotation items)
+    pdf_attachment_key: str | None = None  # 8-char key of the PDF attachment item
 
 
 def zotero_document_url_or_path(item: ZoteroItem) -> str | None:
@@ -271,7 +272,7 @@ def load_items(
             tags = [r["name"] for r in cur.fetchall()]
 
             cur.execute("""
-                SELECT ia.path
+                SELECT ia.path, i2.key AS attachment_key
                 FROM   itemAttachments ia
                 JOIN   items i2 ON ia.itemID = i2.itemID
                 WHERE  ia.parentItemID = ?
@@ -280,7 +281,9 @@ def load_items(
             """, (item_id,))
             att = cur.fetchone()
             pdf_path: Path | None = None
+            pdf_attachment_key: str | None = None
             if att and att["path"]:
+                pdf_attachment_key = att["attachment_key"]
                 raw = att["path"]
                 if raw.startswith("storage:"):
                     pdf_path = (
@@ -302,6 +305,7 @@ def load_items(
                 collections = collections,
                 tags        = tags,
                 pdf_path    = pdf_path,
+                pdf_attachment_key = pdf_attachment_key,
                 date_added  = ts,
                 highlight_text = annotation_texts.get(item_id),
             ))

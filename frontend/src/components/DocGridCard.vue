@@ -9,29 +9,37 @@
     </div>
     <div class="grid-card-footer">
       <SourceBadge :source="doc.source" />
-      <button
-        v-if="hasWebLink"
-        class="grid-card-link"
-        type="button"
-        title="Open in new tab"
-        aria-label="Open in new tab"
-        @click.stop="openLink"
-      >
-        <svg
-          class="grid-card-link-icon"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
+      <div v-if="hasWebLink || showZotero" class="grid-card-actions">
+        <button
+          v-if="hasWebLink"
+          class="grid-card-link"
+          type="button"
+          title="Open in new tab"
+          aria-label="Open in new tab"
+          @click.stop="openLink"
         >
-          <rect x="2.5" y="8.5" width="6" height="6" rx="1" />
-          <line x1="8.5" y1="8.5" x2="13.5" y2="3.5" />
-          <polyline points="9.5,3.5 13.5,3.5 13.5,7.5" />
-        </svg>
-      </button>
+          <svg
+            class="grid-card-link-icon"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="2.5" y="8.5" width="6" height="6" rx="1" />
+            <line x1="8.5" y1="8.5" x2="13.5" y2="3.5" />
+            <polyline points="9.5,3.5 13.5,3.5 13.5,7.5" />
+          </svg>
+        </button>
+        <ZoteroOpenButton
+          v-if="showZotero"
+          :source-id="doc.source_id"
+          :attachment-key="doc.zotero_attachment_key"
+          size="card"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -39,14 +47,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { DocumentListItem } from '@/api/client'
-import { hasOpenableUrl, openInNewTab, resolveHttpUrl } from '@/lib/urls'
+import { openInNewTab, resolveHttpUrl } from '@/lib/urls'
+import { canOpenInZotero } from '@/lib/zotero'
 import SourceBadge from './SourceBadge.vue'
+import ZoteroOpenButton from './ZoteroOpenButton.vue'
 
 const props = defineProps<{ doc: DocumentListItem; selected?: boolean }>()
 defineEmits<{ click: [] }>()
 
 const openUrl = computed(() => resolveHttpUrl(props.doc.source, props.doc.url_or_path))
 const hasWebLink = computed(() => openUrl.value != null)
+const showZotero = computed(() => canOpenInZotero(props.doc.source, props.doc.source_id))
 
 function openLink() {
   const url = openUrl.value
@@ -105,6 +116,12 @@ const hasTags = computed(
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+}
+.grid-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 .grid-card-link {
   flex-shrink: 0;

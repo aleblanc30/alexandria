@@ -275,7 +275,8 @@ class TestDocuments:
         }])
         doc = client.get("/documents").json()["documents"][0]
         for key in (
-            "id", "source", "title", "description", "url_or_path",
+            "id", "source", "source_id", "title", "description", "url_or_path",
+            "zotero_attachment_key",
             "source_tags", "cluster_l1_tags", "cluster_l2_tags",
         ):
             assert key in doc

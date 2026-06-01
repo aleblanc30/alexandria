@@ -21,11 +21,26 @@
           <span class="mkey">Fetch</span><span>{{ doc.fetch_status }}</span>
           <span class="mkey">Chunks</span><span>{{ doc.chunks_count }}</span>
         </div>
-        <div v-if="showWebLink" class="link-row">
-          <span class="link-url" :title="openUrl!">{{ openUrl }}</span>
-          <button class="btn-xs" type="button" @click.stop="openInNewTab(openUrl!)">
+        <div
+          v-if="showWebLink || showZotero"
+          class="link-row"
+          :class="{ 'link-row--end': !showWebLink }"
+        >
+          <span v-if="showWebLink" class="link-url" :title="openUrl!">{{ openUrl }}</span>
+          <button
+            v-if="showWebLink"
+            class="btn-xs"
+            type="button"
+            @click.stop="openInNewTab(openUrl!)"
+          >
             Open in new tab
           </button>
+          <ZoteroOpenButton
+            v-if="showZotero"
+            :source-id="doc.source_id"
+            :attachment-key="doc.zotero_attachment_key"
+            size="panel"
+          />
         </div>
       </section>
 
@@ -62,7 +77,9 @@ import { useUiStore } from '@/stores/ui'
 import { getDocument, patchTags } from '@/api/client'
 import type { DocumentDetail } from '@/api/client'
 import { openInNewTab, resolveHttpUrl } from '@/lib/urls'
+import { canOpenInZotero } from '@/lib/zotero'
 import SourceBadge from './SourceBadge.vue'
+import ZoteroOpenButton from './ZoteroOpenButton.vue'
 
 const route = useRoute()
 const ui  = useUiStore()
@@ -78,6 +95,12 @@ const openUrl = computed(() => {
 })
 const showWebLink = computed(
   () => isBrowse.value && openUrl.value != null,
+)
+const showZotero = computed(
+  () =>
+    isBrowse.value
+    && doc.value != null
+    && canOpenInZotero(doc.value.source, doc.value.source_id),
 )
 
 watch(() => ui.activeDocId, async (id) => {
@@ -111,6 +134,7 @@ async function addTag() {
 .mkey        { color: var(--muted) }
 .link-row    { display: flex; align-items: center; gap: 8px; margin-top: 8px }
 .link-url    { flex: 1; min-width: 0; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.link-row--end { justify-content: flex-end }
 .tag-wrap    { display: flex; flex-wrap: wrap; gap: 5px }
 .tag         { padding: 3px 9px; border-radius: 10px; font-size: 11px; cursor: pointer }
 .tag--source   { background: #F1EFE8; color: #5F5E5A }

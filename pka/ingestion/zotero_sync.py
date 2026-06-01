@@ -3,7 +3,7 @@ import logging
 
 from pka.connectors.zotero import ensure_zotero_copy, load_item_keys, load_items
 from pka.constants import Source
-from pka.db.queries import source_ids_with_chunks
+from pka.db.queries import refresh_zotero_attachment_keys, source_ids_with_chunks
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
@@ -46,6 +46,15 @@ def sync_zotero_metadata(
     sp.begin_metadata_sync(key, pending, baseline)
     items = take(load_items())
     stats = ingest_zotero_metadata(items, dry_run=dry_run, progress_key=key)
+    if not dry_run:
+        attach_keys = {
+            i.source_id: i.pdf_attachment_key
+            for i in items
+            if i.pdf_attachment_key
+        }
+        n_keys = refresh_zotero_attachment_keys(attach_keys)
+        if n_keys:
+            log.info("Zotero attachment keys refreshed on %d row(s)", n_keys)
     log.info("Zotero metadata: %s", stats)
     return {"metadata": stats, "stopped": stats.get("stopped")}
 

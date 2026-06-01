@@ -44,6 +44,7 @@ def ingest_zotero_items(
                 fetch_status = (
                     FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
                 ),
+                zotero_attachment_key = item.pdf_attachment_key,
             )
             insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
             insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
@@ -94,6 +95,7 @@ def ingest_zotero_metadata(
             fetch_status = (
                 FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
             ),
+            zotero_attachment_key = item.pdf_attachment_key,
         )
         if doc_id is None:
             return "skipped"
@@ -136,6 +138,7 @@ def ingest_zotero_embed(
                 fetch_status = (
                     FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING
                 ),
+                zotero_attachment_key = item.pdf_attachment_key,
             )
             doc_ids[item.source_id] = doc_id
         result = ingest_text_block(

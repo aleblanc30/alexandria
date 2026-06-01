@@ -18,6 +18,7 @@ documents = sa.Table(
     sa.Column("source_id",    sa.Text, nullable=False),    # id within the source system
     sa.Column("title",        sa.Text),
     sa.Column("url_or_path",  sa.Text),
+    sa.Column("zotero_attachment_key", sa.Text),           # PDF attachment key for zotero://open-pdf
     sa.Column("date_added",   sa.Integer),                 # unix ts from source (when user saved it)
     sa.Column("ingested_at",  sa.Integer),                 # unix ts when PKA first indexed it
     sa.Column("fetch_status", sa.Text, default="pending"), # see pka.constants.FetchStatus

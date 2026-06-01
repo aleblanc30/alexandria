@@ -14,6 +14,7 @@ class DocumentOut(BaseModel):
     source_id: str
     title: str
     url_or_path: str | None
+    zotero_attachment_key: str | None = None
     date_added: int | None
     fetch_status: str
     source_tags: list[str]
@@ -36,9 +37,11 @@ class TagPatchRequest(BaseModel):
 class DocumentListItem(BaseModel):
     id: int
     source: str
+    source_id: str
     title: str
     description: str
     url_or_path: str | None = None
+    zotero_attachment_key: str | None = None
     source_tags: list[str] = []
     cluster_l1_tags: list[str] = []
     cluster_l2_tags: list[str] = []
