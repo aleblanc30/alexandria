@@ -13,6 +13,10 @@ log = logging.getLogger(__name__)
 _EMPTY_STATS = {"processed": 0, "skipped": 0, "failed": 0}
 
 
+def _plan_counts(key: str, total: int) -> None:
+    sp.set_corpus_total(key, total)
+
+
 def _unavailable_metadata(key: str, baseline: int, reason: str) -> dict:
     sp.begin_metadata_sync(key, 0, baseline)
     sp.skip_phase(key, "metadata")
@@ -20,7 +24,7 @@ def _unavailable_metadata(key: str, baseline: int, reason: str) -> dict:
 
 
 def _unavailable_ingest(key: str, reason: str) -> dict:
-    sp.set_corpus_total(key, 0)
+    _plan_counts(key, 0)
     sp.skip_phase(key, "fetching")
     sp.skip_phase(key, "embedding")
     return {"ingest": dict(_EMPTY_STATS), "unavailable": reason}
@@ -56,7 +60,7 @@ def sync_images_ingest(
         return _unavailable_ingest(key, unavailable)
     images = take(images)
     n = len(images)
-    sp.set_corpus_total(key, n)
+    _plan_counts(key, n)
     sp.skip_phase(key, "fetching")
     sp.set_phase(key, "embedding", n)
     stats = ingest_images(images, dry_run=dry_run, progress_key=key)

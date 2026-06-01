@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
 
 from pka.api.dependencies import get_engine
-from pka.constants import ALL_SOURCES, FetchStatus
+from pka.constants import ALL_SOURCES, FetchStatus, Source
 from pka.db.schema import documents, fetch_log
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.progress_baselines import (
@@ -110,10 +110,13 @@ def _sync_metadata(src: str) -> None:
 
 def _sync_ingest(src: str) -> None:
     from pka.db.queries import get_engine, init_db
+    from pka.ingestion.pending_metadata import source_corpus_size
 
     init_db()
     _seed_baselines(src)
     sp.begin_job(src, "ingest", phase="loading")
+    if src != Source.FIREFOX:
+        sp.begin_ingest(src, source_corpus_size(src))
     try:
         stats = require_handlers(src).sync_ingest(progress_key=src)
         _finish_job(src, stats)

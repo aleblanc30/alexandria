@@ -19,6 +19,10 @@ _EMPTY_STATS = {"processed": 0, "skipped": 0, "failed": 0}
 _EMPTY_EMBED = {**_EMPTY_STATS, "chunks": 0}
 
 
+def _plan_counts(key: str, total: int) -> None:
+    sp.set_corpus_total(key, total)
+
+
 def _unavailable_metadata(key: str, baseline: int, reason: str) -> dict:
     sp.begin_metadata_sync(key, 0, baseline)
     sp.skip_phase(key, "metadata")
@@ -26,7 +30,7 @@ def _unavailable_metadata(key: str, baseline: int, reason: str) -> dict:
 
 
 def _unavailable_ingest(key: str, reason: str) -> dict:
-    sp.set_corpus_total(key, 0)
+    _plan_counts(key, 0)
     sp.skip_phase(key, "fetching")
     sp.skip_phase(key, "embedding")
     return {
@@ -70,7 +74,7 @@ def sync_calibre_ingest(
     n_files = sum(
         1 for b in books if b.preferred_path and b.preferred_path.exists()
     )
-    sp.set_corpus_total(key, n_files or n)
+    _plan_counts(key, n_files or n)
     sp.skip_phase(key, "fetching")
 
     stats: dict = {}

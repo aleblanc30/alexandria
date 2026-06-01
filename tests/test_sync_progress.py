@@ -210,6 +210,91 @@ def test_metadata_job_progress_from_archive_db():
     assert metadata_job_progress("firefox", 1, 3) == (3, 4)
 
 
+def test_advance_does_not_inflate_phase_total():
+    sp.begin_job("zotero", "ingest")
+    sp.set_corpus_total("zotero", 100)
+    sp.set_phase("zotero", "embedding", 100)
+    for _ in range(150):
+        sp.advance("zotero")
+    embed = sp.snapshot("zotero")["zotero"]["phase_details"][2]
+    assert embed["total"] == 100
+    assert embed["processed"] == 100
+
+
+def test_begin_ingest_pins_corpus_before_handler():
+    sp.begin_job("zotero", "ingest")
+    sp.begin_ingest("zotero", 500)
+    snap = sp.snapshot("zotero")["zotero"]
+    assert all(p["total"] == 500 for p in snap["phase_details"])
+    assert snap["phase_details"][1]["processed"] == 500
+
+
+def test_refresh_display_from_db_preserves_ingest_corpus_totals():
+    sp.hydrate(
+        "zotero",
+        {"metadata": 500, "fetching": 500, "embedding": 500},
+        {"metadata": 500, "fetching": 500, "embedding": 200},
+    )
+    sp.begin_job("zotero", "ingest")
+    sp.set_corpus_total("zotero", 500)
+    sp.skip_phase("zotero", "fetching")
+    sp.set_phase("zotero", "embedding", 500)
+    sp.refresh_display_from_db(
+        "zotero",
+        {"metadata": 1000, "fetching": 1000, "embedding": 1000},
+        {"metadata": 500, "fetching": 500, "embedding": 250},
+    )
+    snap = sp.snapshot("zotero")["zotero"]
+    assert all(p["total"] == 500 for p in snap["phase_details"])
+    assert snap["phase_details"][2]["processed"] == 250
+
+
+def test_embed_finish_preserves_job_corpus_over_doc_count(tmp_path, monkeypatch):
+    from pka.db.queries import get_engine, init_db, insert_document_if_new
+    from pka.ingestion.progress_baselines import seed_progress_from_db
+
+    monkeypatch.setenv("PKA_DATA_DIR", str(tmp_path))
+    init_db()
+    for i in range(10):
+        insert_document_if_new(
+            "zotero", f"z{i}", f"Title {i}", f"http://{i}", None,
+        )
+    monkeypatch.setattr(
+        "pka.ingestion.progress_baselines.source_corpus_size",
+        lambda _src: 10,
+    )
+    sp.begin_job("zotero", "ingest")
+    sp.begin_ingest("zotero", 5)
+    sp.set_phase("zotero", "embedding", 5)
+    for _ in range(5):
+        sp.advance("zotero")
+    sp.finish("zotero")
+    seed_progress_from_db(get_engine(), "zotero")
+    embed = sp.snapshot("zotero")["zotero"]["phase_details"][2]
+    assert embed["total"] == 5
+
+
+def test_metadata_finish_hydrate_does_not_double_totals():
+    from pka.db.queries import get_engine, init_db, insert_document_if_new
+    from pka.ingestion.progress_baselines import seed_progress_from_db
+
+    init_db()
+    for i in range(5):
+        insert_document_if_new(
+            "zotero", f"z{i}", f"Title {i}", f"http://{i}", None,
+        )
+    sp.begin_metadata_sync("zotero", pending=5, baseline=0)
+    snap_running = sp.snapshot("zotero")["zotero"]
+    assert snap_running["phase_details"][0]["total"] == 5
+    assert snap_running["phase_details"][0]["processed"] == 5
+
+    sp.finish("zotero")
+    seed_progress_from_db(get_engine(), "zotero")
+    meta = sp.snapshot("zotero")["zotero"]["phase_details"][0]
+    assert meta["total"] == 5
+    assert meta["processed"] == 5
+
+
 def test_hydrate_shrinks_totals_after_documents_removed():
     sp.hydrate(
         "firefox",

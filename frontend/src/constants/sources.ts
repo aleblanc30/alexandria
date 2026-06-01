@@ -18,3 +18,12 @@ export const SOURCE_LABELS: Record<IngestionSource, string> = {
 export function isIngestionSource(value: string): value is IngestionSource {
   return (INGESTION_SOURCES as readonly string[]).includes(value)
 }
+
+/** Sources that run HTTP fetch as part of the ingest job. */
+export function sourceHasFetchPhase(source: IngestionSource): boolean {
+  return source === 'firefox'
+}
+
+export function ingestJobLabel(source: IngestionSource): string {
+  return sourceHasFetchPhase(source) ? 'Fetch & embed' : 'Embed'
+}

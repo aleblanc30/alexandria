@@ -12,6 +12,11 @@ from pka.ingestion.runners.zotero import ingest_zotero_embed, ingest_zotero_meta
 log = logging.getLogger(__name__)
 
 
+def _plan_counts(key: str, total: int) -> None:
+    """Set shared corpus size for all phases (Firefox ingest pattern)."""
+    sp.set_corpus_total(key, total)
+
+
 def _load_zotero_items_for_embed(skip_existing: bool = True) -> tuple[list, int, int]:
     """Load only items that still need embedding; return (items, total, skipped)."""
     dst = ensure_zotero_copy()
@@ -52,7 +57,7 @@ def sync_zotero_ingest(
 ) -> dict:
     key = progress_key or "zotero"
     items, n, pre_skipped = _load_zotero_items_for_embed(skip_existing=skip_existing)
-    sp.set_corpus_total(key, n)
+    _plan_counts(key, n)
     sp.skip_phase(key, "fetching")
     sp.set_phase(key, "embedding", n)
     if not items:

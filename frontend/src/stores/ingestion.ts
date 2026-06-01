@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import * as api from '@/api/client'
+import { formatJobToast } from '@/lib/ingestStats'
 import { useToastStore } from './toast'
 
 function notifyError(e: any) {
@@ -11,15 +12,6 @@ const POLL_MS = 500
 const SOURCES = ['firefox', 'zotero', 'calibre', 'image'] as const
 type JobKind = 'metadata' | 'ingest'
 type Source = typeof SOURCES[number]
-
-function formatJobToast(src: string, p: api.SyncProgress): string {
-  const job = p.active_job === 'metadata' ? 'metadata sync' : 'ingest'
-  const r = p.last_result as Record<string, any> | null | undefined
-  if (!r || src !== 'firefox') return `${src} ${job} complete`
-  const f = r.fetch ?? {}
-  const e = r.embed ?? {}
-  return `${src} ingest: ${f.fetched ?? 0} fetched, ${f.unfetchable ?? 0} unfetchable, ${f.skipped ?? 0} skipped, ${e.processed ?? 0} embedded`
-}
 
 export const useIngestionStore = defineStore('ingestion', () => {
   const status          = ref<api.IngestionStatus | null>(null)

@@ -73,13 +73,15 @@ def _overall(state: SyncState) -> tuple[int, int]:
 
 def _apply_monotonic_total(plan: PhasePlan, total: int) -> None:
     """Raise phase total to fit new work without shrinking below progress."""
-    plan.total = max(plan.total, total, plan.processed)
+    plan.total = max(plan.total, total)
+    if plan.total > 0:
+        plan.processed = min(plan.processed, plan.total)
 
 
 def _apply_monotonic_processed(plan: PhasePlan, processed: int) -> None:
     plan.processed = max(plan.processed, processed)
-    if plan.processed > plan.total:
-        plan.total = plan.processed
+    if plan.total > 0:
+        plan.processed = min(plan.processed, plan.total)
 
 
 def _normalize_phases(state: SyncState) -> None:
@@ -122,6 +124,15 @@ def is_running(source: str) -> bool:
         return state is not None and state.status == "running"
 
 
+def job_corpus_total(source: str) -> int:
+    """Return pinned corpus size from the current/last job phases, or 0."""
+    with _lock:
+        state = _states.get(source)
+        if not state or not state.phases:
+            return 0
+        return max(p.total for p in state.phases)
+
+
 def hydrate(
     source: str,
     totals: dict[str, int],
@@ -145,12 +156,16 @@ def refresh_display_from_db(
     processed: dict[str, int] | None = None,
     fetch_outcomes: dict[str, int] | None = None,
 ) -> None:
-    """Refresh phase totals/processed from DB while an ingest job is running."""
+    """Refresh phase processed counts from DB while an ingest job is running.
+
+    Corpus totals are owned by ``set_corpus_total`` at job start (same as Firefox
+    ingest); DB baselines must not overwrite them during polling.
+    """
     with _lock:
         state = _states.get(source)
         if not state or state.status != "running" or state.active_job != "ingest":
             return
-        _apply_db_counts(state, totals, processed, fetch_outcomes)
+        _apply_db_counts(state, totals, processed, fetch_outcomes, update_totals=False)
 
 
 def _apply_db_counts(
@@ -158,18 +173,23 @@ def _apply_db_counts(
     totals: dict[str, int],
     processed: dict[str, int] | None,
     fetch_outcomes: dict[str, int] | None,
+    *,
+    update_totals: bool = True,
 ) -> None:
     _ensure_standard_phases(state)
     proc = processed or {}
     phase_map = _phase_map(state)
     for name in STANDARD_PHASES:
         plan = phase_map[name]
-        if name in totals:
+        if update_totals and name in totals:
             plan.total = totals[name]
         if name in proc:
-            plan.processed = proc[name]
-        if plan.total:
-            plan.processed = min(plan.processed, plan.total)
+            if update_totals:
+                plan.processed = proc[name]
+            else:
+                plan.processed = max(plan.processed, proc[name])
+            if plan.total:
+                plan.processed = min(plan.processed, plan.total)
     fetch = phase_map["fetching"]
     if fetch_outcomes:
         fetch.success = fetch_outcomes.get("success", 0)
@@ -182,6 +202,16 @@ def _apply_db_counts(
     meta = phase_map["metadata"]
     state.total = meta.total
     state.processed = meta.processed
+
+
+def begin_ingest(source: str, corpus: int) -> None:
+    """Pin shared corpus totals before slow connector work (Firefox ingest pattern)."""
+    from pka.constants import Source
+
+    if corpus > 0:
+        set_corpus_total(source, corpus)
+    if source != Source.FIREFOX:
+        skip_phase(source, "fetching")
 
 
 def begin_job(source: str, job: JobKind, phase: str = "loading") -> None:
@@ -345,8 +375,8 @@ def advance(source: str, *, failed: bool = False, phase: str | None = None) -> N
                 plan.processed = plan.success + plan.failure
             else:
                 plan.processed += 1
-            if plan.processed > plan.total:
-                plan.total = plan.processed
+            if plan.total > 0:
+                plan.processed = min(plan.processed, plan.total)
             state.processed = plan.processed
             state.total = plan.total
         else:

@@ -3,6 +3,9 @@ Read-only Zotero connector.
 
 Operates on a temporary copy of ``zotero.sqlite`` to avoid lock contention
 with a running Zotero process.
+
+Dev (``PKA_DEV=1``): snapshot ``zotero.sqlite`` once into ``data/`` and reuse it.
+Prod: fresh online backup on each connector access.
 """
 import logging
 import sqlite3
@@ -65,8 +68,33 @@ def zotero_embed_text(item: ZoteroItem) -> str:
 _FIELD_NAMES: tuple[str, ...] = ("title", "abstractNote", "DOI", "date", "url")
 
 
-def _copy_db(src: Path, dst: Path) -> None:
-    copy_sqlite_database(src, dst)
+def _dev_zotero_copy(src: Path, dst: Path, *, refresh: bool = False) -> Path:
+    """One-time snapshot for dev; reused until ``refresh`` or the file is deleted."""
+    if dst.exists() and not refresh:
+        log.debug("Using dev Zotero copy: %s", dst)
+        return dst
+    log.info("Creating dev Zotero copy from %s", src)
+    return copy_sqlite_database(src, dst)
+
+
+def ensure_zotero_copy(
+    zotero_db: Path | None = None,
+    copy_path: Path | None = None,
+    *,
+    refresh: bool = False,
+) -> Path:
+    """Copy ``zotero.sqlite`` for read-only access; return the copy path.
+
+    When ``PKA_DEV=1``, the library DB is copied once to ``data/zotero_copy.sqlite``
+    and that snapshot is reused. Pass ``refresh=True`` (or delete the copy) to resnapshot.
+    """
+    src = zotero_db or settings.zotero_db
+    dst = copy_path or settings.zotero_db_copy
+    if not src.exists():
+        raise FileNotFoundError(f"Zotero database not found: {src}")
+    if settings.dev:
+        return _dev_zotero_copy(src, dst, refresh=refresh)
+    return copy_sqlite_database(src, dst)
 
 
 def _parse_year(date_str: str | None) -> int | None:
@@ -136,19 +164,6 @@ def _load_item_fields(
     return {r["fieldName"]: r["value"] for r in cur.fetchall()}
 
 
-def ensure_zotero_copy(
-    zotero_db: Path | None = None,
-    copy_path: Path | None = None,
-) -> Path:
-    """Copy ``zotero.sqlite`` for read-only access; return the copy path."""
-    src = zotero_db or settings.zotero_db
-    dst = copy_path or settings.zotero_db_copy
-    if not src.exists():
-        raise FileNotFoundError(f"Zotero database not found: {src}")
-    _copy_db(src, dst)
-    return dst
-
-
 _ITEM_KEYS_SQL = """
     SELECT i.key
     FROM   items i
@@ -162,11 +177,12 @@ def load_item_keys(
     copy_path: Path | None = None,
     *,
     skip_copy: bool = False,
+    refresh: bool = False,
 ) -> set[str]:
     """Return Zotero item keys without loading full item payloads."""
     dst = copy_path or settings.zotero_db_copy
     if not skip_copy:
-        ensure_zotero_copy(zotero_db, dst)
+        ensure_zotero_copy(zotero_db, dst, refresh=refresh)
     with sqlite3.connect(dst) as con:
         cur = con.cursor()
         cur.execute(_ITEM_KEYS_SQL)
@@ -179,12 +195,13 @@ def load_items(
     *,
     keys: set[str] | None = None,
     skip_copy: bool = False,
+    refresh: bool = False,
 ) -> list[ZoteroItem]:
     src = zotero_db or settings.zotero_db
     dst = copy_path or settings.zotero_db_copy
 
     if not skip_copy:
-        ensure_zotero_copy(src, dst)
+        ensure_zotero_copy(src, dst, refresh=refresh)
     elif not dst.exists():
         raise FileNotFoundError(f"Zotero copy not found: {dst}")
 

@@ -6,7 +6,7 @@
         <div class="source-name">{{ SOURCE_LABELS[source] }}</div>
         <div class="source-count">{{ st?.by_source[source] ?? 0 }} documents</div>
         <div v-if="unavailableHint" class="source-unavailable hint">{{ unavailableHint }}</div>
-        <div v-if="fetchSummary" class="fetch-summary hint">{{ fetchSummary }}</div>
+        <div v-if="ingestSummary" class="fetch-summary hint">{{ ingestSummary }}</div>
         <div class="phase-bars">
           <div
             v-for="phase in phaseList"
@@ -67,7 +67,7 @@
           :disabled="ingest.isMetadataRunning(source)"
           @click="ingest.ingest(source)"
         >
-          Ingest
+          {{ ingestJobLabel(source) }}
         </button>
       </div>
     </div>
@@ -77,7 +77,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PhaseDetail, SyncProgress } from '@/api/client'
-import { SOURCE_COLORS, SOURCE_LABELS, type IngestionSource } from '@/constants/sources'
+import { SOURCE_COLORS, SOURCE_LABELS, ingestJobLabel, sourceHasFetchPhase, type IngestionSource } from '@/constants/sources'
+import { ingestStatsSummary } from '@/lib/ingestStats'
 import { useIngestionStore } from '@/stores/ingestion'
 
 const props = defineProps<{ source: IngestionSource }>()
@@ -104,23 +105,12 @@ function defaultPhases(): PhaseDetail[] {
 
 const phaseList = computed(() => {
   const p = progressFor()
-  if (p?.phase_details?.length) return p.phase_details
-  return defaultPhases()
+  const phases = p?.phase_details?.length ? p.phase_details : defaultPhases()
+  if (sourceHasFetchPhase(props.source)) return phases
+  return phases.filter(ph => ph.name !== 'fetching')
 })
 
-const fetchSummary = computed((): string | null => {
-  if (props.source !== 'firefox') return null
-  const fb = st.value?.fetch_by_source?.[props.source]
-  if (!fb) return null
-  const parts = [
-    `${fb.fetched ?? 0} fetched`,
-    `${fb.unfetchable ?? 0} unfetchable`,
-    `${fb.skipped ?? 0} skipped`,
-    `${fb.embedded ?? 0} embedded`,
-  ]
-  if ((fb.pending ?? 0) > 0) parts.push(`${fb.pending} pending`)
-  return parts.join(' · ')
-})
+const ingestSummary = computed(() => ingestStatsSummary(props.source, st.value))
 
 const unavailableHint = computed((): string | null => {
   const msg = st.value?.source_unavailable?.[props.source]

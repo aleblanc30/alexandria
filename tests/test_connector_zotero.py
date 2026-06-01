@@ -130,3 +130,22 @@ class TestLoadItems:
         assert zotero_embed_text(item) == "Important PDF highlight text here."
 
 
+class TestDevZoteroCopy:
+    def test_dev_mode_reuses_one_time_copy(self, zotero_db, monkeypatch):
+        from pka import config
+
+        monkeypatch.setattr(config.settings, "dev", True)
+        copy_path = config.settings.zotero_db_copy
+        assert not copy_path.exists()
+
+        first = load_items(zotero_db=zotero_db)
+        assert copy_path.exists()
+        assert len(first) == 3
+        mtime = copy_path.stat().st_mtime
+
+        second = load_items(zotero_db=zotero_db)
+        assert copy_path.stat().st_mtime == mtime
+        assert len(second) == 3
+
+        load_items(zotero_db=zotero_db, refresh=True)
+        assert copy_path.stat().st_mtime >= mtime

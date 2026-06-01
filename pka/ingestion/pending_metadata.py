@@ -66,6 +66,43 @@ def count_pending_metadata(source: Source | str) -> int:
     return 0
 
 
+def source_corpus_size(source: Source | str) -> int:
+    """Source connector item count at job scope (respects dev ingestion cap).
+
+    Used to pin ingest phase totals before slow connector I/O, matching the
+    Firefox ``_plan_counts`` / ``set_corpus_total`` pattern.
+    """
+    src = str(source)
+    if src == Source.FIREFOX:
+        from pka.connectors.firefox import load_bookmarks
+
+        return len(take(load_bookmarks()))
+
+    if src == Source.ZOTERO:
+        from pka.connectors.zotero import ensure_zotero_copy, load_item_keys
+
+        dst = ensure_zotero_copy()
+        return len(take(sorted(load_item_keys(copy_path=dst, skip_copy=True))))
+
+    if src == Source.CALIBRE:
+        books, unavailable = try_load_calibre_books()
+        if unavailable:
+            return 0
+        books = take(books)
+        n_files = sum(
+            1 for b in books if b.preferred_path and b.preferred_path.exists()
+        )
+        return n_files or len(books)
+
+    if src == Source.IMAGE:
+        images, unavailable = try_scan_images()
+        if unavailable:
+            return 0
+        return len(take(images))
+
+    return 0
+
+
 def metadata_job_progress(source: Source | str, baseline: int, pending_total: int) -> tuple[int, int]:
     """Return ``(archive_count, corpus_total)`` for an active metadata job.
 
