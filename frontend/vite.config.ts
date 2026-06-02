@@ -23,6 +23,12 @@ export default defineConfig({
       '/ingestion':     'http://localhost:8000',
       '/images':        'http://localhost:8000',
       '/reading-lists': 'http://localhost:8000',
+      '/tag-training': {
+        target: 'http://localhost:8000',
+        // LLM pseudo-label runs many sequential Ollama calls
+        timeout: 30 * 60 * 1000,
+        proxyTimeout: 30 * 60 * 1000,
+      },
     },
   },
   build: { outDir: 'dist' },

@@ -30,6 +30,7 @@ class TagOrigin(StrEnum):
     LLM = "llm"
     CLUSTER_L1 = "cluster_l1"
     CLUSTER_L2 = "cluster_l2"
+    LEARNED = "learned"
 
 
 ALL_SOURCES = [s.value for s in Source]

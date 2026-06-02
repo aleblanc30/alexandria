@@ -5,6 +5,18 @@
 const BASE = ''
 const DEFAULT_TIMEOUT_MS = 30000
 const INGESTION_TIMEOUT_MS = 120000
+/** One Ollama call per doc; default batch 20 × ~60s + slack (must exceed DEFAULT_TIMEOUT_MS). */
+const PSEUDO_LABEL_LLM_PER_DOC_MS = 65_000
+const PSEUDO_LABEL_LLM_BASE_MS = 15_000
+const PSEUDO_LABEL_LLM_MAX_MS = 30 * 60 * 1000
+
+function pseudoLabelLlmTimeoutMs(batchSize?: number): number {
+  const n = batchSize ?? 20
+  return Math.min(
+    PSEUDO_LABEL_LLM_MAX_MS,
+    PSEUDO_LABEL_LLM_BASE_MS + n * PSEUDO_LABEL_LLM_PER_DOC_MS,
+  )
+}
 
 export class ApiError extends Error {
   status: number
@@ -162,6 +174,7 @@ export const listDocuments = (params?: {
   overlay_tags?: string[]
   cluster_l1_tags?: string[]
   cluster_l2_tags?: string[]
+  learned_tags?: string[]
   wayback_only?: boolean
   limit?: number
   offset?: number
@@ -173,6 +186,7 @@ export const listDocuments = (params?: {
   params?.overlay_tags?.forEach(t => qs.append('overlay_tags', t))
   params?.cluster_l1_tags?.forEach(t => qs.append('cluster_l1_tags', t))
   params?.cluster_l2_tags?.forEach(t => qs.append('cluster_l2_tags', t))
+  params?.learned_tags?.forEach(t => qs.append('learned_tags', t))
   if (params?.wayback_only) qs.set('wayback_only', 'true')
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.offset != null) qs.set('offset', String(params.offset))
@@ -319,3 +333,77 @@ export const addListItem   = (listId: number, document_id: number, note = '') =>
   req<{ id: number }>(`/reading-lists/${listId}/items`, { method: 'POST', body: JSON.stringify({ document_id, note }) })
 export const removeListItem = (listId: number, itemId: number) =>
   req<void>(`/reading-lists/${listId}/items/${itemId}`, { method: 'DELETE' })
+
+// ── Tag training (active learning) ───────────────────────────────────────────
+
+export interface TagTrainingLabel { doc_id: number; label: number }
+export interface TagTrainingSession {
+  session_id: number
+  tag: string
+  status: string
+  created_at: number
+  accepted_at: number | null
+  parameters: Record<string, unknown>
+  provenance: Record<string, unknown> | null
+  positive_count: number
+  negative_count: number
+  has_model: boolean
+  train_stats: Record<string, unknown> | null
+  bootstrap_negatives_added?: number
+  pseudo_label_result?: {
+    mode: string
+    added_positive: number
+    added_negative: number
+    pseudo_label_high?: number
+    pseudo_label_low?: number
+    errors?: number
+    batch_size?: number
+  }
+}
+export interface TagTrainingQueueDoc {
+  doc_id: number
+  title: string
+  probability: number
+  uncertainty: number
+}
+
+export const listTagTrainingSessions = () =>
+  req<TagTrainingSession[]>('/tag-training/sessions')
+export const getTagTrainingSession = (id: number) =>
+  req<TagTrainingSession>(`/tag-training/sessions/${id}`)
+export const createTagTrainingSession = (tag: string, labels: TagTrainingLabel[]) =>
+  req<TagTrainingSession>('/tag-training/sessions', {
+    method: 'POST',
+    body: JSON.stringify({ tag, labels }),
+  })
+export const createTagTrainingFromSourceTag = (sourceTag: string, targetTag: string) =>
+  req<TagTrainingSession>('/tag-training/sessions/from-source-tag', {
+    method: 'POST',
+    body: JSON.stringify({ source_tag: sourceTag, target_tag: targetTag }),
+  })
+export const getTagTrainingQueue = (sessionId: number) =>
+  req<TagTrainingQueueDoc[]>(`/tag-training/sessions/${sessionId}/queue`)
+export const postTagTrainingLabels = (sessionId: number, labels: TagTrainingLabel[]) =>
+  req<TagTrainingSession>(`/tag-training/sessions/${sessionId}/labels`, {
+    method: 'POST',
+    body: JSON.stringify({ labels }),
+  })
+export const acceptTagTrainingSession = (sessionId: number) =>
+  req<TagTrainingSession>(`/tag-training/sessions/${sessionId}/accept`, { method: 'POST' })
+export const resumeTagTrainingSession = (sessionId: number) =>
+  req<TagTrainingSession>(`/tag-training/sessions/${sessionId}/resume`, { method: 'POST' })
+export const pseudoLabelTagTrainingSession = (
+  sessionId: number,
+  mode: 'model' | 'llm',
+  batchSize?: number,
+) =>
+  req<TagTrainingSession>(
+    `/tag-training/sessions/${sessionId}/pseudo-label`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ mode, batch_size: batchSize ?? null }),
+    },
+    mode === 'llm' ? pseudoLabelLlmTimeoutMs(batchSize) : DEFAULT_TIMEOUT_MS,
+  )
+export const getTagTrainingSessionByTag = (tag: string) =>
+  req<TagTrainingSession>(`/tag-training/sessions/by-tag/${encodeURIComponent(tag)}`)

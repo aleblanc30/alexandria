@@ -9,6 +9,7 @@ export const router = createRouter({
     { path: '/clusters',   component: () => import('@/views/ClusterView.vue') },
     { path: '/trends',     component: () => import('@/views/TrendsView.vue') },
     { path: '/tags',       component: () => import('@/views/TagView.vue') },
+    { path: '/tags/train/:sessionId', component: () => import('@/views/TagTrainView.vue') },
     { path: '/runs',       component: () => import('@/views/RunManagerView.vue') },
     { path: '/ingestion',         component: () => import('@/views/IngestionView.vue') },
     { path: '/ingestion/:source', component: () => import('@/views/IngestionSourceView.vue') },

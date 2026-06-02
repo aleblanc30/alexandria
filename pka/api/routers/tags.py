@@ -14,7 +14,7 @@ router = APIRouter(prefix="/tags", tags=["tags"])
 async def list_tags(
     origin: str | None = Query(
         None,
-        description="source | inferred | manual | llm | cluster_l1 | cluster_l2",
+        description="source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned",
     ),
     sources: Annotated[list[Source] | None, Query()] = None,
     source_tags: Annotated[list[str] | None, Query()] = None,

@@ -38,6 +38,7 @@ class TestSchema:
             "chunks", "fetch_log",
             "overlay_tags", "clusters", "cluster_runs",
             "cluster_assignments", "reading_lists", "reading_list_items",
+            "tag_training_sessions", "tag_training_labels",
         }
         assert expected <= existing
 

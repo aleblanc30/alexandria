@@ -1,5 +1,9 @@
 <template>
-  <div class="card" :class="{ selected }" @click="$emit('click')">
+  <div class="card" :class="{ selected, 'card--pick': pickMode }" @click="$emit('click')">
+    <label v-if="pickMode" class="card-check" @click.stop>
+      <input type="checkbox" :checked="checked" @change="$emit('toggle-check')" />
+    </label>
+    <div class="card-body">
     <div class="title">{{ doc.title || 'Untitled' }}</div>
     <div v-if="description" class="desc">{{ description }}</div>
     <div class="meta">
@@ -12,6 +16,7 @@
     <div v-if="similarity != null" class="score-bar">
       <div class="score-fill" :style="{ width: similarity * 100 + '%' }" />
     </div>
+    </div>
   </div>
 </template>
 <script setup lang="ts">
@@ -20,8 +25,13 @@ import type { DocumentListItem, DocumentOut } from '@/api/client'
 import { clusterLabel, docDescription, docSimilarity, docYear } from '@/lib/docDisplay'
 import SourceBadge from './SourceBadge.vue'
 
-const props = defineProps<{ doc: DocumentOut | DocumentListItem; selected?: boolean }>()
-defineEmits(['click'])
+const props = defineProps<{
+  doc: DocumentOut | DocumentListItem
+  selected?: boolean
+  pickMode?: boolean
+  checked?: boolean
+}>()
+defineEmits<{ click: []; 'toggle-check': [] }>()
 
 const cluster = computed(() => clusterLabel(props.doc))
 const year = computed(() => docYear(props.doc))
@@ -29,7 +39,10 @@ const similarity = computed(() => docSimilarity(props.doc))
 const description = computed(() => docDescription(props.doc))
 </script>
 <style scoped>
-.card        { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 12px 16px; cursor: pointer; transition: border-color .1s; margin-bottom: 8px }
+.card        { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 12px 16px; cursor: pointer; transition: border-color .1s; margin-bottom: 8px; display: flex; gap: 10px; align-items: flex-start }
+.card--pick  { padding-left: 10px }
+.card-check  { flex-shrink: 0; padding-top: 2px; cursor: pointer }
+.card-body   { flex: 1; min-width: 0 }
 .card:hover  { border-color: rgba(0,0,0,.22) }
 .card.selected { border-color: #85B7EB; background: #F4F9FE }
 .title       { font-size: 13px; font-weight: 500; margin-bottom: 5px }

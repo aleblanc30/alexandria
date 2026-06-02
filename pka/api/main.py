@@ -15,6 +15,7 @@ from pka.api.routers import (
     reading_lists,
     runs,
     search,
+    tag_training,
     tags,
     trends,
 )
@@ -50,7 +51,7 @@ if os.environ.get("PKA_DEV") == "1":
 
 for router in (
     search, documents, images, clusters,
-    runs, tags, trends, ingestion, reading_lists,
+    runs, tags, trends, ingestion, reading_lists, tag_training,
 ):
     app.include_router(router.router)
 

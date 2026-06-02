@@ -68,6 +68,12 @@ def refresh_document_embedding(doc_id: int) -> bool:
             .where(documents.c.id == doc_id)
             .values(doc_embedding=blob)
         )
+    try:
+        from pka.tag_training.lifecycle import apply_learned_tags_for_document
+
+        apply_learned_tags_for_document(doc_id)
+    except Exception:
+        log.exception("Failed to apply learned tags to document %d", doc_id)
     return True
 
 

@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     cluster_async_labelling: bool = False     # TF-IDF first, LLM relabel in background
     cluster_regenerate_temperature: float = 0.85  # higher on manual Regenerate label (Ollama)
 
+    # ── Tag training ───────────────────────────────────────────────────────
+    tag_training_llm_chat_timeout_seconds: float = 60.0  # per doc in LLM pseudo-label
+
     # ── Validators ──────────────────────────────────────────────────────────
     @field_validator("dev", "fetch_wayback_fallback", "cluster_async_labelling", mode="before")
     @classmethod

@@ -41,6 +41,26 @@ export const useBrowseStore = defineStore('browse', () => {
   const loadingTags   = ref(false)
   const error         = ref<string | null>(null)
   const viewMode      = ref<BrowseViewMode>(loadViewMode())
+  const selectedDocIds  = ref<Set<number>>(new Set())
+
+  function isDocSelected(id: number) {
+    return selectedDocIds.value.has(id)
+  }
+
+  function toggleDocSelection(id: number) {
+    const next = new Set(selectedDocIds.value)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    selectedDocIds.value = next
+  }
+
+  function clearSelection() {
+    selectedDocIds.value = new Set()
+  }
+
+  function selectAllOnPage(ids: number[]) {
+    selectedDocIds.value = new Set(ids)
+  }
 
   function setViewMode(mode: BrowseViewMode) {
     viewMode.value = mode
@@ -210,6 +230,11 @@ export const useBrowseStore = defineStore('browse', () => {
     error,
     viewMode,
     setViewMode,
+    selectedDocIds,
+    isDocSelected,
+    toggleDocSelection,
+    clearSelection,
+    selectAllOnPage,
     load,
     loadTags,
     loadMore,

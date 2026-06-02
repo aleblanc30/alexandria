@@ -157,3 +157,29 @@ image_tags = sa.Table(
     sa.Column("tag",      sa.Text, nullable=False),
     sa.Column("origin",   sa.Text, nullable=False),        # see pka.constants.TagOrigin
 )
+
+# ── Tag training (active learning) ────────────────────────────────────────────
+
+tag_training_sessions = sa.Table(
+    "tag_training_sessions", meta,
+    sa.Column("session_id",  sa.Integer, primary_key=True),
+    sa.Column("tag",         sa.Text, nullable=False),
+    sa.Column("status",      sa.Text, nullable=False, server_default="labeling"),
+    sa.Column("model_blob",  sa.Text),
+    sa.Column("parameters",  sa.Text),
+    sa.Column("provenance",  sa.Text),
+    sa.Column("notes",       sa.Text),
+    sa.Column("created_at",  sa.Integer, nullable=False),
+    sa.Column("accepted_at", sa.Integer),
+)
+
+tag_training_labels = sa.Table(
+    "tag_training_labels", meta,
+    sa.Column("id",          sa.Integer, primary_key=True),
+    sa.Column("session_id",  sa.Integer, sa.ForeignKey("tag_training_sessions.session_id"), nullable=False),
+    sa.Column("document_id", sa.Integer, sa.ForeignKey("documents.id"), nullable=False),
+    sa.Column("label",       sa.Integer, nullable=False),
+    sa.Column("source",      sa.Text, nullable=False),
+    sa.Column("created_at",  sa.Integer, nullable=False),
+    sa.UniqueConstraint("session_id", "document_id", name="uq_tag_train_session_doc"),
+)

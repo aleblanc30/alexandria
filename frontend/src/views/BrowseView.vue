@@ -78,7 +78,10 @@
           :key="doc.id"
           :doc="doc"
           :selected="ui.activeDocId === doc.id"
+          pick-mode
+          :checked="store.isDocSelected(doc.id)"
           @click="openDoc(doc.id)"
+          @toggle-check="store.toggleDocSelection(doc.id)"
         />
       </div>
 
@@ -88,8 +91,20 @@
           :key="doc.id"
           :doc="doc"
           :selected="ui.activeDocId === doc.id"
+          pick-mode
+          :checked="store.isDocSelected(doc.id)"
           @click="openDoc(doc.id)"
+          @toggle-check="store.toggleDocSelection(doc.id)"
         />
+      </div>
+
+      <div v-if="selectionCount > 0" class="browse-bulk-bar">
+        <span>{{ selectionCount }} selected</span>
+        <button type="button" class="btn" @click="selectAllVisible">Select page</button>
+        <button type="button" class="btn" @click="store.clearSelection()">Clear</button>
+        <button type="button" class="btn btn-primary" @click="startTrainingFromSelection">
+          Train classifier…
+        </button>
       </div>
 
       <div v-if="showSentinel" ref="sentinel" class="browse-sentinel">
@@ -105,25 +120,39 @@
 
       <p v-if="displayError" class="error">{{ displayError }}</p>
     </div>
+
+    <TrainTagPrompt
+      v-model:open="trainDialogOpen"
+      :hint="trainDialogHint"
+      :busy="trainBusy"
+      @confirm="onTrainConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { getDocument } from '@/api/client'
+import { useRouter } from 'vue-router'
+import { createTagTrainingSession, getDocument } from '@/api/client'
 import type { DocumentListItem, DocumentOut } from '@/api/client'
 import { toGridItem } from '@/lib/docDisplay'
 import { useBrowseStore } from '@/stores/browse'
 import { useSearchStore } from '@/stores/search'
 import { useUiStore } from '@/stores/ui'
+import { useToastStore } from '@/stores/toast'
 import BrowseNavPanel from '@/components/BrowseNavPanel.vue'
 import DocCard from '@/components/DocCard.vue'
 import DocGridCard from '@/components/DocGridCard.vue'
+import TrainTagPrompt from '@/components/TrainTagPrompt.vue'
 
 const store = useBrowseStore()
 const search = useSearchStore()
 const ui = useUiStore()
+const router = useRouter()
+const toast = useToastStore()
 const sentinel = ref<HTMLElement | null>(null)
+const trainDialogOpen = ref(false)
+const trainBusy = ref(false)
 
 const modes = ['semantic', 'fulltext', 'hybrid'] as const
 
@@ -170,6 +199,55 @@ const showSentinel = computed(() =>
 const displayError = computed(() =>
   isSearching.value ? search.error : store.error,
 )
+
+const selectionCount = computed(() => store.selectedDocIds.size)
+
+const trainDialogHint = computed(() => {
+  const n = selectionCount.value
+  return n === 1
+    ? '1 document will be a positive training example.'
+    : `${n} documents will be positive training examples.`
+})
+
+function visibleDocIds(): number[] {
+  const docs = store.viewMode === 'cards' ? gridDocs.value : lineDocs.value
+  return docs.map(d => d.id)
+}
+
+function selectAllVisible() {
+  store.selectAllOnPage(visibleDocIds())
+}
+
+function startTrainingFromSelection() {
+  if (selectionCount.value === 0) {
+    toast.push('Select at least one document using the checkboxes.', 'error')
+    return
+  }
+  trainDialogOpen.value = true
+}
+
+async function onTrainConfirm(tag: string) {
+  const ids = Array.from(store.selectedDocIds)
+  if (!ids.length) {
+    toast.push('Selection is empty.', 'error')
+    trainDialogOpen.value = false
+    return
+  }
+  trainBusy.value = true
+  try {
+    const session = await createTagTrainingSession(
+      tag,
+      ids.map(doc_id => ({ doc_id, label: 1 })),
+    )
+    store.clearSelection()
+    trainDialogOpen.value = false
+    await router.push(`/tags/train/${session.session_id}`)
+  } catch (e: any) {
+    toast.push(e.message, 'error')
+  } finally {
+    trainBusy.value = false
+  }
+}
 
 let observer: IntersectionObserver | null = null
 
@@ -297,5 +375,30 @@ onUnmounted(() => observer?.disconnect())
 .browse-load-more:disabled {
   opacity: .6;
   cursor: not-allowed;
+}
+.browse-bulk-bar {
+  position: sticky;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-top: 12px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .08);
+  font-size: 13px;
+  z-index: 20;
+}
+.btn-primary {
+  margin-left: auto;
+  background: #378ADD;
+  color: #fff;
+  border-color: #378ADD;
+}
+.btn-primary:hover {
+  background: #185FA5;
 }
 </style>

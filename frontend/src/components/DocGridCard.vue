@@ -1,5 +1,9 @@
 <template>
-  <div class="grid-card" :class="{ selected }" @click="$emit('click')">
+  <div class="grid-card" :class="{ selected, 'grid-card--pick': pickMode }" @click="$emit('click')">
+    <label v-if="pickMode" class="grid-card-check" @click.stop>
+      <input type="checkbox" :checked="checked" @change="$emit('toggle-check')" />
+    </label>
+    <div class="grid-card-inner">
     <div class="grid-card-title">{{ doc.title || 'Untitled' }}</div>
     <div v-if="doc.description" class="grid-card-desc">{{ doc.description }}</div>
     <div v-if="hasTags" class="grid-card-tags">
@@ -41,6 +45,7 @@
         />
       </div>
     </div>
+    </div>
   </div>
 </template>
 
@@ -51,8 +56,13 @@ import { useDocLinks } from '@/composables/useDocLinks'
 import SourceBadge from './SourceBadge.vue'
 import ZoteroOpenButton from './ZoteroOpenButton.vue'
 
-const props = defineProps<{ doc: DocumentListItem; selected?: boolean }>()
-defineEmits<{ click: [] }>()
+const props = defineProps<{
+  doc: DocumentListItem
+  selected?: boolean
+  pickMode?: boolean
+  checked?: boolean
+}>()
+defineEmits<{ click: []; 'toggle-check': [] }>()
 
 const { hasWebLink, canZotero: showZotero, openLink } = useDocLinks(() => props.doc)
 
@@ -67,8 +77,9 @@ const hasTags = computed(
 <style scoped>
 .grid-card {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  gap: 8px;
+  align-items: flex-start;
   background: var(--surface);
   border: 0.5px solid var(--border);
   border-radius: var(--radius-lg);
@@ -77,6 +88,14 @@ const hasTags = computed(
   min-height: 100px;
   transition: border-color .1s;
 }
+.grid-card-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.grid-card-check { flex-shrink: 0; padding-top: 2px; cursor: pointer }
 .grid-card:hover { border-color: rgba(0, 0, 0, .22) }
 .grid-card.selected { border-color: #85B7EB; background: #F4F9FE }
 .grid-card-title {

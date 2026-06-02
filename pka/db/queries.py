@@ -532,6 +532,7 @@ def _apply_document_browse_filters(
     general_tag_filter: list[str] | None = None,
     cluster_l1_tag_filter: list[str] | None = None,
     cluster_l2_tag_filter: list[str] | None = None,
+    learned_tag_filter: list[str] | None = None,
     wayback_only: bool = False,
 ) -> sa.Select:
     if source_filter:
@@ -551,6 +552,8 @@ def _apply_document_browse_filters(
         q = _where_overlay_tag(q, tag, TagOrigin.CLUSTER_L1)
     for tag in cluster_l2_tag_filter or []:
         q = _where_overlay_tag(q, tag, TagOrigin.CLUSTER_L2)
+    for tag in learned_tag_filter or []:
+        q = _where_overlay_tag(q, tag, TagOrigin.LEARNED)
     return q
 
 
@@ -639,6 +642,7 @@ def list_documents(
     general_tags: list[str] | None = None,
     cluster_l1_tags: list[str] | None = None,
     cluster_l2_tags: list[str] | None = None,
+    learned_tags: list[str] | None = None,
     wayback_only: bool = False,
     limit: int = 48,
     offset: int = 0,
@@ -651,6 +655,7 @@ def list_documents(
         "general_tag_filter": _norm_filter(general_tags),
         "cluster_l1_tag_filter": _norm_filter(cluster_l1_tags),
         "cluster_l2_tag_filter": _norm_filter(cluster_l2_tags),
+        "learned_tag_filter": _norm_filter(learned_tags),
         "wayback_only": wayback_only,
     }
 
@@ -790,6 +795,7 @@ def list_tags(
             str(TagOrigin.LLM),
             str(TagOrigin.CLUSTER_L1),
             str(TagOrigin.CLUSTER_L2),
+            str(TagOrigin.LEARNED),
         }
         if not origin or origin in overlay_origins:
             rows += [
