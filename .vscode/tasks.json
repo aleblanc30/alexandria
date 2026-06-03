@@ -1,0 +1,161 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "alexandria: api (dev)",
+      "type": "shell",
+      "command": "${workspaceFolder}/pka_v0.2.0/.venv/bin/uvicorn pka.api.main:app --reload --port 8000",
+      "options": {
+        "cwd": "${workspaceFolder}/pka_v0.2.0",
+        "env": {
+          "ALEXANDRIA_DEV": "1"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "uvicorn",
+        "pattern": { "regexp": "^.*$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Uvicorn running on"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "alexandria"
+      }
+    },
+    {
+      "label": "alexandria: api (debug attach)",
+      "type": "shell",
+      "command": "${workspaceFolder}/pka_v0.2.0/.venv/bin/python -m debugpy --listen 5678 --wait-for-client -m uvicorn pka.api.main:app --port 8000",
+      "options": {
+        "cwd": "${workspaceFolder}/pka_v0.2.0",
+        "env": {
+          "ALEXANDRIA_DEV": "1"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "debugpy",
+        "pattern": { "regexp": "^.*$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Uvicorn running on|Waiting for debugger attach"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "alexandria"
+      }
+    },
+    {
+      "label": "alexandria: frontend (dev)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.tools/node-v22.16.0-linux-x64/bin/npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/pka_v0.2.0/frontend",
+        "env": {
+          "PATH": "${workspaceFolder}/.tools/node-v22.16.0-linux-x64/bin:${env:PATH}"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^.*$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Local:"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "alexandria"
+      }
+    },
+    {
+      "label": "alexandria: dev stack",
+      "dependsOn": ["alexandria: api (dev)", "alexandria: frontend (dev)"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "alexandria: purge firefox",
+      "type": "shell",
+      "command": "${workspaceFolder}/pka_v0.2.0/.venv/bin/python scripts/purge_source.py firefox",
+      "options": {
+        "cwd": "${workspaceFolder}/pka_v0.2.0"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "group": "alexandria"
+      }
+    },
+    {
+      "label": "alexandria: purge source",
+      "type": "shell",
+      "command": "${workspaceFolder}/pka_v0.2.0/.venv/bin/python scripts/purge_source.py ${input:alexandriaSource}",
+      "options": {
+        "cwd": "${workspaceFolder}/pka_v0.2.0"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "group": "alexandria"
+      }
+    },
+    {
+      "label": "alexandria: purge clustering runs",
+      "type": "shell",
+      "command": "${workspaceFolder}/pka_v0.2.0/.venv/bin/python scripts/purge_cluster_runs.py ${input:alexandriaClusterRunScope}",
+      "options": {
+        "cwd": "${workspaceFolder}/pka_v0.2.0"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "group": "alexandria"
+      }
+    },
+    {
+      "label": "alexandria: purge clustering runs (all, force)",
+      "type": "shell",
+      "command": "${workspaceFolder}/pka_v0.2.0/.venv/bin/python scripts/purge_cluster_runs.py --all --force",
+      "options": {
+        "cwd": "${workspaceFolder}/pka_v0.2.0"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "group": "alexandria"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "alexandriaSource",
+      "type": "pickString",
+      "description": "Source connector to purge from archive.db",
+      "options": ["firefox", "zotero", "calibre", "image"],
+      "default": "firefox"
+    },
+    {
+      "id": "alexandriaClusterRunScope",
+      "type": "pickString",
+      "description": "Clustering runs to purge (skips running and accepted runs)",
+      "options": ["--all", "--all --dry-run"],
+      "default": "--all --dry-run"
+    }
+  ]
+}

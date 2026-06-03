@@ -16,7 +16,6 @@ venv/
 env/
 
 # IDEs
-.vscode/
 .idea/
 *.swp
 
@@ -35,3 +34,11 @@ node_modules/
 dist/
 frontend/dist/
 *.tsbuildinfo
+
+# dev tools
+.cursor/
+.pip-cache/
+.pytest_cache/
+.ruff_cache/
+.tmp/
+.tools/

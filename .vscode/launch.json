@@ -1,0 +1,51 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    
+    {
+      "name": "Alexandria API (debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["pka.api.main:app", "--port", "8000"],
+      "cwd": "${workspaceFolder}/pka_v0.2.0",
+      "python": "${workspaceFolder}/pka_v0.2.0/.venv/bin/python",
+      "env": {
+        "ALEXANDRIA_DEV": "1"
+      },
+      "jinja": true,
+      "justMyCode": true
+    },
+    {
+      "name": "Attach to Alexandria API",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}/pka_v0.2.0",
+          "remoteRoot": "${workspaceFolder}/pka_v0.2.0"
+        }
+      ],
+      "preLaunchTask": "alexandria: api (debug attach)"
+    },
+    {
+      "name": "Alexandria API (debug) + Frontend",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["pka.api.main:app", "--port", "8000"],
+      "cwd": "${workspaceFolder}/pka_v0.2.0",
+      "python": "${workspaceFolder}/pka_v0.2.0/.venv/bin/python",
+      "env": {
+        "ALEXANDRIA_DEV": "1"
+      },
+      "preLaunchTask": "alexandria: frontend (dev)",
+      "jinja": true,
+      "justMyCode": true
+    }
+  ]
+}
