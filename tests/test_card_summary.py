@@ -1,5 +1,5 @@
 """Tests for card summary text helpers."""
-from pka.card_summary import body_excerpt, truncate_summary, zotero_card_summary
+from pka.card_summary import body_excerpt, preprint_card_summary, truncate_summary, zotero_card_summary
 from pka.connectors.zotero import ZoteroItem
 
 
@@ -29,6 +29,15 @@ class TestBodyExcerpt:
 
     def test_single_line_fallback(self):
         assert body_excerpt("Only one line of content here.") == "Only one line of content here."
+
+
+class TestPreprintCardSummary:
+    def test_uses_abstract(self):
+        assert preprint_card_summary("  Paper abstract.  ") == "Paper abstract."
+
+    def test_empty_returns_none(self):
+        assert preprint_card_summary(None) is None
+        assert preprint_card_summary("   ") is None
 
 
 class TestZoteroCardSummary:

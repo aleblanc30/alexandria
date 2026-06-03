@@ -6,7 +6,7 @@ import { buildDocumentFilters, type AcademicKind } from '@/lib/browseFilters'
 import { useSearchStore } from './search'
 import { useToastStore } from './toast'
 
-const VIEW_MODE_KEY = 'pka-browse-view-mode'
+const VIEW_MODE_KEY = 'alexandria-browse-view-mode'
 
 export type BrowseViewMode = 'cards' | 'lines'
 

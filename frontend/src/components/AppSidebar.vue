@@ -11,8 +11,8 @@
     </div>
 
     <div class="sidebar-body">
-      <div class="logo" :title="showFull ? undefined : 'PKA knowledge archive'">
-        PKA <span v-if="showFull">knowledge archive</span>
+      <div class="logo" :title="showFull ? undefined : 'Alexandria'">
+        Alexandria
       </div>
 
       <div v-if="showFull" class="nav-section">Explore</div>

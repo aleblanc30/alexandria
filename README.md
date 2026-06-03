@@ -1,4 +1,4 @@
-# Personal Knowledge Archive (PKA) — v0.2.0
+# Alexandria — v0.2.0
 
 A local-first research library that unifies a Firefox bookmark collection, a
 Zotero academic library, a Calibre ebook collection, and an unstructured
@@ -11,7 +11,7 @@ leaves the machine.
 
 ```
 pka/                          # Python backend
-├── config.py                 # Pydantic settings (PKA_ env prefix, .env supported)
+├── config.py                 # Pydantic settings (ALEXANDRIA_ env prefix, .env supported)
 ├── constants.py              # Source, FetchStatus, TagOrigin enums
 ├── pipeline.py               # _ingest_text_block + per-source ingestion funcs
 ├── db/                       # SQLAlchemy Core schema + queries
@@ -74,6 +74,11 @@ python scripts/run_images.py
 Common flags across the scripts: `--dry-run`, `--force-reindex`. See
 `--help` per script for the full set.
 
+```bash
+python scripts/domain_report.py              # domains by frequency (prioritize fetch handlers)
+python scripts/domain_report.py --source firefox --limit 50
+```
+
 ### Cluster and review
 
 ```bash
@@ -88,7 +93,7 @@ python scripts/run_clustering.py --assign-new   # assign new docs to existing cl
 
 ```bash
 # Dev: backend with CORS enabled (frontend on :5173 talks to backend on :8000)
-PKA_DEV=1 uvicorn pka.api.main:app --reload --port 8000
+ALEXANDRIA_DEV=1 uvicorn pka.api.main:app --reload --port 8000
 
 # In another terminal
 cd frontend && npm run dev
@@ -120,7 +125,7 @@ cd frontend && npm run test
 
 ## Configuration
 
-All settings can be overridden via the `PKA_` environment-variable prefix or
+All settings can be overridden via the `ALEXANDRIA_` environment-variable prefix or
 a `.env` file. See `.env.example` for the full list.
 
 ## Design

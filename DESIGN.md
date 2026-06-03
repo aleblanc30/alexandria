@@ -1,6 +1,6 @@
-# PKA Design Notes
+# Alexandria Design Notes
 
-The authoritative design specification for the Personal Knowledge Archive is
+The authoritative design specification for Alexandria is
 the PDF design document (kept separately by the author). This file holds
 supplementary notes accumulated during implementation and the v0.2.0 audit
 pass, organised so they can be cross-referenced from the code.
@@ -78,6 +78,12 @@ chunks are re-queued automatically on the next ingest run. When a Firefox URL
 returns HTTP 404, the fetcher can fall back to the closest Internet Archive
 snapshot (`fetch_wayback_fallback`, default on).
 
+Firefox phase 2 also uses domain-specific handlers instead of raw HTML scrape
+where APIs exist: Wikipedia (MediaWiki), Amazon product pages, **arXiv**
+(`export.arxiv.org` metadata + PDF — updates `documents.title` and
+`documents.card_summary` from the abstract), and **bioRxiv** (`api.biorxiv.org`
+DOI lookup + PDF, same card fields).
+
 ## 4. Cluster lifecycle
 
 Every clustering run is stored regardless of acceptance. The UI surfaces
@@ -97,7 +103,7 @@ an overlay tag (`cluster_l1` / `cluster_l2` origins) for browse filtering.
 
 **Status:** implemented on branch `active-learning-tags` (backend + v1 UI).
 
-PKA already has several tagging mechanisms that do not overlap with this one:
+Alexandria already has several tagging mechanisms that do not overlap with this one:
 
 | Mechanism | Location | Role today |
 |-----------|----------|------------|
@@ -148,7 +154,7 @@ with `label ∈ {0, 1}` (negative / positive for the target tag).
 **Required seed affordances** (v1 UI — both map to positive `L₀` before the first train):
 
 1. **From a source tag** — user selects a tag with `origin=source` (Tag browser
-   row action, or equivalent in `BrowseNavPanel` source-tag list). PKA resolves
+   row action, or equivalent in `BrowseNavPanel` source-tag list). Alexandria resolves
    all `document_id` values in `source_tags` for that `tag_string` and seeds
    `label=1` for each. User then names the **target tag** for the classifier
    (may match the source tag string or be a new overlay tag, e.g. learn a
@@ -237,7 +243,7 @@ count, rounds completed.
   `loss="log_loss"` — fast retrain each round, serializable coefficients,
   interpretable.
 - **Output:** P(tag) per document; threshold default 0.5, tunable before apply.
-- **Why not LLM zero-shot:** aligns with PKA privacy model; cheaper at scale;
+- **Why not LLM zero-shot:** aligns with Alexandria privacy model; cheaper at scale;
   complements (does not replace) optional LLM cluster labeling in §4.
 
 ### 5.5 Data model
@@ -282,7 +288,7 @@ Tables in `pka/db/schema.py`:
 LLM pseudo-label runs **sequentially** (one Ollama call per doc in the batch). The UI
 request timeout scales with batch size (~65s per doc, cap 30 min). Vite proxies
 `/tag-training` with the same cap. Per-call Ollama timeout:
-`PKA_TAG_TRAINING_LLM_CHAT_TIMEOUT_SECONDS` (default 60).
+`ALEXANDRIA_TAG_TRAINING_LLM_CHAT_TIMEOUT_SECONDS` (default 60).
 
 ### 5.6 Lifecycle and maintenance
 

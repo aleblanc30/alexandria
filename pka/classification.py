@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import time
-from urllib.parse import urlparse
 
 import sqlalchemy as sa
 
 from pka.constants import Source, TagOrigin
 from pka.db.queries import get_engine
 from pka.db.schema import overlay_tags
+from pka.domains import extract_domain
 
 CLASSIFICATION_TAGS = frozenset({"academic", "paper", "preprint"})
 
@@ -17,36 +17,17 @@ ZOTERO_PREPRINT_TYPES = frozenset({"preprint"})
 
 PREPRINT_HOSTS = frozenset({
     "arxiv.org",
-    "www.arxiv.org",
     "biorxiv.org",
-    "www.biorxiv.org",
     "medrxiv.org",
-    "www.medrxiv.org",
     "ssrn.com",
-    "www.ssrn.com",
     "researchsquare.com",
-    "www.researchsquare.com",
 })
 
 PAPER_HOSTS = frozenset({
     "doi.org",
-    "www.doi.org",
     "pubmed.ncbi.nlm.nih.gov",
     "ncbi.nlm.nih.gov",
 })
-
-
-def _hostname(url_or_path: str | None) -> str | None:
-    if not url_or_path:
-        return None
-    raw = url_or_path.strip()
-    if not raw.lower().startswith(("http://", "https://")):
-        return None
-    try:
-        host = urlparse(raw).hostname
-    except ValueError:
-        return None
-    return host.lower() if host else None
 
 
 def _classify_zotero(item_type: str | None) -> list[str]:
@@ -60,14 +41,14 @@ def _classify_zotero(item_type: str | None) -> list[str]:
 
 
 def _classify_firefox_url(url_or_path: str | None) -> list[str]:
-    host = _hostname(url_or_path)
+    host = extract_domain(url_or_path)
     if not host:
         return []
     if host in PREPRINT_HOSTS:
         return ["academic", "preprint"]
     if host in PAPER_HOSTS:
         return ["academic", "paper"]
-    if host in {"ncbi.nlm.nih.gov", "www.ncbi.nlm.nih.gov"}:
+    if host == "ncbi.nlm.nih.gov":
         if url_or_path and "/pmc/" in url_or_path.lower():
             return ["academic", "paper"]
     return []

@@ -106,7 +106,7 @@ def source_corpus_size(source: Source | str) -> int:
 def metadata_job_progress(source: Source | str, baseline: int, pending_total: int) -> tuple[int, int]:
     """Return ``(archive_count, corpus_total)`` for an active metadata job.
 
-    ``archive_count`` is the live row count in PKA; ``corpus_total`` is the
+    ``archive_count`` is the live row count in Alexandria; ``corpus_total`` is the
     source size at job start (``baseline + pending_total``), never below the
     current archive count.
     """

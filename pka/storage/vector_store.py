@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 _client: chromadb.ClientAPI | None = None
 _collection: chromadb.Collection | None = None
 _embedding_fn: DefaultEmbeddingFunction | None = None
-COLLECTION_NAME = "pka_chunks"
+COLLECTION_NAME = "alexandria_chunks"
 _FETCH_BATCH_SIZE = 200
 
 
@@ -85,7 +85,7 @@ def drop_document_collection() -> None:
 
 
 def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
-    """Rebuild ``pka_chunks`` from SQLite chunk text (Chroma embeds in-process)."""
+    """Rebuild ``alexandria_chunks`` from SQLite chunk text (Chroma embeds in-process)."""
     import uuid
 
     import sqlalchemy as sa

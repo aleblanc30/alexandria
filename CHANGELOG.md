@@ -31,7 +31,7 @@
 - Sentence splitter has an optional spaCy backend, with a regex fallback
   that protects common abbreviations.
 - CORS middleware is only mounted when the backend is started with
-  `PKA_DEV=1` — production serves frontend same-origin.
+  `ALEXANDRIA_DEV=1` — production serves frontend same-origin.
 - Path validator on the settings model rejects `/etc`, `/usr`, `/var`,
   `/sys` roots.
 - `cluster_runs.umap_points` JSON column persists 2-D UMAP coordinates so

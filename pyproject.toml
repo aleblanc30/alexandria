@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pka"
 version = "0.2.0"
-description = "Personal Knowledge Archive — local-first research library"
+description = "Alexandria — local-first research library"
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "MIT" }
@@ -52,12 +52,12 @@ spacy = [
 ]
 
 [project.scripts]
-pka-init        = "scripts.init_db:__main__"
-pka-zotero      = "scripts.run_zotero:main"
-pka-firefox     = "scripts.run_firefox:main"
-pka-calibre     = "scripts.run_calibre:main"
-pka-images      = "scripts.run_images:main"
-pka-clustering  = "scripts.run_clustering:main"
+alexandria-init        = "scripts.init_db:__main__"
+alexandria-zotero      = "scripts.run_zotero:main"
+alexandria-firefox     = "scripts.run_firefox:main"
+alexandria-calibre     = "scripts.run_calibre:main"
+alexandria-images      = "scripts.run_images:main"
+alexandria-clustering  = "scripts.run_clustering:main"
 
 [tool.setuptools.packages.find]
 include = ["pka*"]

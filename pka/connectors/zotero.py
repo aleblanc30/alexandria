@@ -4,7 +4,7 @@ Read-only Zotero connector.
 Operates on a temporary copy of ``zotero.sqlite`` to avoid lock contention
 with a running Zotero process.
 
-Dev (``PKA_DEV=1``): snapshot ``zotero.sqlite`` once into ``data/`` and reuse it.
+Dev (``ALEXANDRIA_DEV=1``): snapshot ``zotero.sqlite`` once into ``data/`` and reuse it.
 Prod: fresh online backup on each connector access.
 """
 import logging
@@ -77,7 +77,7 @@ def ensure_zotero_copy(
 ) -> Path:
     """Copy ``zotero.sqlite`` for read-only access; return the copy path.
 
-    When ``PKA_DEV=1``, the library DB is copied once to ``data/zotero_copy.sqlite``
+    When ``ALEXANDRIA_DEV=1``, the library DB is copied once to ``data/zotero_copy.sqlite``
     and that snapshot is reused. Pass ``refresh=True`` (or delete the copy) to resnapshot.
     """
     src = zotero_db or settings.zotero_db

@@ -12,6 +12,8 @@ Strategy:
   - HTTP 404 with ``fetch_wayback_fallback`` enabled → query archive.org for a snapshot
   - ``*.wikipedia.org`` URLs → MediaWiki Action API (with retries) instead of HTML scrape
   - Amazon book product pages → title + editorial summary extracted for browse cards
+  - ``arxiv.org`` URLs → export.arxiv.org API (metadata + PDF); title and abstract on cards
+  - ``biorxiv.org`` URLs → api.biorxiv.org DOI lookup (metadata + PDF); title and abstract on cards
 
 Previously skipped PDF bookmarks stay ``fetch_status=skipped`` until reset manually, e.g.::
 
@@ -63,6 +65,7 @@ class FetchResult:
     error_msg: str | None
     archive_url: str | None = None  # Wayback snapshot URL when content came from archive.org
     title: str | None = None       # when set, overrides documents.title on persist
+    card_summary: str | None = None  # when set, overrides documents.card_summary on persist
 
 
 # ── Rate limiting (simple per-domain token bucket) ───────────────────────────
@@ -148,6 +151,7 @@ def _fetch_budget_seconds(
     pdf: bool = False,
     wayback: bool = False,
     wikipedia: bool = False,
+    preprint: bool = False,
 ) -> float:
     """Hard ceiling per URL including rate-limit wait and text extraction."""
     if pdf:
@@ -164,6 +168,9 @@ def _fetch_budget_seconds(
         attempts = cfg.fetch_wikipedia_max_retries + 1
         base += attempts * (cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds)
         base += cfg.fetch_wikipedia_max_retries * cfg.fetch_wikipedia_retry_delay_seconds
+    if preprint:
+        base += cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds
+        base += cfg.fetch_pdf_timeout_seconds + cfg.fetch_pdf_budget_extra_seconds
     return base
 
 
@@ -269,6 +276,20 @@ async def _fetch_one_impl(
     if parse_wikipedia_url(url) is not None:
         return await fetch_wikipedia_with_retries(client, doc_id, url)
 
+    from pka.ingestion.arxiv import fetch_arxiv_paper, parse_arxiv_url
+
+    if parse_arxiv_url(url):
+        result = await fetch_arxiv_paper(client, doc_id, url)
+        if result is not None:
+            return result
+
+    from pka.ingestion.biorxiv import fetch_biorxiv_paper, parse_biorxiv_url
+
+    if parse_biorxiv_url(url):
+        result = await fetch_biorxiv_paper(client, doc_id, url)
+        if result is not None:
+            return result
+
     expect_pdf = _url_looks_like_pdf(url)
     path = urlparse(url).path.lower()
     if not expect_pdf and any(path.endswith(ext) for ext in _SKIP_EXTENSIONS):
@@ -338,16 +359,22 @@ async def _fetch_one(
     doc_id: int,
     url: str,
 ) -> FetchResult:
+    from pka.ingestion.arxiv import parse_arxiv_url
+    from pka.ingestion.biorxiv import parse_biorxiv_url
     from pka.ingestion.wikipedia import parse_wikipedia_url
 
     pdf = _url_looks_like_pdf(url)
     wayback = cfg.fetch_wayback_fallback
     wikipedia = parse_wikipedia_url(url) is not None
+    preprint = parse_arxiv_url(url) is not None or parse_biorxiv_url(url) is not None
     try:
         return await asyncio.wait_for(
             _fetch_one_impl(client, doc_id, url),
             timeout=_fetch_budget_seconds(
-                pdf=pdf, wayback=wayback, wikipedia=wikipedia,
+                pdf=pdf,
+                wayback=wayback,
+                wikipedia=wikipedia,
+                preprint=preprint,
             ),
         )
     except asyncio.TimeoutError:
@@ -409,6 +436,8 @@ def _persist_fetch_result(r: FetchResult) -> None:
             update_values["archive_url"] = r.archive_url
         if r.title:
             update_values["title"] = r.title
+        if r.card_summary:
+            update_values["card_summary"] = r.card_summary
         con.execute(
             documents.update()
             .where(documents.c.id == r.document_id)
@@ -449,7 +478,7 @@ async def _run_fetch_workers(
     progress_key: str | None,
     advance_phase: str | None = None,
     on_result: Callable[[int, FetchResult], None] | None = None,
-    embed_fn: Callable[[int, str], dict] | None = None,
+    embed_fn: Callable[..., dict] | None = None,
     embed_stats: dict | None = None,
     dry_run: bool = False,
 ) -> tuple[list[FetchResult], str | None]:
@@ -503,7 +532,9 @@ async def _run_fetch_workers(
                     break
                 if embed_fn and r and r.text and not dry_run:
                     try:
-                        outcome = await asyncio.to_thread(embed_fn, doc_id, r.text)
+                        outcome = await asyncio.to_thread(
+                            embed_fn, doc_id, r.text, r.card_summary,
+                        )
                         _accumulate_embed(embed_stats, outcome)
                     except Exception as exc:
                         log.exception("Embed failed for doc_id=%d: %s", doc_id, exc)
@@ -524,7 +555,7 @@ async def fetch_and_embed_pending(
     limit: int | None = 500,
     concurrency: int | None = None,
     progress_key: str | None = None,
-    embed_fn: Callable[[int, str], dict] | None = None,
+    embed_fn: Callable[..., dict] | None = None,
     dry_run: bool = False,
 ) -> dict:
     """

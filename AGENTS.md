@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repository.
 
 ## Project overview
 
-**Personal Knowledge Archive (PKA) v0.2.0** is a local-first research library. It ingests Firefox bookmarks, Zotero papers, Calibre ebooks, and image folders into a single semantically indexed SQLite + ChromaDB archive. Inference runs on-device via Ollama; no data leaves the machine.
+**Alexandria v0.2.0** is a local-first research library. It ingests Firefox bookmarks, Zotero papers, Calibre ebooks, and image folders into a single semantically indexed SQLite + ChromaDB archive. Inference runs on-device via Ollama; no data leaves the machine.
 
 This repo is the Python backend + Vue frontend. The parent workspace (`../`) may also hold shared Cursor config (`.cursor/`) and VS Code tasks (`.vscode/`).
 
@@ -34,7 +34,7 @@ python scripts/init_db.py
 cd frontend && npm install
 ```
 
-System prerequisites: Ollama (chat/vision), Tesseract OCR (images). Copy `.env.example` to `.env` only when overriding defaults; settings use the `PKA_` env prefix via `pka/config.py`.
+System prerequisites: Ollama (chat/vision), Tesseract OCR (images). Copy `.env.example` to `.env` only when overriding defaults; settings use the `ALEXANDRIA_` env prefix via `pka/config.py`.
 
 ## Commands
 
@@ -46,12 +46,12 @@ Run from **repo root** unless noted.
 | Tests with coverage | `pytest --cov=pka --cov-report=term-missing` |
 | Lint (Python) | `ruff check pka tests scripts` |
 | Format (Python) | `ruff format pka tests scripts` |
-| API (dev, CORS) | `PKA_DEV=1 uvicorn pka.api.main:app --reload --port 8000` |
+| API (dev, CORS) | `ALEXANDRIA_DEV=1 uvicorn pka.api.main:app --reload --port 8000` |
 | Frontend (dev) | `cd frontend && npm run dev` |
 | Frontend (build) | `cd frontend && npm run build` |
 | Init DB | `python scripts/init_db.py` |
 
-The parent workspace VS Code task **"pka: dev stack"** starts API + frontend in parallel.
+The parent workspace VS Code task **"alexandria: dev stack"** starts API + frontend in parallel.
 
 Do **not** run full ingestion scripts (`run_zotero`, `run_firefox`, etc.) or production uvicorn during routine agent work unless the user asks—they touch real source databases and external services.
 

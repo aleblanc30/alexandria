@@ -21,7 +21,7 @@ documents = sa.Table(
     sa.Column("archive_url",  sa.Text),                  # Wayback snapshot when fetch used archive.org
     sa.Column("zotero_attachment_key", sa.Text),           # PDF attachment key for zotero://open-pdf
     sa.Column("date_added",   sa.Integer),                 # unix ts from source (when user saved it)
-    sa.Column("ingested_at",  sa.Integer),                 # unix ts when PKA first indexed it
+    sa.Column("ingested_at",  sa.Integer),                 # unix ts when Alexandria first indexed it
     sa.Column("fetch_status", sa.Text, default="pending"), # see pka.constants.FetchStatus
     sa.Column("item_type",    sa.Text),                    # Zotero itemTypes.typeName
     sa.Column("card_summary", sa.Text),                    # card excerpt (abstract, body lines, …)

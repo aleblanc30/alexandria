@@ -74,6 +74,7 @@ def ingest_firefox_bookmarks(
 def embed_fetched_text(
     doc_id: int,
     text: str,
+    card_summary: str | None = None,
     *,
     skip_existing: bool = True,
     dry_run: bool = False,
@@ -89,7 +90,7 @@ def embed_fetched_text(
         result = ingest_text_block(doc_id, text, Source.FIREFOX, dry_run=dry_run)
         if result["skipped"]:
             return {"processed": False, "chunks": 0, "skipped": True, "failed": False}
-        if not dry_run:
+        if not dry_run and card_summary is None:
             update_card_summary(doc_id, body_excerpt(text))
         if chunked is not None:
             chunked.add(doc_id)

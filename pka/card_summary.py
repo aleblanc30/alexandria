@@ -25,6 +25,12 @@ def body_excerpt(text: str, max_lines: int = 3, max_len: int = SUMMARY_MAX_LEN) 
     return truncate_summary(excerpt, max_len)
 
 
+def preprint_card_summary(abstract: str | None) -> str | None:
+    """Abstract text for browse cards on arXiv / bioRxiv papers."""
+    raw = (abstract or "").strip()
+    return raw or None
+
+
 def zotero_card_summary(item: ZoteroItem) -> str | None:
     if item.item_type == "annotation":
         raw = (item.highlight_text or "").strip()

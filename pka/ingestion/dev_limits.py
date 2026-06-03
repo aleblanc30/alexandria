@@ -1,4 +1,4 @@
-"""Dev-mode ingestion caps — limit corpus size per source when PKA_DEV=1."""
+"""Dev-mode ingestion caps — limit corpus size per source when ALEXANDRIA_DEV=1."""
 from __future__ import annotations
 
 import logging

@@ -1,5 +1,5 @@
 """
-Shared fixtures for the PKA test suite.
+Shared fixtures for the Alexandria test suite.
 
 Every test runs in an isolated ``tmp_path``; no real browser, Zotero, or
 Calibre databases are touched. Ollama chat/vision and outbound HTTP calls are

@@ -265,7 +265,7 @@ def test_embed_finish_preserves_job_corpus_over_doc_count(tmp_path, monkeypatch)
     from pka.db.queries import get_engine, init_db, insert_document_if_new
     from pka.ingestion.progress_baselines import seed_progress_from_db
 
-    monkeypatch.setenv("PKA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ALEXANDRIA_DATA_DIR", str(tmp_path))
     init_db()
     for i in range(10):
         insert_document_if_new(

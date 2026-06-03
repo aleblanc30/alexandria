@@ -1,7 +1,7 @@
 """
 Read-only Firefox bookmarks connector.
 
-Dev (``PKA_DEV=1``): snapshot ``places.sqlite`` once into ``data/`` and reuse it.
+Dev (``ALEXANDRIA_DEV=1``): snapshot ``places.sqlite`` once into ``data/`` and reuse it.
 Prod: read the live profile DB directly (may wait on Firefox's lock).
 Bookmark *content* (HTTP fetch + parse) is deferred to :mod:`pka.ingestion.fetcher`.
 """
@@ -44,7 +44,7 @@ def _find_places_sqlite(firefox_root: Path) -> Path:
 
     raise FileNotFoundError(
         f"Could not find places.sqlite under {firefox_root}. "
-        "Set PKA_FIREFOX_DB to the exact path if the profile is non-standard."
+        "Set ALEXANDRIA_FIREFOX_DB to the exact path if the profile is non-standard."
     )
 
 
@@ -152,7 +152,7 @@ def load_bookmarks(
       2. ``firefox_root`` argument  → auto-detect profile
       3. :data:`pka.config.settings.firefox_db` → auto-detect profile
 
-    When ``PKA_DEV=1``, the profile DB is copied once to ``data/firefox_places_copy.sqlite``
+    When ``ALEXANDRIA_DEV=1``, the profile DB is copied once to ``data/firefox_places_copy.sqlite``
     and that snapshot is reused. Pass ``refresh=True`` (or delete the copy) to resnapshot.
     In production, the live profile file is opened read-only.
     """

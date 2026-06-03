@@ -12,6 +12,7 @@ from pka.ingestion.fetcher import (
     fetch_pending,
     FetchResult,
     reset_unfetchable_for_fetch,
+    _persist_fetch_result,
 )
 
 
@@ -326,7 +327,7 @@ class TestFetchAndEmbedPending:
         d1 = upsert_document("firefox", "F30", "T", "https://embed.example", None)
         embed_calls: list[tuple[int, str]] = []
 
-        def embed_fn(doc_id: int, text: str) -> dict:
+        def embed_fn(doc_id: int, text: str, card_summary=None) -> dict:
             embed_calls.append((doc_id, text))
             return {"processed": True, "chunks": 2, "skipped": False, "failed": False}
 
@@ -359,7 +360,7 @@ class TestFetchAndEmbedPending:
         )
         embed_calls: list[int] = []
 
-        def embed_fn(doc_id: int, text: str) -> dict:
+        def embed_fn(doc_id: int, text: str, card_summary=None) -> dict:
             embed_calls.append(doc_id)
             return {"processed": True, "chunks": 1, "skipped": False, "failed": False}
 
@@ -508,4 +509,119 @@ class TestResetUnfetchableForFetch:
         assert rows[wiki_id] == str(FetchStatus.PENDING)
         assert rows[other_id] == str(FetchStatus.PENDING)
         assert rows[local_id] == str(FetchStatus.UNFETCHABLE)
+
+
+_ARXIV_ATOM = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2301.00001v1</id>
+    <title>Attention Is All You Need Again</title>
+    <summary>We revisit transformer architectures for language modeling.</summary>
+    <author><name>Alice Smith</name></author>
+  </entry>
+</feed>
+"""
+
+_BIORXIV_JSON = {
+    "collection": [{
+        "doi": "10.1101/2024.01.16.575895",
+        "title": "A neural circuit for reward",
+        "authors": "Smith, A.",
+        "abstract": "We map dopamine neurons in the ventral tegmental area.",
+        "version": "1",
+    }],
+}
+
+
+class TestPreprintFetchIntegration:
+    @pytest.mark.asyncio
+    async def test_fetch_one_uses_arxiv_handler(self, monkeypatch):
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        api_resp = httpx.Response(200, text=_ARXIV_ATOM, request=httpx.Request("GET", "http://x"))
+        mock_client.get.return_value = api_resp
+
+        async def fake_pdf(client, arxiv_id):
+            return "Full paper body with enough extracted text for embedding.", 200, None
+
+        monkeypatch.setattr("pka.ingestion.arxiv._fetch_arxiv_pdf_text", fake_pdf)
+
+        result = await _fetch_one(
+            mock_client,
+            doc_id=1,
+            url="https://arxiv.org/abs/2301.00001",
+        )
+
+        assert result.status == "fetched"
+        assert result.title == "Attention Is All You Need Again"
+        assert result.card_summary == "We revisit transformer architectures for language modeling."
+        assert result.error_msg == "fetched via arxiv api"
+
+    @pytest.mark.asyncio
+    async def test_persist_updates_title_and_card_summary(self):
+        from pka.constants import Source
+        from pka.db.queries import get_engine
+        from pka.db.schema import documents
+        import sqlalchemy as sa
+
+        doc_id = upsert_document(
+            source=Source.FIREFOX,
+            source_id="F-ARX",
+            title="Old bookmark title",
+            url_or_path="https://arxiv.org/abs/2301.00001",
+            date_added=None,
+            fetch_status=FetchStatus.PENDING,
+        )
+        _persist_fetch_result(FetchResult(
+            doc_id,
+            "https://arxiv.org/abs/2301.00001",
+            "fetched",
+            "Paper text for embedding.",
+            200,
+            "fetched via arxiv api",
+            title="Attention Is All You Need Again",
+            card_summary="We revisit transformer architectures for language modeling.",
+        ))
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.title, documents.c.card_summary).where(
+                    documents.c.id == doc_id
+                )
+            ).fetchone()
+        assert row[0] == "Attention Is All You Need Again"
+        assert row[1] == "We revisit transformer architectures for language modeling."
+
+    @pytest.mark.asyncio
+    async def test_embed_preserves_api_card_summary(self, mock_chroma):
+        from pka.constants import Source
+        from pka.db.queries import get_engine
+        from pka.db.schema import documents
+        from pka.ingestion.runners.firefox import embed_fetched_text
+        import sqlalchemy as sa
+
+        doc_id = upsert_document(
+            source=Source.FIREFOX,
+            source_id="F-ARX2",
+            title="Paper title",
+            url_or_path="https://arxiv.org/abs/2301.00001",
+            date_added=None,
+            fetch_status=FetchStatus.FETCHED,
+        )
+        abstract = "We revisit transformer architectures for language modeling."
+        body = "PDF opening line that should not replace the abstract on the card.\n" * 5
+        _persist_fetch_result(FetchResult(
+            doc_id,
+            "https://arxiv.org/abs/2301.00001",
+            "fetched",
+            body,
+            200,
+            "fetched via arxiv api",
+            title="Attention Is All You Need Again",
+            card_summary=abstract,
+        ))
+        embed_fetched_text(doc_id, body, card_summary=abstract, skip_existing=False)
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.card_summary).where(documents.c.id == doc_id)
+            ).fetchone()
+        assert row[0] == abstract
 

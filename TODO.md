@@ -1,17 +1,17 @@
 # TODO
 
-Backlog of planned work for Personal Knowledge Archive (PKA).
+Backlog of planned work for Alexandria.
 
 ## Ingestion & deduplication
 
 - [ ] **Deduplication of tags** — merge or collapse duplicate tag names (case, spacing, synonyms) so the tag index stays clean.
 - [ ] **Deduplication of items** — detect and merge duplicate documents/items across sources (same URL, DOI, arXiv ID, etc.) instead of storing multiple records.
-- [ ] **Domain frequency report** — list all domain names from ingested items, sorted by frequency, to prioritize which domains deserve special fetch/handlers next.
+- [x] **Domain frequency report** — list all domain names from ingested items, sorted by frequency, to prioritize which domains deserve special fetch/handlers next.
 
 ## Source connectors
 
-- [ ] **arXiv ingester** — dedicated connector/handler for arxiv.org (metadata, PDF, stable IDs).
-- [ ] **bioRxiv ingester** — dedicated connector/handler for biorxiv.org (preprint metadata and content).
+- [x] **arXiv ingester** — Firefox fetch handler for arxiv.org (`pka/ingestion/arxiv.py`): export.arxiv.org API metadata + PDF; title and abstract on browse cards.
+- [x] **bioRxiv ingester** — Firefox fetch handler for biorxiv.org (`pka/ingestion/biorxiv.py`): api.biorxiv.org DOI lookup + PDF; title and abstract on browse cards.
 
 ## Active learning
 
@@ -21,3 +21,8 @@ Backlog of planned work for Personal Knowledge Archive (PKA).
 ## UI
 
 - [ ] **Delete tags in the UI** — allow removing tags from the frontend (with appropriate API support and confirmation).
+
+## CLI & assistant
+
+- [ ] **Build a CLI** — unified command-line entry point (e.g. `alexandria` or `python -m pka.cli`) for search, ingest, clustering, tag training, and stats, wrapping or replacing the current one-off scripts under `scripts/`.
+- [ ] **Add chat/agent capability** — local-first conversational interface over the archive: retrieve relevant documents via semantic search, answer questions with Ollama, and cite source items (UI panel and/or CLI subcommand).

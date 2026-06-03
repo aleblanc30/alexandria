@@ -15,7 +15,7 @@ from pka.ingestion.progress_baselines import (
 
 @pytest.fixture(autouse=True)
 def _fresh_db(tmp_path, monkeypatch):
-    monkeypatch.setenv("PKA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ALEXANDRIA_DATA_DIR", str(tmp_path))
     init_db()
 
 

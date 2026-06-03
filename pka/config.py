@@ -2,7 +2,7 @@
 Project-wide settings.
 
 All paths default to sensible per-user locations and can be overridden via the
-``PKA_`` env prefix or a ``.env`` file in the working directory.
+``ALEXANDRIA_`` env prefix or a ``.env`` file in the working directory.
 """
 from pathlib import Path
 
@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # ── Output paths ────────────────────────────────────────────────────────
     data_dir: Path = Path("data")
-    dev: bool = False  # PKA_DEV=1 — dev API, Firefox places snapshot, Zotero library snapshot
+    dev: bool = False  # ALEXANDRIA_DEV=1 — dev API, Firefox places snapshot, Zotero library snapshot
     dev_ingestion_limit: int = 1000  # max docs per source when dev=True
 
     @property
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     fetch_wikipedia_retry_delay_seconds: float = 2.0  # pause between Wikipedia API retries
     fetch_wikipedia_max_retries: int = 2  # retries after the first Wikipedia API attempt
     fetch_user_agent: str = (
-        "PKA/0.2 (local personal knowledge archive; +https://www.mediawiki.org/wiki/API:Etiquette)"
+        "Alexandria/0.2 (local research library; +https://www.mediawiki.org/wiki/API:Etiquette)"
     )
 
     # ── Images ──────────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
-        env_prefix = "PKA_"
+        env_prefix = "ALEXANDRIA_"
 
 
 settings = Settings()

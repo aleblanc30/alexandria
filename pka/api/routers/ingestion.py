@@ -165,7 +165,7 @@ def _queue_job(src: str, job: str, force: bool) -> dict:
         target=_JOB_TARGETS[job],
         args=(src,),
         daemon=True,
-        name=f"pka-sync-{src}-{job}",
+        name=f"alexandria-sync-{src}-{job}",
     ).start()
     return {"status": "queued", "source": src, "job": job}
 
@@ -233,6 +233,6 @@ async def rebuild_vectors():
     threading.Thread(
         target=_run,
         daemon=True,
-        name="pka-rebuild-vectors",
+        name="alexandria-rebuild-vectors",
     ).start()
     return {"status": "queued"}

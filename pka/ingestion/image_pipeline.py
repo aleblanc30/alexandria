@@ -3,8 +3,8 @@ Image ingestion pipeline.
 
 Orchestrates the four extraction passes and persists results to:
   - ``archive.db`` : ``images`` + ``image_tags`` tables
-  - ChromaDB      : two collections — ``pka_clip`` (CLIP vectors) and
-                    ``pka_chunks`` (text vectors from OCR + description,
+  - ChromaDB      : two collections — ``alexandria_clip`` (CLIP vectors) and
+                    ``alexandria_chunks`` (text vectors from OCR + description,
                     so images appear in unified text search).
 """
 import logging
@@ -28,7 +28,7 @@ from pka.ingestion.loops import run_embed_loop, run_metadata_loop
 
 log = logging.getLogger(__name__)
 
-CLIP_COLLECTION = "pka_clip"
+CLIP_COLLECTION = "alexandria_clip"
 
 # Cached Chroma client/collection — recreating these per call is expensive.
 _clip_client = None

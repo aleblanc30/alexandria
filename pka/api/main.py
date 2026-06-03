@@ -26,22 +26,22 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("PKA API starting — initialising database…")
+    log.info("Alexandria API starting — initialising database…")
     init_db()
     yield
-    log.info("PKA API shutting down.")
+    log.info("Alexandria API shutting down.")
 
 
 app = FastAPI(
-    title       = "Personal Knowledge Archive",
+    title       = "Alexandria",
     version     = "0.2.0",
     description = "Local-first research library API",
     lifespan    = lifespan,
 )
 
 # CORS only needed in dev — in production the frontend is served same-origin.
-# Start the backend with PKA_DEV=1 to enable.
-if os.environ.get("PKA_DEV") == "1":
+# Start the backend with ALEXANDRIA_DEV=1 to enable.
+if os.environ.get("ALEXANDRIA_DEV") == "1":
     app.add_middleware(
         CORSMiddleware,
         allow_origins = ["http://localhost:5173"],
