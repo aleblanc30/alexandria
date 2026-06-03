@@ -1,5 +1,7 @@
 # Alexandria — v0.2.0
 
+This project is entirely coded by LLM agents. It is an experiment to learn how to use those.
+
 A local-first research library that unifies a Firefox bookmark collection, a
 Zotero academic library, a Calibre ebook collection, and an unstructured
 images folder into a single semantically indexed, searchable knowledge base.
