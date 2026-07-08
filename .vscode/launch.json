@@ -8,8 +8,8 @@
       "request": "launch",
       "module": "uvicorn",
       "args": ["pka.api.main:app", "--port", "8000"],
-      "cwd": "${workspaceFolder}/pka_v0.2.0",
-      "python": "${workspaceFolder}/pka_v0.2.0/.venv/bin/python",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
       "env": {
         "ALEXANDRIA_DEV": "1"
       },
@@ -26,8 +26,8 @@
       },
       "pathMappings": [
         {
-          "localRoot": "${workspaceFolder}/pka_v0.2.0",
-          "remoteRoot": "${workspaceFolder}/pka_v0.2.0"
+          "localRoot": "${workspaceFolder}",
+          "remoteRoot": "${workspaceFolder}"
         }
       ],
       "preLaunchTask": "alexandria: api (debug attach)"
@@ -38,8 +38,8 @@
       "request": "launch",
       "module": "uvicorn",
       "args": ["pka.api.main:app", "--port", "8000"],
-      "cwd": "${workspaceFolder}/pka_v0.2.0",
-      "python": "${workspaceFolder}/pka_v0.2.0/.venv/bin/python",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
       "env": {
         "ALEXANDRIA_DEV": "1"
       },
