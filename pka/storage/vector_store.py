@@ -64,9 +64,10 @@ def vector_count() -> int:
         return get_collection().count()
     except Exception as exc:
         log.warning("Chroma count failed (%s); using chunk table", exc)
+        import sqlalchemy as sa
+
         from pka.db.queries import get_engine
         from pka.db.schema import chunks
-        import sqlalchemy as sa
 
         with get_engine().connect() as con:
             return con.execute(
@@ -129,7 +130,7 @@ def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
         ]
         upsert_chunks(vector_ids, texts, metadatas)
         with eng.begin() as con:
-            for row, vid in zip(batch, vector_ids):
+            for row, vid in zip(batch, vector_ids, strict=False):
                 con.execute(
                     chunks.update()
                     .where(chunks.c.id == row.id)
@@ -177,7 +178,7 @@ def _fetch_embedding_batch(col, ids: list[str], out: dict[str, list[float]]) -> 
         return
     try:
         page = col.get(ids=ids, include=["embeddings"])
-        for vid, emb in zip(page["ids"], page["embeddings"]):
+        for vid, emb in zip(page["ids"], page["embeddings"], strict=False):
             out[vid] = emb
     except Exception:
         mid = len(ids) // 2

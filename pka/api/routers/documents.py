@@ -1,8 +1,6 @@
 """``/documents`` list and ``/documents/{id}`` detail + tag patch."""
-import time
 from typing import Annotated
 
-import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from pka.api.active_run import fetch_active_run_id
@@ -65,22 +63,16 @@ async def get_document(doc_id: int, engine=Depends(get_engine)):
 
 @router.patch("/{doc_id}/tags", response_model=dict)
 async def patch_tags(doc_id: int, req: TagPatchRequest, engine=Depends(get_engine)):
-    now = int(time.time())
+    from pka.clustering.cluster_tags import insert_overlay_tags
+
     with engine.begin() as con:
         for tag in req.add:
-            con.execute(sa.text("""
-                INSERT OR IGNORE INTO overlay_tags
-                    (document_id, tag, origin, created_at)
-                VALUES (:did, :tag, :origin, :now)
-            """), {
-                "did": doc_id, "tag": tag,
-                "origin": str(TagOrigin.MANUAL), "now": now,
-            })
-        for tag in req.remove:
+            insert_overlay_tags(con, [doc_id], tag, TagOrigin.MANUAL)
+        if req.remove:
             con.execute(
                 overlay_tags.delete().where(
                     (overlay_tags.c.document_id == doc_id) &
-                    (overlay_tags.c.tag == tag) &
+                    overlay_tags.c.tag.in_(req.remove) &
                     (overlay_tags.c.origin == str(TagOrigin.MANUAL))
                 )
             )

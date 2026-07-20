@@ -7,6 +7,7 @@ Bookmark *content* (HTTP fetch + parse) is deferred to :mod:`pka.ingestion.fetch
 """
 import logging
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -169,7 +170,9 @@ def load_bookmarks(
 
     bookmarks: list[FirefoxBookmark] = []
 
-    with _connect_ro(db_path) as con:
+    # closing(): sqlite3's own context manager leaves the connection open,
+    # which keeps the snapshot file locked on Windows.
+    with closing(_connect_ro(db_path)) as con:
         con.row_factory = sqlite3.Row
         cur = con.cursor()
 

@@ -13,12 +13,12 @@ Read **`README.md`** for human-oriented setup and usage. Read **`DESIGN.md`** fo
 ## Repository layout
 
 ```
-pka/              # Python package (config, pipeline, db, connectors, api, clustering)
-scripts/          # CLI entry points (run_zotero, run_clustering, init_db, …)
-tests/            # pytest suite (~150 tests); conftest.py mocks all external I/O
+pka/              # Python package (config, pipeline, cli, db, connectors, api, clustering)
+scripts/          # thin shims around pka/cli (kept for `python scripts/<name>.py`)
+tests/            # pytest suite; conftest.py mocks all external I/O
 frontend/         # Vue 3 + Vite + Pinia + TypeScript
 README.md
-DESIGN.md
+DESIGN.md         # living design notes; initial_design.pdf is the original design doc
 pyproject.toml
 ```
 
@@ -27,12 +27,17 @@ pyproject.toml
 All backend commands assume **repo root as `cwd`** and the venv is active.
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e '.[dev]'
-python scripts/init_db.py
+alexandria init        # or: python scripts/init_db.py
 
 cd frontend && npm install
 ```
+
+The primary dev environment is Linux/WSL; the repo is also checked out on
+Windows, where the same venv steps work (`py -3.12 -m venv .venv`). Keep code
+Windows-safe: close SQLite connections and temp files before renaming or
+reopening them (Windows locks open files).
 
 System prerequisites: Ollama (chat/vision), Tesseract OCR (images). Copy `.env.example` to `.env` only when overriding defaults; settings use the `ALEXANDRIA_` env prefix via `pka/config.py`.
 
@@ -49,7 +54,8 @@ Run from **repo root** unless noted.
 | API (dev, CORS) | `ALEXANDRIA_DEV=1 uvicorn pka.api.main:app --reload --port 8000` |
 | Frontend (dev) | `cd frontend && npm run dev` |
 | Frontend (build) | `cd frontend && npm run build` |
-| Init DB | `python scripts/init_db.py` |
+| Init DB | `alexandria init` (or `python scripts/init_db.py`) |
+| Unified CLI | `alexandria --help` (`python -m pka.cli` from a checkout) |
 
 The parent workspace VS Code task **"alexandria: dev stack"** starts API + frontend in parallel.
 

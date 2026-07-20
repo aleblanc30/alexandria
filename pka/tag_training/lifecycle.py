@@ -73,30 +73,43 @@ def _upsert_labels(
         raise ValueError(
             f"Invalid label source '{source}'; use pseudo/pseudo_llm for model-assisted labels"
         )
+    deduped = dict(labels)  # last occurrence wins, matching sequential upsert order
+    if not deduped:
+        return
     now = _now()
-    for doc_id, label in labels:
-        existing = con.execute(
-            sa.select(tag_training_labels.c.id).where(
+    existing = {
+        r[0]: r[1]
+        for r in con.execute(
+            sa.select(tag_training_labels.c.document_id, tag_training_labels.c.id).where(
                 (tag_training_labels.c.session_id == session_id)
-                & (tag_training_labels.c.document_id == doc_id)
+                & tag_training_labels.c.document_id.in_(list(deduped))
             )
-        ).fetchone()
-        if existing:
-            con.execute(
-                tag_training_labels.update()
-                .where(tag_training_labels.c.id == existing[0])
-                .values(label=label, source=source, created_at=now)
-            )
-        else:
-            con.execute(
-                tag_training_labels.insert().values(
-                    session_id=session_id,
-                    document_id=doc_id,
-                    label=label,
-                    source=source,
-                    created_at=now,
-                )
-            )
+        ).fetchall()
+    }
+    updates = [
+        {"row_id": existing[did], "label": label, "source": source, "created_at": now}
+        for did, label in deduped.items() if did in existing
+    ]
+    inserts = [
+        {
+            "session_id": session_id, "document_id": did,
+            "label": label, "source": source, "created_at": now,
+        }
+        for did, label in deduped.items() if did not in existing
+    ]
+    if updates:
+        con.execute(
+            tag_training_labels.update()
+            .where(tag_training_labels.c.id == sa.bindparam("row_id"))
+            .values(
+                label=sa.bindparam("label"),
+                source=sa.bindparam("source"),
+                created_at=sa.bindparam("created_at"),
+            ),
+            updates,
+        )
+    if inserts:
+        con.execute(tag_training_labels.insert(), inserts)
 
 
 def _bootstrap_negatives_if_needed(con: sa.Connection, session_id: int, n: int = 5) -> int:
@@ -166,11 +179,11 @@ def create_session(
         if bootstrap_negatives:
             added = _bootstrap_negatives_if_needed(con, session_id)
 
+    train_session(session_id)
     result = get_session(session_id)
     if added:
         result["bootstrap_negatives_added"] = added
-    train_session(session_id)
-    return get_session(session_id)
+    return result
 
 
 def create_session_from_source_tag(source_tag: str, target_tag: str) -> dict[str, Any]:
@@ -294,27 +307,12 @@ def _set_learned_overlay(
     confidence: float,
     now: int,
 ) -> None:
-    origin = str(TagOrigin.LEARNED)
-    con.execute(
-        overlay_tags.delete().where(
-            (overlay_tags.c.document_id == doc_id)
-            & (overlay_tags.c.tag == tag)
-            & (overlay_tags.c.origin == origin)
-        )
-    )
-    con.execute(
-        sa.text("""
-            INSERT INTO overlay_tags
-                (document_id, tag, origin, confidence, created_at)
-            VALUES (:did, :tag, :origin, :conf, :now)
-        """),
-        {
-            "did": doc_id,
-            "tag": tag,
-            "origin": origin,
-            "conf": float(confidence),
-            "now": now,
-        },
+    from pka.clustering.cluster_tags import insert_overlay_tags
+
+    # Delete-then-insert so confidence reflects the latest score.
+    _clear_learned_overlay(con, doc_id, tag)
+    insert_overlay_tags(
+        con, [doc_id], tag, TagOrigin.LEARNED, confidence=float(confidence),
     )
 
 
@@ -435,18 +433,36 @@ def _require_labeling_session(session_id: int) -> dict[str, Any]:
     return session
 
 
-def apply_pseudo_labels_model(session_id: int) -> dict[str, Any]:
-    """Add high-confidence model pseudo-labels (default P≥0.95 / P≤0.05) and retrain."""
-    _require_labeling_session(session_id)
+def _fetch_model_row(session_id: int):
     eng = get_engine()
     with eng.connect() as con:
-        row = con.execute(
+        return con.execute(
             sa.select(tag_training_sessions.c.model_blob, tag_training_sessions.c.parameters)
             .where(tag_training_sessions.c.session_id == session_id)
         ).fetchone()
-    if not row or not row[0]:
-        train_session(session_id)
-        return apply_pseudo_labels_model(session_id)
+
+
+def _ensure_model_row(session_id: int):
+    """Return (model_blob, parameters), training at most once. None when untrainable."""
+    row = _fetch_model_row(session_id)
+    if row and row[0]:
+        return row
+    train_session(session_id)
+    row = _fetch_model_row(session_id)
+    if row and row[0]:
+        return row
+    return None
+
+
+def apply_pseudo_labels_model(session_id: int) -> dict[str, Any]:
+    """Add high-confidence model pseudo-labels (default P≥0.95 / P≤0.05) and retrain."""
+    _require_labeling_session(session_id)
+    row = _ensure_model_row(session_id)
+    if row is None:
+        raise ValueError(
+            "Cannot train a classifier for this session: it needs at least one "
+            "positive and one negative label with document embeddings"
+        )
 
     params = _parse_parameters(row[1])
     high = float(params.get("pseudo_label_high", 0.95))
@@ -458,7 +474,7 @@ def apply_pseudo_labels_model(session_id: int) -> dict[str, Any]:
     added_neg = sum(1 for _, label, _ in candidates if label == 0)
 
     if pairs:
-        with eng.begin() as con:
+        with get_engine().begin() as con:
             _upsert_labels(con, session_id, pairs, "pseudo")
         train_session(session_id)
 
@@ -561,15 +577,10 @@ def get_queue(session_id: int) -> list[dict[str, Any]]:
     if session["status"] != "labeling":
         return []
 
-    eng = get_engine()
-    with eng.connect() as con:
-        row = con.execute(
-            sa.select(tag_training_sessions.c.model_blob, tag_training_sessions.c.parameters)
-            .where(tag_training_sessions.c.session_id == session_id)
-        ).fetchone()
-    if not row or not row[0]:
-        train_session(session_id)
-        return get_queue(session_id)
+    row = _ensure_model_row(session_id)
+    if row is None:
+        # Untrainable (single-class labels or no embeddings) — nothing to queue.
+        return []
 
     params = _parse_parameters(row[1])
     batch = int(params.get("queue_batch_size", 10))

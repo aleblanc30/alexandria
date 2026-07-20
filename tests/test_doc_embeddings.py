@@ -70,9 +70,10 @@ class TestLoadCachedEmbeddings:
     def test_mixed_cached_and_missing(self, mock_chroma):
         doc_id = upsert_document("zotero", "MX1", "Mixed", None, None)
         vec = np.ones(EMBEDDING_DIM, dtype=np.float32)
+        import sqlalchemy as sa
+
         from pka.db.queries import get_engine
         from pka.db.schema import documents
-        import sqlalchemy as sa
 
         with get_engine().begin() as con:
             con.execute(

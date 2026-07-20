@@ -156,34 +156,60 @@ _JOB_TARGETS = {
 }
 
 
+_workers: dict[str, threading.Thread] = {}
+_workers_lock = threading.Lock()
+
+_FORCE_STOP_TIMEOUT = 30.0  # seconds to wait for a cancelled worker to exit
+
+
+def _stop_running_job(src: str) -> None:
+    """Cancel the active worker for ``src`` and wait until it exits."""
+    sp.request_cancel(src)
+    with _workers_lock:
+        old = _workers.get(src)
+    if old is not None and old.is_alive():
+        old.join(timeout=_FORCE_STOP_TIMEOUT)
+        if old.is_alive():
+            raise HTTPException(
+                409, f"Previous sync for {src} has not stopped yet; try again",
+            )
+
+
 def _queue_job(src: str, job: str, force: bool) -> dict:
-    if sp.is_running(src) and not force:
-        raise HTTPException(409, f"Sync already in progress for {src}")
+    if sp.is_running(src):
+        if not force:
+            raise HTTPException(409, f"Sync already in progress for {src}")
+        _stop_running_job(src)
     if force:
         sp.reset(src)
-    threading.Thread(
+    thread = threading.Thread(
         target=_JOB_TARGETS[job],
         args=(src,),
         daemon=True,
         name=f"alexandria-sync-{src}-{job}",
-    ).start()
+    )
+    with _workers_lock:
+        _workers[src] = thread
+    thread.start()
     return {"status": "queued", "source": src, "job": job}
 
 
+# Plain ``def`` endpoints: _queue_job may block while joining a cancelled
+# worker, so FastAPI must run these in its threadpool, not on the event loop.
 @router.post("/sync/{source}", status_code=202)
-async def sync_source(source: str, force: bool = False):
+def sync_source(source: str, force: bool = False):
     require_source(source)
     return _queue_job(source, "full", force)
 
 
 @router.post("/sync/{source}/metadata", status_code=202)
-async def sync_metadata(source: str, force: bool = False):
+def sync_metadata(source: str, force: bool = False):
     require_source(source)
     return _queue_job(source, "metadata", force)
 
 
 @router.post("/sync/{source}/ingest", status_code=202)
-async def sync_ingest(source: str, force: bool = False):
+def sync_ingest(source: str, force: bool = False):
     require_source(source)
     return _queue_job(source, "ingest", force)
 

@@ -1,6 +1,4 @@
 """Tests for active-learning tag training."""
-from unittest.mock import MagicMock
-
 import numpy as np
 import pytest
 import sqlalchemy as sa
@@ -38,12 +36,8 @@ def _set_embedding(doc_id: int, vec: np.ndarray) -> None:
 
 
 @pytest.fixture()
-def client(monkeypatch):
+def client(empty_vector_store):
     init_db()
-    mock_col = MagicMock()
-    mock_col.count.return_value = 0
-    monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
-
     from pka.api.main import app
     return TestClient(app, raise_server_exceptions=True)
 
@@ -298,6 +292,69 @@ class TestTagTrainingLifecycle:
                 assert row is not None, f"missing label for doc {did}"
                 assert row[0] == "pseudo_llm"
 
+    def test_create_session_reports_bootstrap_negatives(self):
+        init_db()
+        pos_ids, _, _ = _seed_labeled_corpus()
+        session = lifecycle.create_session(
+            "bootstrap-count",
+            [{"doc_id": did, "label": 1} for did in pos_ids[:3]],
+        )
+        assert session.get("bootstrap_negatives_added", 0) >= 1
+        assert session["negative_count"] >= 1
+
+    def test_untrainable_session_queue_empty(self):
+        """Single-class labels without embeddings must not recurse — queue is just empty."""
+        init_db()
+        doc_id = upsert_document(
+            "zotero", "NOEMB", "No embedding", "https://example.com/x", 1700000000,
+        )
+        session = lifecycle.create_session(
+            "untrainable", [{"doc_id": doc_id, "label": 1}], bootstrap_negatives=False,
+        )
+        assert session["has_model"] is False
+        assert lifecycle.get_queue(session["session_id"]) == []
+
+    def test_untrainable_session_pseudo_label_raises(self):
+        init_db()
+        doc_id = upsert_document(
+            "zotero", "NOEMB2", "No embedding", "https://example.com/y", 1700000000,
+        )
+        session = lifecycle.create_session(
+            "untrainable-2", [{"doc_id": doc_id, "label": 1}], bootstrap_negatives=False,
+        )
+        with pytest.raises(ValueError, match="Cannot train"):
+            lifecycle.apply_pseudo_labels_model(session["session_id"])
+
+    def test_upsert_labels_batch_insert_and_update(self):
+        init_db()
+        pos_ids, neg_ids, extra_ids = _seed_labeled_corpus()
+        session = lifecycle.create_session(
+            "batch-upsert",
+            [{"doc_id": did, "label": 1} for did in pos_ids[:2]]
+            + [{"doc_id": neg_ids[0], "label": 0}],
+            bootstrap_negatives=False,
+        )
+        sid = session["session_id"]
+        eng = get_engine()
+        with eng.begin() as con:
+            lifecycle._upsert_labels(
+                con, sid, [(pos_ids[0], 0), (extra_ids[0], 1)], "user",
+            )
+        with get_engine().connect() as con:
+            rows = {
+                r[0]: (r[1], r[2])
+                for r in con.execute(
+                    sa.select(
+                        tag_training_labels.c.document_id,
+                        tag_training_labels.c.label,
+                        tag_training_labels.c.source,
+                    ).where(tag_training_labels.c.session_id == sid)
+                ).fetchall()
+            }
+        assert rows[pos_ids[0]] == (0, "user")      # updated in place
+        assert rows[extra_ids[0]] == (1, "user")    # newly inserted
+        assert rows[pos_ids[1]] == (1, "seed")      # untouched
+
     def test_upsert_rejects_predicted_source(self):
         init_db()
         pos_ids, neg_ids, _ = _seed_labeled_corpus()
@@ -429,6 +486,21 @@ class TestTagTrainingApi:
         r = client.post(f"/tag-training/sessions/{created['session_id']}/resume")
         assert r.status_code == 200
         assert r.json()["status"] == "labeling"
+
+    def test_pseudo_label_untrainable_400(self, client):
+        doc_id = upsert_document(
+            "zotero", "NOEMB3", "No embedding", "https://example.com/z", 1700000000,
+        )
+        created = client.post("/tag-training/sessions", json={
+            "tag": "untrainable-api",
+            "labels": [{"doc_id": doc_id, "label": 1}],
+        }).json()
+        r = client.post(
+            f"/tag-training/sessions/{created['session_id']}/pseudo-label",
+            json={"mode": "model"},
+        )
+        assert r.status_code == 400
+        assert "Cannot train" in r.json()["detail"]
 
     def test_list_documents_learned_tags_filter(self, client):
         pos_ids, neg_ids, _ = _seed_labeled_corpus()

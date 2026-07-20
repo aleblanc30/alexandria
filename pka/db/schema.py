@@ -74,6 +74,7 @@ overlay_tags = sa.Table(
     sa.Column("origin",      sa.Text, nullable=False),     # see pka.constants.TagOrigin
     sa.Column("confidence",  sa.Float),
     sa.Column("created_at",  sa.Integer),
+    sa.Index("uq_overlay_doc_tag_origin", "document_id", "tag", "origin", unique=True),
 )
 
 clusters = sa.Table(

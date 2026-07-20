@@ -6,19 +6,25 @@ No Ollama or HTTP calls are made.
 import pytest
 import sqlalchemy as sa
 
-from pka.constants import FetchStatus
+from pka.constants import FetchStatus, TagOrigin
 from pka.db.queries import (
-    init_db, get_engine,
-    insert_document_if_new,
-    upsert_document, insert_source_tags, insert_source_collections,
-    insert_chunks, document_has_chunks, document_index, source_ids_with_chunks,
+    document_has_chunks,
+    document_index,
+    filter_document_ids,
     firefox_ingest_queue,
-    resolve_description, filter_document_ids, list_documents,
-    update_document_item_type, update_card_summary,
+    get_engine,
+    init_db,
+    insert_chunks,
+    insert_document_if_new,
+    insert_source_tags,
+    list_documents,
+    resolve_description,
+    source_ids_with_chunks,
+    update_card_summary,
+    update_document_item_type,
+    upsert_document,
 )
-from pka.constants import TagOrigin
-from pka.db.schema import overlay_tags
-from pka.db.schema import documents, source_tags, source_collections, chunks
+from pka.db.schema import chunks, documents, overlay_tags, source_tags
 
 
 @pytest.fixture(autouse=True)
@@ -188,7 +194,7 @@ class TestChunks:
 
     def test_document_index(self):
         upsert_document("firefox", "bm1", "A", "http://a", None)
-        d2 = upsert_document("firefox", "bm2", "B", "http://b", None)
+        upsert_document("firefox", "bm2", "B", "http://b", None)
         idx = document_index("firefox")
         assert idx["bm1"] != idx["bm2"]
         assert set(idx) == {"bm1", "bm2"}

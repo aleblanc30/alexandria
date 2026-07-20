@@ -179,13 +179,13 @@ export const useIngestionStore = defineStore('ingestion', () => {
       await pollProgress()
     } catch (e: any) {
       if (e?.status === 409) {
-        try {
-          await fn(source, true)
-          await pollProgress()
-          return
-        } catch (retryErr) {
-          notifyError(retryErr)
-        }
+        // A job is already running server-side (force=true would cancel it).
+        // Surface the conflict instead of silently restarting the sync.
+        useToastStore().push(
+          `${source}: a sync is already running — cancel it first to restart`,
+          'info',
+        )
+        await pollProgress()
       } else {
         notifyError(e)
       }

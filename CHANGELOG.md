@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased — maintainability pass (June 2026)
+
+### Correctness fixes
+- `accept_run` now deactivates all other runs in the same transaction, so
+  accepting an older run actually rolls the active state back (design
+  §4.2.2). Accept/reject endpoints reject non-`finished` runs with 409.
+- Tag training: `apply_pseudo_labels_model` / `get_queue` no longer recurse
+  infinitely (→ 500) on untrainable sessions (single-class labels or missing
+  embeddings); they train once then raise 400 / return an empty queue.
+  `create_session` returns the previously-dropped `bootstrap_negatives_added`.
+- Search pagination: the fulltext branch no longer pre-limits its query, so
+  pages past the first are complete and `total` is exact. Semantic fetch
+  depth scales with the requested offset. Vector-store failures are logged
+  instead of silently swallowed.
+- `force=true` on sync endpoints now cancels and joins the running worker
+  before starting a new one (previously two jobs could run concurrently);
+  the frontend surfaces the conflict instead of silently force-retrying.
+- `sync_progress.snapshot()` serializes under the lock — it was mutating
+  shared phase state while worker threads advanced it.
+- Windows portability: `sqlite3` connections are now explicitly closed
+  (`contextlib.closing`) in all connectors and the snapshot copier, and the
+  remote-PDF temp file is closed before re-opening by name. This fixes 41
+  test failures on Windows (file-lock `PermissionError`s).
+- `overlay_tags` gained a unique index on (document_id, tag, origin) with a
+  dedupe migration — the manual-tag `INSERT OR IGNORE` previously never
+  ignored anything, accumulating duplicates.
+- `n_noise` in `/runs` responses is computed (chunked docs without an L1
+  assignment) instead of hardcoded 0.
+
+### Performance
+- Batched the per-row query loops in image hit resolution, cluster tag
+  application, tag-training label upserts, `assign_new_docs` (now reuses the
+  batched `_doc_mean_embeddings`), and `compute_drift`.
+- `insert_overlay_tags` is the single shared overlay-tag write path
+  (cluster tags, manual tags, learned tags).
+
+### Tooling
+- New unified CLI: `alexandria <command>` (`pka/cli/`), replacing the six
+  broken `[project.scripts]` entries that pointed at the non-packaged
+  `scripts/` directory; `scripts/*.py` remain as thin shims.
+- `.vscode/tasks.json` paths fixed (stale `pka_v0.2.0` subdirectory).
+- Tests: mock Chroma now ranks by real embedding distance; shared
+  `empty_vector_store` fixture; sync-progress state reset is an autouse
+  fixture; new coverage for `image_hits`, `document_serialize`,
+  `json_utils`, `sync_helpers`, the CLI dispatcher, and regression tests
+  for every fix above.
+
 ## v0.2.0 — audit pass
 
 ### Critical correctness fixes

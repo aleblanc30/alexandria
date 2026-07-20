@@ -181,10 +181,15 @@ def _extract_text_from_pdf_bytes(
 ) -> str | None:
     """Write bytes to a temp file and run the Calibre PDF extractor."""
     pages = max_pages if max_pages is not None else cfg.fetch_pdf_max_pages
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+    # delete=False + close before reopening by name: Windows locks the file
+    # while a NamedTemporaryFile handle is open.
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    try:
         tmp.write(data)
-        tmp.flush()
+        tmp.close()
         sections = extract_pdf(Path(tmp.name), max_pages=pages)
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
     if not sections:
         return None
     parts = [s["text"] for s in sections if s.get("text", "").strip()]
@@ -377,7 +382,7 @@ async def _fetch_one(
                 preprint=preprint,
             ),
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return FetchResult(doc_id, url, "unfetchable", None, None, "timeout")
 
 

@@ -1,6 +1,7 @@
+
 import pytest
-from pathlib import Path
-from pka.connectors.firefox import load_bookmarks, FirefoxBookmark
+
+from pka.connectors.firefox import FirefoxBookmark, load_bookmarks
 
 
 class TestLoadBookmarks:
@@ -60,7 +61,8 @@ class TestLoadBookmarks:
             INSERT INTO moz_bookmarks VALUES (3,1,1,1,'Same',1000,NULL);
             INSERT INTO moz_bookmarks VALUES (4,1,1,1,'Same again',2000,NULL);
         """)
-        con.commit(); con.close()
+        con.commit()
+        con.close()
         items = load_bookmarks(places_db=db)
         assert len(items) == 1
 

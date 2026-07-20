@@ -1,15 +1,7 @@
 """Tests for Zotero sync orchestration."""
 from unittest.mock import MagicMock
 
-import pytest
-
 from pka.connectors.zotero import ZoteroItem
-from pka.constants import Source
-from pka.ingestion import sync_progress as sp
-
-
-def setup_function():
-    sp.reset("zotero")
 
 
 def _zotero_item(key: str, **overrides) -> ZoteroItem:

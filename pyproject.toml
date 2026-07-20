@@ -52,12 +52,7 @@ spacy = [
 ]
 
 [project.scripts]
-alexandria-init        = "scripts.init_db:__main__"
-alexandria-zotero      = "scripts.run_zotero:main"
-alexandria-firefox     = "scripts.run_firefox:main"
-alexandria-calibre     = "scripts.run_calibre:main"
-alexandria-images      = "scripts.run_images:main"
-alexandria-clustering  = "scripts.run_clustering:main"
+alexandria = "pka.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["pka*"]
@@ -78,6 +73,7 @@ source = ["pka"]
 omit   = [
     "pka/db/alembic/*",
     "scripts/*",
+    "pka/cli/*",           # thin CLI wrappers around library code (like scripts/)
     "pka/pipeline.py",
     "pka/db/init_db.py",
 ]
@@ -95,3 +91,8 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 ignore = ["E501"]                   # line length handled by formatter
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency-injection style relies on `Depends(...)` / `Query(...)`
+# calls in argument defaults, which B008 flags by design.
+"pka/api/routers/*" = ["B008"]

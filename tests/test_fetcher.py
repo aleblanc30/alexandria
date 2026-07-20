@@ -1,24 +1,59 @@
 import asyncio
-import pytest
-import httpx
-from unittest.mock import AsyncMock, MagicMock, patch
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
-from pka.db.queries import init_db, upsert_document
+import httpx
+import pytest
+
 from pka.constants import FetchStatus
+from pka.db.queries import init_db, upsert_document
 from pka.ingestion.fetcher import (
+    FetchResult,
     _fetch_one,
+    _persist_fetch_result,
     bookmark_url_unfetchable_reason,
     fetch_and_embed_pending,
     fetch_pending,
-    FetchResult,
     reset_unfetchable_for_fetch,
-    _persist_fetch_result,
 )
 
 
 @pytest.fixture(autouse=True)
 def fresh_db():
     init_db()
+
+
+class TestExtractTextFromPdfBytes:
+    def test_extractor_reopens_temp_file_by_path(self, monkeypatch):
+        """The temp PDF must be closed before extract_pdf reopens it by name
+        (Windows locks files held open by NamedTemporaryFile)."""
+        from pka.ingestion import fetcher
+
+        seen: dict = {}
+
+        def fake_extract(path, max_pages=None):
+            seen["path"] = Path(path)
+            assert Path(path).read_bytes().startswith(b"%PDF")
+            return [{"title": "", "text": "extracted text"}]
+
+        monkeypatch.setattr(fetcher, "extract_pdf", fake_extract)
+        out = fetcher._extract_text_from_pdf_bytes(b"%PDF-1.4 fake body")
+        assert out == "extracted text"
+        assert not seen["path"].exists()
+
+    def test_temp_file_removed_when_extractor_raises(self, monkeypatch):
+        from pka.ingestion import fetcher
+
+        seen: dict = {}
+
+        def fake_extract(path, max_pages=None):
+            seen["path"] = Path(path)
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(fetcher, "extract_pdf", fake_extract)
+        with pytest.raises(RuntimeError):
+            fetcher._extract_text_from_pdf_bytes(b"%PDF-1.4 fake body")
+        assert not seen["path"].exists()
 
 
 def _html_response(status: int = 200, body: str = "<html><body><p>Hello world, this is content.</p></body></html>", content_type: str = "text/html") -> MagicMock:
@@ -252,6 +287,7 @@ class TestFetchPending:
     @pytest.mark.asyncio
     async def test_persists_each_result_before_batch_end(self, monkeypatch):
         import sqlalchemy as sa
+
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
 
@@ -274,6 +310,7 @@ class TestFetchPending:
     @pytest.mark.asyncio
     async def test_cancelled_fetch_still_persists_completed_urls(self, monkeypatch):
         import sqlalchemy as sa
+
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
         from pka.ingestion import sync_progress as sp
@@ -447,6 +484,7 @@ class TestResetUnfetchableForFetch:
             "firefox", "F-403", "Blocked", "https://example.com/blocked", None,
         )
         import sqlalchemy as sa
+
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
 
@@ -484,6 +522,7 @@ class TestResetUnfetchableForFetch:
             "firefox", "F-LOCAL", "Local", "file:///C:/Users/foo.pdf", None,
         )
         import sqlalchemy as sa
+
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
 
@@ -558,10 +597,11 @@ class TestPreprintFetchIntegration:
 
     @pytest.mark.asyncio
     async def test_persist_updates_title_and_card_summary(self):
+        import sqlalchemy as sa
+
         from pka.constants import Source
         from pka.db.queries import get_engine
         from pka.db.schema import documents
-        import sqlalchemy as sa
 
         doc_id = upsert_document(
             source=Source.FIREFOX,
@@ -592,11 +632,12 @@ class TestPreprintFetchIntegration:
 
     @pytest.mark.asyncio
     async def test_embed_preserves_api_card_summary(self, mock_chroma):
+        import sqlalchemy as sa
+
         from pka.constants import Source
         from pka.db.queries import get_engine
         from pka.db.schema import documents
         from pka.ingestion.runners.firefox import embed_fetched_text
-        import sqlalchemy as sa
 
         doc_id = upsert_document(
             source=Source.FIREFOX,

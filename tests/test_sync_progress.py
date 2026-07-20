@@ -1,10 +1,9 @@
-"""Tests for sync progress tracking."""
+"""Tests for sync progress tracking.
+
+State isolation: the autouse ``isolated_settings`` fixture in conftest resets
+``sync_progress`` around every test.
+"""
 from pka.ingestion import sync_progress as sp
-
-
-def setup_function():
-    for src in ("firefox", "zotero", "calibre", "image"):
-        sp.reset(src)
 
 
 def test_pipeline_overall_percent():
@@ -345,3 +344,34 @@ def test_hydrate_before_job_uses_db_not_stale_memory():
     snap = sp.snapshot("firefox")["firefox"]
     assert snap["phase_details"][0]["total"] == 500
     assert snap["phase_details"][0]["processed"] == 500
+
+
+def test_snapshot_concurrent_with_advance_is_safe():
+    """snapshot() serializes under the lock — no races with worker advance()."""
+    import threading
+
+    sp.begin_job("zotero", "ingest")
+    sp.set_corpus_total("zotero", 100_000)
+    stop = threading.Event()
+    errors: list[Exception] = []
+
+    def hammer():
+        try:
+            while not stop.is_set():
+                sp.advance("zotero", phase="fetching")
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    t = threading.Thread(target=hammer)
+    t.start()
+    try:
+        for _ in range(300):
+            snap = sp.snapshot("zotero")["zotero"]
+            assert snap["source"] == "zotero"
+            details = {d["name"]: d for d in snap["phase_details"]}
+            assert details["fetching"]["processed"] <= details["fetching"]["total"]
+    finally:
+        stop.set()
+        t.join(timeout=2.0)
+    assert not errors
+    sp.finish("zotero")

@@ -3,10 +3,11 @@ Calibre connector tests.
 Uses a synthetic metadata.db built in tmp_path — no real Calibre installation needed.
 """
 import sqlite3
-import pytest
 from pathlib import Path
 
-from pka.connectors.calibre import load_books, CalibreBook
+import pytest
+
+from pka.connectors.calibre import CalibreBook, load_books
 
 
 def _book_by_title(items: list[CalibreBook], title: str) -> CalibreBook:

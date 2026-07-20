@@ -37,7 +37,7 @@ def _read_exif(path: Path) -> tuple[dict, int | None, int | None, int | None]:
     width = height = date_ts = None
 
     try:
-        from PIL import Image, ExifTags
+        from PIL import ExifTags, Image
         with Image.open(path) as img:
             width, height = img.size
             raw = img._getexif() if hasattr(img, "_getexif") else None

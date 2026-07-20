@@ -116,6 +116,17 @@ def init_db() -> None:
                 "ALTER TABLE cluster_assignments ADD COLUMN level INTEGER NOT NULL DEFAULT 1"
             ))
 
+        # Migration: dedupe overlay_tags, then enforce (document_id, tag, origin)
+        # uniqueness on DBs that predate the unique index.
+        con.execute(sa.text(
+            "DELETE FROM overlay_tags WHERE id NOT IN ("
+            " SELECT MIN(id) FROM overlay_tags GROUP BY document_id, tag, origin)"
+        ))
+        con.execute(sa.text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_overlay_doc_tag_origin "
+            "ON overlay_tags(document_id, tag, origin)"
+        ))
+
 
 # ── Documents ────────────────────────────────────────────────────────────────
 

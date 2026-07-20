@@ -32,9 +32,14 @@ MERGE_THRESHOLD  = 0.85   # flag pair for merge review above this similarity
 # ── Accept / reject ───────────────────────────────────────────────────────────
 
 def accept_run(run_id: int) -> None:
-    """Mark run_id as accepted. All other runs remain stored but inactive."""
+    """Mark run_id as the single accepted (active) run; deactivate all others."""
     eng = get_engine()
     with eng.begin() as con:
+        con.execute(
+            cluster_runs.update()
+            .where(cluster_runs.c.run_id != run_id)
+            .values(accepted=False)
+        )
         con.execute(
             cluster_runs.update()
             .where(cluster_runs.c.run_id == run_id)
@@ -59,7 +64,7 @@ def get_active_run_id() -> int | None:
     with eng.connect() as con:
         row = con.execute(
             sa.select(cluster_runs.c.run_id)
-            .where(cluster_runs.c.accepted == True)
+            .where(cluster_runs.c.accepted == True)  # noqa: E712 — SQLA expression
             .order_by(cluster_runs.c.run_id.desc())
             .limit(1)
         ).fetchone()
@@ -96,7 +101,7 @@ def _doc_mean_embeddings(doc_ids: list[int]) -> dict[int, np.ndarray]:
 
     doc_vecs: dict[int, list[np.ndarray]] = {}
     metas = result.get("metadatas") or []
-    for emb, meta in zip(result["embeddings"], metas):
+    for emb, meta in zip(result["embeddings"], metas, strict=False):
         did = int((meta or {}).get("document_id", -1))
         if did == -1:
             continue
@@ -218,20 +223,14 @@ def assign_new_docs(run_id: int | None = None) -> dict:
         if parent_id is not None and cid in l2_centroids:
             l2_by_parent.setdefault(parent_id, {})[cid] = l2_centroids[cid]
 
-    from pka.storage.vector_store import get_collection
-    col = get_collection()
     now = int(time.time())
     assignment_rows = []
 
+    doc_means = _doc_mean_embeddings(unassigned)
     for doc_id in unassigned:
-        result = col.get(
-            where   = {"document_id": {"$in": [doc_id]}},
-            include = ["embeddings"],
-        )
-        if not _embeddings_available(result):
+        doc_vec = doc_means.get(doc_id)
+        if doc_vec is None:
             continue
-
-        doc_vec = np.mean(result["embeddings"], axis=0).astype(np.float32)
 
         l1_cid, l1_score = _nearest_centroid(doc_vec, l1_centroids)
         if l1_cid is None:
@@ -306,28 +305,34 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
     centroids = _get_cluster_centroids(active_run, level=1)
     results = []
 
-    for cid, centroid in centroids.items():
-        # Recent doc_ids: assigned to this cluster AND added after run_ts
-        with eng.connect() as con:
-            recent_ids = [
-                r[0] for r in con.execute(
-                    sa.select(cluster_assignments.c.document_id)
-                    .join(documents, documents.c.id == cluster_assignments.c.document_id)
-                    .where(
-                        (cluster_assignments.c.cluster_id == cid) &
-                        (cluster_assignments.c.run_id == active_run) &
-                        (cluster_assignments.c.level == 1) &
-                        (documents.c.ingested_at > run_ts)
-                    )
-                ).fetchall()
-            ]
+    # One query for all recent level-1 assignments, then one batched
+    # embedding fetch — instead of two roundtrips per cluster.
+    recent_by_cluster: dict[int, list[int]] = {}
+    with eng.connect() as con:
+        for cid, did in con.execute(
+            sa.select(
+                cluster_assignments.c.cluster_id,
+                cluster_assignments.c.document_id,
+            )
+            .join(documents, documents.c.id == cluster_assignments.c.document_id)
+            .where(
+                (cluster_assignments.c.run_id == active_run) &
+                (cluster_assignments.c.level == 1) &
+                (documents.c.ingested_at > run_ts)
+            )
+        ):
+            recent_by_cluster.setdefault(cid, []).append(did)
 
+    all_recent = [d for ids in recent_by_cluster.values() for d in ids]
+    doc_means = _doc_mean_embeddings(all_recent) if all_recent else {}
+
+    for cid, centroid in centroids.items():
+        recent_ids = recent_by_cluster.get(cid, [])
         if not recent_ids:
             results.append({"cluster_id": cid, "label": label_map.get(cid, ""),
                              "drift_score": 0.0, "n_recent": 0, "flagged": False})
             continue
 
-        doc_means = _doc_mean_embeddings(recent_ids)
         vecs_list = [doc_means[d] for d in recent_ids if d in doc_means]
         if not vecs_list:
             continue

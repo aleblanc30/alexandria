@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pka.api.db_rows import fetchall_mappings
 from pka.api.dependencies import get_engine
 from pka.api.schemas.clusters import DiagnosticsOut, RunOut
-from pka.db.schema import cluster_assignments, cluster_runs, clusters
+from pka.db.schema import chunks, cluster_assignments, cluster_runs, clusters
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +69,23 @@ def _running_run_id(engine) -> int | None:
     return row[0] if row else None
 
 
-def _run_out(con, row) -> RunOut:
+def _n_noise(con, run_id: int, *, total_chunked: int | None = None) -> int:
+    """Chunked documents without a level-1 assignment in this run."""
+    if total_chunked is None:
+        total_chunked = con.execute(
+            sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))
+        ).scalar() or 0
+    assigned = con.execute(
+        sa.select(sa.func.count(sa.distinct(cluster_assignments.c.document_id)))
+        .where(
+            (cluster_assignments.c.run_id == run_id)
+            & (cluster_assignments.c.level == 1)
+        )
+    ).scalar() or 0
+    return max(0, total_chunked - assigned)
+
+
+def _run_out(con, row, *, total_chunked: int | None = None) -> RunOut:
     n_cl = con.execute(
         sa.select(sa.func.count()).select_from(clusters)
         .where(clusters.c.run_id == row["run_id"])
@@ -82,7 +98,7 @@ def _run_out(con, row) -> RunOut:
         accepted=bool(row["accepted"]),
         status=row.get("status") or "finished",
         n_clusters=n_cl,
-        n_noise=0,
+        n_noise=_n_noise(con, row["run_id"], total_chunked=total_chunked),
         notes=row["notes"],
     )
 
@@ -93,7 +109,10 @@ async def list_runs(engine=Depends(get_engine)):
         rows = fetchall_mappings(con.execute(
             sa.select(cluster_runs).order_by(cluster_runs.c.run_id.desc())
         ))
-        return [_run_out(con, r) for r in rows]
+        total_chunked = con.execute(
+            sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))
+        ).scalar() or 0
+        return [_run_out(con, r, total_chunked=total_chunked) for r in rows]
 
 
 @router.get("/{run_id}/diagnostics", response_model=DiagnosticsOut)
@@ -110,10 +129,11 @@ async def run_diagnostics(run_id: int, engine=Depends(get_engine)):
             .group_by(clusters.c.cluster_id)
         ).fetchall()
         sizes = {str(r[0]): r[1] for r in cluster_rows}
+        n_noise = _n_noise(con, run_id)
     return DiagnosticsOut(
         run_id=run_id,
         n_clusters=len(sizes),
-        n_noise=0,
+        n_noise=n_noise,
         cluster_sizes=sizes,
         drift_flags=compute_drift(run_id),
         merge_suggestions=compute_merge_suggestions(run_id),
@@ -123,7 +143,9 @@ async def run_diagnostics(run_id: int, engine=Depends(get_engine)):
 @router.post("/{run_id}/accept", status_code=204)
 async def accept_run(run_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
-        _require_run(con, run_id)
+        status = _require_run(con, run_id)
+    if status != "finished":
+        raise HTTPException(409, f"Cannot accept a {status} run")
     from pka.clustering.lifecycle import accept_run as _accept
     _accept(run_id)
 
@@ -131,7 +153,9 @@ async def accept_run(run_id: int, engine=Depends(get_engine)):
 @router.post("/{run_id}/reject", status_code=204)
 async def reject_run(run_id: int, notes: str = "", engine=Depends(get_engine)):
     with engine.connect() as con:
-        _require_run(con, run_id)
+        status = _require_run(con, run_id)
+    if status != "finished":
+        raise HTTPException(409, f"Cannot reject a {status} run")
     from pka.clustering.lifecycle import reject_run as _reject
     _reject(run_id, notes=notes)
 

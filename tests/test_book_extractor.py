@@ -1,8 +1,5 @@
 """Tests for book text extraction helpers."""
-from pathlib import Path
-from unittest.mock import MagicMock
 
-import pytest
 
 
 class TestStripHtml:

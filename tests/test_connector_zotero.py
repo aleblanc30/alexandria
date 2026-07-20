@@ -1,5 +1,6 @@
+
 import pytest
-from pathlib import Path
+
 from pka.connectors.zotero import (
     ZoteroItem,
     load_items,

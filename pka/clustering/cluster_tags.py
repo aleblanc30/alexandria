@@ -38,6 +38,48 @@ def cluster_document_ids(con, cluster_id: int, run_id: int) -> list[int]:
     ]
 
 
+def insert_overlay_tags(
+    con,
+    doc_ids: list[int],
+    tag: str,
+    origin: TagOrigin | str,
+    *,
+    confidence: float | None = None,
+) -> tuple[int, int]:
+    """Batch-insert one overlay tag for many documents, skipping existing rows.
+
+    Shared write path for cluster tags, manual tags, and learned overlays.
+    Returns ``(applied, skipped_existing)``.
+    """
+    if not tag or not doc_ids:
+        return 0, 0
+    unique_ids = list(dict.fromkeys(doc_ids))
+    existing = {
+        r[0]
+        for r in con.execute(
+            sa.select(overlay_tags.c.document_id).where(
+                (overlay_tags.c.tag == tag)
+                & (overlay_tags.c.origin == str(origin))
+                & overlay_tags.c.document_id.in_(unique_ids)
+            )
+        )
+    }
+    to_insert = [did for did in unique_ids if did not in existing]
+    if to_insert:
+        now = int(time.time())
+        con.execute(overlay_tags.insert(), [
+            {
+                "document_id": did,
+                "tag": tag,
+                "origin": str(origin),
+                "confidence": confidence,
+                "created_at": now,
+            }
+            for did in to_insert
+        ])
+    return len(to_insert), len(existing)
+
+
 def apply_tag_to_documents(
     con,
     doc_ids: list[int],
@@ -46,39 +88,7 @@ def apply_tag_to_documents(
 ) -> tuple[int, int]:
     """Insert overlay tag for each document. Returns (applied, skipped)."""
     tag = slugify_tag(tag) or tag.strip()
-    if not tag or not doc_ids:
-        return 0, 0
-
-    now = int(time.time())
-    applied = skipped = 0
-    for doc_id in doc_ids:
-        existing = con.execute(
-            sa.select(sa.func.count())
-            .select_from(overlay_tags)
-            .where(
-                (overlay_tags.c.document_id == doc_id)
-                & (overlay_tags.c.tag == tag)
-                & (overlay_tags.c.origin == str(origin))
-            )
-        ).scalar()
-        if existing:
-            skipped += 1
-            continue
-        con.execute(
-            sa.text("""
-                INSERT INTO overlay_tags
-                    (document_id, tag, origin, created_at)
-                VALUES (:did, :tag, :origin, :now)
-            """),
-            {
-                "did": doc_id,
-                "tag": tag,
-                "origin": str(origin),
-                "now": now,
-            },
-        )
-        applied += 1
-    return applied, skipped
+    return insert_overlay_tags(con, doc_ids, tag, origin)
 
 
 def top_tags_for_cluster(con, cluster_id: int, run_id: int, limit: int = 10) -> list[str]:

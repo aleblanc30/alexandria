@@ -16,6 +16,7 @@ pka/                          # Python backend
 ├── config.py                 # Pydantic settings (ALEXANDRIA_ env prefix, .env supported)
 ├── constants.py              # Source, FetchStatus, TagOrigin enums
 ├── pipeline.py               # _ingest_text_block + per-source ingestion funcs
+├── cli/                      # `alexandria` CLI (init, sync, clustering, purge, …)
 ├── db/                       # SQLAlchemy Core schema + queries
 ├── connectors/               # zotero, firefox, calibre, images
 ├── ingestion/                # chunker, fetcher, extractors, image_pipeline
@@ -23,7 +24,7 @@ pka/                          # Python backend
 ├── clustering/               # UMAP + HDBSCAN engine + lifecycle (drift/merge)
 └── api/                      # FastAPI app, 9 routers, 5 Pydantic schema modules
 
-scripts/                      # CLI entry points (init_db, run_*, run_clustering)
+scripts/                      # thin shims around pka/cli for repo-local runs
 tests/                        # ~150 pytest tests; conftest mocks Ollama, Chroma, HTTP
 frontend/                     # Vue 3 + Vite + Pinia
 ├── index.html
@@ -47,12 +48,16 @@ pip install -e '.[dev]'    # pytest, ruff, mypy
 pip install -e '.[spacy]'  # better sentence splitting
 
 # Database — idempotent, safe to re-run
-python scripts/init_db.py
+alexandria init            # or: python scripts/init_db.py
 
 # Frontend
 cd frontend
 npm install
 ```
+
+Installing the package provides the `alexandria` console command (also
+runnable as `python -m pka.cli`). The `scripts/` files are thin shims kept
+for `python scripts/<name>.py` workflows; both forms run the same code.
 
 System prerequisites:
 
@@ -67,28 +72,28 @@ System prerequisites:
 ### Ingest sources
 
 ```bash
-python scripts/run_zotero.py
-python scripts/run_firefox.py             # metadata + async fetch + embed
-python scripts/run_calibre.py --fulltext
-python scripts/run_images.py
+alexandria zotero
+alexandria firefox                  # metadata + async fetch + embed
+alexandria calibre --fulltext
+alexandria images
 ```
 
-Common flags across the scripts: `--dry-run`, `--force-reindex`. See
-`--help` per script for the full set.
+Common flags across the subcommands: `--dry-run`, `--force-reindex`. See
+`alexandria <command> --help` for the full set.
 
 ```bash
-python scripts/domain_report.py              # domains by frequency (prioritize fetch handlers)
-python scripts/domain_report.py --source firefox --limit 50
+alexandria domain-report            # domains by frequency (prioritize fetch handlers)
+alexandria domain-report --source firefox --limit 50
 ```
 
 ### Cluster and review
 
 ```bash
-python scripts/run_clustering.py                # creates a stored, unaccepted run
-python scripts/run_clustering.py --accept       # accept it immediately
-python scripts/run_clustering.py --drift        # drift report on the active run
-python scripts/run_clustering.py --merges       # merge candidates on the active run
-python scripts/run_clustering.py --assign-new   # assign new docs to existing clusters
+alexandria clustering               # creates a stored, unaccepted run
+alexandria clustering --accept      # accept it immediately
+alexandria clustering --drift       # drift report on the active run
+alexandria clustering --merges      # merge candidates on the active run
+alexandria clustering --assign-new  # assign new docs to existing clusters
 ```
 
 ### Serve the API and frontend
@@ -132,7 +137,12 @@ a `.env` file. See `.env.example` for the full list.
 
 ## Design
 
-The authoritative specification lives in the PDF design document. `DESIGN.md`
-in this repository contains supplementary notes (data flow diagram, instructions
+The initial design document is committed as [`initial_design.pdf`](initial_design.pdf)
+(parts are outdated, but it remains the reference for intent). `DESIGN.md`
+contains the living supplementary notes (data flow diagram, instructions
 for adding a new source connector). The audit pass that produced v0.2.0 is
 recorded in `CHANGELOG.md`.
+
+Note on naming: the Python package is `pka` (Personal Knowledge Archive, the
+project's original name); "Alexandria" is the user-facing brand. The
+`ALEXANDRIA_` env prefix and the `alexandria` CLI follow the brand.

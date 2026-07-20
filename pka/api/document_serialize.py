@@ -77,7 +77,8 @@ def documents_out_batch(
 
     needs_chunk = [
         did for did in doc_ids
-        if not (doc_rows[did].get("card_summary") and str(doc_rows[did]["card_summary"]).strip())
+        if did in doc_rows
+        and not (doc_rows[did].get("card_summary") and str(doc_rows[did]["card_summary"]).strip())
     ]
     chunk_map = _batch_first_chunk_map(con, needs_chunk)
 

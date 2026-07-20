@@ -3,8 +3,8 @@
 Verifies that the metadata pass and the full-text pass produce non-colliding,
 strictly increasing ``chunk_index`` values.
 """
-import sqlalchemy as sa
 import pytest
+import sqlalchemy as sa
 
 from pka.connectors.calibre import CalibreBook
 from pka.db.queries import document_has_chunks, get_engine, init_db

@@ -1,4 +1,3 @@
-import pytest
 from pka.ingestion.chunker import clean_text, sentence_window_chunks
 
 

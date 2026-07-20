@@ -4,30 +4,21 @@ Uses TestClient (synchronous httpx wrapper) — no running server needed.
 All storage and embedding calls are mocked; DB is real SQLite in tmp_path.
 """
 import time
+from unittest.mock import MagicMock
+
 import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
-
-from pka.db.queries import init_db, upsert_document, insert_chunks, update_card_summary
-from pka.db.schema import reading_lists, cluster_runs, clusters, cluster_assignments
 import sqlalchemy as sa
+from fastapi.testclient import TestClient
 
+from pka.db.queries import init_db, insert_chunks, update_card_summary, upsert_document
+from pka.db.schema import cluster_assignments, cluster_runs, clusters
 
 # ── App fixture ───────────────────────────────────────────────────────────────
 
 @pytest.fixture()
-def client(monkeypatch):
-    """Return a TestClient with a fresh DB and mocked vector store."""
+def client(empty_vector_store):
+    """Return a TestClient with a fresh DB and mocked (empty) vector store."""
     init_db()
-
-    # Stub out vector query to return empty results by default
-    mock_col = MagicMock()
-    mock_col.count.return_value = 0
-    mock_col.query.return_value = {"ids": [[]], "documents": [[]], "distances": [[]], "metadatas": [[]]}
-    mock_col.get.return_value = {"ids": [], "embeddings": [], "metadatas": [], "documents": []}
-    monkeypatch.setattr("pka.storage.vector_store._collection", mock_col)
-    monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
-
     from pka.api.main import app
     return TestClient(app, raise_server_exceptions=True)
 
@@ -96,7 +87,8 @@ def _seed_run(doc_ids: list[int], n_clusters: int = 2, *, with_l2: bool = False)
 def _seed_image(client=None) -> int:
     """Insert a test image row and return its id."""
     from pka.db.queries import get_engine
-    from pka.db.schema import image_tags, images as images_tbl
+    from pka.db.schema import image_tags
+    from pka.db.schema import images as images_tbl
 
     now = int(time.time())
     with get_engine().begin() as con:
@@ -155,6 +147,25 @@ class TestSearch:
                                           "sources": ["zotero"]})
         for doc in r.json()["documents"]:
             assert doc["source"] == "zotero"
+
+    def test_fulltext_pagination_past_first_page(self, client):
+        """total counts all matches; page 2 is full and disjoint from page 1."""
+        n, limit = 13, 5
+        _seed_docs(n)
+        pages = []
+        for offset in (0, 5, 10):
+            r = client.post("/search", json={
+                "query": "Document", "mode": "fulltext",
+                "limit": limit, "offset": offset,
+            })
+            body = r.json()
+            assert body["total"] == n
+            pages.append([d["id"] for d in body["documents"]])
+        assert len(pages[0]) == limit
+        assert len(pages[1]) == limit
+        assert len(pages[2]) == n - 2 * limit
+        all_ids = [i for page in pages for i in page]
+        assert len(all_ids) == len(set(all_ids)) == n
 
     def test_empty_query_returns_200(self, client):
         r = client.post("/search", json={"query": ""})
@@ -233,7 +244,7 @@ class TestSearch:
         ids = _seed_docs(4)
         run_id = _seed_run(ids, n_clusters=2)
         from pka.db.queries import get_engine
-        from pka.db.schema import cluster_assignments, cluster_runs, clusters
+        from pka.db.schema import cluster_runs, clusters
 
         with get_engine().connect() as con:
             cid = con.execute(
@@ -298,7 +309,6 @@ class TestSearch:
         assert returned_ids == {ids[1]}
 
     def test_search_wayback_only_filter(self, client):
-        import sqlalchemy as sa
 
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
@@ -353,6 +363,8 @@ class TestDocuments:
         assert doc["cluster_l2_tags"] == []
 
     def test_list_documents_snippet_truncation(self, client):
+        from pka.card_summary import SUMMARY_MAX_LEN
+
         ids = _seed_docs(1)
         long_text = "word " * 70
         insert_chunks([{
@@ -360,7 +372,7 @@ class TestDocuments:
             "text": long_text, "token_count": 70, "vector_id": "v0",
         }])
         doc = client.get("/documents").json()["documents"][0]
-        assert len(doc["description"]) <= 281
+        assert len(doc["description"]) <= SUMMARY_MAX_LEN + 1  # +1 for the ellipsis
         assert doc["description"].endswith("…")
 
     def test_list_documents_prefers_card_summary(self, client):
@@ -389,7 +401,6 @@ class TestDocuments:
         assert all(d["source"] == "zotero" for d in docs)
 
     def test_list_documents_wayback_only_filter(self, client):
-        import sqlalchemy as sa
 
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
@@ -558,6 +569,15 @@ class TestDocuments:
         data = client.get(f"/documents/{ids[0]}").json()
         overlay = [t["tag"] for t in data["overlay_tags"]]
         assert "bye" not in overlay
+
+    def test_patch_tags_add_is_idempotent(self, client):
+        """Adding the same manual tag twice must not create duplicate rows."""
+        ids = _seed_docs(1)
+        client.patch(f"/documents/{ids[0]}/tags", json={"add": ["twice"], "remove": []})
+        client.patch(f"/documents/{ids[0]}/tags", json={"add": ["twice"], "remove": []})
+        data = client.get(f"/documents/{ids[0]}").json()
+        overlay = [t["tag"] for t in data["overlay_tags"]]
+        assert overlay.count("twice") == 1
 
 
 # ── Tags ──────────────────────────────────────────────────────────────────────
@@ -791,6 +811,7 @@ class TestClusters:
 
     def test_scatter_points_with_umap(self, client):
         import json
+
         from pka.db.queries import get_engine
         from pka.db.schema import cluster_runs
 
@@ -844,6 +865,28 @@ class TestRuns:
         r2 = client.post(f"/runs/{run_id}/accept")
         assert r2.status_code == 204
 
+    def test_accept_older_run_switches_active(self, client):
+        """Design §4.2.2: rollback = changing which run_id is marked active."""
+        ids = _seed_docs(2)
+        old_run = _seed_run(ids)
+        new_run = _seed_run(ids)
+        assert client.post(f"/runs/{new_run}/accept").status_code == 204
+        assert client.post(f"/runs/{old_run}/accept").status_code == 204
+        runs = {r["run_id"]: r for r in client.get("/runs").json()}
+        assert runs[old_run]["accepted"] is True
+        assert runs[new_run]["accepted"] is False
+
+    def test_accept_failed_run_409(self, client):
+        from pka.db.queries import get_engine
+        with get_engine().begin() as con:
+            res = con.execute(cluster_runs.insert().values(
+                timestamp=int(time.time()), algorithm="HDBSCAN",
+                parameters="{}", accepted=False, status="failed",
+            ))
+            run_id = res.inserted_primary_key[0]
+        assert client.post(f"/runs/{run_id}/accept").status_code == 409
+        assert client.post(f"/runs/{run_id}/reject").status_code == 409
+
     def test_diagnostics_200(self, client):
         ids = _seed_docs(4)
         run_id = _seed_run(ids, n_clusters=2)
@@ -886,6 +929,7 @@ class TestRuns:
 
         def slow_cluster(**kw):
             import time
+
             from pka.clustering.run_progress import check_cancel
             for _ in range(50):
                 if check_cancel(kw["run_id"]):
@@ -985,8 +1029,8 @@ class TestTrends:
 
 class TestIngestion:
     def setup_method(self):
-        from pka.ingestion import sync_progress as sp
         from pka.constants import ALL_SOURCES
+        from pka.ingestion import sync_progress as sp
         for src in ALL_SOURCES:
             sp.reset(src)
 
@@ -1107,8 +1151,8 @@ class TestIngestion:
         assert r.json()["job"] == "ingest"
 
     def test_sync_metadata_routes_zotero(self, monkeypatch):
-        from pka.ingestion import sync_progress as sp
         from pka.api.routers import ingestion as ing
+        from pka.ingestion import sync_progress as sp
 
         called = []
         monkeypatch.setattr(
@@ -1122,8 +1166,8 @@ class TestIngestion:
         assert sp.snapshot("zotero")["zotero"]["active_job"] is None
 
     def test_sync_ingest_routes_firefox(self, monkeypatch):
-        from pka.ingestion import sync_progress as sp
         from pka.api.routers import ingestion as ing
+        from pka.ingestion import sync_progress as sp
 
         called = []
         monkeypatch.setattr(
@@ -1140,6 +1184,51 @@ class TestIngestion:
     def test_sync_progress_unknown_source_400(self, client):
         r = client.get("/ingestion/sync/progress?source=invalid")
         assert r.status_code == 400
+
+    def test_force_cancels_running_job_before_restart(self, client, monkeypatch):
+        """force=true must stop the running worker, not run two jobs concurrently."""
+        import threading as th
+
+        from pka.api.routers import ingestion as ing
+        from pka.ingestion import sync_progress as sp
+
+        started: list[th.Event] = []
+
+        def fake_job(src: str) -> None:
+            ev = th.Event()
+            started.append(ev)
+            sp.begin_job(src, "metadata")
+            ev.set()
+            while not sp.check_stop(src):
+                time.sleep(0.005)
+            sp.finish(src, stopped="cancel")
+
+        monkeypatch.setitem(ing._JOB_TARGETS, "metadata", fake_job)
+        sp.reset("zotero")
+
+        r1 = client.post("/ingestion/sync/zotero/metadata")
+        assert r1.status_code == 202
+        assert started[0].wait(timeout=2.0)
+
+        # Same job again without force → conflict, still exactly one worker.
+        assert client.post("/ingestion/sync/zotero/metadata").status_code == 409
+        assert len(started) == 1
+
+        # force=true cancels the first worker and only then starts a second.
+        r2 = client.post("/ingestion/sync/zotero/metadata?force=true")
+        assert r2.status_code == 202
+        deadline = time.time() + 2.0
+        while len(started) < 2 and time.time() < deadline:
+            time.sleep(0.005)
+        assert len(started) == 2
+        assert started[1].wait(timeout=2.0)
+
+        # Clean up: stop the second worker too.
+        sp.request_cancel("zotero")
+        deadline = time.time() + 2.0
+        while sp.is_running("zotero") and time.time() < deadline:
+            time.sleep(0.005)
+        assert not sp.is_running("zotero")
 
     def test_rebuild_vectors_queued(self, client, monkeypatch):
         from pka.api.routers import ingestion as ing
@@ -1165,8 +1254,8 @@ class TestIngestion:
             ing._rebuild_running = False
 
     def test_sync_routes_zotero_via_sync_fn(self, monkeypatch):
-        from pka.ingestion import sync_progress as sp
         from pka.api.routers import ingestion as ing
+        from pka.ingestion import sync_progress as sp
 
         called = []
         monkeypatch.setattr(
@@ -1179,8 +1268,8 @@ class TestIngestion:
         assert sp.snapshot("zotero")["zotero"]["status"] == "done"
 
     def test_sync_records_error_on_failure(self, monkeypatch):
-        from pka.ingestion import sync_progress as sp
         from pka.api.routers import ingestion as ing
+        from pka.ingestion import sync_progress as sp
 
         def boom(**kw):
             raise RuntimeError("sync blew up")
@@ -1193,8 +1282,8 @@ class TestIngestion:
         assert "sync blew up" in snap["error"]
 
     def test_sync_firefox_source(self, monkeypatch):
-        from pka.ingestion import sync_progress as sp
         from pka.api.routers import ingestion as ing
+        from pka.ingestion import sync_progress as sp
 
         monkeypatch.setattr(
             "pka.ingestion.firefox_sync.sync_firefox",
@@ -1205,8 +1294,8 @@ class TestIngestion:
         assert sp.snapshot("firefox")["firefox"]["status"] == "paused"
 
     def test_sync_calibre_source(self, monkeypatch):
-        from pka.ingestion import sync_progress as sp
         from pka.api.routers import ingestion as ing
+        from pka.ingestion import sync_progress as sp
 
         monkeypatch.setattr(
             "pka.ingestion.calibre_sync.sync_calibre",
@@ -1217,8 +1306,8 @@ class TestIngestion:
         assert sp.snapshot("calibre")["calibre"]["status"] == "done"
 
     def test_sync_image_source(self, monkeypatch):
-        from pka.ingestion import sync_progress as sp
         from pka.api.routers import ingestion as ing
+        from pka.ingestion import sync_progress as sp
 
         monkeypatch.setattr(
             "pka.ingestion.image_sync.sync_images",
@@ -1316,7 +1405,7 @@ class TestReadingLists:
         r = client.delete(f"/reading-lists/{list_id}")
         assert r.status_code == 204
         lists = client.get("/reading-lists").json()
-        assert not any(l["list_id"] == list_id for l in lists)
+        assert not any(item["list_id"] == list_id for item in lists)
 
     def test_items_order_by_position(self, client):
         ids = _seed_docs(3)

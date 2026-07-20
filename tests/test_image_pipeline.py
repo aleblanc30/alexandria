@@ -1,13 +1,14 @@
-import pytest
 import time
-import sqlalchemy as sa
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
+import pytest
+import sqlalchemy as sa
 from PIL import Image as PILImage
 
-from pka.db.queries import init_db, get_engine
-from pka.db.schema import images, image_tags
-
+from pka.connectors.images import ImageFile
+from pka.db.queries import get_engine, init_db
+from pka.db.schema import image_tags, images
 
 FAKE_CLIP_DIM  = 512
 FAKE_TEXT_DIM  = 8
@@ -213,8 +214,7 @@ class TestIngestImage:
 
 
 class TestIngestImages:
-    def _make_image_file(self, path: Path) -> "ImageFile":
-        from pka.connectors.images import ImageFile
+    def _make_image_file(self, path: Path) -> ImageFile:
         PILImage.new("RGB", (100, 100)).save(path)
         return ImageFile(path, path.name, 100, 100, 500, int(time.time()), {})
 
@@ -272,8 +272,7 @@ class TestSearchImagesByText:
 
 
 class TestRegisterImages:
-    def _make_image_file(self, path: Path) -> "ImageFile":
-        from pka.connectors.images import ImageFile
+    def _make_image_file(self, path: Path) -> ImageFile:
         PILImage.new("RGB", (50, 50)).save(path)
         return ImageFile(path, path.name, 50, 50, 200, int(time.time()), {})
 
@@ -350,9 +349,9 @@ class TestClipCollectionCache:
 
 class TestIngestImagesStop:
     def test_stops_on_cancel(self, tmp_path, all_mocks):
+        from pka.connectors.images import ImageFile
         from pka.ingestion import sync_progress as sp
         from pka.ingestion.image_pipeline import ingest_images
-        from pka.connectors.images import ImageFile
 
         sp.begin("image")
         sp.set_phase("image", "ingesting", 3)

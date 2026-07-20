@@ -38,7 +38,16 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(ip, "_clip_client", None)
     monkeypatch.setattr(ip, "_clip_col", None)
 
+    # Reset in-memory sync progress so job state never leaks between tests
+    from pka.constants import ALL_SOURCES
+    from pka.ingestion import sync_progress as sp
+    for src in ALL_SOURCES:
+        sp.reset(src)
+
     yield
+
+    for src in ALL_SOURCES:
+        sp.reset(src)
 
 
 # ── Fake Zotero SQLite ────────────────────────────────────────────────────────
@@ -163,6 +172,23 @@ def fake_embedding(text: str) -> list[float]:
 # ── Mock Chroma ───────────────────────────────────────────────────────────────
 
 @pytest.fixture()
+def empty_vector_store(monkeypatch):
+    """Mocked Chroma collection returning no results — default for API tests."""
+    col = MagicMock()
+    col.count.return_value = 0
+    col.query.return_value = {
+        "ids": [[]], "documents": [[]], "distances": [[]], "metadatas": [[]],
+    }
+    col.get.return_value = {
+        "ids": [], "embeddings": [], "metadatas": [], "documents": [],
+    }
+    import pka.storage.vector_store as vs
+    monkeypatch.setattr(vs, "_collection", col)
+    monkeypatch.setattr(vs, "get_collection", lambda: col)
+    return col
+
+
+@pytest.fixture()
 def mock_chroma(monkeypatch):
     """Replace Chroma with an in-memory dict store."""
     store: dict[str, dict] = {}
@@ -183,12 +209,30 @@ def mock_chroma(monkeypatch):
             }
 
     def _query(query_texts=None, query_embeddings=None, n_results=10, **kw):
-        items = list(store.values())[:n_results]
+        """Rank stored items by L2 distance to the query embedding.
+
+        Real distances (instead of a constant) so ordering and similarity
+        logic in search code is actually exercised.
+        """
+        if query_embeddings is not None:
+            q_emb = list(query_embeddings[0])
+        elif query_texts is not None:
+            q_emb = fake_embedding(query_texts[0])
+        else:
+            q_emb = [0.0] * FAKE_DIM
+
+        def _dist(emb: list[float]) -> float:
+            return sum((a - b) ** 2 for a, b in zip(q_emb, emb, strict=False)) ** 0.5
+
+        ranked = sorted(
+            ((vid, item, _dist(item["emb"])) for vid, item in store.items()),
+            key=lambda t: t[2],
+        )[:n_results]
         return {
-            "ids":       [[v for v in store.keys()][:n_results]],
-            "documents": [[i["text"] for i in items]],
-            "distances": [[0.1] * len(items)],
-            "metadatas": [[i["meta"] for i in items]],
+            "ids":       [[vid for vid, _, _ in ranked]],
+            "documents": [[item["text"] for _, item, _ in ranked]],
+            "distances": [[d for _, _, d in ranked]],
+            "metadatas": [[item["meta"] for _, item, _ in ranked]],
         }
 
     def _get(ids=None, include=None, **kwargs):

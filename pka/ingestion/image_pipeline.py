@@ -40,6 +40,7 @@ def _get_clip_collection():
     if _clip_col is None:
         import chromadb
         from chromadb.config import Settings as ChromaSettings
+
         from pka.config import settings as cfg
         _clip_client = chromadb.PersistentClient(
             path=str(cfg.chroma_dir),

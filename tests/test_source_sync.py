@@ -1,18 +1,11 @@
 """Unit tests for per-source sync orchestrators."""
 from unittest.mock import MagicMock
 
-import pytest
-
 from pka.connectors.calibre import CalibreBook
 from pka.connectors.firefox import FirefoxBookmark
 from pka.connectors.images import ImageFile
 from pka.connectors.zotero import ZoteroItem
 from pka.ingestion import sync_progress as sp
-
-
-def setup_function():
-    for src in ("firefox", "zotero", "calibre", "image"):
-        sp.reset(src)
 
 
 def _mock_pending_counts(monkeypatch, sync_module: str, *, pending: int = 1, baseline: int = 0):
@@ -38,7 +31,6 @@ def _zotero_item(**overrides) -> ZoteroItem:
 
 
 def _calibre_book(tmp_path, *, with_file: bool = True) -> CalibreBook:
-    from pathlib import Path
     path = None
     if with_file:
         path = tmp_path / "test.epub"
@@ -387,7 +379,6 @@ class TestUnavailableSources:
         reg = MagicMock()
         monkeypatch.setattr("pka.ingestion.calibre_sync.ingest_calibre_metadata", reg)
 
-        from pka.ingestion.calibre_sync import sync_calibre_metadata
         from pka.api.routers import ingestion as ing
 
         sp.reset("calibre")
@@ -405,7 +396,6 @@ class TestUnavailableSources:
         ingest = MagicMock()
         monkeypatch.setattr("pka.ingestion.image_sync.ingest_images", ingest)
 
-        from pka.ingestion.image_sync import sync_images_ingest
         from pka.api.routers import ingestion as ing
 
         sp.reset("image")

@@ -15,7 +15,9 @@ File layout assumed (Calibre default):
 """
 import logging
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
 
 from pka.config import settings as cfg
@@ -88,11 +90,11 @@ def _parse_ts(dt_str: str | None) -> int | None:
     if not dt_str:
         return None
     try:
-        from datetime import datetime, timezone
+        from datetime import datetime
         # Calibre uses 'YYYY-MM-DD HH:MM:SS.ffffff+00:00' or similar
         dt_str = dt_str.split("+")[0].strip()  # strip tz suffix
         dt = datetime.fromisoformat(dt_str)
-        return int(dt.replace(tzinfo=timezone.utc).timestamp())
+        return int(dt.replace(tzinfo=UTC).timestamp())
     except Exception:
         return None
 
@@ -134,7 +136,9 @@ def load_books(
 
     books: list[CalibreBook] = []
 
-    with sqlite3.connect(db_copy) as con:
+    # closing(): sqlite3's own context manager leaves the connection open,
+    # which keeps the snapshot file locked on Windows.
+    with closing(sqlite3.connect(db_copy)) as con:
         con.row_factory = sqlite3.Row
         cur = con.cursor()
 

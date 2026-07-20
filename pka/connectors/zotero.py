@@ -9,8 +9,9 @@ Prod: fresh online backup on each connector access.
 """
 import logging
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pka.config import settings
@@ -175,7 +176,7 @@ def load_item_keys(
     dst = copy_path or settings.zotero_db_copy
     if not skip_copy:
         ensure_zotero_copy(zotero_db, dst, refresh=refresh)
-    with sqlite3.connect(dst) as con:
+    with closing(sqlite3.connect(dst)) as con:
         cur = con.cursor()
         cur.execute(_ITEM_KEYS_SQL)
         return {row[0] for row in cur.fetchall()}
@@ -202,7 +203,9 @@ def load_items(
 
     items: list[ZoteroItem] = []
 
-    with sqlite3.connect(dst) as con:
+    # closing(): sqlite3's own context manager leaves the connection open,
+    # which keeps the snapshot file locked on Windows.
+    with closing(sqlite3.connect(dst)) as con:
         con.row_factory = sqlite3.Row
         cur = con.cursor()
 
@@ -227,7 +230,7 @@ def load_items(
 
             try:
                 dt = datetime.fromisoformat(row["dateAdded"])
-                ts = int(dt.replace(tzinfo=timezone.utc).timestamp())
+                ts = int(dt.replace(tzinfo=UTC).timestamp())
             except Exception:
                 ts = None
 

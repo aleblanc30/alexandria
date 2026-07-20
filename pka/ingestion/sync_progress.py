@@ -461,6 +461,8 @@ def reset(source: str) -> None:
 def snapshot(source: str | None = None) -> dict[str, dict]:
     from pka.constants import ALL_SOURCES
 
+    # Serialize under the lock: _to_dict normalizes (mutates) shared state and
+    # must not race advance()/set_phase() from worker threads.
     with _lock:
         if source:
             items = {source: _states.get(source, _idle(source))}
@@ -469,7 +471,7 @@ def snapshot(source: str | None = None) -> dict[str, dict]:
                 src: _states.get(src, _idle(src))
                 for src in ALL_SOURCES
             }
-    return {src: _to_dict(st) for src, st in items.items()}
+        return {src: _to_dict(st) for src, st in items.items()}
 
 
 def _to_dict(state: SyncState) -> dict:

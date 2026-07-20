@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import pytest
-import sqlalchemy as sa
 
 from pka.constants import FetchStatus, Source
 from pka.db.queries import get_engine, init_db, insert_document_if_new
-from pka.db.schema import chunks, documents, images
+from pka.db.schema import chunks, images
 from pka.ingestion.progress_baselines import (
     build_ingestion_status,
     get_phase_baselines,

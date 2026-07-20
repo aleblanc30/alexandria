@@ -5,6 +5,8 @@ The N+1 query problem in the per-document lookup loop is avoided by
 required relations (``source_tags``, ``overlay_tags``, ``cluster_assignments``)
 in batched ``IN`` queries.
 """
+import logging
+
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends
 
@@ -17,6 +19,8 @@ from pka.api.schemas.images import ImageOut
 from pka.api.schemas.search import SearchRequest, SearchResponse
 from pka.db.queries import filter_document_ids
 from pka.db.schema import cluster_assignments, documents
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -33,7 +37,12 @@ async def search(req: SearchRequest, engine=Depends(get_engine)):
             where_filter: dict = {}
             if req.sources:
                 where_filter["source"] = {"$in": [str(s) for s in req.sources]}
-            hits = vquery(req.query, n_results=req.limit * 3, where=where_filter or None)
+            # Fetch enough hits to fill the requested page, not just page 1.
+            hits = vquery(
+                req.query,
+                n_results=(req.offset + req.limit) * 3,
+                where=where_filter or None,
+            )
             seen: dict[int, float] = {}
             for h in hits:
                 did = int(h["metadata"].get("document_id", -1))
@@ -43,23 +52,28 @@ async def search(req: SearchRequest, engine=Depends(get_engine)):
             results = sorted(seen.items(), key=lambda x: -x[1])
         except Exception:
             # Fall through to fulltext if the vector store is unavailable
-            pass
+            log.warning(
+                "Semantic search unavailable; falling back to fulltext", exc_info=True,
+            )
 
     with engine.connect() as con:
         run_id = fetch_active_run_id(con)
 
         # ── Fulltext fallback / merge ────────────────────────────────────────
         if req.mode in ("fulltext", "hybrid") or not results:
-            q = sa.select(documents).where(
-                documents.c.title.ilike(f"%{req.query}%")
+            # No LIMIT here: pagination happens after merging/filtering, so a
+            # pre-limited fetch would make page 2+ incomplete and undercount total.
+            q = (
+                sa.select(documents.c.id)
+                .where(documents.c.title.ilike(f"%{req.query}%"))
+                .order_by(documents.c.id)
             )
             if req.sources:
                 q = q.where(documents.c.source.in_([str(s) for s in req.sources]))
-            rows = fetchall_mappings(con.execute(q.limit(req.limit)))
-            existing_ids = {r[0] for r in results}
-            for row in rows:
-                if row["id"] not in existing_ids:
-                    results.append((row["id"], None))
+            existing_ids = {doc_id for doc_id, _ in results}
+            for row in con.execute(q):
+                if row[0] not in existing_ids:
+                    results.append((row[0], None))
 
         # ── Browse-style filters (sources, tags, wayback) ─────────────────────
         if results and (

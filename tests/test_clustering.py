@@ -6,15 +6,14 @@ Chroma is replaced by the mock_chroma fixture from conftest.py.
 import json
 import sys
 import time
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
-from unittest.mock import patch, MagicMock
-
 import sqlalchemy as sa
 
-from pka.db.queries import init_db, upsert_document, get_engine
-from pka.db.schema import cluster_runs, clusters, cluster_assignments
-
+from pka.db.queries import get_engine, init_db, upsert_document
+from pka.db.schema import cluster_assignments, cluster_runs, clusters
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -133,7 +132,7 @@ def populated(monkeypatch):
 
 class TestRunClustering:
     def test_returns_cluster_run_result(self, populated):
-        from pka.clustering.engine import run_clustering, ClusterRunResult
+        from pka.clustering.engine import ClusterRunResult, run_clustering
         result = run_clustering(min_cluster_size=2)
         assert isinstance(result, ClusterRunResult)
 
@@ -216,7 +215,7 @@ class TestRunClustering:
                 sa.select(cluster_runs.c.accepted)
                 .where(cluster_runs.c.run_id == result.run_id)
             ).fetchone()
-        assert row[0] is False or row[0] == 0
+        assert not row[0]  # SQLite stores booleans as 0/1
 
     def test_llm_labels_applied(self, populated):
         from pka.clustering.engine import run_clustering
@@ -317,13 +316,20 @@ class TestAcceptRejectRun:
             ).fetchone()
         assert bool(row[0]) is False
 
-    def test_get_active_run_id_returns_latest_accepted(self):
+    def test_accept_run_deactivates_others(self):
+        """Accepting a run (even an older one) makes it the single active run."""
         from pka.clustering.lifecycle import accept_run, get_active_run_id
         r1 = self._insert_run()
         r2 = self._insert_run()
-        accept_run(r1)
         accept_run(r2)
-        assert get_active_run_id() == r2
+        accept_run(r1)
+        assert get_active_run_id() == r1
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(cluster_runs.c.accepted)
+                .where(cluster_runs.c.run_id == r2)
+            ).fetchone()
+        assert not row[0]
 
     def test_get_active_run_id_none_when_none_accepted(self):
         from pka.clustering.lifecycle import get_active_run_id
@@ -427,7 +433,7 @@ class TestAssignNewDocs:
     def test_assigns_unassigned_docs(self, populated, monkeypatch):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, assign_new_docs
-        from pka.db.queries import get_engine, insert_chunks, upsert_document
+        from pka.db.queries import insert_chunks, upsert_document
 
         result = run_clustering(min_cluster_size=2)
         accept_run(result.run_id)
@@ -517,15 +523,19 @@ class TestParseLlmJson:
         assert _parse_llm_json(raw)["label"] == "B"
 
     def test_invalid_json_raises(self):
-        from pka.clustering.engine import _parse_llm_json
+        import json
+
         import pytest
-        with pytest.raises(Exception):
+
+        from pka.clustering.engine import _parse_llm_json
+        with pytest.raises(json.JSONDecodeError):
             _parse_llm_json("not json at all")
 
 
 class TestRunUmapLegacy:
     def test_legacy_umap_shapes(self, monkeypatch):
         import numpy as np
+
         from pka.clustering.engine import _run_umap_legacy
 
         matrix = np.random.rand(20, 8).astype(np.float32)
@@ -597,8 +607,9 @@ class TestClusterLabellingSamples:
         assert "Title: Title One" in captured[0]
 
     def test_l1_from_l2_children(self, monkeypatch):
-        from pka.clustering.engine import L2ClusterBatch, _label_l1_clusters
         import numpy as np
+
+        from pka.clustering.engine import L2ClusterBatch, _label_l1_clusters
 
         monkeypatch.setattr(
             "pka.clustering.engine._label_parent_from_children_with_llm",

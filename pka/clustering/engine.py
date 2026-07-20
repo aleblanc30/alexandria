@@ -86,7 +86,7 @@ def _mean_pool_from_chroma(
     source_filter: list[str] | None,
 ) -> tuple[list[int], np.ndarray]:
     doc_vecs: dict[int, list[list[float]]] = {}
-    for vid, meta in zip(vector_ids, metadatas):
+    for vid, meta in zip(vector_ids, metadatas, strict=False):
         emb = embeddings.get(vid)
         if emb is None:
             continue
@@ -165,7 +165,7 @@ def _load_document_embeddings(
         doc_ids_chroma, matrix_chroma = _mean_pool_from_chroma(
             vector_ids, metadatas, embeddings, source_filter,
         )
-        chroma_map = dict(zip(doc_ids_chroma, matrix_chroma))
+        chroma_map = dict(zip(doc_ids_chroma, matrix_chroma, strict=False))
         for did in missing:
             if did in chroma_map:
                 cached[did] = chroma_map[did]
@@ -827,7 +827,7 @@ def _write_hierarchical_clusters(
         return res.inserted_primary_key[0]
 
     def _collect_assignments(rows, doc_ids_iter, raw_labels, db_ids, level):
-        for doc_id, raw_label in zip(doc_ids_iter, raw_labels):
+        for doc_id, raw_label in zip(doc_ids_iter, raw_labels, strict=False):
             db_cid = db_ids.get(raw_label, -1)
             if db_cid == -1:
                 continue
@@ -912,7 +912,7 @@ def _run_level2_pass_core(
             continue
 
         l2_cluster_docs: dict[int, list[int]] = {c: [] for c in l2_unique}
-        for doc_id, lbl in zip(member_doc_ids, l2_labels.tolist()):
+        for doc_id, lbl in zip(member_doc_ids, l2_labels.tolist(), strict=False):
             if lbl != -1:
                 l2_cluster_docs[lbl].append(doc_id)
 
@@ -1097,7 +1097,7 @@ def _build_cluster_docs(
 ) -> dict[int, list[int]]:
     unique = sorted(set(labels.tolist()) - {-1})
     cluster_docs: dict[int, list[int]] = {c: [] for c in unique}
-    for doc_id, lbl in zip(doc_ids, labels.tolist()):
+    for doc_id, lbl in zip(doc_ids, labels.tolist(), strict=False):
         if lbl != -1:
             cluster_docs[lbl].append(doc_id)
     return cluster_docs
@@ -1389,7 +1389,7 @@ def run_clustering(
         umap_2d              = reduced_2d,
         doc_ids              = doc_ids,
         assignments          = {
-            did: int(lbl) for did, lbl in zip(doc_ids, l1_labels.tolist())
+            did: int(lbl) for did, lbl in zip(doc_ids, l1_labels.tolist(), strict=False)
         },
         diagnostics          = diagnostics,
     )

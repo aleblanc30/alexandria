@@ -64,11 +64,21 @@ def copy_sqlite_database(
 
     uri = f"file:{src}?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=timeout) as src_con:
-            with sqlite3.connect(tmp) as dst_con:
-                src_con.backup(dst_con)
-                dst_con.execute("PRAGMA journal_mode=DELETE")
-                dst_con.commit()
+        # sqlite3's context manager only scopes the transaction — close the
+        # connections explicitly or Windows keeps the tmp file locked and
+        # tmp.replace(dst) below fails with WinError 32.
+        src_con = sqlite3.connect(uri, uri=True, timeout=timeout)
+        try:
+            dst_con = sqlite3.connect(tmp)
+            try:
+                with src_con, dst_con:
+                    src_con.backup(dst_con)
+                    dst_con.execute("PRAGMA journal_mode=DELETE")
+                    dst_con.commit()
+            finally:
+                dst_con.close()
+        finally:
+            src_con.close()
     except sqlite3.Error:
         _unlink_sqlite_files(tmp)
         raise

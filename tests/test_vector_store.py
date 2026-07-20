@@ -1,6 +1,6 @@
 """Integration tests for the Chroma vector store wrapper."""
-import sqlalchemy as sa
 import pytest
+import sqlalchemy as sa
 
 
 @pytest.fixture()
@@ -62,7 +62,7 @@ class TestVectorStore:
         assert all(len(v) > 0 for v in found.values())
 
     def test_purge_vectors_removes_chunks(self, real_chroma):
-        from pka.db.queries import get_engine, insert_chunks, init_db
+        from pka.db.queries import get_engine, init_db, insert_chunks
         from pka.db.schema import chunks
 
         init_db()
@@ -126,9 +126,10 @@ class TestVectorStore:
         assert real_chroma.get_collection().count() == 0
 
     def test_rebuild_from_chunks(self, real_chroma):
+        import sqlalchemy as sa
+
         from pka.db.queries import init_db, insert_chunks, upsert_document
         from pka.db.schema import chunks
-        import sqlalchemy as sa
 
         init_db()
         doc_id = upsert_document("zotero", "RB1", "Rebuild doc", None, None)

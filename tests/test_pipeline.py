@@ -1,8 +1,11 @@
-import pytest
 from unittest.mock import MagicMock
-from pka.connectors.zotero import ZoteroItem
+
+import pytest
+import sqlalchemy as sa
+
 from pka.connectors.firefox import FirefoxBookmark
-from pka.db.queries import init_db, document_has_chunks, get_engine
+from pka.connectors.zotero import ZoteroItem
+from pka.db.queries import document_has_chunks, get_engine, init_db
 from pka.db.schema import documents, source_tags
 from pka.ingestion.runners import (
     ingest_fetched_texts,
@@ -10,7 +13,6 @@ from pka.ingestion.runners import (
     ingest_zotero_embed,
     ingest_zotero_items,
 )
-import sqlalchemy as sa
 
 
 @pytest.fixture(autouse=True)

@@ -12,7 +12,9 @@ class TestChunkerEdgeCases:
             def __init__(self, text):
                 self.sents = [FakeSpan(s.strip()) for s in text.split(".") if s.strip()]
 
-        fake_nlp = lambda text: FakeDoc(text)
+        def fake_nlp(text):
+            return FakeDoc(text)
+
         monkeypatch.setattr("pka.ingestion.chunker._get_spacy", lambda: fake_nlp)
 
         text = "First sentence here. Second sentence follows. Third one too."
