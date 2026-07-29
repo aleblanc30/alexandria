@@ -9,6 +9,20 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
+FORBIDDEN_PATH_PREFIXES = (Path("/etc"), Path("/usr"), Path("/var"), Path("/sys"))
+
+
+def reject_system_path(v: Path) -> Path:
+    """Expand ``~`` and reject obvious system roots."""
+    v = Path(v).expanduser().resolve()
+    for prefix in FORBIDDEN_PATH_PREFIXES:
+        try:
+            v.relative_to(prefix)
+        except ValueError:
+            continue
+        raise ValueError(f"Refusing to index system path: {v}")
+    return v
+
 
 class Settings(BaseSettings):
     # ── Source paths ────────────────────────────────────────────────────────
@@ -91,18 +105,9 @@ class Settings(BaseSettings):
     @field_validator("zotero_db", "firefox_db", "book_archive", "images_dir")
     @classmethod
     def _expand_and_check(cls, v: Path) -> Path:
-        """Expand ``~`` and reject obvious system roots."""
         if v is None:
             return v
-        v = Path(v).expanduser().resolve()
-        forbidden = (Path("/etc"), Path("/usr"), Path("/var"), Path("/sys"))
-        for prefix in forbidden:
-            try:
-                v.relative_to(prefix)
-            except ValueError:
-                continue
-            raise ValueError(f"Refusing to index system path: {v}")
-        return v
+        return reject_system_path(v)
 
     class Config:
         env_file = ".env"

@@ -311,6 +311,18 @@ export const cancelSync         = (source: string) =>
     10000,
   )
 
+export interface SourcePathInfo { source: string; path: string; kind: 'file' | 'dir'; exists: boolean }
+
+export const getSourcePath = (source: string) =>
+  req<SourcePathInfo>(`/ingestion/sources/${source}/path`)
+export const setSourcePath = (source: string, path: string) =>
+  req<SourcePathInfo>(
+    `/ingestion/sources/${source}/path`,
+    { method: 'PUT', body: JSON.stringify({ path }) },
+  )
+export const browseSourcePath = (source: string) =>
+  req<{ path: string | null }>(`/ingestion/sources/${source}/browse`, { method: 'POST' }, 120000)
+
 // ── Images ────────────────────────────────────────────────────────────────────
 
 export const listImages   = (params?: { image_type?: string; limit?: number; offset?: number }) => {

@@ -5,7 +5,9 @@ import threading
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
 
+from pka.api import source_paths as spaths
 from pka.api.dependencies import get_engine
+from pka.api.schemas.ingestion import SourcePathUpdate
 from pka.constants import ALL_SOURCES, FetchStatus, Source
 from pka.db.schema import documents, fetch_log
 from pka.ingestion import sync_progress as sp
@@ -42,6 +44,33 @@ async def sync_progress(source: str | None = None, engine=Depends(get_engine)):
     for src in targets:
         apply_progress_baselines(engine, src)
     return sp.snapshot(source)
+
+
+@router.get("/sources/{source}/path")
+async def get_path(source: str):
+    require_source(source)
+    return spaths.get_source_path(source)
+
+
+@router.put("/sources/{source}/path")
+def update_path(source: str, body: SourcePathUpdate):
+    require_source(source)
+    if not body.path.strip():
+        raise HTTPException(400, "Path must not be empty")
+    try:
+        return spaths.set_source_path(source, body.path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/sources/{source}/browse", status_code=200)
+def browse_path(source: str):
+    require_source(source)
+    try:
+        chosen = spaths.open_native_picker(source)
+    except RuntimeError as exc:
+        raise HTTPException(501, str(exc)) from exc
+    return {"path": chosen}
 
 
 @router.get("/unfetchable")

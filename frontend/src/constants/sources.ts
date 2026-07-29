@@ -19,6 +19,13 @@ export function isIngestionSource(value: string): value is IngestionSource {
   return (INGESTION_SOURCES as readonly string[]).includes(value)
 }
 
+export const SOURCE_PATH_LABELS: Record<IngestionSource, string> = {
+  firefox: 'Firefox profile folder',
+  zotero: 'Zotero database file (zotero.sqlite)',
+  calibre: 'Calibre library folder',
+  image: 'Image folder',
+}
+
 /** Sources that run HTTP fetch as part of the ingest job. */
 export function sourceHasFetchPhase(source: IngestionSource): boolean {
   return source === 'firefox'

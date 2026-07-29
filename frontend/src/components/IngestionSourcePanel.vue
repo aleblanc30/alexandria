@@ -71,20 +71,78 @@
         </button>
       </div>
     </div>
+
+    <div class="path-form">
+      <label class="path-label">{{ SOURCE_PATH_LABELS[source] }}</label>
+      <div class="path-row">
+        <input
+          v-model="pathInput"
+          class="path-input"
+          type="text"
+          :disabled="pathBusy"
+          @keydown.enter="savePath"
+        />
+        <button class="btn-xs" type="button" :disabled="pathBusy" @click="browsePath">Browse…</button>
+        <button class="btn-xs" type="button" :disabled="pathBusy || !pathDirty" @click="savePath">Save</button>
+      </div>
+      <div v-if="pathInfo" class="path-status hint" :class="{ 'path-status--bad': !pathInfo.exists }">
+        {{ pathInfo.exists ? '✓ found on disk' : '⚠ not found on disk' }}
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import * as api from '@/api/client'
 import type { PhaseDetail, SyncProgress } from '@/api/client'
-import { SOURCE_COLORS, SOURCE_LABELS, ingestJobLabel, sourceHasFetchPhase, sourceSkipsEmbedPhase, type IngestionSource } from '@/constants/sources'
+import { SOURCE_COLORS, SOURCE_LABELS, SOURCE_PATH_LABELS, ingestJobLabel, sourceHasFetchPhase, sourceSkipsEmbedPhase, type IngestionSource } from '@/constants/sources'
 import { ingestStatsSummary } from '@/lib/ingestStats'
+import { notifyError } from '@/lib/notifyError'
 import { useIngestionStore } from '@/stores/ingestion'
 
 const props = defineProps<{ source: IngestionSource }>()
 
 const ingest = useIngestionStore()
 const st = computed(() => ingest.status)
+
+// ── Source path (folder/database) config ────────────────────────────────────
+
+const pathInfo = ref<api.SourcePathInfo | null>(null)
+const pathInput = ref('')
+const pathBusy = ref(false)
+
+const pathDirty = computed(() =>
+  pathInfo.value != null && pathInput.value.trim() !== pathInfo.value.path,
+)
+
+async function loadPath() {
+  try {
+    pathInfo.value = await api.getSourcePath(props.source)
+    pathInput.value = pathInfo.value.path
+  } catch (e) { notifyError(e) }
+}
+
+async function browsePath() {
+  pathBusy.value = true
+  try {
+    const res = await api.browseSourcePath(props.source)
+    if (res.path) pathInput.value = res.path
+  } catch (e) { notifyError(e) } finally { pathBusy.value = false }
+}
+
+async function savePath() {
+  const value = pathInput.value.trim()
+  if (!value || pathBusy.value) return
+  pathBusy.value = true
+  try {
+    pathInfo.value = await api.setSourcePath(props.source, value)
+    pathInput.value = pathInfo.value.path
+  } catch (e) { notifyError(e) } finally { pathBusy.value = false }
+}
+
+watch(() => props.source, loadPath)
+onMounted(loadPath)
 
 const PHASE_ORDER = ['metadata', 'fetching', 'embedding'] as const
 const PHASE_LABELS: Record<string, string> = {
@@ -160,3 +218,12 @@ function phaseBarStyle(phase: PhaseDetail): Record<string, string> {
   return { width: `${phase.percent}%` }
 }
 </script>
+
+<style scoped>
+.path-form { margin-top: 14px; padding-top: 14px; border-top: 0.5px solid var(--border) }
+.path-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px }
+.path-row { display: flex; gap: 8px }
+.path-input { flex: 1; min-width: 0; font-family: monospace; font-size: 12px }
+.path-status { margin-top: 6px }
+.path-status--bad { color: #A32D2D }
+</style>
