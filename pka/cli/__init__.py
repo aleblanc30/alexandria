@@ -12,6 +12,7 @@ Installed as the ``alexandria`` console script::
     alexandria purge-source firefox --dry-run
     alexandria purge-cluster-runs --all --dry-run
     alexandria backfill-classification
+    alexandria dev
 
 Each subcommand delegates to a ``pka.cli.<module>.main(argv)`` that owns its
 own argparse parser; ``scripts/*.py`` remain as thin repo-local shims.
@@ -33,6 +34,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "purge-source":            ("purge_source", "Remove archived data for a source"),
     "purge-cluster-runs":      ("purge_cluster_runs", "Delete stored clustering runs"),
     "backfill-classification": ("backfill_classification", "Backfill item types and classification tags"),
+    "dev":                     ("dev", "Run backend + frontend together for local development (opens browser)"),
 }
 
 

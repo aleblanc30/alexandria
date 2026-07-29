@@ -51,7 +51,8 @@ Run from **repo root** unless noted.
 | Tests with coverage | `pytest --cov=pka --cov-report=term-missing` |
 | Lint (Python) | `ruff check pka tests scripts` |
 | Format (Python) | `ruff format pka tests scripts` |
-| API (dev, CORS) | `ALEXANDRIA_DEV=1 uvicorn pka.api.main:app --reload --port 8000` |
+| Dev (backend+frontend, one command) | `alexandria dev` |
+| API (dev, CORS) | `ALEXANDRIA_DEV=1 uvicorn pka.api.main:app --reload --port 8420` |
 | Frontend (dev) | `cd frontend && npm run dev` |
 | Frontend (build) | `cd frontend && npm run build` |
 | Init DB | `alexandria init` (or `python scripts/init_db.py`) |

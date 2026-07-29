@@ -99,15 +99,34 @@ alexandria clustering --assign-new  # assign new docs to existing clusters
 ### Serve the API and frontend
 
 ```bash
-# Dev: backend with CORS enabled (frontend on :5173 talks to backend on :8000)
-ALEXANDRIA_DEV=1 uvicorn pka.api.main:app --reload --port 8000
+# Dev: one command starts both, streams both logs, and opens the browser
+alexandria dev
+```
 
-# In another terminal
+This runs `uvicorn --reload` (port 8420) and `npm run dev` (port 5173)
+together in one terminal and opens `http://localhost:5173` once the frontend
+is ready. Ctrl+C (or closing the window) stops both, and if either server
+doesn't come up within 15s (e.g. the port is already taken by something
+else) the command reports that and shuts everything down instead of leaving
+a half-working stack running. On Windows, double-clicking
+[`scripts/run_dev.bat`](scripts/run_dev.bat) does the same — useful as the
+target of a Desktop shortcut.
+
+Equivalent manual two-terminal form, if you want the processes' logs kept
+separate:
+
+```bash
+# Terminal 1: backend with CORS enabled (frontend on :5173 talks to backend on :8420)
+ALEXANDRIA_DEV=1 uvicorn pka.api.main:app --reload --port 8420
+
+# Terminal 2
 cd frontend && npm run dev
+```
 
+```bash
 # Production: build the frontend, drop CORS, mount /dist at the API root
 cd frontend && npm run build
-uvicorn pka.api.main:app --port 8000
+uvicorn pka.api.main:app --port 8420
 ```
 
 The build output ships to `frontend/dist`. The FastAPI app mounts that

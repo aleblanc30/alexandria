@@ -1,10 +1,10 @@
-﻿{
+{
   "version": "2.0.0",
   "tasks": [
     {
       "label": "alexandria: api (dev)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/bin/uvicorn pka.api.main:app --reload --port 8000",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m uvicorn pka.api.main:app --reload --port 8420",
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
@@ -30,7 +30,7 @@
     {
       "label": "alexandria: api (debug attach)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/bin/python -m debugpy --listen 5678 --wait-for-client -m uvicorn pka.api.main:app --port 8000",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m debugpy --listen 5678 --wait-for-client -m uvicorn pka.api.main:app --port 8420",
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
@@ -56,12 +56,9 @@
     {
       "label": "alexandria: frontend (dev)",
       "type": "shell",
-      "command": "${workspaceFolder}/.tools/node-v22.16.0-linux-x64/bin/npm run dev",
+      "command": "npm run dev",
       "options": {
-        "cwd": "${workspaceFolder}/frontend",
-        "env": {
-          "PATH": "${workspaceFolder}/.tools/node-v22.16.0-linux-x64/bin:${env:PATH}"
-        }
+        "cwd": "${workspaceFolder}/frontend"
       },
       "isBackground": true,
       "problemMatcher": {
@@ -88,7 +85,7 @@
     {
       "label": "alexandria: purge firefox",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/bin/python scripts/purge_source.py firefox",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/purge_source.py firefox",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -102,7 +99,7 @@
     {
       "label": "alexandria: purge source",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/bin/python scripts/purge_source.py ${input:alexandriaSource}",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/purge_source.py ${input:alexandriaSource}",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -116,7 +113,7 @@
     {
       "label": "alexandria: purge clustering runs",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/bin/python scripts/purge_cluster_runs.py ${input:alexandriaClusterRunScope}",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/purge_cluster_runs.py ${input:alexandriaClusterRunScope}",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -130,7 +127,7 @@
     {
       "label": "alexandria: purge clustering runs (all, force)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/bin/python scripts/purge_cluster_runs.py --all --force",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/purge_cluster_runs.py --all --force",
       "options": {
         "cwd": "${workspaceFolder}"
       },
