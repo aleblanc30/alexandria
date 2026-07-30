@@ -37,6 +37,7 @@ frontend/dist/
 
 # dev tools
 .cursor/
+.claude/
 .pip-cache/
 .pytest_cache/
 .ruff_cache/
