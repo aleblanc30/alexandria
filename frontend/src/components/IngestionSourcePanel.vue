@@ -85,7 +85,8 @@
         <button class="btn-xs" type="button" :disabled="pathBusy" @click="browsePath">Browse…</button>
         <button class="btn-xs" type="button" :disabled="pathBusy || !pathDirty" @click="savePath">Save</button>
       </div>
-      <div v-if="pathInfo" class="path-status hint" :class="{ 'path-status--bad': !pathInfo.exists }">
+      <div v-if="browsing" class="path-status hint">Waiting for the file picker window to open…</div>
+      <div v-else-if="pathInfo" class="path-status hint" :class="{ 'path-status--bad': !pathInfo.exists }">
         {{ pathInfo.exists ? '✓ found on disk' : '⚠ not found on disk' }}
       </div>
     </div>
@@ -111,6 +112,7 @@ const st = computed(() => ingest.status)
 const pathInfo = ref<api.SourcePathInfo | null>(null)
 const pathInput = ref('')
 const pathBusy = ref(false)
+const browsing = ref(false)
 
 const pathDirty = computed(() =>
   pathInfo.value != null && pathInput.value.trim() !== pathInfo.value.path,
@@ -125,10 +127,11 @@ async function loadPath() {
 
 async function browsePath() {
   pathBusy.value = true
+  browsing.value = true
   try {
     const res = await api.browseSourcePath(props.source)
     if (res.path) pathInput.value = res.path
-  } catch (e) { notifyError(e) } finally { pathBusy.value = false }
+  } catch (e) { notifyError(e) } finally { pathBusy.value = false; browsing.value = false }
 }
 
 async function savePath() {
@@ -138,6 +141,7 @@ async function savePath() {
   try {
     pathInfo.value = await api.setSourcePath(props.source, value)
     pathInput.value = pathInfo.value.path
+    await ingest.load(true)
   } catch (e) { notifyError(e) } finally { pathBusy.value = false }
 }
 

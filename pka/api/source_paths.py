@@ -5,6 +5,9 @@ folder/file picker so the user doesn't have to type an absolute path by hand.
 from __future__ import annotations
 
 import logging
+import subprocess
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -72,42 +75,67 @@ def set_source_path(source: str, new_path: str) -> dict:
     return get_source_path(source)
 
 
+PICKER_TIMEOUT_SECONDS = 600  # generous — the clock is mostly "user thinking"
+
+# Runs as a standalone script (see open_native_picker) rather than importing
+# tkinter in-process. A Tk root created on a FastAPI threadpool worker thread
+# competes with the event loop / reload watcher for the GIL and can take tens
+# of seconds just to *appear* on Windows; a fresh subprocess gets its own GIL
+# and a real main thread, which is what Tk expects, and starts instantly since
+# it doesn't carry this process's already-imported ML/ASGI stack.
+_PICKER_SCRIPT = """\
+import sys
+import tkinter as tk
+from tkinter import filedialog
+
+kind, title, initial = sys.argv[1], sys.argv[2], sys.argv[3] or None
+root = tk.Tk()
+root.withdraw()
+root.attributes("-topmost", True)
+try:
+    if kind == "dir":
+        chosen = filedialog.askdirectory(title=title, initialdir=initial, parent=root)
+    else:
+        chosen = filedialog.askopenfilename(title=title, initialdir=initial, parent=root)
+finally:
+    root.destroy()
+print(chosen)
+"""
+
+
 def open_native_picker(source: str) -> str | None:
     """Open a native OS folder/file picker on the machine running the API.
 
     Alexandria is local-first: the API and the browser tab run on the same
     machine, so a server-side native dialog is the natural way to browse the
     filesystem (a plain ``<input type="file">`` can't return a real absolute
-    path). Raises ``RuntimeError`` when no display/Tk is available — callers
+    path). Runs in a standalone subprocess (see ``_PICKER_SCRIPT``) so Tk gets
+    a real main thread instead of a threadpool worker. Raises ``RuntimeError``
+    when no display/Tk is available or the dialog fails to open — callers
     should fall back to manual path entry in that case.
     """
     spec = require_spec(source)
     current: Path = getattr(settings, spec.field)
-    initial_dir = str(current if spec.kind == "dir" else current.parent) if current.exists() else None
+    initial_dir = str(current if spec.kind == "dir" else current.parent) if current.exists() else ""
 
+    t0 = time.monotonic()
+    log.info("Opening native picker for %s (subprocess launch)…", source)
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except ImportError as exc:
-        raise RuntimeError("Native file picker unavailable (tkinter not installed)") from exc
+        result = subprocess.run(
+            [sys.executable, "-c", _PICKER_SCRIPT, spec.kind, spec.label, initial_dir],
+            capture_output=True, text=True, timeout=PICKER_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        log.warning("Native picker for %s timed out after %.1fs", source, time.monotonic() - t0)
+        raise RuntimeError("Native file picker timed out") from exc
+    except OSError as exc:
+        raise RuntimeError(f"Native file picker unavailable: {exc}") from exc
 
-    try:
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-    except tk.TclError as exc:
-        raise RuntimeError("Native file picker unavailable (no display)") from exc
+    log.info("Native picker for %s returned after %.1fs (rc=%s)", source, time.monotonic() - t0, result.returncode)
 
-    try:
-        if spec.kind == "dir":
-            chosen = filedialog.askdirectory(
-                title=spec.label, initialdir=initial_dir, parent=root,
-            )
-        else:
-            chosen = filedialog.askopenfilename(
-                title=spec.label, initialdir=initial_dir, parent=root,
-            )
-    finally:
-        root.destroy()
+    if result.returncode != 0:
+        reason = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "unknown error"
+        raise RuntimeError(f"Native file picker unavailable ({reason})")
 
+    chosen = result.stdout.strip()
     return chosen or None

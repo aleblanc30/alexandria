@@ -320,8 +320,11 @@ export const setSourcePath = (source: string, path: string) =>
     `/ingestion/sources/${source}/path`,
     { method: 'PUT', body: JSON.stringify({ path }) },
   )
+// Matches PICKER_TIMEOUT_SECONDS in pka/api/source_paths.py, plus slack so the
+// backend's own timeout fires first and returns a real error.
+const BROWSE_TIMEOUT_MS = 605_000
 export const browseSourcePath = (source: string) =>
-  req<{ path: string | null }>(`/ingestion/sources/${source}/browse`, { method: 'POST' }, 120000)
+  req<{ path: string | null }>(`/ingestion/sources/${source}/browse`, { method: 'POST' }, BROWSE_TIMEOUT_MS)
 
 // ── Images ────────────────────────────────────────────────────────────────────
 
