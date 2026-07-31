@@ -65,6 +65,26 @@ class TestChatJson:
         assert err is None
         assert data["label"] == "AI"
 
+    def test_requests_json_format(self, monkeypatch):
+        """The reply must be grammar-constrained to valid JSON."""
+        monkeypatch.setattr(oc, "resolve_chat_model", lambda m=None: "llama3")
+        captured = {}
+
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"message": {"content": '{"label": "AI"}'}}
+
+        def _post(url, json=None, timeout=None):
+            captured["payload"] = json
+            return FakeResp()
+
+        monkeypatch.setattr("httpx.post", _post)
+        oc.chat_json("prompt")
+        assert captured["payload"]["format"] == "json"
+
     def test_empty_content_returns_error(self, monkeypatch):
         monkeypatch.setattr(oc, "resolve_chat_model", lambda m=None: "llama3")
 

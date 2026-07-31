@@ -81,6 +81,40 @@ class TestClassifyAndDescribe:
         assert itype == "unknown"
         assert desc == ""
 
+    def test_salvages_unescaped_quotes_in_description(self, sample_png, monkeypatch):
+        """Vision models emit unescaped quotes that break strict JSON; recover anyway."""
+        broken = (
+            '{\n  "image_type": "notes",\n'
+            '  "description": "A photo of "handwritten" lecture notes."\n}'
+        )
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {"message": {"content": broken}}
+        monkeypatch.setattr("pka.ingestion.image_extractor.httpx.post", lambda *a, **kw: resp)
+
+        from pka.ingestion.image_extractor import classify_and_describe
+        itype, desc = classify_and_describe(sample_png)
+        assert itype == "notes"
+        assert desc == 'A photo of "handwritten" lecture notes.'
+
+    def test_requests_json_format(self, sample_png, monkeypatch):
+        """The vision call must ask Ollama to grammar-constrain valid JSON."""
+        captured = {}
+
+        def _post(url, json=None, timeout=None):
+            captured["payload"] = json
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.json.return_value = {
+                "message": {"content": '{"image_type": "slide", "description": "x"}'},
+            }
+            return resp
+
+        monkeypatch.setattr("pka.ingestion.image_extractor.httpx.post", _post)
+        from pka.ingestion.image_extractor import classify_and_describe
+        classify_and_describe(sample_png)
+        assert captured["payload"]["format"] == "json"
+
 
 class TestOcrImage:
     def test_success(self, sample_png, monkeypatch):

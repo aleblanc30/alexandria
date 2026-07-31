@@ -10,12 +10,10 @@ export const useSearchStore = defineStore('search', () => {
   const query       = ref('')
   const mode        = ref<'semantic'|'fulltext'|'hybrid'>('semantic')
   const results     = shallowRef<api.DocumentOut[]>([])
-  const images      = shallowRef<api.ImageOut[]>([])
   const total       = ref(0)
   const loading     = ref(false)
   const loadingMore = ref(false)
   const error       = ref<string | null>(null)
-  const includeImgs = ref(false)
 
   function browseSearchBody(browse: ReturnType<typeof useBrowseStore>, offset = 0): api.SearchRequest {
     return {
@@ -24,7 +22,6 @@ export const useSearchStore = defineStore('search', () => {
       ...buildDocumentFilters(browse, { includeSources: true }),
       limit: PAGE_SIZE,
       offset,
-      include_images: includeImgs.value,
     }
   }
 
@@ -50,7 +47,6 @@ export const useSearchStore = defineStore('search', () => {
       } else {
         results.value = res.documents
       }
-      images.value = res.images
       total.value = res.total
     } catch (e: any) {
       error.value = e.message
@@ -63,7 +59,6 @@ export const useSearchStore = defineStore('search', () => {
 
   function reset() {
     results.value = []
-    images.value = []
     total.value = 0
     error.value = null
   }
@@ -72,12 +67,10 @@ export const useSearchStore = defineStore('search', () => {
     query,
     mode,
     results,
-    images,
     total,
     loading,
     loadingMore,
     error,
-    includeImgs,
     runWithBrowseFilters,
     reset,
   }

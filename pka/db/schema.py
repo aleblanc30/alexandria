@@ -138,6 +138,7 @@ reading_list_items = sa.Table(
 images = sa.Table(
     "images", meta,
     sa.Column("id",             sa.Integer, primary_key=True),
+    sa.Column("document_id",    sa.Integer, sa.ForeignKey("documents.id")),  # unified document row
     sa.Column("path",           sa.Text, nullable=False, unique=True),
     sa.Column("filename",       sa.Text, nullable=False),
     sa.Column("image_type",     sa.Text),                  # book_cover|slide|poster|notes|whiteboard|unknown

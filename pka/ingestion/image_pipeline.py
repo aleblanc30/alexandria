@@ -14,10 +14,12 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
+from pka.clustering.cluster_tags import insert_overlay_tags
 from pka.connectors.images import ImageFile
-from pka.constants import TagOrigin
-from pka.db.queries import get_engine
+from pka.constants import FetchStatus, Source, TagOrigin
+from pka.db.queries import get_engine, update_card_summary, upsert_document
 from pka.db.schema import images
+from pka.ingestion.core import ingest_text_block
 from pka.ingestion.image_extractor import (
     classify_and_describe,
     clip_embed_image,
@@ -60,6 +62,22 @@ def reset_clip_collection() -> None:
     _clip_col = None
 
 
+def _ensure_image_document(img: ImageFile) -> int:
+    """Create (or update) the unified ``documents`` row backing an image.
+
+    Images are first-class documents (``source=image``): the file path is both
+    ``source_id`` and ``url_or_path`` so the cover route can stream the bytes.
+    """
+    return upsert_document(
+        source       = Source.IMAGE,
+        source_id    = str(img.path),
+        title        = img.filename,
+        url_or_path  = str(img.path),
+        date_added   = img.date_taken,
+        fetch_status = FetchStatus.AVAILABLE,
+    )
+
+
 def _image_already_indexed(path: Path) -> int | None:
     """Return image DB id if already registered (row exists), else None."""
     with get_engine().connect() as con:
@@ -95,16 +113,19 @@ def register_images(
             return "skipped"
         if dry_run:
             return "dry_run"
+        doc_id = _ensure_image_document(img)
         eng = get_engine()
         with eng.begin() as con:
             con.execute(sa.text("""
                 INSERT INTO images
-                    (path, filename, image_type, width, height, file_size,
-                     date_taken, indexed_at)
+                    (document_id, path, filename, image_type, width, height,
+                     file_size, date_taken, indexed_at)
                 VALUES
-                    (:path, :fname, 'unknown', :w, :h, :sz, :dt, NULL)
-                ON CONFLICT(path) DO NOTHING
+                    (:doc_id, :path, :fname, 'unknown', :w, :h, :sz, :dt, NULL)
+                ON CONFLICT(path) DO UPDATE SET
+                    document_id = excluded.document_id
             """), {
+                "doc_id": doc_id,
                 "path": str(img.path), "fname": img.filename,
                 "w": img.width, "h": img.height, "sz": img.file_size,
                 "dt": img.date_taken,
@@ -158,34 +179,35 @@ def ingest_image(
             "has_text_emb": text_doc is not None,
         }
 
-    # ── Persist to SQLite ─────────────────────────────────────────────────────
+    # ── Persist the unified document + image sidecar row ──────────────────────
     now = int(time.time())
     clip_vid = str(uuid.uuid4()) if clip_vector else None
-    text_vid = str(uuid.uuid4()) if text_doc else None
+    doc_id = _ensure_image_document(img)
 
     eng = get_engine()
     with eng.begin() as con:
         con.execute(sa.text("""
             INSERT INTO images
-                (path, filename, image_type, width, height, file_size,
-                 date_taken, ocr_text, description, clip_vector_id,
-                 text_vector_id, indexed_at)
+                (document_id, path, filename, image_type, width, height,
+                 file_size, date_taken, ocr_text, description, clip_vector_id,
+                 indexed_at)
             VALUES
-                (:path,:fname,:itype,:w,:h,:sz,:dt,:ocr,:desc,:cvid,:tvid,:now)
+                (:doc_id,:path,:fname,:itype,:w,:h,:sz,:dt,:ocr,:desc,:cvid,:now)
             ON CONFLICT(path) DO UPDATE SET
+                document_id    = excluded.document_id,
                 image_type     = excluded.image_type,
                 ocr_text       = excluded.ocr_text,
                 description    = excluded.description,
                 clip_vector_id = excluded.clip_vector_id,
-                text_vector_id = excluded.text_vector_id,
                 indexed_at     = excluded.indexed_at
         """), {
+            "doc_id": doc_id,
             "path": str(img.path), "fname": img.filename,
             "itype": image_type,
             "w": img.width, "h": img.height, "sz": img.file_size,
             "dt": img.date_taken,
             "ocr": ocr_text or None, "desc": description or None,
-            "cvid": clip_vid, "tvid": text_vid, "now": now,
+            "cvid": clip_vid, "now": now,
         })
 
         row = con.execute(
@@ -193,24 +215,22 @@ def ingest_image(
         ).fetchone()
         image_id = row[0]
 
+        # The vision classification becomes an inferred overlay tag on the
+        # document, so it filters and displays like any other document tag.
         if image_type != "unknown":
-            con.execute(sa.text("""
-                INSERT OR IGNORE INTO image_tags (image_id, tag, origin)
-                VALUES (:iid, :tag, :origin)
-            """), {
-                "iid": image_id,
-                "tag": image_type,
-                "origin": str(TagOrigin.INFERRED),
-            })
+            insert_overlay_tags(con, [doc_id], image_type, TagOrigin.INFERRED)
 
-    # ── Persist to Chroma ─────────────────────────────────────────────────────
-    meta_base = {
-        "image_id":   image_id,
-        "image_type": image_type,
-        "filename":   img.filename,
-        "path":       str(img.path),
-    }
+    # ── Description card + searchable text (chunks keyed by document_id) ───────
+    update_card_summary(doc_id, description or None)
+    ingest_text_block(
+        doc_id,
+        text_doc or "",
+        Source.IMAGE,
+        extra_metadata={"title": img.filename, "modality": "image"},
+        fallback_text=img.filename,
+    )
 
+    # ── CLIP vector for cross-modal (text → image) search ─────────────────────
     if clip_vector and clip_vid:
         try:
             col = _get_clip_collection()
@@ -218,21 +238,17 @@ def ingest_image(
                 ids        = [clip_vid],
                 embeddings = [clip_vector],
                 documents  = [img.filename],
-                metadatas  = [{**meta_base, "modality": "clip"}],
+                metadatas  = [{
+                    "document_id": doc_id,
+                    "image_id":    image_id,
+                    "image_type":  image_type,
+                    "filename":    img.filename,
+                    "path":        str(img.path),
+                    "modality":    "clip",
+                }],
             )
         except Exception as exc:
             log.warning("CLIP Chroma upsert failed: %s", exc)
-
-    if text_doc and text_vid:
-        try:
-            from pka.storage.vector_store import upsert_chunks
-            upsert_chunks(
-                ids       = [text_vid],
-                texts     = [text_doc],
-                metadatas = [{**meta_base, "modality": "text", "source": "image"}],
-            )
-        except Exception as exc:
-            log.warning("Text Chroma upsert failed: %s", exc)
 
     return {
         "status":       "ok",
@@ -296,11 +312,13 @@ def search_images_by_text(query: str, n: int = 10) -> list[dict]:
     res = col.query(query_embeddings=[vec], n_results=n)
     out: list[dict] = []
     for i, vid in enumerate(res["ids"][0]):
+        meta = res["metadatas"][0][i]
         out.append({
-            "vector_id":  vid,
-            "filename":   res["metadatas"][0][i].get("filename"),
-            "path":       res["metadatas"][0][i].get("path"),
-            "image_type": res["metadatas"][0][i].get("image_type"),
-            "distance":   res["distances"][0][i],
+            "vector_id":   vid,
+            "document_id": meta.get("document_id"),
+            "filename":    meta.get("filename"),
+            "path":        meta.get("path"),
+            "image_type":  meta.get("image_type"),
+            "distance":    res["distances"][0][i],
         })
     return out

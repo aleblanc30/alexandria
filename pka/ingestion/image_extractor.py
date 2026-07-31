@@ -11,7 +11,9 @@ calls are batched into a single prompt that returns both classification and
 description, avoiding two round-trips.
 """
 import base64
+import json
 import logging
+import re
 from pathlib import Path
 
 import httpx
@@ -41,6 +43,31 @@ Rules:
 - unknown      : anything else
 
 No markdown, no explanation. Only the JSON object."""
+
+
+_IMAGE_TYPE_RE = re.compile(r'"?image_type"?\s*[:=]\s*"?([a-z_]+)', re.IGNORECASE)
+_DESCRIPTION_RE = re.compile(
+    r'"?description"?\s*[:=]\s*"(.*)"\s*}?\s*$', re.IGNORECASE | re.DOTALL
+)
+
+
+def _salvage_vision_fields(content: str) -> tuple[str, str]:
+    """Recover ``(image_type, description)`` when the model emits invalid JSON.
+
+    Vision models frequently return a description containing unescaped quotes,
+    which breaks strict JSON parsing. Rather than discard an otherwise good
+    answer, pull the two fields directly; the greedy description match keeps any
+    inner quotes as literal text.
+    """
+    image_type = "unknown"
+    m = _IMAGE_TYPE_RE.search(content)
+    if m and m.group(1).lower() in _VALID_TYPES:
+        image_type = m.group(1).lower()
+    description = ""
+    d = _DESCRIPTION_RE.search(content.strip())
+    if d:
+        description = d.group(1).strip()
+    return image_type, description
 
 
 # ── Image encoding ────────────────────────────────────────────────────────────
@@ -83,18 +110,28 @@ def classify_and_describe(
                     "content": _CLASSIFY_PROMPT,
                     "images": [b64],
                 }],
+                # Grammar-constrain the output to valid JSON so descriptions
+                # containing quotes don't produce unparseable responses.
+                "format": "json",
                 "stream": False,
             },
             timeout=120,
         )
         resp.raise_for_status()
         content = resp.json()["message"]["content"]
-        parsed = _parse_llm_json(content)
 
-        image_type = parsed.get("image_type", "unknown")
+        try:
+            parsed = _parse_llm_json(content)
+            image_type = parsed.get("image_type", "unknown")
+            description = parsed.get("description", "")
+        except (ValueError, json.JSONDecodeError):
+            # Model ignored the JSON grammar (or emitted stray quotes anyway):
+            # salvage the fields instead of dropping to unknown/empty.
+            image_type, description = _salvage_vision_fields(content)
+
         if image_type not in _VALID_TYPES:
             image_type = "unknown"
-        return image_type, parsed.get("description", "")
+        return image_type, description
 
     except Exception as exc:
         log.warning("Vision LLM failed for %s: %s", path.name, exc)

@@ -41,12 +41,6 @@
           :class="{ active: search.mode === m }"
           @click="setMode(m)"
         >{{ m }}</span>
-        <span class="chip-sep" />
-        <span
-          class="chip"
-          :class="{ active: search.includeImgs }"
-          @click="toggleIncludeImages"
-        >+images</span>
       </div>
 
       <p class="results-meta">
@@ -57,8 +51,6 @@
         </template>
         <template v-else>
           {{ store.total.toLocaleString() }} document{{ store.total === 1 ? '' : 's' }}
-          <span v-if="imageResults.length" class="hint">
-            · {{ imageResults.length }} image{{ imageResults.length === 1 ? '' : 's' }}</span>
           <span v-if="store.waybackOnly" class="hint"> · Wayback archive</span>
         </template>
       </p>
@@ -68,34 +60,6 @@
       </div>
 
       <template v-else>
-        <div v-if="imageResults.length" class="image-section">
-          <h2 class="image-section-title">
-            Images
-            <span class="hint">{{ imageResults.length }}</span>
-          </h2>
-          <div class="image-grid">
-            <a
-              v-for="img in imageResults"
-              :key="img.id"
-              class="image-tile"
-              :href="imageFileUrl(img.id)"
-              target="_blank"
-              rel="noopener"
-              :title="img.description || img.filename"
-            >
-              <img
-                class="image-tile-img"
-                :src="imageFileUrl(img.id)"
-                :alt="img.description || img.filename"
-                loading="lazy"
-              />
-              <span v-if="img.similarity != null" class="image-tile-sim">
-                {{ Math.round(img.similarity * 100) }}%
-              </span>
-            </a>
-          </div>
-        </div>
-
         <p v-if="showEmpty" class="browse-empty hint">
           {{ isSearching ? 'No results match your search and filters.' : 'No documents match the current filters.' }}
         </p>
@@ -162,8 +126,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { createTagTrainingSession, getDocument, imageFileUrl } from '@/api/client'
-import type { DocumentListItem, DocumentOut, ImageOut } from '@/api/client'
+import { createTagTrainingSession, getDocument } from '@/api/client'
+import type { DocumentListItem, DocumentOut } from '@/api/client'
 import { toGridItem } from '@/lib/docDisplay'
 import { useBrowseStore } from '@/stores/browse'
 import { useSearchStore } from '@/stores/search'
@@ -199,16 +163,10 @@ const resultCount = computed(() =>
   isSearching.value ? search.results.length : store.documents.length,
 )
 
-// Image-pipeline results come from search (with `+images` on) or, when just
-// browsing, from the browse store (whenever the Images source is in scope).
-const imageResults = computed<ImageOut[]>(() =>
-  isSearching.value ? search.images : store.images,
-)
-
 const hasMore = computed(() =>
   isSearching.value
     ? search.results.length < search.total
-    : store.documents.length < store.total || !store.imagesExhausted,
+    : store.documents.length < store.total,
 )
 
 const loadingAny = computed(() =>
@@ -224,7 +182,7 @@ const showLoading = computed(() =>
 )
 
 const showEmpty = computed(() =>
-  !loadingAny.value && resultCount.value === 0 && imageResults.value.length === 0,
+  !loadingAny.value && resultCount.value === 0,
 )
 
 const showSentinel = computed(() =>
@@ -305,11 +263,6 @@ function setMode(m: typeof modes[number]) {
   if (isSearching.value) void search.runWithBrowseFilters(store)
 }
 
-function toggleIncludeImages() {
-  search.includeImgs = !search.includeImgs
-  if (isSearching.value) void search.runWithBrowseFilters(store)
-}
-
 function loadMore() {
   if (isSearching.value) {
     void search.runWithBrowseFilters(store, true)
@@ -387,48 +340,6 @@ onUnmounted(() => observer?.disconnect())
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px;
-}
-.image-section {
-  margin-bottom: 16px;
-}
-.image-section-title {
-  font-size: 13px;
-  font-weight: 500;
-  margin: 0 0 8px;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.image-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
-}
-.image-tile {
-  position: relative;
-  display: block;
-  aspect-ratio: 1;
-  border-radius: var(--radius);
-  overflow: hidden;
-  border: 0.5px solid var(--border);
-  background: var(--surface);
-}
-.image-tile-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.image-tile-sim {
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
-  padding: 1px 5px;
-  border-radius: 8px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #fff;
-  background: rgba(0, 0, 0, .6);
 }
 .doc-lines {
   display: flex;

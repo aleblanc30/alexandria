@@ -36,10 +36,6 @@ export const useBrowseStore = defineStore('browse', () => {
   })
   const documents     = shallowRef<api.DocumentListItem[]>([])
   const total         = ref(0)
-  // Ingested images live in a separate table from documents, so the browse
-  // listing loads them alongside whenever the "Images" source is in scope.
-  const images         = shallowRef<api.ImageOut[]>([])
-  const imagesExhausted = ref(true)
   const loading       = ref(false)
   const loadingMore   = ref(false)
   const loadingTags   = ref(false)
@@ -97,17 +93,6 @@ export const useBrowseStore = defineStore('browse', () => {
     return buildDocumentFilters(filterState())
   }
 
-  // Images are in scope when no source filter is set (browse everything) or the
-  // "image" source is explicitly selected.
-  function wantImages() {
-    return sources.value.length === 0 || sources.value.includes('image')
-  }
-
-  // When only "image" is selected there are no matching documents to fetch.
-  function onlyImages() {
-    return sources.value.length === 1 && sources.value[0] === 'image'
-  }
-
   async function loadTags() {
     loadingTags.value = true
     try {
@@ -130,15 +115,9 @@ export const useBrowseStore = defineStore('browse', () => {
     loading.value = true
     error.value   = null
     try {
-      const wImg = wantImages()
-      const [docRes, imgRes] = await Promise.all([
-        onlyImages() ? Promise.resolve(null) : api.listDocuments(listParams(0)),
-        wImg ? api.listImages({ limit: PAGE_SIZE, offset: 0 }) : Promise.resolve([]),
-      ])
-      documents.value = docRes ? docRes.documents : []
-      total.value     = docRes ? docRes.total : 0
-      images.value    = imgRes
-      imagesExhausted.value = !wImg || imgRes.length < PAGE_SIZE
+      const docRes = await api.listDocuments(listParams(0))
+      documents.value = docRes.documents
+      total.value     = docRes.total
     } catch (e: any) {
       error.value = e.message
       useToastStore().push(e.message, 'error')
@@ -149,23 +128,12 @@ export const useBrowseStore = defineStore('browse', () => {
 
   async function loadMore() {
     if (loadingMore.value || loading.value) return
-    const docsRemain = !onlyImages() && documents.value.length < total.value
-    const imgsRemain = !imagesExhausted.value
-    if (!docsRemain && !imgsRemain) return
+    if (documents.value.length >= total.value) return
     loadingMore.value = true
     try {
-      const [docRes, imgRes] = await Promise.all([
-        docsRemain ? api.listDocuments(listParams(documents.value.length)) : Promise.resolve(null),
-        imgsRemain ? api.listImages({ limit: PAGE_SIZE, offset: images.value.length }) : Promise.resolve(null),
-      ])
-      if (docRes) {
-        documents.value = [...documents.value, ...docRes.documents]
-        total.value     = docRes.total
-      }
-      if (imgRes) {
-        images.value = [...images.value, ...imgRes]
-        imagesExhausted.value = imgRes.length < PAGE_SIZE
-      }
+      const docRes = await api.listDocuments(listParams(documents.value.length))
+      documents.value = [...documents.value, ...docRes.documents]
+      total.value     = docRes.total
     } catch (e: any) {
       error.value = e.message
       useToastStore().push(e.message, 'error')
@@ -256,8 +224,6 @@ export const useBrowseStore = defineStore('browse', () => {
     tagRows,
     documents,
     total,
-    images,
-    imagesExhausted,
     loading,
     loadingMore,
     loadingTags,

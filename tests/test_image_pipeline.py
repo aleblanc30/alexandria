@@ -8,7 +8,7 @@ from PIL import Image as PILImage
 
 from pka.connectors.images import ImageFile
 from pka.db.queries import get_engine, init_db
-from pka.db.schema import image_tags, images
+from pka.db.schema import chunks, documents, images, overlay_tags
 
 FAKE_CLIP_DIM  = 512
 FAKE_TEXT_DIM  = 8
@@ -130,6 +130,7 @@ class TestIngestImage:
         assert "machine learning" in (row[0] or "").lower()
 
     def test_auto_tag_from_type(self, sample_image, all_mocks):
+        """image_type becomes an inferred overlay tag on the unified document."""
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
         img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
@@ -137,11 +138,40 @@ class TestIngestImage:
         ingest_image(img)
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(image_tags.c.tag)
-                .join(images, images.c.id == image_tags.c.image_id)
+                sa.select(overlay_tags.c.tag, overlay_tags.c.origin)
+                .join(images, images.c.document_id == overlay_tags.c.document_id)
                 .where(images.c.path == str(sample_image))
             ).fetchone()
         assert row[0] == "slide"
+        assert row[1] == "inferred"
+
+    def test_creates_document_row(self, sample_image, all_mocks):
+        """An image is a first-class document: source=image, linked + searchable."""
+        from pka.connectors.images import ImageFile
+        from pka.ingestion.image_pipeline import ingest_image
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
+                        int(time.time()), {})
+        ingest_image(img)
+        with get_engine().connect() as con:
+            image_row = con.execute(
+                sa.select(images.c.id, images.c.document_id)
+                .where(images.c.path == str(sample_image))
+            ).fetchone()
+            doc = con.execute(
+                sa.select(documents.c.source, documents.c.title,
+                          documents.c.url_or_path, documents.c.card_summary)
+                .where(documents.c.id == image_row[1])
+            ).fetchone()
+            n_chunks = con.execute(
+                sa.select(sa.func.count()).select_from(chunks)
+                .where(chunks.c.document_id == image_row[1])
+            ).scalar()
+        assert image_row[1] is not None                     # images.document_id set
+        assert doc[0] == "image"
+        assert doc[1] == sample_image.name                  # title = filename
+        assert doc[2] == str(sample_image)                  # url_or_path = image path
+        assert "machine learning" in (doc[3] or "").lower()  # card_summary = description
+        assert n_chunks >= 1                                 # searchable text embedded
 
     def test_clip_vector_id_stored(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
@@ -284,9 +314,15 @@ class TestRegisterImages:
         assert stats["skipped"] == 0
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(images.c.filename).where(images.c.path == str(img.path))
+                sa.select(images.c.filename, images.c.document_id)
+                .where(images.c.path == str(img.path))
             ).fetchone()
+            doc_source = con.execute(
+                sa.select(documents.c.source).where(documents.c.id == row[1])
+            ).scalar()
         assert row is not None
+        assert row[1] is not None          # linked to a documents row
+        assert doc_source == "image"       # registered as an image document
 
     def test_skips_existing_path(self, tmp_path):
         from pka.ingestion.image_pipeline import register_images

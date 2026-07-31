@@ -61,6 +61,10 @@ def chat_json(
     payload: dict[str, Any] = {
         "model": chosen,
         "messages": [{"role": "user", "content": prompt}],
+        # Grammar-constrain the reply to valid JSON so quotes/newlines in the
+        # generated content don't produce an unparseable response. Every caller
+        # of chat_json prompts for and parses JSON.
+        "format": "json",
         "stream": False,
     }
     if temperature is not None:

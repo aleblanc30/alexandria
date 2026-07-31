@@ -85,14 +85,19 @@ def _seed_run(doc_ids: list[int], n_clusters: int = 2, *, with_l2: bool = False)
 
 
 def _seed_image(client=None) -> int:
-    """Insert a test image row and return its id."""
+    """Insert a test image (unified document row + images sidecar); return image id."""
     from pka.db.queries import get_engine
     from pka.db.schema import image_tags
     from pka.db.schema import images as images_tbl
 
     now = int(time.time())
+    doc_id = upsert_document(
+        "image", "/tmp/slide.png", "slide.png", "/tmp/slide.png", now,
+        fetch_status="available",
+    )
     with get_engine().begin() as con:
         res = con.execute(images_tbl.insert().values(
+            document_id=doc_id,
             path="/tmp/slide.png",
             filename="slide.png",
             image_type="slide",
@@ -111,6 +116,15 @@ def _seed_image(client=None) -> int:
             image_id=image_id, tag="ml", origin="auto",
         ))
     return image_id
+
+
+def _image_document_id(image_id: int) -> int:
+    from pka.db.queries import get_engine
+    from pka.db.schema import images as images_tbl
+    with get_engine().connect() as con:
+        return con.execute(
+            sa.select(images_tbl.c.document_id).where(images_tbl.c.id == image_id)
+        ).scalar()
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
@@ -223,22 +237,45 @@ class TestSearch:
         })
         assert all(d["fetch_status"] == "pending" for d in r.json()["documents"])
 
-    def test_include_images(self, client, monkeypatch):
-        _seed_image(client)
+    def test_clip_matches_merged_into_documents(self, client, monkeypatch):
+        """CLIP visual hits surface image documents in the unified result list."""
+        image_id = _seed_image(client)
+        doc_id = _image_document_id(image_id)
         monkeypatch.setattr(
             "pka.ingestion.image_pipeline.search_images_by_text",
             lambda q, n=10: [{
                 "vector_id": "clip-1",
+                "document_id": doc_id,
                 "filename": "slide.png",
                 "path": "/tmp/slide.png",
                 "image_type": "slide",
                 "distance": 0.2,
             }],
         )
-        r = client.post("/search", json={"query": "neural", "include_images": True})
-        images = r.json()["images"]
-        assert len(images) == 1
-        assert images[0]["filename"] == "slide.png"
+        r = client.post("/search", json={"query": "unrelated visual query"})
+        body = r.json()
+        assert "images" not in body
+        match = next(d for d in body["documents"] if d["id"] == doc_id)
+        assert match["source"] == "image"
+        assert match["similarity"] == pytest.approx(0.8)
+
+    def test_clip_matches_excluded_by_source_filter(self, client, monkeypatch):
+        """Filtering to non-image sources must not pull in CLIP image hits."""
+        image_id = _seed_image(client)
+        doc_id = _image_document_id(image_id)
+        called = {"n": 0}
+
+        def _fake(q, n=10):
+            called["n"] += 1
+            return [{"vector_id": "clip-1", "document_id": doc_id, "distance": 0.1}]
+
+        monkeypatch.setattr(
+            "pka.ingestion.image_pipeline.search_images_by_text", _fake,
+        )
+        r = client.post("/search", json={"query": "neural", "sources": ["zotero"]})
+        ids = [d["id"] for d in r.json()["documents"]]
+        assert doc_id not in ids
+        assert called["n"] == 0  # image search skipped entirely when out of scope
 
     def test_cluster_id_filter(self, client, monkeypatch):
         ids = _seed_docs(4)
@@ -618,6 +655,35 @@ class TestDocumentCover:
     def test_404_for_unknown_document(self, client):
         r = client.get("/documents/999999/cover")
         assert r.status_code == 404
+
+    def test_image_document_cover_streams_the_file(self, client, tmp_path):
+        from PIL import Image as PILImage
+        p = tmp_path / "photo.png"
+        PILImage.new("RGB", (8, 8), color="blue").save(p)
+        doc_id = upsert_document(
+            "image", str(p), "photo.png", str(p), int(time.time()),
+            fetch_status="available",
+        )
+        r = client.get(f"/documents/{doc_id}/cover")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "image/png"
+
+
+class TestImageDocuments:
+    def test_image_appears_in_document_list(self, client):
+        _seed_image()
+        r = client.get("/documents?sources=image")
+        docs = r.json()["documents"]
+        assert len(docs) == 1
+        assert docs[0]["source"] == "image"
+        assert docs[0]["title"] == "slide.png"
+
+    def test_image_detail_served(self, client):
+        image_id = _seed_image()
+        doc_id = _image_document_id(image_id)
+        r = client.get(f"/documents/{doc_id}")
+        assert r.status_code == 200
+        assert r.json()["source"] == "image"
 
 
 # ── Tags ──────────────────────────────────────────────────────────────────────

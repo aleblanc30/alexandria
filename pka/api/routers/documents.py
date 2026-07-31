@@ -1,4 +1,5 @@
 """``/documents`` list and ``/documents/{id}`` detail + tag patch."""
+import mimetypes
 from pathlib import Path
 from typing import Annotated
 
@@ -71,13 +72,27 @@ async def get_document(doc_id: int, engine=Depends(get_engine)):
 
 @router.get("/{doc_id}/cover")
 async def get_document_cover(doc_id: int, engine=Depends(get_engine)):
-    """Serve a Calibre book's cover image (``cover.jpg`` next to its formats)."""
+    """Serve a document's cover image.
+
+    Calibre books have a ``cover.jpg`` next to their format files; image
+    documents *are* the image, so their ``url_or_path`` is streamed directly.
+    """
     with engine.connect() as con:
         row = fetchone_mapping(con.execute(
             sa.select(documents_tbl.c.source, documents_tbl.c.url_or_path)
             .where(documents_tbl.c.id == doc_id)
         ))
-    if not row or row["source"] != Source.CALIBRE or not row["url_or_path"]:
+    if not row or not row["url_or_path"]:
+        raise HTTPException(404, detail="No cover available")
+
+    if row["source"] == Source.IMAGE:
+        image_path = Path(row["url_or_path"])
+        if not image_path.is_file():
+            raise HTTPException(404, detail="No cover available")
+        media_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
+        return FileResponse(image_path, media_type=media_type)
+
+    if row["source"] != Source.CALIBRE:
         raise HTTPException(404, detail="No cover available")
 
     cover_path = Path(row["url_or_path"]).parent / _COVER_FILENAME

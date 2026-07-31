@@ -14,9 +14,8 @@ from pka.api.active_run import fetch_active_run_id
 from pka.api.db_rows import fetchall_mappings
 from pka.api.dependencies import get_engine
 from pka.api.document_serialize import documents_out_batch
-from pka.api.image_hits import clip_hits_to_image_out
-from pka.api.schemas.images import ImageOut
 from pka.api.schemas.search import SearchRequest, SearchResponse
+from pka.constants import Source
 from pka.db.queries import filter_document_ids
 from pka.db.schema import cluster_assignments, documents
 
@@ -74,6 +73,43 @@ async def search(req: SearchRequest, engine=Depends(get_engine)):
             for row in con.execute(q):
                 if row[0] not in existing_ids:
                     results.append((row[0], None))
+
+        # ── CLIP cross-modal matches merged into the same result list ────────
+        # Image documents already surface via their OCR/description text
+        # vectors; CLIP adds purely-visual matches (query text → image) that
+        # share no words with the image, folded in by (max) similarity.
+        images_in_scope = (not req.sources) or (Source.IMAGE in req.sources)
+        if req.query.strip() and images_in_scope:
+            try:
+                from pka.ingestion.image_pipeline import search_images_by_text
+
+                clip_hits = search_images_by_text(
+                    req.query, n=max(10, req.offset + req.limit),
+                )
+            except Exception:
+                log.warning("CLIP image search unavailable", exc_info=True)
+                clip_hits = []
+            if clip_hits:
+                best: dict[int, float | None] = {}
+                for doc_id, sim in results:
+                    if doc_id not in best or (
+                        sim is not None and (best[doc_id] is None or sim > best[doc_id])
+                    ):
+                        best[doc_id] = sim
+                for hit in clip_hits:
+                    did = hit.get("document_id")
+                    if did is None:
+                        continue
+                    did = int(did)
+                    sim = 1.0 - hit["distance"]
+                    if did not in best or best[did] is None or sim > best[did]:
+                        best[did] = sim
+                scored = sorted(
+                    ((d, s) for d, s in best.items() if s is not None),
+                    key=lambda x: -x[1],
+                )
+                unscored = [(d, None) for d, s in best.items() if s is None]
+                results = scored + unscored
 
         # ── Browse-style filters (sources, tags, wayback) ─────────────────────
         if results and (
@@ -142,16 +178,4 @@ async def search(req: SearchRequest, engine=Depends(get_engine)):
 
         docs_out = documents_out_batch(page, con, run_id)
 
-        # ── Images ────────────────────────────────────────────────────────────
-        images_out: list[ImageOut] = []
-        if req.include_images:
-            from pka.ingestion.image_pipeline import search_images_by_text
-
-            images_out = clip_hits_to_image_out(
-                con, search_images_by_text(req.query, n=10)
-            )
-
-    return SearchResponse(
-        query=req.query, total=total,
-        documents=docs_out, images=images_out,
-    )
+    return SearchResponse(query=req.query, total=total, documents=docs_out)

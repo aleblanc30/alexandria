@@ -82,6 +82,16 @@ def init_db() -> None:
                 "ALTER TABLE documents ADD COLUMN doc_embedding BLOB"
             ))
 
+        # Migration: link images to their unified documents row
+        img_cols = [r[1] for r in con.execute(
+            sa.text("PRAGMA table_info(images)")
+        ).fetchall()]
+        if img_cols and "document_id" not in img_cols:
+            con.execute(sa.text(
+                "ALTER TABLE images ADD COLUMN document_id INTEGER "
+                "REFERENCES documents(id)"
+            ))
+
         # Migration: add umap_points to cluster_runs
         cr_cols = [r[1] for r in con.execute(
             sa.text("PRAGMA table_info(cluster_runs)")

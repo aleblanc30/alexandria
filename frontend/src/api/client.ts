@@ -91,7 +91,6 @@ export interface SearchRequest {
   cluster_ids?: number[]; tags?: string[]
   date_from?: number; date_to?: number; fetch_status?: string
   mode?: 'semantic' | 'fulltext' | 'hybrid'; limit?: number; offset?: number
-  include_images?: boolean
 }
 export interface ImageOut {
   id: number; path: string; filename: string; image_type: string | null
@@ -99,7 +98,7 @@ export interface ImageOut {
   description: string | null; ocr_text: string | null
   date_taken: number | null; tags: string[]; similarity: number | null
 }
-export interface SearchResponse { query: string; total: number; documents: DocumentOut[]; images: ImageOut[] }
+export interface SearchResponse { query: string; total: number; documents: DocumentOut[] }
 export interface ClusterOut    {
   cluster_id: number; label: string; description: string | null; run_id: number; doc_count: number
   level: number; parent_cluster_id: number | null; parent_label: string | null
@@ -336,8 +335,6 @@ export const listImages   = (params?: { image_type?: string; limit?: number; off
 export const searchImages = (q: string, n = 10) =>
   req<ImageOut[]>(`/images/search?q=${encodeURIComponent(q)}&n=${n}`)
 export const getImage     = (id: number) => req<ImageOut>(`/images/${id}`)
-/** URL for the raw image bytes — usable directly as an `<img src>`. */
-export const imageFileUrl = (id: number) => `/images/${id}/file`
 
 // ── Reading lists ─────────────────────────────────────────────────────────────
 
