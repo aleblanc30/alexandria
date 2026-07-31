@@ -141,6 +141,16 @@ def _load_clip():
     return _clip_model, _clip_processor
 
 
+def _pooled(features):
+    """Unwrap ``get_image_features``/``get_text_features`` return value.
+
+    transformers >= 4.56 wraps these in ``BaseModelOutputWithPooling`` (the
+    projected embedding lives at ``.pooler_output``) instead of returning a
+    plain tensor directly.
+    """
+    return features if hasattr(features, "norm") else features.pooler_output
+
+
 def clip_embed_image(path: Path) -> list[float] | None:
     """Return a normalised CLIP image embedding, or ``None`` on failure."""
     try:
@@ -153,7 +163,7 @@ def clip_embed_image(path: Path) -> list[float] | None:
             inputs = processor(images=img, return_tensors="pt")
 
         with torch.no_grad():
-            features = model.get_image_features(**inputs)
+            features = _pooled(model.get_image_features(**inputs))
             features = features / features.norm(dim=-1, keepdim=True)
 
         return features.squeeze().tolist()
@@ -170,7 +180,7 @@ def clip_embed_text(query: str) -> list[float] | None:
         model, processor = _load_clip()
         inputs = processor(text=[query], return_tensors="pt", padding=True)
         with torch.no_grad():
-            features = model.get_text_features(**inputs)
+            features = _pooled(model.get_text_features(**inputs))
             features = features / features.norm(dim=-1, keepdim=True)
         return features.squeeze().tolist()
     except Exception as exc:

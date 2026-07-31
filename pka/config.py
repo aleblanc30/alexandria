@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     # ── Ollama ──────────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
     chat_model: str = ""   # auto-detect first non-embedding model when empty
-    vision_model: str = "llava"
+    vision_model: str = "llava-phi3"   # swap via ALEXANDRIA_VISION_MODEL (e.g. "llava")
 
     # ── Chunking ────────────────────────────────────────────────────────────
     chunk_sentences: int = 5      # sentence-window size

@@ -1,6 +1,7 @@
 """Image sync — register (metadata) and ingest (OCR/CLIP/embed) as separate jobs."""
 import logging
 
+from pka.config import settings as cfg
 from pka.constants import Source
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.dev_limits import take
@@ -56,7 +57,9 @@ def sync_images_ingest(
     _plan_counts(key, n)
     sp.skip_phase(key, "fetching")
     sp.set_phase(key, "embedding", n)
-    stats = ingest_images(images, dry_run=dry_run, progress_key=key)
+    stats = ingest_images(
+        images, vision_model=cfg.vision_model, dry_run=dry_run, progress_key=key,
+    )
     log.info("Image ingest: %s", stats)
     return {"ingest": stats, "stopped": stats.get("stopped")}
 

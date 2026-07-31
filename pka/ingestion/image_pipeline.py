@@ -61,12 +61,27 @@ def reset_clip_collection() -> None:
 
 
 def _image_already_indexed(path: Path) -> int | None:
-    """Return image DB id if already indexed, else None."""
+    """Return image DB id if already registered (row exists), else None."""
     with get_engine().connect() as con:
         row = con.execute(
             sa.select(images.c.id).where(images.c.path == str(path))
         ).fetchone()
     return row[0] if row else None
+
+
+def _image_already_embedded(path: Path) -> bool:
+    """True if this image has already been through the OCR/CLIP/embed pass.
+
+    Distinct from ``_image_already_indexed``: a row exists as soon as the
+    metadata (register) pass runs, well before ``indexed_at`` is set by
+    ``ingest_image``. Using the row-exists check here would skip every image
+    during the embed pass, since they were all already registered.
+    """
+    with get_engine().connect() as con:
+        row = con.execute(
+            sa.select(images.c.indexed_at).where(images.c.path == str(path))
+        ).fetchone()
+    return bool(row and row[0] is not None)
 
 
 def register_images(
@@ -257,7 +272,7 @@ def ingest_images(
 
     stats = run_embed_loop(
         image_files,
-        should_skip=lambda img: skip_existing and _image_already_indexed(img.path) is not None,
+        should_skip=lambda img: skip_existing and _image_already_embedded(img.path),
         process=_process,
         progress_key=progress_key,
         on_error_log=lambda img, exc: log.exception("Failed image %s: %s", img.path.name, exc),

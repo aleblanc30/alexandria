@@ -4,7 +4,7 @@
     {
       "label": "alexandria: api (dev)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m uvicorn pka.api.main:app --reload --port 8420",
+      "command": ".venv/Scripts/python.exe -m uvicorn pka.api.main:app --reload --port 8420",
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
@@ -30,7 +30,7 @@
     {
       "label": "alexandria: api (debug attach)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe -m debugpy --listen 5678 --wait-for-client -m uvicorn pka.api.main:app --port 8420",
+      "command": ".venv/Scripts/python.exe -m debugpy --listen 5678 --wait-for-client -m uvicorn pka.api.main:app --port 8420",
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
@@ -85,7 +85,7 @@
     {
       "label": "alexandria: purge firefox",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/purge_source.py firefox",
+      "command": ".venv/Scripts/python.exe scripts/purge_source.py firefox",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -99,7 +99,7 @@
     {
       "label": "alexandria: purge source",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/purge_source.py ${input:alexandriaSource}",
+      "command": ".venv/Scripts/python.exe scripts/purge_source.py ${input:alexandriaSource}",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -113,7 +113,7 @@
     {
       "label": "alexandria: purge clustering runs",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/purge_cluster_runs.py ${input:alexandriaClusterRunScope}",
+      "command": ".venv/Scripts/python.exe scripts/purge_cluster_runs.py ${input:alexandriaClusterRunScope}",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -127,7 +127,7 @@
     {
       "label": "alexandria: purge clustering runs (all, force)",
       "type": "shell",
-      "command": "${workspaceFolder}/.venv/Scripts/python.exe scripts/purge_cluster_runs.py --all --force",
+      "command": ".venv/Scripts/python.exe scripts/purge_cluster_runs.py --all --force",
       "options": {
         "cwd": "${workspaceFolder}"
       },
