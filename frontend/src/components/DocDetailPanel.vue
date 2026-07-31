@@ -18,6 +18,11 @@
         <p class="panel-summary">{{ doc.description }}</p>
       </section>
 
+      <section v-if="doc.note" class="section">
+        <div class="section-label">Notes</div>
+        <p class="panel-summary panel-note">{{ doc.note }}</p>
+      </section>
+
       <section class="section">
         <div class="section-label">Metadata</div>
         <div class="meta-grid">
@@ -71,6 +76,11 @@
         <div class="score-bar"><div class="score-fill" :style="{ width: doc.similarity * 100 + '%' }" /></div>
         <span class="hint-text">{{ Math.round(doc.similarity * 100) }}%</span>
       </section>
+
+      <section v-if="coverUrl && !coverFailed" class="section section--cover">
+        <div class="section-label">Cover</div>
+        <img class="panel-cover" :src="coverUrl" alt="" @error="coverFailed = true" />
+      </section>
     </div>
   </aside>
 </template>
@@ -82,6 +92,7 @@ import { useUiStore } from '@/stores/ui'
 import { getDocument, patchTags } from '@/api/client'
 import type { DocumentDetail } from '@/api/client'
 import { useDocLinks } from '@/composables/useDocLinks'
+import { docCoverUrl } from '@/lib/docDisplay'
 import SourceBadge from './SourceBadge.vue'
 import ZoteroOpenButton from './ZoteroOpenButton.vue'
 
@@ -89,6 +100,9 @@ const route = useRoute()
 const ui  = useUiStore()
 const doc = ref<DocumentDetail | null>(null)
 const newTag = ref('')
+
+const coverUrl = computed(() => (doc.value ? docCoverUrl(doc.value) : null))
+const coverFailed = ref(false)
 
 const { openUrl, hasWebLink, canZotero, openLink } = useDocLinks(() => doc.value)
 
@@ -99,6 +113,7 @@ const showWebLink = computed(() => isBrowse.value && hasWebLink.value)
 const showZotero = computed(() => isBrowse.value && canZotero.value)
 
 watch(() => ui.activeDocId, async (id) => {
+  coverFailed.value = false
   if (id == null) { doc.value = null; return }
   doc.value = await getDocument(id)
 }, { immediate: true })
@@ -117,6 +132,8 @@ async function addTag() {
 .panel     { position: fixed; top: 0; right: 0; width: var(--panel-w); height: 100%; background: var(--surface); border-left: 0.5px solid var(--border); z-index: 11; display: flex; flex-direction: column; animation: slideIn .2s ease }
 @keyframes slideIn { from { transform: translateX(100%) } to { transform: translateX(0) } }
 .panel-header { padding: 16px; border-bottom: 0.5px solid var(--border); display: flex; gap: 10px; align-items: flex-start }
+.section--cover { text-align: center }
+.panel-cover { width: 100%; max-width: 240px; height: auto; border-radius: var(--radius); border: 0.5px solid var(--border); box-shadow: 0 2px 12px rgba(0,0,0,.12) }
 .panel-title-wrap { flex: 1; min-width: 0 }
 .panel-title { font-size: 13px; font-weight: 500; line-height: 1.4; margin-bottom: 6px }
 .panel-badges { display: flex; gap: 5px; flex-wrap: wrap }
@@ -142,6 +159,7 @@ async function addTag() {
 .add-tag button { padding: 4px 10px; font-size: 11px; border: 0.5px solid var(--border); border-radius: var(--radius); background: #f5f4f0; cursor: pointer }
 .hint-text   { font-size: 12px; color: var(--muted) }
 .panel-summary { font-size: 13px; color: var(--muted); line-height: 1.45; margin: 0 }
+.panel-note    { white-space: pre-line }
 .score-bar   { height: 6px; background: #E6F1FB; border-radius: 3px; overflow: hidden; margin-bottom: 4px }
 .score-fill  { height: 100%; background: #378ADD; border-radius: 3px }
 </style>

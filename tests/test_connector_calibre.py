@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pka.connectors.calibre import CalibreBook, load_books
+from pka.connectors.calibre import CalibreBook, load_books, split_calibre_tags
 
 
 def _book_by_title(items: list[CalibreBook], title: str) -> CalibreBook:
@@ -39,8 +39,16 @@ def _make_calibre_library(root: Path) -> Path:
             flags        INTEGER DEFAULT 1,
             uuid         TEXT,
             has_cover    BOOL DEFAULT 0,
-            last_modified TEXT NOT NULL DEFAULT '2000-01-01 00:00:00+00:00',
-            rating       INTEGER DEFAULT 0
+            last_modified TEXT NOT NULL DEFAULT '2000-01-01 00:00:00+00:00'
+        );
+        CREATE TABLE ratings (
+            id     INTEGER PRIMARY KEY,
+            rating INTEGER CHECK(rating > -1 AND rating < 11)
+        );
+        CREATE TABLE books_ratings_link (
+            id     INTEGER PRIMARY KEY,
+            book   INTEGER NOT NULL,
+            rating INTEGER NOT NULL
         );
         CREATE TABLE authors (
             id   INTEGER PRIMARY KEY,
@@ -106,7 +114,7 @@ def _make_calibre_library(root: Path) -> Path:
             '2023-05-01 10:00:00+00:00','2011-01-01 00:00:00+00:00',
             1.0,'Kahneman, Daniel','978-0374533557','',
             'Daniel Kahneman/Thinking, Fast and Slow (1)',
-            1,'uuid-1',1,'2023-05-01 10:00:00+00:00',8
+            1,'uuid-1',1,'2023-05-01 10:00:00+00:00'
         );
         INSERT INTO authors VALUES (1,'Daniel Kahneman','Kahneman, Daniel');
         INSERT INTO books_authors_link VALUES (1,1,1);
@@ -118,6 +126,8 @@ def _make_calibre_library(root: Path) -> Path:
         INSERT INTO identifiers VALUES (1,1,'isbn','978-0374533557');
         INSERT INTO data VALUES (1,1,'EPUB',1024000,'Thinking, Fast and Slow - Daniel Kahneman');
         INSERT INTO data VALUES (2,1,'PDF', 2048000,'Thinking, Fast and Slow - Daniel Kahneman');
+        INSERT INTO ratings VALUES (1,8);
+        INSERT INTO books_ratings_link VALUES (1,1,1);
 
         -- Book 2: part of a series, no description
         INSERT INTO books VALUES (
@@ -125,7 +135,7 @@ def _make_calibre_library(root: Path) -> Path:
             '2022-11-10 08:00:00+00:00','1954-01-01 00:00:00+00:00',
             1.0,'Tolkien, J.R.R.',NULL,'',
             'J.R.R. Tolkien/The Fellowship of the Ring (2)',
-            1,'uuid-2',0,'2022-11-10 08:00:00+00:00',10
+            1,'uuid-2',0,'2022-11-10 08:00:00+00:00'
         );
         INSERT INTO authors VALUES (2,'J.R.R. Tolkien','Tolkien, J.R.R.');
         INSERT INTO books_authors_link VALUES (2,2,2);
@@ -134,12 +144,14 @@ def _make_calibre_library(root: Path) -> Path:
         INSERT INTO series VALUES (1,'The Lord of the Rings',NULL);
         INSERT INTO books_series_link VALUES (1,2,1);
         INSERT INTO data VALUES (3,2,'EPUB',3000000,'The Fellowship of the Ring - J.R.R. Tolkien');
+        INSERT INTO ratings VALUES (2,10);
+        INSERT INTO books_ratings_link VALUES (2,2,2);
 
         -- Book 3: no formats registered
         INSERT INTO books VALUES (
             3,'Bare Book',NULL,'2021-01-01 00:00:00+00:00',NULL,
             1.0,NULL,NULL,'','Bare Book (3)',
-            1,'uuid-3',0,'2021-01-01 00:00:00+00:00',0
+            1,'uuid-3',0,'2021-01-01 00:00:00+00:00'
         );
         INSERT INTO authors VALUES (3,'Anonymous','Anonymous');
         INSERT INTO books_authors_link VALUES (3,3,3);
@@ -296,3 +308,44 @@ class TestLoadBooks:
                            copy_path=tmp_path / "copy.db")
         for b in items:
             assert isinstance(b.source_id, str)
+
+
+class TestSplitCalibreTags:
+    def test_short_tags_kept_no_note(self):
+        tags, note = split_calibre_tags(["psychology", "non-fiction", "history of rome"])
+        assert tags == ["psychology", "non-fiction", "history of rome"]
+        assert note is None
+
+    def test_four_word_tag_is_kept(self):
+        # "more than 4 words" is the note threshold — exactly 4 stays a tag
+        tags, note = split_calibre_tags(["a b c d"])
+        assert tags == ["a b c d"]
+        assert note is None
+
+    def test_five_word_tag_becomes_note(self):
+        tags, note = split_calibre_tags(["imported from zotero on friday"])
+        assert tags == []
+        assert note == "imported from zotero on friday"
+
+    def test_mixed_tags_partitioned(self):
+        tags, note = split_calibre_tags([
+            "economics",
+            "leftover note that is quite long",
+            "psychology",
+        ])
+        assert tags == ["economics", "psychology"]
+        assert note == "leftover note that is quite long"
+
+    def test_multiple_long_tags_bundled_newline_separated(self):
+        tags, note = split_calibre_tags([
+            "first long leftover import note",
+            "second long leftover import note",
+        ])
+        assert tags == []
+        assert note == (
+            "first long leftover import note\n"
+            "second long leftover import note"
+        )
+
+    def test_empty_tags(self):
+        assert split_calibre_tags([]) == ([], None)

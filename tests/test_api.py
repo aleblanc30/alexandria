@@ -580,6 +580,46 @@ class TestDocuments:
         assert overlay.count("twice") == 1
 
 
+class TestDocumentCover:
+    def test_cover_served_when_file_exists(self, client, tmp_path):
+        book_dir = tmp_path / "Author" / "Title (1)"
+        book_dir.mkdir(parents=True)
+        (book_dir / "book.epub").write_bytes(b"epub")
+        (book_dir / "cover.jpg").write_bytes(b"\xff\xd8\xff\xe0fakejpeg")
+
+        doc_id = upsert_document(
+            "calibre", "1", "Title", str(book_dir / "book.epub"), int(time.time()),
+        )
+        r = client.get(f"/documents/{doc_id}/cover")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "image/jpeg"
+        assert r.content == b"\xff\xd8\xff\xe0fakejpeg"
+
+    def test_404_when_no_cover_file(self, client, tmp_path):
+        book_dir = tmp_path / "Author" / "Title (1)"
+        book_dir.mkdir(parents=True)
+        (book_dir / "book.epub").write_bytes(b"epub")
+
+        doc_id = upsert_document(
+            "calibre", "1", "Title", str(book_dir / "book.epub"), int(time.time()),
+        )
+        r = client.get(f"/documents/{doc_id}/cover")
+        assert r.status_code == 404
+
+    def test_404_for_non_calibre_source(self, client):
+        ids = _seed_docs(3)
+        firefox_id = next(
+            i for i in ids
+            if client.get(f"/documents/{i}").json()["source"] == "firefox"
+        )
+        r = client.get(f"/documents/{firefox_id}/cover")
+        assert r.status_code == 404
+
+    def test_404_for_unknown_document(self, client):
+        r = client.get("/documents/999999/cover")
+        assert r.status_code == 404
+
+
 # ── Tags ──────────────────────────────────────────────────────────────────────
 
 class TestTags:

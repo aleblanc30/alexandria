@@ -18,21 +18,29 @@ def ingest_text_block(
     chunk_offset: int = 0,
     dry_run: bool = False,
     min_chars: int | None = None,
+    fallback_text: str | None = None,
 ) -> dict:
     """Chunk, embed, and persist a single block of text for a document.
+
+    When ``text`` yields no chunks (empty, or too short to survive the
+    ``min_chars`` filter) and ``fallback_text`` is given, the fallback is
+    embedded as a single chunk regardless of length. This keeps documents with
+    little or no body text — e.g. a Calibre book with only a title — findable by
+    semantic search on that fallback (typically the title).
 
     Returns:
         ``{"chunks_added": int, "skipped": bool}``.
     """
-    if not text or not text.strip():
-        return {"chunks_added": 0, "skipped": True}
-
-    chunk_texts = sentence_window_chunks(
-        text,
-        window    = cfg.chunk_sentences,
-        overlap   = cfg.chunk_overlap,
-        min_chars = min_chars if min_chars is not None else cfg.min_chunk_chars,
-    )
+    chunk_texts: list[str] = []
+    if text and text.strip():
+        chunk_texts = sentence_window_chunks(
+            text,
+            window    = cfg.chunk_sentences,
+            overlap   = cfg.chunk_overlap,
+            min_chars = min_chars if min_chars is not None else cfg.min_chunk_chars,
+        )
+    if not chunk_texts and fallback_text and fallback_text.strip():
+        chunk_texts = [fallback_text.strip()]
     if not chunk_texts:
         return {"chunks_added": 0, "skipped": True}
 

@@ -24,6 +24,7 @@ class DocumentOut(BaseModel):
     cluster_label: str | None
     similarity: float | None = None   # only present in search results
     description: str = ""
+    note: str | None = None
 
 
 class DocumentDetail(DocumentOut):

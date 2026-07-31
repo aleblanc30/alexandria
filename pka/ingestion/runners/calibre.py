@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from pka.connectors.calibre import CalibreBook
+from pka.connectors.calibre import CalibreBook, split_calibre_tags
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
     document_index,
@@ -33,6 +33,7 @@ def ingest_calibre_metadata(
     def _persist(book: CalibreBook) -> MetadataOutcome:
         if dry_run:
             return "dry_run"
+        tags, note = split_calibre_tags(book.tags)
         doc_id = insert_document_if_new(
             source       = Source.CALIBRE,
             source_id    = book.source_id,
@@ -42,10 +43,11 @@ def ingest_calibre_metadata(
             fetch_status = (
                 FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING
             ),
+            note         = note,
         )
         if doc_id is None:
             return "skipped"
-        insert_source_tags(doc_id, book.tags, source=Source.CALIBRE)
+        insert_source_tags(doc_id, tags, source=Source.CALIBRE)
         if book.series:
             insert_source_collections(doc_id, [book.series], source=Source.CALIBRE)
         known[book.source_id] = doc_id
@@ -76,6 +78,7 @@ def ingest_calibre_books(
     def _process(book: CalibreBook) -> tuple[bool, int]:
         doc_id = doc_ids.get(book.source_id)
         if doc_id is None:
+            tags, note = split_calibre_tags(book.tags)
             doc_id = upsert_document(
                 source       = Source.CALIBRE,
                 source_id    = book.source_id,
@@ -85,9 +88,10 @@ def ingest_calibre_books(
                 fetch_status = (
                     FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING
                 ),
+                note         = note,
             )
             doc_ids[book.source_id] = doc_id
-            insert_source_tags(doc_id, book.tags, source=Source.CALIBRE)
+            insert_source_tags(doc_id, tags, source=Source.CALIBRE)
             if book.series:
                 insert_source_collections(doc_id, [book.series], source=Source.CALIBRE)
         result = ingest_text_block(
@@ -96,6 +100,7 @@ def ingest_calibre_books(
             Source.CALIBRE,
             extra_metadata={"title": book.title, "pass": "metadata"},
             dry_run=dry_run,
+            fallback_text=book.title,
         )
         if result["skipped"]:
             return False, 0

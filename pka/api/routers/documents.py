@@ -1,9 +1,13 @@
 """``/documents`` list and ``/documents/{id}`` detail + tag patch."""
+from pathlib import Path
 from typing import Annotated
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from pka.api.active_run import fetch_active_run_id
+from pka.api.db_rows import fetchone_mapping
 from pka.api.dependencies import get_engine
 from pka.api.document_serialize import document_detail
 from pka.api.schemas.documents import (
@@ -14,9 +18,13 @@ from pka.api.schemas.documents import (
 )
 from pka.constants import Source, TagOrigin
 from pka.db.queries import list_documents as query_list_documents
+from pka.db.schema import documents as documents_tbl
 from pka.db.schema import overlay_tags
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+# Calibre stores a cover image alongside each book's format files.
+_COVER_FILENAME = "cover.jpg"
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -59,6 +67,23 @@ async def get_document(doc_id: int, engine=Depends(get_engine)):
     if detail is None:
         raise HTTPException(404, detail="Document not found")
     return detail
+
+
+@router.get("/{doc_id}/cover")
+async def get_document_cover(doc_id: int, engine=Depends(get_engine)):
+    """Serve a Calibre book's cover image (``cover.jpg`` next to its formats)."""
+    with engine.connect() as con:
+        row = fetchone_mapping(con.execute(
+            sa.select(documents_tbl.c.source, documents_tbl.c.url_or_path)
+            .where(documents_tbl.c.id == doc_id)
+        ))
+    if not row or row["source"] != Source.CALIBRE or not row["url_or_path"]:
+        raise HTTPException(404, detail="No cover available")
+
+    cover_path = Path(row["url_or_path"]).parent / _COVER_FILENAME
+    if not cover_path.is_file():
+        raise HTTPException(404, detail="No cover available")
+    return FileResponse(cover_path, media_type="image/jpeg")
 
 
 @router.patch("/{doc_id}/tags", response_model=dict)

@@ -73,6 +73,10 @@ def init_db() -> None:
             con.execute(sa.text(
                 "ALTER TABLE documents ADD COLUMN card_summary TEXT"
             ))
+        if "note" not in cols:
+            con.execute(sa.text(
+                "ALTER TABLE documents ADD COLUMN note TEXT"
+            ))
         if "doc_embedding" not in cols:
             con.execute(sa.text(
                 "ALTER TABLE documents ADD COLUMN doc_embedding BLOB"
@@ -139,6 +143,7 @@ def insert_document_if_new(
     fetch_status: FetchStatus | str = FetchStatus.PENDING,
     zotero_attachment_key: str | None = None,
     item_type: str | None = None,
+    note: str | None = None,
 ) -> int | None:
     """Insert a document when ``(source, source_id)`` is not already archived."""
     eng = get_engine()
@@ -157,16 +162,16 @@ def insert_document_if_new(
                 INSERT INTO documents
                     (source, source_id, title, url_or_path,
                      zotero_attachment_key, date_added, ingested_at, fetch_status,
-                     item_type)
+                     item_type, note)
                 VALUES
-                    (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type)
+                    (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type, :note)
             """),
             {
                 "source": str(source), "sid": source_id,
                 "title": title, "url": url_or_path,
                 "zak": zotero_attachment_key,
                 "da": date_added, "now": now, "fs": str(fetch_status),
-                "item_type": item_type,
+                "item_type": item_type, "note": note,
             },
         )
         row = con.execute(
@@ -187,6 +192,7 @@ def upsert_document(
     fetch_status: FetchStatus | str = FetchStatus.PENDING,
     zotero_attachment_key: str | None = None,
     item_type: str | None = None,
+    note: str | None = None,
 ) -> int:
     """Insert a document or update its mutable fields. Returns the document id.
 
@@ -200,9 +206,9 @@ def upsert_document(
             INSERT INTO documents
                 (source, source_id, title, url_or_path,
                  zotero_attachment_key, date_added, ingested_at, fetch_status,
-                 item_type)
+                 item_type, note)
             VALUES
-                (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type)
+                (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type, :note)
             ON CONFLICT(source, source_id) DO UPDATE SET
                 title        = excluded.title,
                 url_or_path  = excluded.url_or_path,
@@ -211,6 +217,7 @@ def upsert_document(
                 zotero_attachment_key = COALESCE(
                     excluded.zotero_attachment_key, documents.zotero_attachment_key
                 ),
+                note         = COALESCE(excluded.note, documents.note),
                 ingested_at  = COALESCE(documents.ingested_at, excluded.ingested_at)
         """)
         con.execute(stmt, {
@@ -218,7 +225,7 @@ def upsert_document(
             "title": title, "url": url_or_path,
             "zak": zotero_attachment_key,
             "da": date_added, "now": now, "fs": str(fetch_status),
-            "item_type": item_type,
+            "item_type": item_type, "note": note,
         })
         row = con.execute(
             sa.select(documents.c.id).where(

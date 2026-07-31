@@ -8,7 +8,7 @@ import sqlalchemy as sa
 
 from pka.connectors.calibre import CalibreBook
 from pka.db.queries import document_has_chunks, get_engine, init_db
-from pka.db.schema import chunks, documents
+from pka.db.schema import chunks, documents, source_tags
 
 
 @pytest.fixture(autouse=True)
@@ -42,6 +42,29 @@ def test_metadata_pass_creates_chunks(mock_chroma):
             sa.select(documents.c.id).where(documents.c.source_id == "B001")
         ).scalar()
     assert document_has_chunks(doc_id)
+
+
+def test_metadata_pass_embeds_title_when_body_too_short(mock_chroma):
+    """A book with no description and a short title still gets one chunk so it
+    stays findable by semantic search on the title."""
+    from pka.ingestion.runners.calibre import ingest_calibre_books
+
+    book = _make_book(source_id="SHORT", title="Dune", description=None)
+    stats = ingest_calibre_books([book])
+    assert stats["processed"] == 1
+
+    with get_engine().connect() as con:
+        doc_id = con.execute(
+            sa.select(documents.c.id).where(documents.c.source_id == "SHORT")
+        ).scalar()
+        chunk_texts = [
+            r[0] for r in con.execute(
+                sa.select(chunks.c.text).where(chunks.c.document_id == doc_id)
+            ).fetchall()
+        ]
+
+    assert document_has_chunks(doc_id)
+    assert chunk_texts == ["Dune"]
 
 
 def test_fulltext_pass_offsets_chunk_indices(
@@ -90,6 +113,32 @@ def test_metadata_only_registers_without_chunks(mock_chroma):
             sa.select(documents.c.id).where(documents.c.source_id == "B001")
         ).scalar()
     assert not document_has_chunks(doc_id)
+
+
+def test_long_tags_bundled_into_note_and_dropped_from_tags(mock_chroma):
+    from pka.ingestion.runners.calibre import ingest_calibre_metadata
+
+    book = _make_book(
+        source_id="NOTE1",
+        tags=["psychology", "imported from zotero on friday"],
+    )
+    ingest_calibre_metadata([book])
+
+    with get_engine().connect() as con:
+        doc_id, note = con.execute(
+            sa.select(documents.c.id, documents.c.note)
+            .where(documents.c.source_id == "NOTE1")
+        ).one()
+        stored_tags = [
+            r[0] for r in con.execute(
+                sa.select(source_tags.c.tag_string)
+                .where(source_tags.c.document_id == doc_id)
+            ).fetchall()
+        ]
+
+    # Long tag routed to note; short tag stays a source tag.
+    assert stored_tags == ["psychology"]
+    assert note == "imported from zotero on friday"
 
 
 def test_metadata_skips_known_books(mock_chroma):

@@ -24,6 +24,7 @@ const baseDoc: DocumentOut = {
   cluster_label: 'Machine Learning',
   similarity: 0.92,
   description: 'A short abstract.',
+  note: null,
 }
 
 describe('docDisplay', () => {

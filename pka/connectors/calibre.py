@@ -21,12 +21,37 @@ from datetime import UTC
 from pathlib import Path
 
 from pka.config import settings as cfg
-from pka.db.sqlite_copy import copy_sqlite_database
+from pka.db.sqlite_copy import ensure_sqlite_copy
 
 log = logging.getLogger(__name__)
 
 # Preference order for picking a format to extract text from
 _FORMAT_PREFERENCE = ["EPUB", "PDF", "MOBI", "AZW3", "AZW", "TXT", "HTML"]
+
+# Calibre tags with more than this many words are treated as leftover notes from
+# a Zotero→Calibre import rather than real topical tags. Ingestion pulls them out
+# of the tag set and bundles them into the document's `note` field.
+MAX_TAG_WORDS = 4
+
+
+def split_calibre_tags(
+    tags: list[str], max_words: int = MAX_TAG_WORDS,
+) -> tuple[list[str], str | None]:
+    """Partition Calibre tags into real tags and leftover-note text.
+
+    A tag counts as a leftover note when it has more than ``max_words`` words.
+    Such tags are dropped from the returned tag list and joined (newline-
+    separated, original order) into a single note string. Returns
+    ``(real_tags, note)`` where ``note`` is ``None`` when nothing was pulled out.
+    """
+    real: list[str] = []
+    notes: list[str] = []
+    for tag in tags:
+        if len(tag.split()) > max_words:
+            notes.append(tag)
+        else:
+            real.append(tag)
+    return real, ("\n".join(notes) if notes else None)
 
 
 @dataclass
@@ -54,7 +79,7 @@ def _copy_db(library_root: Path) -> Path:
     if not src.exists():
         raise FileNotFoundError(f"Calibre metadata.db not found at {src}")
     dst = cfg.data_dir / "calibre_metadata_copy.db"
-    return copy_sqlite_database(src, dst)
+    return ensure_sqlite_copy(src, dst)
 
 
 # ── Format path resolution ────────────────────────────────────────────────────
@@ -128,9 +153,8 @@ def load_books(
     if not src.exists():
         raise FileNotFoundError(f"Calibre metadata.db not found at {src}")
 
-    db_copy = copy_path or (cfg.data_dir / "calibre_metadata_copy.db")
     if copy_path:
-        copy_sqlite_database(src, db_copy)
+        db_copy = ensure_sqlite_copy(src, copy_path)
     else:
         db_copy = _copy_db(root)
 
@@ -146,8 +170,11 @@ def load_books(
         cur.execute("""
             SELECT
                 b.id, b.title, b.path, b.pubdate, b.timestamp,
-                b.series_index, b.rating,
-                (SELECT text FROM comments WHERE book = b.id LIMIT 1) AS description
+                b.series_index,
+                (SELECT text FROM comments WHERE book = b.id LIMIT 1) AS description,
+                (SELECT r.rating FROM books_ratings_link brl
+                 JOIN ratings r ON r.id = brl.rating
+                 WHERE brl.book = b.id LIMIT 1) AS rating
             FROM books b
             ORDER BY b.id
         """)

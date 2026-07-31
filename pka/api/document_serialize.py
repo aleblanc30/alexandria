@@ -100,6 +100,7 @@ def documents_out_batch(
             cluster_id=cid, cluster_label=clabel,
             similarity=sim,
             description=description,
+            note=row.get("note"),
         ))
     return out
 
@@ -158,5 +159,6 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
         source_tags=stags, overlay_tags=otags,
         cluster_id=cluster_id, cluster_label=cluster_label,
         description=description,
+        note=row.get("note"),
         collections=colls, chunks_count=n_chunks,
     )

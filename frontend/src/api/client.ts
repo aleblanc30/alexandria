@@ -69,6 +69,7 @@ export interface DocumentOut  {
   cluster_id: number | null; cluster_label: string | null
   similarity: number | null
   description: string
+  note: string | null
 }
 export interface DocumentDetail extends DocumentOut {
   description: string

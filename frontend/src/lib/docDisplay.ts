@@ -38,3 +38,9 @@ export function docDescription(doc: DocumentOut | DocumentListItem): string {
   if ('description' in doc && doc.description) return doc.description
   return ''
 }
+
+/** Cover image URL for a Calibre book, or null for sources with no cover. */
+export function docCoverUrl(doc: DocumentOut | DocumentListItem): string | null {
+  if (doc.source !== 'calibre') return null
+  return `/documents/${doc.id}/cover`
+}

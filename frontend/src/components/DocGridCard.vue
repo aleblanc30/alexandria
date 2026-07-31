@@ -3,6 +3,14 @@
     <label v-if="pickMode" class="grid-card-check" @click.stop>
       <input type="checkbox" :checked="checked" @change="$emit('toggle-check')" />
     </label>
+    <img
+      v-if="coverUrl && !coverFailed"
+      class="grid-card-cover"
+      :src="coverUrl"
+      alt=""
+      loading="lazy"
+      @error="coverFailed = true"
+    />
     <div class="grid-card-inner">
     <div class="grid-card-title">{{ doc.title || 'Untitled' }}</div>
     <div v-if="doc.description" class="grid-card-desc">{{ doc.description }}</div>
@@ -50,9 +58,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { DocumentListItem } from '@/api/client'
 import { useDocLinks } from '@/composables/useDocLinks'
+import { docCoverUrl } from '@/lib/docDisplay'
 import SourceBadge from './SourceBadge.vue'
 import ZoteroOpenButton from './ZoteroOpenButton.vue'
 
@@ -65,6 +74,10 @@ const props = defineProps<{
 defineEmits<{ click: []; 'toggle-check': [] }>()
 
 const { hasWebLink, canZotero: showZotero, openLink } = useDocLinks(() => props.doc)
+
+const coverUrl = computed(() => docCoverUrl(props.doc))
+const coverFailed = ref(false)
+watch(coverUrl, () => { coverFailed.value = false })
 
 const hasTags = computed(
   () =>
@@ -96,6 +109,15 @@ const hasTags = computed(
   min-width: 0;
 }
 .grid-card-check { flex-shrink: 0; padding-top: 2px; cursor: pointer }
+.grid-card-cover {
+  flex-shrink: 0;
+  width: 52px;
+  height: 76px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 0.5px solid var(--border);
+  background: var(--surface);
+}
 .grid-card:hover { border-color: rgba(0, 0, 0, .22) }
 .grid-card.selected { border-color: #85B7EB; background: #F4F9FE }
 .grid-card-title {
