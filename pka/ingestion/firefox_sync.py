@@ -33,7 +33,7 @@ def sync_firefox_metadata(
 
     init_db()
     key = progress_key or "firefox"
-    bookmarks = take(load_bookmarks())
+    bookmarks = take(load_bookmarks(), Source.FIREFOX)
     baseline = archive_document_count(Source.FIREFOX)
     pending = count_pending_metadata(Source.FIREFOX)
     sp.begin_metadata_sync(key, pending, baseline)
@@ -57,7 +57,7 @@ def sync_firefox_ingest(
 
     work = firefox_ingest_queue(fetch_limit)
     n_work = len(work)
-    n_bm = len(take(load_bookmarks()))
+    n_bm = len(take(load_bookmarks(), Source.FIREFOX))
     _plan_counts(n_bm)
 
     if n_work == 0:

@@ -48,7 +48,7 @@ def sync_calibre_metadata(
         return unavailable_metadata(key, baseline, unavailable)
     pending = count_pending_metadata(Source.CALIBRE)
     sp.begin_metadata_sync(key, pending, baseline)
-    books = take(books)
+    books = take(books, Source.CALIBRE)
     stats = ingest_calibre_metadata(books, dry_run=dry_run, progress_key=key)
     log.info("Calibre metadata: %s", stats)
     return {"metadata": stats, "stopped": stats.get("stopped")}
@@ -63,7 +63,7 @@ def sync_calibre_ingest(
     books, unavailable = try_load_calibre_books()
     if unavailable:
         return _unavailable_ingest(key, unavailable)
-    books = take(books)
+    books = take(books, Source.CALIBRE)
     n = len(books)
     n_files = sum(
         1 for b in books if b.preferred_path and b.preferred_path.exists()

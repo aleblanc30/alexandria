@@ -21,7 +21,7 @@ def _plan_counts(key: str, total: int) -> None:
 def _load_zotero_items_for_embed(skip_existing: bool = True) -> tuple[list, int, int]:
     """Load only items that still need embedding; return (items, total, skipped)."""
     dst = ensure_zotero_copy()
-    all_keys = set(take(sorted(load_item_keys(copy_path=dst, skip_copy=True))))
+    all_keys = set(take(sorted(load_item_keys(copy_path=dst, skip_copy=True)), Source.ZOTERO))
     total = len(all_keys)
     if skip_existing:
         embedded = source_ids_with_chunks(Source.ZOTERO)
@@ -31,7 +31,7 @@ def _load_zotero_items_for_embed(skip_existing: bool = True) -> tuple[list, int,
             return [], total, skipped
         items = load_items(copy_path=dst, skip_copy=True, keys=pending)
         return items, total, skipped
-    return take(load_items(copy_path=dst, skip_copy=True)), total, 0
+    return take(load_items(copy_path=dst, skip_copy=True), Source.ZOTERO), total, 0
 
 
 def sync_zotero_metadata(
@@ -45,7 +45,7 @@ def sync_zotero_metadata(
     baseline = archive_document_count(Source.ZOTERO)
     pending = count_pending_metadata(Source.ZOTERO)
     sp.begin_metadata_sync(key, pending, baseline)
-    items = take(load_items())
+    items = take(load_items(), Source.ZOTERO)
     stats = ingest_zotero_metadata(items, dry_run=dry_run, progress_key=key)
     if not dry_run:
         attach_keys = {

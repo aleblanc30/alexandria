@@ -38,7 +38,7 @@ def sync_images_metadata(
         return unavailable_metadata(key, baseline, unavailable)
     pending = count_pending_metadata(Source.IMAGE)
     sp.begin_metadata_sync(key, pending, baseline)
-    images = take(images)
+    images = take(images, Source.IMAGE)
     stats = register_images(images, dry_run=dry_run, progress_key=key)
     log.info("Image metadata: %s", stats)
     return {"metadata": stats, "stopped": stats.get("stopped")}
@@ -52,7 +52,7 @@ def sync_images_ingest(
     images, unavailable = try_scan_images()
     if unavailable:
         return _unavailable_ingest(key, unavailable)
-    images = take(images)
+    images = take(images, Source.IMAGE)
     n = len(images)
     _plan_counts(key, n)
     sp.skip_phase(key, "fetching")

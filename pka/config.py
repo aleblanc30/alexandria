@@ -34,7 +34,12 @@ class Settings(BaseSettings):
     # ── Output paths ────────────────────────────────────────────────────────
     data_dir: Path = Path("data")
     dev: bool = False  # ALEXANDRIA_DEV=1 — dev API, Firefox places snapshot, Zotero library snapshot
-    dev_ingestion_limit: int = 1000  # max docs per source when dev=True
+    # Max docs synced/ingested per source when dev=True. Edit via
+    # ALEXANDRIA_DEV_INGESTION_LIMIT_<SOURCE> env vars (e.g. ALEXANDRIA_DEV_INGESTION_LIMIT_ZOTERO).
+    dev_ingestion_limit_firefox: int = 10
+    dev_ingestion_limit_zotero: int = 10
+    dev_ingestion_limit_calibre: int = 10
+    dev_ingestion_limit_image: int = 10
 
     @property
     def archive_db(self) -> Path:

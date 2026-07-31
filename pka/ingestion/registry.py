@@ -47,11 +47,11 @@ def get_source_handlers() -> dict[str, SourceHandlers]:
             sync_metadata=sync_firefox_metadata,
             sync_ingest=lambda *, progress_key=None, **__: sync_firefox_ingest(
                 progress_key=progress_key,
-                fetch_limit=effective_ingestion_limit(),
+                fetch_limit=effective_ingestion_limit(Source.FIREFOX),
             ),
             sync_full=lambda *, progress_key=None, **__: sync_firefox(
                 progress_key=progress_key,
-                fetch_limit=effective_ingestion_limit(),
+                fetch_limit=effective_ingestion_limit(Source.FIREFOX),
             ),
         ),
         Source.CALIBRE: SourceHandlers(

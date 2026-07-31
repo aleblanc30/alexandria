@@ -33,14 +33,14 @@ def count_pending_metadata(source: Source | str) -> int:
 
         known = set(document_index(Source.FIREFOX))
         return sum(
-            1 for bm in take(load_bookmarks()) if bm.source_id not in known
+            1 for bm in take(load_bookmarks(), Source.FIREFOX) if bm.source_id not in known
         )
 
     if src == Source.ZOTERO:
         from pka.connectors.zotero import ensure_zotero_copy, load_item_keys
 
         dst = ensure_zotero_copy()
-        keys = set(take(sorted(load_item_keys(copy_path=dst, skip_copy=True))))
+        keys = set(take(sorted(load_item_keys(copy_path=dst, skip_copy=True)), Source.ZOTERO))
         known = set(document_index(Source.ZOTERO))
         return sum(1 for key in keys if key not in known)
 
@@ -49,7 +49,7 @@ def count_pending_metadata(source: Source | str) -> int:
         if unavailable:
             return 0
         known = set(document_index(Source.CALIBRE))
-        return sum(1 for book in take(books) if book.source_id not in known)
+        return sum(1 for book in take(books, Source.CALIBRE) if book.source_id not in known)
 
     if src == Source.IMAGE:
         from pka.ingestion.image_pipeline import _image_already_indexed
@@ -58,7 +58,7 @@ def count_pending_metadata(source: Source | str) -> int:
         if unavailable:
             return 0
         pending = 0
-        for img in take(images):
+        for img in take(images, Source.IMAGE):
             if _image_already_indexed(img.path) is None:
                 pending += 1
         return pending
@@ -76,19 +76,19 @@ def source_corpus_size(source: Source | str) -> int:
     if src == Source.FIREFOX:
         from pka.connectors.firefox import load_bookmarks
 
-        return len(take(load_bookmarks()))
+        return len(take(load_bookmarks(), Source.FIREFOX))
 
     if src == Source.ZOTERO:
         from pka.connectors.zotero import ensure_zotero_copy, load_item_keys
 
         dst = ensure_zotero_copy()
-        return len(take(sorted(load_item_keys(copy_path=dst, skip_copy=True))))
+        return len(take(sorted(load_item_keys(copy_path=dst, skip_copy=True)), Source.ZOTERO))
 
     if src == Source.CALIBRE:
         books, unavailable = try_load_calibre_books()
         if unavailable:
             return 0
-        books = take(books)
+        books = take(books, Source.CALIBRE)
         n_files = sum(
             1 for b in books if b.preferred_path and b.preferred_path.exists()
         )
@@ -98,7 +98,7 @@ def source_corpus_size(source: Source | str) -> int:
         images, unavailable = try_scan_images()
         if unavailable:
             return 0
-        return len(take(images))
+        return len(take(images, Source.IMAGE))
 
     return 0
 
