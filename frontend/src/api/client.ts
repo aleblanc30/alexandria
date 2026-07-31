@@ -335,6 +335,8 @@ export const listImages   = (params?: { image_type?: string; limit?: number; off
 export const searchImages = (q: string, n = 10) =>
   req<ImageOut[]>(`/images/search?q=${encodeURIComponent(q)}&n=${n}`)
 export const getImage     = (id: number) => req<ImageOut>(`/images/${id}`)
+/** URL for the raw image bytes — usable directly as an `<img src>`. */
+export const imageFileUrl = (id: number) => `/images/${id}/file`
 
 // ── Reading lists ─────────────────────────────────────────────────────────────
 

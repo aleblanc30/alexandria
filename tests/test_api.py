@@ -1349,6 +1349,30 @@ class TestImages:
     def test_get_image_404(self, client):
         assert client.get("/images/99999").status_code == 404
 
+    def test_get_image_file_serves_bytes(self, client, tmp_path):
+        from pka.db.queries import get_engine
+        from pka.db.schema import images as images_tbl
+
+        img = tmp_path / "pic.png"
+        img.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        with get_engine().begin() as con:
+            image_id = con.execute(images_tbl.insert().values(
+                path=str(img), filename="pic.png", image_type="slide",
+            )).inserted_primary_key[0]
+
+        r = client.get(f"/images/{image_id}/file")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "image/png"
+        assert r.content == b"\x89PNG\r\n\x1a\nfake"
+
+    def test_get_image_file_missing_on_disk(self, client):
+        # _seed_image points at /tmp/slide.png, which does not exist on disk.
+        image_id = _seed_image()
+        assert client.get(f"/images/{image_id}/file").status_code == 404
+
+    def test_get_image_file_unknown_id(self, client):
+        assert client.get("/images/99999/file").status_code == 404
+
     def test_search_images(self, client, monkeypatch):
         _seed_image()
         monkeypatch.setattr(
