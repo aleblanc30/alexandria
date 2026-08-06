@@ -311,6 +311,14 @@ export const cancelSync         = (source: string) =>
     10000,
   )
 
+export interface PurgeResult { status: string; source: string; counts: Record<string, number> }
+export const purgeSource        = (source: string) =>
+  req<PurgeResult>(
+    `/ingestion/sources/${source}/purge`,
+    { method: 'POST' },
+    INGESTION_TIMEOUT_MS,
+  )
+
 export interface SourcePathInfo { source: string; path: string; kind: 'file' | 'dir'; exists: boolean }
 
 export const getSourcePath = (source: string) =>

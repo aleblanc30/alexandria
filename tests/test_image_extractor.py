@@ -52,7 +52,7 @@ class TestClassifyAndDescribe:
         resp.json.return_value = {
             "message": {"content": '{"image_type": "slide", "description": "ML slide."}'},
         }
-        monkeypatch.setattr("pka.ingestion.image_extractor.httpx.post", lambda *a, **kw: resp)
+        monkeypatch.setattr("pka.providers.ollama.httpx.post", lambda *a, **kw: resp)
 
         from pka.ingestion.image_extractor import classify_and_describe
         itype, desc = classify_and_describe(sample_png)
@@ -65,7 +65,7 @@ class TestClassifyAndDescribe:
         resp.json.return_value = {
             "message": {"content": '{"image_type": "not_valid", "description": "x"}'},
         }
-        monkeypatch.setattr("pka.ingestion.image_extractor.httpx.post", lambda *a, **kw: resp)
+        monkeypatch.setattr("pka.providers.ollama.httpx.post", lambda *a, **kw: resp)
 
         from pka.ingestion.image_extractor import classify_and_describe
         itype, _ = classify_and_describe(sample_png)
@@ -73,7 +73,7 @@ class TestClassifyAndDescribe:
 
     def test_failure_returns_unknown(self, sample_png, monkeypatch):
         monkeypatch.setattr(
-            "pka.ingestion.image_extractor.httpx.post",
+            "pka.providers.ollama.httpx.post",
             lambda *a, **kw: (_ for _ in ()).throw(ConnectionError("down")),
         )
         from pka.ingestion.image_extractor import classify_and_describe
@@ -90,7 +90,7 @@ class TestClassifyAndDescribe:
         resp = MagicMock()
         resp.raise_for_status.return_value = None
         resp.json.return_value = {"message": {"content": broken}}
-        monkeypatch.setattr("pka.ingestion.image_extractor.httpx.post", lambda *a, **kw: resp)
+        monkeypatch.setattr("pka.providers.ollama.httpx.post", lambda *a, **kw: resp)
 
         from pka.ingestion.image_extractor import classify_and_describe
         itype, desc = classify_and_describe(sample_png)
@@ -110,7 +110,7 @@ class TestClassifyAndDescribe:
             }
             return resp
 
-        monkeypatch.setattr("pka.ingestion.image_extractor.httpx.post", _post)
+        monkeypatch.setattr("pka.providers.ollama.httpx.post", _post)
         from pka.ingestion.image_extractor import classify_and_describe
         classify_and_describe(sample_png)
         assert captured["payload"]["format"] == "json"
@@ -165,7 +165,7 @@ class TestClipEmbed:
         fake_processor = MagicMock(return_value={"pixel_values": "x"})
 
         monkeypatch.setattr(
-            "pka.ingestion.image_extractor._load_clip",
+            "pka.providers.clip._load_clip",
             lambda: (fake_model, fake_processor),
         )
 
@@ -179,7 +179,7 @@ class TestClipEmbed:
         fake_processor = MagicMock(return_value={"input_ids": "x"})
 
         monkeypatch.setattr(
-            "pka.ingestion.image_extractor._load_clip",
+            "pka.providers.clip._load_clip",
             lambda: (fake_model, fake_processor),
         )
 
@@ -188,7 +188,7 @@ class TestClipEmbed:
 
     def test_clip_failure_returns_none(self, sample_png, monkeypatch):
         monkeypatch.setattr(
-            "pka.ingestion.image_extractor._load_clip",
+            "pka.providers.clip._load_clip",
             lambda: (_ for _ in ()).throw(RuntimeError("clip")),
         )
         from pka.ingestion.image_extractor import clip_embed_image

@@ -120,6 +120,26 @@ def browse_path(source: str):
     return {"path": chosen}
 
 
+@router.post("/sources/{source}/purge")
+def purge_source_endpoint(source: str):
+    """Delete every archived row (and vectors) for ``source``.
+
+    Refuses while a sync is running so a purge can't race a live worker.
+    """
+    require_source(source)
+    if sp.is_running(source):
+        raise HTTPException(409, f"Stop the running sync for {source} before purging")
+
+    from pka.cli.purge_source import purge_source
+    from pka.db.queries import init_db
+
+    init_db()
+    counts = purge_source(source)
+    sp.reset(source)
+    _seed_baselines(source)
+    return {"status": "purged", "source": source, "counts": counts}
+
+
 @router.get("/unfetchable")
 async def unfetchable_urls(
     limit: int = 50, offset: int = 0,

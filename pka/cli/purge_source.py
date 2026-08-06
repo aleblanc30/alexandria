@@ -99,16 +99,33 @@ def _purge_documents(source: str, *, dry_run: bool = False) -> dict[str, int]:
 
 
 def _purge_images(*, dry_run: bool = False) -> dict[str, int]:
+    """Purge image data.
+
+    Images are first-class documents (``source=image``): their ``documents``,
+    ``chunks`` (text-search vectors), and overlay tags go through the shared
+    :func:`_purge_documents` path. On top of that we clear the ``images`` /
+    ``image_tags`` sidecar rows and the CLIP vectors, which live in a separate
+    Chroma collection (``alexandria_clip``) rather than the chunk collection.
+    """
+    from pka.ingestion import image_pipeline
+
     eng = get_engine()
     with eng.connect() as con:
         image_ids = [r[0] for r in con.execute(sa.select(images.c.id)).fetchall()]
-        vector_ids: list[str] = []
-        for row in con.execute(
-            sa.select(images.c.clip_vector_id, images.c.text_vector_id)
-        ).fetchall():
-            vector_ids.extend(vid for vid in row if vid)
+        clip_vector_ids = [
+            r[0]
+            for r in con.execute(
+                sa.select(images.c.clip_vector_id).where(
+                    images.c.clip_vector_id.isnot(None)
+                )
+            ).fetchall()
+        ]
 
-    counts: dict[str, int] = {"images": len(image_ids), "vectors": len(vector_ids)}
+    # documents / chunks / chunk vectors / overlay tags / etc.
+    counts = _purge_documents(str(Source.IMAGE), dry_run=dry_run)
+    counts["images"] = len(image_ids)
+    counts["clip_vectors"] = len(clip_vector_ids)
+
     if not image_ids:
         return counts
 
@@ -121,8 +138,8 @@ def _purge_images(*, dry_run: bool = False) -> dict[str, int]:
             ).scalar() or 0
         return counts
 
-    if vector_ids:
-        counts["vectors_purged"] = vector_store.purge_vectors(vector_ids)
+    if clip_vector_ids:
+        counts["clip_vectors_purged"] = image_pipeline.delete_clip_vectors(clip_vector_ids)
 
     with eng.begin() as con:
         result = con.execute(image_tags.delete().where(image_tags.c.image_id.in_(image_ids)))
