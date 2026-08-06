@@ -50,6 +50,9 @@ dev = [
 spacy = [
     "spacy>=3.7",                # optional sentence splitter backend
 ]
+reddit = [
+    "praw>=7.7",                 # Reddit OAuth API client for saved-post ingestion
+]
 
 [project.scripts]
 alexandria = "pka.cli:main"

@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     dev_ingestion_limit_zotero: int = 10
     dev_ingestion_limit_calibre: int = 10
     dev_ingestion_limit_image: int = 10
+    dev_ingestion_limit_reddit: int = 10
 
     @property
     def archive_db(self) -> Path:
@@ -82,6 +83,17 @@ class Settings(BaseSettings):
     fetch_user_agent: str = (
         "Alexandria/0.2 (local research library; +https://www.mediawiki.org/wiki/API:Etiquette)"
     )
+
+    # ── Reddit (saved posts) ────────────────────────────────────────────────
+    # OAuth "script" app credentials — set via ALEXANDRIA_REDDIT_* env / .env only.
+    # Never commit these. Create an app at https://www.reddit.com/prefs/apps
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    reddit_username: str = ""
+    reddit_password: str = ""
+    reddit_refresh_token: str = ""   # alternative to username/password auth
+    reddit_user_agent: str = "Alexandria/0.2 (local research library; saved-post indexer)"
+    reddit_saved_limit: int | None = None   # None = fetch all saved items
 
     # ── Images ──────────────────────────────────────────────────────────────
     ocr_lang: str = "eng"                                  # passed to pytesseract

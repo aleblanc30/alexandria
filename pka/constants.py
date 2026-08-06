@@ -12,6 +12,7 @@ class Source(StrEnum):
     ZOTERO = "zotero"
     CALIBRE = "calibre"
     IMAGE = "image"
+    REDDIT = "reddit"
 
 
 class FetchStatus(StrEnum):
