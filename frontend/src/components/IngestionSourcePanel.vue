@@ -90,6 +90,21 @@
         {{ pathInfo.exists ? '✓ found on disk' : '⚠ not found on disk' }}
       </div>
     </div>
+
+    <div class="danger-zone">
+      <div class="danger-info">
+        <div class="danger-label">Purge {{ SOURCE_LABELS[source] }}</div>
+        <div class="hint">Delete every archived document, chunk, tag, and vector for this source. Cannot be undone.</div>
+      </div>
+      <button
+        class="btn-xs btn-xs--danger"
+        type="button"
+        :disabled="purgeBusy || jobRunning || docCount === 0"
+        @click="purge"
+      >
+        {{ purgeBusy ? 'Purging…' : 'Purge' }}
+      </button>
+    </div>
   </div>
 </template>
 
@@ -147,6 +162,29 @@ async function savePath() {
 
 watch(() => props.source, loadPath)
 onMounted(loadPath)
+
+// ── Purge ────────────────────────────────────────────────────────────────────
+
+const purgeBusy = ref(false)
+const docCount = computed(() => st.value?.by_source[props.source] ?? 0)
+const jobRunning = computed(() =>
+  ingest.isMetadataRunning(props.source) || ingest.isIngestRunning(props.source),
+)
+
+async function purge() {
+  if (purgeBusy.value) return
+  const label = SOURCE_LABELS[props.source]
+  const ok = window.confirm(
+    `Permanently delete all ${docCount.value} ${label} document(s) and their tags, chunks, and vectors?\n\nThis cannot be undone.`,
+  )
+  if (!ok) return
+  purgeBusy.value = true
+  try {
+    await ingest.purge(props.source)
+  } finally {
+    purgeBusy.value = false
+  }
+}
 
 const PHASE_ORDER = ['metadata', 'fetching', 'embedding'] as const
 const PHASE_LABELS: Record<string, string> = {
@@ -230,4 +268,14 @@ function phaseBarStyle(phase: PhaseDetail): Record<string, string> {
 .path-input { flex: 1; min-width: 0; font-family: monospace; font-size: 12px }
 .path-status { margin-top: 6px }
 .path-status--bad { color: #A32D2D }
+.danger-zone {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--border);
+}
+.danger-info { flex: 1; min-width: 0 }
+.danger-label { font-size: 12px; font-weight: 500; color: #A32D2D; margin-bottom: 2px }
 </style>
