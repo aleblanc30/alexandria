@@ -49,7 +49,11 @@ async def sync_progress(source: str | None = None, engine=Depends(get_engine)):
 @router.get("/sources/{source}/path")
 async def get_path(source: str):
     require_source(source)
-    return spaths.get_source_path(source)
+    try:
+        return spaths.get_source_path(source)
+    except ValueError as exc:
+        # Credential-based sources (e.g. Reddit) have no filesystem path.
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.put("/sources/{source}/path")
@@ -68,6 +72,8 @@ def browse_path(source: str):
     require_source(source)
     try:
         chosen = spaths.open_native_picker(source)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(501, str(exc)) from exc
     return {"path": chosen}

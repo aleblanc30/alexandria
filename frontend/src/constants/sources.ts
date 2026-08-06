@@ -1,4 +1,4 @@
-export const INGESTION_SOURCES = ['firefox', 'zotero', 'calibre', 'image'] as const
+export const INGESTION_SOURCES = ['firefox', 'zotero', 'calibre', 'image', 'reddit'] as const
 export type IngestionSource = (typeof INGESTION_SOURCES)[number]
 
 export const SOURCE_COLORS: Record<IngestionSource, string> = {
@@ -6,6 +6,7 @@ export const SOURCE_COLORS: Record<IngestionSource, string> = {
   zotero: '#639922',
   calibre: '#BA7517',
   image: '#7F77DD',
+  reddit: '#FF4500',
 }
 
 export const SOURCE_LABELS: Record<IngestionSource, string> = {
@@ -13,6 +14,7 @@ export const SOURCE_LABELS: Record<IngestionSource, string> = {
   zotero: 'Zotero',
   calibre: 'Calibre',
   image: 'Images',
+  reddit: 'Reddit',
 }
 
 export function isIngestionSource(value: string): value is IngestionSource {
@@ -24,11 +26,20 @@ export const SOURCE_PATH_LABELS: Record<IngestionSource, string> = {
   zotero: 'Zotero database file (zotero.sqlite)',
   calibre: 'Calibre library folder',
   image: 'Image folder',
+  reddit: 'Configured via ALEXANDRIA_REDDIT_* credentials in .env',
+}
+
+/**
+ * Credential-based sources have no filesystem path to configure (they read from
+ * an authenticated API). Their panel hides the path form.
+ */
+export function sourceIsPathBased(source: IngestionSource): boolean {
+  return source !== 'reddit'
 }
 
 /** Sources that run HTTP fetch as part of the ingest job. */
 export function sourceHasFetchPhase(source: IngestionSource): boolean {
-  return source === 'firefox'
+  return source === 'firefox' || source === 'reddit'
 }
 
 /** Sources that embed inline during fetch (no separate embedding progress bar). */

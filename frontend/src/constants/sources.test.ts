@@ -4,12 +4,13 @@ import {
   ingestJobLabel,
   isIngestionSource,
   sourceHasFetchPhase,
+  sourceIsPathBased,
   sourceSkipsEmbedPhase,
 } from './sources'
 
 describe('sources', () => {
   it('covers all backend ingestion sources', () => {
-    expect(INGESTION_SOURCES).toEqual(['firefox', 'zotero', 'calibre', 'image'])
+    expect(INGESTION_SOURCES).toEqual(['firefox', 'zotero', 'calibre', 'image', 'reddit'])
   })
 
   it('isIngestionSource type guard', () => {
@@ -21,6 +22,16 @@ describe('sources', () => {
     expect(sourceHasFetchPhase('firefox')).toBe(true)
     expect(sourceSkipsEmbedPhase('firefox')).toBe(true)
     expect(sourceHasFetchPhase('zotero')).toBe(false)
+  })
+
+  it('reddit fetches link posts but keeps a separate embed phase', () => {
+    expect(sourceHasFetchPhase('reddit')).toBe(true)
+    expect(sourceSkipsEmbedPhase('reddit')).toBe(false)
+  })
+
+  it('reddit is credential-based, not path-based', () => {
+    expect(sourceIsPathBased('reddit')).toBe(false)
+    expect(sourceIsPathBased('firefox')).toBe(true)
   })
 
   it('ingestJobLabel reflects fetch phase', () => {
