@@ -15,7 +15,7 @@ graph TD
     A[Firefox places.sqlite] --> D[Source Connectors]
     B[Zotero zotero.sqlite]  --> D
     C[Calibre metadata.db]   --> D
-    I[Image folder]          --> D
+    I[Image folders]         --> D
     D --> E[Chunker]
     E --> F[Ollama Embedder]
     F --> G[ChromaDB]

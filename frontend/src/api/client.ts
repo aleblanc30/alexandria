@@ -326,6 +326,28 @@ const BROWSE_TIMEOUT_MS = 605_000
 export const browseSourcePath = (source: string) =>
   req<{ path: string | null }>(`/ingestion/sources/${source}/browse`, { method: 'POST' }, BROWSE_TIMEOUT_MS)
 
+// ── Image folders (the image source is a list of folders) ──────────────────────
+export interface ImageDir { path: string; exists: boolean }
+
+export const getImageDirs = () =>
+  req<{ dirs: ImageDir[] }>('/ingestion/sources/image/dirs').then(r => r.dirs)
+export const addImageDir = (path: string) =>
+  req<{ dirs: ImageDir[] }>(
+    '/ingestion/sources/image/dirs',
+    { method: 'POST', body: JSON.stringify({ path }) },
+  ).then(r => r.dirs)
+export const removeImageDir = (path: string) =>
+  req<{ dirs: ImageDir[] }>(
+    '/ingestion/sources/image/dirs',
+    { method: 'DELETE', body: JSON.stringify({ path }) },
+  ).then(r => r.dirs)
+export const browseImageDir = () =>
+  req<{ path: string | null }>(
+    '/ingestion/sources/image/dirs/browse',
+    { method: 'POST' },
+    BROWSE_TIMEOUT_MS,
+  )
+
 // ── Images ────────────────────────────────────────────────────────────────────
 
 export const listImages   = (params?: { image_type?: string; limit?: number; offset?: number }) => {

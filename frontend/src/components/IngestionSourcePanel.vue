@@ -72,7 +72,39 @@
       </div>
     </div>
 
-    <div class="path-form">
+    <div v-if="source === 'image'" class="path-form">
+      <label class="path-label">{{ SOURCE_PATH_LABELS[source] }}</label>
+      <ul v-if="imageDirs.length" class="dir-list">
+        <li v-for="dir in imageDirs" :key="dir.path" class="dir-row">
+          <span class="dir-path" :title="dir.path">{{ dir.path }}</span>
+          <span class="dir-status hint" :class="{ 'path-status--bad': !dir.exists }">
+            {{ dir.exists ? '✓ found' : '⚠ not found' }}
+          </span>
+          <button
+            class="btn-xs btn-xs--danger"
+            type="button"
+            :disabled="dirsBusy"
+            @click="removeDir(dir.path)"
+          >Remove</button>
+        </li>
+      </ul>
+      <div v-else class="path-status hint">No image folders configured yet.</div>
+      <div class="path-row">
+        <input
+          v-model="newDir"
+          class="path-input"
+          type="text"
+          placeholder="Add another image folder…"
+          :disabled="dirsBusy"
+          @keydown.enter="addDir"
+        />
+        <button class="btn-xs" type="button" :disabled="dirsBusy" @click="browseNewDir">Browse…</button>
+        <button class="btn-xs" type="button" :disabled="dirsBusy || !newDir.trim()" @click="addDir">Add</button>
+      </div>
+      <div v-if="dirBrowsing" class="path-status hint">Waiting for the file picker window to open…</div>
+    </div>
+
+    <div v-else class="path-form">
       <label class="path-label">{{ SOURCE_PATH_LABELS[source] }}</label>
       <div class="path-row">
         <input
@@ -145,8 +177,55 @@ async function savePath() {
   } catch (e) { notifyError(e) } finally { pathBusy.value = false }
 }
 
-watch(() => props.source, loadPath)
-onMounted(loadPath)
+// ── Image folders (the image source is a list of folders) ───────────────────
+
+const imageDirs = ref<api.ImageDir[]>([])
+const newDir = ref('')
+const dirsBusy = ref(false)
+const dirBrowsing = ref(false)
+
+async function loadImageDirs() {
+  try {
+    imageDirs.value = await api.getImageDirs()
+  } catch (e) { notifyError(e) }
+}
+
+async function addDir() {
+  const value = newDir.value.trim()
+  if (!value || dirsBusy.value) return
+  dirsBusy.value = true
+  try {
+    imageDirs.value = await api.addImageDir(value)
+    newDir.value = ''
+    await ingest.load(true)
+  } catch (e) { notifyError(e) } finally { dirsBusy.value = false }
+}
+
+async function removeDir(path: string) {
+  if (dirsBusy.value) return
+  dirsBusy.value = true
+  try {
+    imageDirs.value = await api.removeImageDir(path)
+    await ingest.load(true)
+  } catch (e) { notifyError(e) } finally { dirsBusy.value = false }
+}
+
+async function browseNewDir() {
+  dirsBusy.value = true
+  dirBrowsing.value = true
+  try {
+    const res = await api.browseImageDir()
+    if (res.path) newDir.value = res.path
+  } catch (e) { notifyError(e) } finally { dirsBusy.value = false; dirBrowsing.value = false }
+}
+
+function loadForSource() {
+  if (props.source === 'image') loadImageDirs()
+  else loadPath()
+}
+
+watch(() => props.source, loadForSource)
+onMounted(loadForSource)
 
 const PHASE_ORDER = ['metadata', 'fetching', 'embedding'] as const
 const PHASE_LABELS: Record<string, string> = {
@@ -230,4 +309,8 @@ function phaseBarStyle(phase: PhaseDetail): Record<string, string> {
 .path-input { flex: 1; min-width: 0; font-family: monospace; font-size: 12px }
 .path-status { margin-top: 6px }
 .path-status--bad { color: #A32D2D }
+.dir-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px }
+.dir-row { display: flex; align-items: center; gap: 8px }
+.dir-path { flex: 1; min-width: 0; font-family: monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.dir-status { flex: 0 0 auto; white-space: nowrap }
 </style>

@@ -4,12 +4,47 @@ Project-wide settings.
 All paths default to sensible per-user locations and can be overridden via the
 ``ALEXANDRIA_`` env prefix or a ``.env`` file in the working directory.
 """
+import json
+import os
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic import AliasChoices, Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode
 
 FORBIDDEN_PATH_PREFIXES = (Path("/etc"), Path("/usr"), Path("/var"), Path("/sys"))
+
+
+def _parse_path_list(value: object) -> list[Path]:
+    """Normalize a config value into a de-duplicated list of validated dirs.
+
+    Accepts a list/tuple, a JSON array string (``'["/a","/b"]'`` — how the app
+    persists it to ``.env``), an OS-path-separated string, or a bare single
+    path (legacy ``ALEXANDRIA_IMAGES_DIR``). Each entry is expanded and checked
+    against the system-path denylist; order is preserved and duplicates dropped.
+    """
+    if value is None or value == "":
+        return []
+    if isinstance(value, str):
+        s = value.strip()
+        if s.startswith("["):
+            try:
+                value = json.loads(s)
+            except json.JSONDecodeError:
+                value = [s]
+        else:
+            value = [part for part in s.split(os.pathsep) if part]
+    if not isinstance(value, (list, tuple)):
+        value = [value]
+
+    out: list[Path] = []
+    seen: set[Path] = set()
+    for item in value:
+        p = reject_system_path(Path(item))
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
 
 
 def reject_system_path(v: Path) -> Path:
@@ -29,7 +64,14 @@ class Settings(BaseSettings):
     zotero_db: Path = Path.home() / "Zotero" / "zotero.sqlite"
     firefox_db: Path = Path.home() / ".mozilla/firefox"   # profile auto-detected
     book_archive: Path = Path.home() / "Documents/books"
-    images_dir: Path = Path.home() / "Pictures" / "research"
+    # One or more image folders. Env: ``ALEXANDRIA_IMAGE_DIRS`` as a JSON array
+    # (``'["/a","/b"]'``); the legacy singular ``ALEXANDRIA_IMAGES_DIR`` is still
+    # honoured as a fallback. ``NoDecode`` defers parsing to ``_parse_image_dirs``
+    # so both JSON and a bare path work.
+    image_dirs: Annotated[list[Path], NoDecode] = Field(
+        default_factory=lambda: [Path.home() / "Pictures" / "research"],
+        validation_alias=AliasChoices("ALEXANDRIA_IMAGE_DIRS", "ALEXANDRIA_IMAGES_DIR"),
+    )
 
     # ── Output paths ────────────────────────────────────────────────────────
     data_dir: Path = Path("data")
@@ -107,12 +149,17 @@ class Settings(BaseSettings):
             return False
         return str(v).strip().lower() in ("1", "true", "yes", "on")
 
-    @field_validator("zotero_db", "firefox_db", "book_archive", "images_dir")
+    @field_validator("zotero_db", "firefox_db", "book_archive")
     @classmethod
     def _expand_and_check(cls, v: Path) -> Path:
         if v is None:
             return v
         return reject_system_path(v)
+
+    @field_validator("image_dirs", mode="before")
+    @classmethod
+    def _parse_image_dirs(cls, v: object) -> list[Path]:
+        return _parse_path_list(v)
 
     class Config:
         env_file = ".env"

@@ -22,7 +22,7 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "zotero_db",    tmp_path / "zotero.sqlite")
     monkeypatch.setattr(s, "firefox_db",   tmp_path / "firefox")
     monkeypatch.setattr(s, "book_archive", tmp_path / "books")
-    monkeypatch.setattr(s, "images_dir",   tmp_path / "images")
+    monkeypatch.setattr(s, "image_dirs",   [tmp_path / "images"])
 
     # Reset cached SQLAlchemy engine so each test gets a fresh DB
     import pka.db.queries as q

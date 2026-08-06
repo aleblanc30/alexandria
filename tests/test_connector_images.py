@@ -66,3 +66,34 @@ class TestScanImages:
         assert scan_images(tmp_path / "empty") == []
 
 
+class TestScanImageDirs:
+    def test_scans_multiple_folders(self, tmp_path):
+        from pka.connectors.images import scan_image_dirs
+        a = tmp_path / "a"
+        b = tmp_path / "b"
+        _make_image(a / "one.jpg")
+        _make_image(b / "two.png")
+        imgs = scan_image_dirs([a, b])
+        assert {i.filename for i in imgs} == {"one.jpg", "two.png"}
+
+    def test_skips_missing_folders(self, tmp_path):
+        from pka.connectors.images import scan_image_dirs
+        a = tmp_path / "a"
+        _make_image(a / "one.jpg")
+        imgs = scan_image_dirs([a, tmp_path / "gone"])
+        assert {i.filename for i in imgs} == {"one.jpg"}
+
+    def test_dedups_files_shared_between_nested_roots(self, tmp_path):
+        from pka.connectors.images import scan_image_dirs
+        root = tmp_path / "root"
+        sub = root / "sub"
+        _make_image(sub / "shared.jpg")
+        # ``sub`` nested inside ``root`` → the file is reachable from both roots.
+        imgs = scan_image_dirs([root, sub])
+        assert [i.filename for i in imgs] == ["shared.jpg"]
+
+    def test_empty_list_returns_empty(self, tmp_path):
+        from pka.connectors.images import scan_image_dirs
+        assert scan_image_dirs([]) == []
+
+

@@ -23,7 +23,7 @@ export const SOURCE_PATH_LABELS: Record<IngestionSource, string> = {
   firefox: 'Firefox profile folder',
   zotero: 'Zotero database file (zotero.sqlite)',
   calibre: 'Calibre library folder',
-  image: 'Image folder',
+  image: 'Image folders',
 }
 
 /** Sources that run HTTP fetch as part of the ingest job. */

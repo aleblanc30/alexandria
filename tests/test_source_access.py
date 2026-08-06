@@ -31,17 +31,34 @@ class TestSourceAccess:
     def test_images_available_when_present(self, tmp_path, monkeypatch):
         folder = tmp_path / "images"
         folder.mkdir()
-        monkeypatch.setattr("pka.ingestion.source_access.settings.images_dir", folder)
+        monkeypatch.setattr("pka.ingestion.source_access.settings.image_dirs", [folder])
+        ok, msg = images_available()
+        assert ok is True
+        assert msg is None
+
+    def test_images_available_when_one_of_several_present(self, tmp_path, monkeypatch):
+        present = tmp_path / "images"
+        present.mkdir()
+        missing = tmp_path / "missing"
+        monkeypatch.setattr(
+            "pka.ingestion.source_access.settings.image_dirs", [missing, present],
+        )
         ok, msg = images_available()
         assert ok is True
         assert msg is None
 
     def test_images_unavailable_when_missing(self, tmp_path, monkeypatch):
         folder = tmp_path / "missing"
-        monkeypatch.setattr("pka.ingestion.source_access.settings.images_dir", folder)
+        monkeypatch.setattr("pka.ingestion.source_access.settings.image_dirs", [folder])
         ok, msg = images_available()
         assert ok is False
         assert msg and "Image folder not found" in msg
+
+    def test_images_unavailable_when_none_configured(self, monkeypatch):
+        monkeypatch.setattr("pka.ingestion.source_access.settings.image_dirs", [])
+        ok, msg = images_available()
+        assert ok is False
+        assert msg and "No image folders configured" in msg
 
     def test_try_load_calibre_returns_empty_when_missing(self, tmp_path, monkeypatch):
         lib = tmp_path / "missing"
@@ -52,7 +69,7 @@ class TestSourceAccess:
 
     def test_try_scan_images_returns_empty_when_missing(self, tmp_path, monkeypatch):
         folder = tmp_path / "missing"
-        monkeypatch.setattr("pka.ingestion.source_access.settings.images_dir", folder)
+        monkeypatch.setattr("pka.ingestion.source_access.settings.image_dirs", [folder])
         images, reason = try_scan_images()
         assert images == []
         assert reason and "Image folder not found" in reason

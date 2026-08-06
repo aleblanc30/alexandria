@@ -4,6 +4,7 @@ Usage::
 
     alexandria images
     alexandria images --folder ~/Pictures/research
+    alexandria images --folder ~/Pictures/a --folder ~/Pictures/b
     alexandria images --skip-ocr
     alexandria images --skip-clip
     alexandria images --skip-vision
@@ -19,7 +20,7 @@ from pathlib import Path
 
 from pka.cli._logging import setup_logging
 from pka.config import settings as cfg
-from pka.connectors.images import scan_images
+from pka.connectors.images import scan_image_dirs
 from pka.db.queries import init_db
 from pka.ingestion.image_pipeline import ingest_images, search_images_by_text
 
@@ -28,8 +29,8 @@ log = logging.getLogger("run_images")
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="alexandria images")
-    parser.add_argument("--folder",       type=Path, default=None,
-                        help="Override images folder path")
+    parser.add_argument("--folder",       type=Path, action="append", default=None,
+                        help="Image folder to scan (repeatable; defaults to configured folders)")
     parser.add_argument("--vision-model", type=str,  default=None,
                         help="Ollama vision model name (llava, moondream, …)")
     parser.add_argument("--ocr-lang",     type=str,  default=None,
@@ -57,9 +58,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 0
 
-    folder = args.folder or cfg.images_dir
-    log.info("Scanning %s…", folder)
-    image_files = scan_images(folder)
+    folders = args.folder or cfg.image_dirs
+    log.info("Scanning %s…", ", ".join(str(f) for f in folders))
+    image_files = scan_image_dirs(folders)
     log.info("Found %d images", len(image_files))
 
     stats = ingest_images(

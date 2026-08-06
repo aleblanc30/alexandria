@@ -46,15 +46,61 @@ async def sync_progress(source: str | None = None, engine=Depends(get_engine)):
     return sp.snapshot(source)
 
 
+# ── Image folders (list-valued source) ──────────────────────────────────────
+# Declared before the ``/sources/{source}/…`` routes so the static ``image``
+# segment is matched by these handlers rather than the single-path fallbacks.
+
+@router.get("/sources/image/dirs")
+async def get_image_dirs():
+    return {"dirs": spaths.get_image_dirs()}
+
+
+@router.post("/sources/image/dirs", status_code=200)
+def add_image_dir(body: SourcePathUpdate):
+    if not body.path.strip():
+        raise HTTPException(400, "Path must not be empty")
+    try:
+        return {"dirs": spaths.add_image_dir(body.path)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.delete("/sources/image/dirs", status_code=200)
+def remove_image_dir(body: SourcePathUpdate):
+    if not body.path.strip():
+        raise HTTPException(400, "Path must not be empty")
+    try:
+        return {"dirs": spaths.remove_image_dir(body.path)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/sources/image/dirs/browse", status_code=200)
+def browse_image_dir():
+    try:
+        chosen = spaths.open_image_dir_picker()
+    except RuntimeError as exc:
+        raise HTTPException(501, str(exc)) from exc
+    return {"path": chosen}
+
+
+def _reject_image_single_path(source: str) -> None:
+    """The image source is list-valued; steer callers to the ``/dirs`` routes."""
+    if source == Source.IMAGE:
+        raise HTTPException(400, "Image source uses /sources/image/dirs")
+
+
 @router.get("/sources/{source}/path")
 async def get_path(source: str):
     require_source(source)
+    _reject_image_single_path(source)
     return spaths.get_source_path(source)
 
 
 @router.put("/sources/{source}/path")
 def update_path(source: str, body: SourcePathUpdate):
     require_source(source)
+    _reject_image_single_path(source)
     if not body.path.strip():
         raise HTTPException(400, "Path must not be empty")
     try:
@@ -66,6 +112,7 @@ def update_path(source: str, body: SourcePathUpdate):
 @router.post("/sources/{source}/browse", status_code=200)
 def browse_path(source: str):
     require_source(source)
+    _reject_image_single_path(source)
     try:
         chosen = spaths.open_native_picker(source)
     except RuntimeError as exc:

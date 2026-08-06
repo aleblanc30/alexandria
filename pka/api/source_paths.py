@@ -4,6 +4,7 @@ folder/file picker so the user doesn't have to type an absolute path by hand.
 """
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 import sys
@@ -21,6 +22,12 @@ PathKind = Literal["file", "dir"]
 # Rewritten in place by tests so a run never touches the repo's real .env.
 ENV_FILE_PATH = Path(".env")
 
+# The image source is a *list* of folders (see ``image_dirs`` below), so it is
+# deliberately absent from the single-path specs — it is managed through the
+# dedicated ``get/add/remove_image_dir`` helpers instead.
+IMAGE_DIRS_ENV_KEY = "ALEXANDRIA_IMAGE_DIRS"
+IMAGE_PICKER_LABEL = "Select image folder"
+
 
 @dataclass(frozen=True)
 class SourcePathSpec:
@@ -33,7 +40,6 @@ SOURCE_PATH_SPECS: dict[str, SourcePathSpec] = {
     "firefox": SourcePathSpec("firefox_db", "dir", "Select Firefox profile folder"),
     "zotero": SourcePathSpec("zotero_db", "file", "Select zotero.sqlite"),
     "calibre": SourcePathSpec("book_archive", "dir", "Select Calibre library folder"),
-    "image": SourcePathSpec("images_dir", "dir", "Select image folder"),
 }
 
 
@@ -75,6 +81,43 @@ def set_source_path(source: str, new_path: str) -> dict:
     return get_source_path(source)
 
 
+# ── Image folders (list-valued source) ──────────────────────────────────────
+
+def _image_dir_info(path: Path) -> dict:
+    return {"path": str(path), "exists": path.is_dir()}
+
+
+def get_image_dirs() -> list[dict]:
+    """Return each configured image folder with an on-disk existence flag."""
+    return [_image_dir_info(p) for p in settings.image_dirs]
+
+
+def _persist_image_dirs(dirs: list[Path]) -> None:
+    # Stored as a JSON array so paths survive any OS path separator and round-trip
+    # through ``config._parse_path_list``.
+    _persist_env_var(IMAGE_DIRS_ENV_KEY, json.dumps([str(p) for p in dirs]))
+
+
+def add_image_dir(new_path: str) -> list[dict]:
+    """Append an image folder (idempotent) and persist the new list."""
+    path = reject_system_path(Path(new_path))
+    dirs = list(settings.image_dirs)
+    if path not in dirs:
+        dirs.append(path)
+    settings.image_dirs = dirs
+    _persist_image_dirs(dirs)
+    return get_image_dirs()
+
+
+def remove_image_dir(target: str) -> list[dict]:
+    """Drop an image folder (no-op if not present) and persist the new list."""
+    path = reject_system_path(Path(target))
+    dirs = [d for d in settings.image_dirs if d != path]
+    settings.image_dirs = dirs
+    _persist_image_dirs(dirs)
+    return get_image_dirs()
+
+
 PICKER_TIMEOUT_SECONDS = 600  # generous — the clock is mostly "user thinking"
 
 # Runs as a standalone script (see open_native_picker) rather than importing
@@ -103,8 +146,8 @@ print(chosen)
 """
 
 
-def open_native_picker(source: str) -> str | None:
-    """Open a native OS folder/file picker on the machine running the API.
+def _run_native_picker(kind: PathKind, label: str, initial_dir: str, log_tag: str) -> str | None:
+    """Launch the Tk picker subprocess and return the chosen path (or ``None``).
 
     Alexandria is local-first: the API and the browser tab run on the same
     machine, so a server-side native dialog is the natural way to browse the
@@ -114,24 +157,20 @@ def open_native_picker(source: str) -> str | None:
     when no display/Tk is available or the dialog fails to open — callers
     should fall back to manual path entry in that case.
     """
-    spec = require_spec(source)
-    current: Path = getattr(settings, spec.field)
-    initial_dir = str(current if spec.kind == "dir" else current.parent) if current.exists() else ""
-
     t0 = time.monotonic()
-    log.info("Opening native picker for %s (subprocess launch)…", source)
+    log.info("Opening native picker for %s (subprocess launch)…", log_tag)
     try:
         result = subprocess.run(
-            [sys.executable, "-c", _PICKER_SCRIPT, spec.kind, spec.label, initial_dir],
+            [sys.executable, "-c", _PICKER_SCRIPT, kind, label, initial_dir],
             capture_output=True, text=True, timeout=PICKER_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
-        log.warning("Native picker for %s timed out after %.1fs", source, time.monotonic() - t0)
+        log.warning("Native picker for %s timed out after %.1fs", log_tag, time.monotonic() - t0)
         raise RuntimeError("Native file picker timed out") from exc
     except OSError as exc:
         raise RuntimeError(f"Native file picker unavailable: {exc}") from exc
 
-    log.info("Native picker for %s returned after %.1fs (rc=%s)", source, time.monotonic() - t0, result.returncode)
+    log.info("Native picker for %s returned after %.1fs (rc=%s)", log_tag, time.monotonic() - t0, result.returncode)
 
     if result.returncode != 0:
         reason = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "unknown error"
@@ -139,3 +178,21 @@ def open_native_picker(source: str) -> str | None:
 
     chosen = result.stdout.strip()
     return chosen or None
+
+
+def open_native_picker(source: str) -> str | None:
+    """Open a native folder/file picker for a single-path source."""
+    spec = require_spec(source)
+    current: Path = getattr(settings, spec.field)
+    initial_dir = str(current if spec.kind == "dir" else current.parent) if current.exists() else ""
+    return _run_native_picker(spec.kind, spec.label, initial_dir, source)
+
+
+def open_image_dir_picker() -> str | None:
+    """Open a folder picker for adding an image folder.
+
+    Seeds the dialog at the first configured folder that still exists so the
+    user starts somewhere sensible when adding a sibling directory.
+    """
+    initial_dir = next((str(d) for d in settings.image_dirs if d.exists()), "")
+    return _run_native_picker("dir", IMAGE_PICKER_LABEL, initial_dir, "image")

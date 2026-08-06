@@ -106,3 +106,29 @@ def scan_images(root: Path) -> list[ImageFile]:
 
     log.info("Scanned %d images under %s", len(results), root)
     return results
+
+
+def scan_image_dirs(roots: list[Path]) -> list[ImageFile]:
+    """Scan several image folders, de-duplicating files shared between roots.
+
+    Overlapping or nested roots (e.g. a folder and its subfolder both being
+    configured) produce the same absolute path for a shared file, so a
+    seen-path set keeps each image once. Missing roots are skipped with a
+    warning rather than raising — one gone folder must not fail the whole scan.
+    """
+    results: list[ImageFile] = []
+    seen_paths: set[str] = set()
+
+    for root in roots:
+        if not root.exists():
+            log.warning("Image folder not found, skipping: %s", root)
+            continue
+        for img in scan_images(root):
+            key = str(img.path)
+            if key in seen_paths:
+                continue
+            seen_paths.add(key)
+            results.append(img)
+
+    log.info("Scanned %d images across %d folder(s)", len(results), len(roots))
+    return results
