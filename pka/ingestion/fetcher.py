@@ -388,11 +388,13 @@ async def _fetch_one(
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-def _get_pending(limit: int | None = None) -> list[tuple[int, str]]:
-    """Return (document_id, url) rows with fetch_status='pending' and source='firefox'."""
+def _get_pending(
+    limit: int | None = None, source: Source | str = Source.FIREFOX,
+) -> list[tuple[int, str]]:
+    """Return (document_id, url) rows with fetch_status='pending' for ``source``."""
     eng = get_engine()
     q = sa.select(documents.c.id, documents.c.url_or_path).where(
-        (documents.c.source == str(Source.FIREFOX)) &
+        (documents.c.source == str(source)) &
         (documents.c.fetch_status == str(FetchStatus.PENDING))
     )
     if limit:
@@ -401,8 +403,8 @@ def _get_pending(limit: int | None = None) -> list[tuple[int, str]]:
         return [(r[0], r[1]) for r in con.execute(q).fetchall() if r[1]]
 
 
-def reset_unfetchable_for_fetch() -> int:
-    """Re-queue unfetchable Firefox bookmarks before a fetch run (dev mode only)."""
+def reset_unfetchable_for_fetch(source: Source | str = Source.FIREFOX) -> int:
+    """Re-queue unfetchable URLs for ``source`` before a fetch run (dev mode only)."""
     if not cfg.dev:
         return 0
 
@@ -410,7 +412,7 @@ def reset_unfetchable_for_fetch() -> int:
     with eng.begin() as con:
         rows = con.execute(
             sa.select(documents.c.id, documents.c.url_or_path).where(
-                (documents.c.source == str(Source.FIREFOX))
+                (documents.c.source == str(source))
                 & (documents.c.fetch_status == str(FetchStatus.UNFETCHABLE))
             )
         ).fetchall()
@@ -562,21 +564,22 @@ async def fetch_and_embed_pending(
     progress_key: str | None = None,
     embed_fn: Callable[..., dict] | None = None,
     dry_run: bool = False,
+    source: Source | str = Source.FIREFOX,
 ) -> dict:
     """
-    Fetch Firefox bookmark URLs and embed each document before moving to the next.
+    Fetch a source's document URLs and embed each document before moving to the next.
 
     Work queue includes pending URLs and fetched docs missing chunks (orphan backfill).
     """
-    from pka.db.queries import firefox_ingest_queue
+    from pka.db.queries import source_ingest_queue
     from pka.ingestion.sync_helpers import should_stop
 
-    reset_unfetchable_for_fetch()
+    reset_unfetchable_for_fetch(source)
 
     workers = concurrency if concurrency is not None else cfg.fetch_concurrency
-    work = firefox_ingest_queue(limit)
+    work = source_ingest_queue(source, limit)
     if not work:
-        log.info("No Firefox URLs to fetch and embed")
+        log.info("No %s URLs to fetch and embed", source)
         return {"fetched": 0, "skipped": 0, "unfetchable": 0, "embed": _empty_embed_stats()}
 
     log.info(

@@ -94,7 +94,11 @@ def _reject_image_single_path(source: str) -> None:
 async def get_path(source: str):
     require_source(source)
     _reject_image_single_path(source)
-    return spaths.get_source_path(source)
+    try:
+        return spaths.get_source_path(source)
+    except ValueError as exc:
+        # Credential-based sources (e.g. Reddit) have no filesystem path.
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.put("/sources/{source}/path")
@@ -115,6 +119,8 @@ def browse_path(source: str):
     _reject_image_single_path(source)
     try:
         chosen = spaths.open_native_picker(source)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(501, str(exc)) from exc
     return {"path": chosen}

@@ -13,6 +13,7 @@ class Source(StrEnum):
     CALIBRE = "calibre"
     IMAGE = "image"
     YOUTUBE = "youtube"
+    REDDIT = "reddit"
 
 
 class FetchStatus(StrEnum):

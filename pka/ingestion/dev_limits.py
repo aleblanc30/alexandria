@@ -19,6 +19,7 @@ _LIMIT_ATTR: dict[str, str] = {
     Source.CALIBRE: "dev_ingestion_limit_calibre",
     Source.IMAGE: "dev_ingestion_limit_image",
     Source.YOUTUBE: "dev_ingestion_limit_youtube",
+    Source.REDDIT: "dev_ingestion_limit_reddit",
 }
 
 

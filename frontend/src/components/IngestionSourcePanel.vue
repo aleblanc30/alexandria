@@ -104,6 +104,9 @@
       <div v-if="dirBrowsing" class="path-status hint">Waiting for the file picker window to open…</div>
     </div>
 
+    <div v-else-if="!pathBased" class="path-form">
+      <label class="path-label">{{ SOURCE_PATH_LABELS[source] }}</label>
+    </div>
     <div v-else class="path-form">
       <label class="path-label">{{ SOURCE_PATH_LABELS[source] }}</label>
       <div class="path-row">
@@ -144,7 +147,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import * as api from '@/api/client'
 import type { PhaseDetail, SyncProgress } from '@/api/client'
-import { SOURCE_COLORS, SOURCE_LABELS, SOURCE_PATH_LABELS, ingestJobLabel, sourceHasFetchPhase, sourceSkipsEmbedPhase, type IngestionSource } from '@/constants/sources'
+import { SOURCE_COLORS, SOURCE_LABELS, SOURCE_PATH_LABELS, ingestJobLabel, sourceHasFetchPhase, sourceIsPathBased, sourceSkipsEmbedPhase, type IngestionSource } from '@/constants/sources'
 import { ingestStatsSummary } from '@/lib/ingestStats'
 import { notifyError } from '@/lib/notifyError'
 import { useIngestionStore } from '@/stores/ingestion'
@@ -161,11 +164,15 @@ const pathInput = ref('')
 const pathBusy = ref(false)
 const browsing = ref(false)
 
+const pathBased = computed(() => sourceIsPathBased(props.source))
+
 const pathDirty = computed(() =>
   pathInfo.value != null && pathInput.value.trim() !== pathInfo.value.path,
 )
 
 async function loadPath() {
+  // Credential-based sources (e.g. Reddit) have no filesystem path to fetch.
+  if (!pathBased.value) return
   try {
     pathInfo.value = await api.getSourcePath(props.source)
     pathInput.value = pathInfo.value.path

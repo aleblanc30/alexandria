@@ -374,19 +374,22 @@ def document_ids_with_chunks(source: Source | str | None = None) -> set[int]:
     return {row[0] for row in rows}
 
 
-def firefox_ingest_queue(limit: int | None = None) -> list[tuple[int, str]]:
-    """Pending Firefox URLs plus fetched docs missing chunks (orphan backfill).
+def source_ingest_queue(
+    source: Source | str, limit: int | None = None,
+) -> list[tuple[int, str]]:
+    """Pending fetch URLs for ``source`` plus fetched docs missing chunks (orphans).
 
     Pending rows come first; duplicates by document id are dropped (pending wins).
     """
     eng = get_engine()
+    src = str(source)
     has_url = documents.c.url_or_path.isnot(None) & (documents.c.url_or_path != "")
     with eng.connect() as con:
         pending_rows = [
             (r[0], r[1])
             for r in con.execute(
                 sa.select(documents.c.id, documents.c.url_or_path).where(
-                    (documents.c.source == str(Source.FIREFOX))
+                    (documents.c.source == src)
                     & (documents.c.fetch_status == str(FetchStatus.PENDING))
                     & has_url
                 )
@@ -396,7 +399,7 @@ def firefox_ingest_queue(limit: int | None = None) -> list[tuple[int, str]]:
             (r[0], r[1])
             for r in con.execute(
                 sa.select(documents.c.id, documents.c.url_or_path).where(
-                    (documents.c.source == str(Source.FIREFOX))
+                    (documents.c.source == src)
                     & (documents.c.fetch_status == str(FetchStatus.FETCHED))
                     & has_url
                     & ~sa.exists(
@@ -418,6 +421,11 @@ def firefox_ingest_queue(limit: int | None = None) -> list[tuple[int, str]]:
     if limit is not None:
         out = out[:limit]
     return out
+
+
+def firefox_ingest_queue(limit: int | None = None) -> list[tuple[int, str]]:
+    """Firefox fetch queue (see :func:`source_ingest_queue`)."""
+    return source_ingest_queue(Source.FIREFOX, limit)
 
 
 def existing_chunk_count(document_id: int) -> int:
