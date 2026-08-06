@@ -209,9 +209,22 @@ export const useIngestionStore = defineStore('ingestion', () => {
     } catch (e) { notifyError(e) }
   }
 
+  async function purge(source: string): Promise<boolean> {
+    try {
+      const res = await api.purgeSource(source)
+      const docs = res.counts.documents ?? res.counts.images ?? 0
+      useToastStore().push(`${source}: purged ${docs} document(s)`, 'info')
+      await load(true)
+      return true
+    } catch (e) {
+      notifyError(e)
+      return false
+    }
+  }
+
   return {
     status, unfetchable, progress, pendingJob,
-    load, syncMetadata, ingest, cancel, stopPolling,
+    load, syncMetadata, ingest, cancel, purge, stopPolling,
     isMetadataRunning, isIngestRunning, isAnyJobRunning,
     applyJobFlags,
   }

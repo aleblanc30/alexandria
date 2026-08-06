@@ -62,6 +62,22 @@ def reset_clip_collection() -> None:
     _clip_col = None
 
 
+def delete_clip_vectors(vector_ids: list[str]) -> int:
+    """Remove CLIP vectors from the ``alexandria_clip`` collection.
+
+    Returns the number of ids handed to Chroma (0 if none or on failure).
+    """
+    ids = [vid for vid in vector_ids if vid]
+    if not ids:
+        return 0
+    try:
+        _get_clip_collection().delete(ids=ids)
+    except Exception as exc:
+        log.warning("CLIP Chroma delete failed: %s", exc)
+        return 0
+    return len(ids)
+
+
 def _ensure_image_document(img: ImageFile) -> int:
     """Create (or update) the unified ``documents`` row backing an image.
 
