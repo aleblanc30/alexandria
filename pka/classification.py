@@ -10,7 +10,7 @@ from pka.db.queries import get_engine
 from pka.db.schema import overlay_tags
 from pka.domains import extract_domain
 
-CLASSIFICATION_TAGS = frozenset({"academic", "paper", "preprint"})
+CLASSIFICATION_TAGS = frozenset({"academic", "paper", "preprint", "video"})
 
 ZOTERO_PAPER_TYPES = frozenset({"journalArticle", "conferencePaper", "thesis"})
 ZOTERO_PREPRINT_TYPES = frozenset({"preprint"})
@@ -60,12 +60,14 @@ def classify_document(
     item_type: str | None = None,
     url_or_path: str | None = None,
 ) -> list[str]:
-    """Return classification tags for a document, or [] if not academic."""
+    """Return classification tags for a document, or [] if unclassified."""
     src = str(source)
     if src == Source.ZOTERO:
         return _classify_zotero(item_type)
     if src == Source.FIREFOX:
         return _classify_firefox_url(url_or_path)
+    if src == Source.YOUTUBE:
+        return ["video"]
     return []
 
 

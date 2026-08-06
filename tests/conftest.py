@@ -160,6 +160,127 @@ def firefox_places_db(tmp_path) -> Path:
     return _make_firefox_db(profile_dir / "places.sqlite")
 
 
+# ── Fake YouTube Data API service ─────────────────────────────────────────────
+
+class _FakeRequest:
+    """Stands in for a googleapiclient request object (only ``execute`` used)."""
+
+    def __init__(self, data: dict):
+        self._data = data
+
+    def execute(self) -> dict:
+        return self._data
+
+
+class _FakeEndpoint:
+    def __init__(self, handler):
+        self._handler = handler
+
+    def list(self, **kwargs) -> _FakeRequest:
+        return _FakeRequest(self._handler(kwargs))
+
+
+class FakeYouTubeService:
+    """Minimal duck-typed stand-in for the YouTube Data API v3 client.
+
+    Single-page responses only (no ``nextPageToken``), which is all the
+    connector's pagination loops need to terminate.
+    """
+
+    def __init__(self, *, channels=None, playlists=None, playlist_items=None, videos=None):
+        self._channels = channels or {"items": []}
+        self._playlists = playlists or {"items": []}
+        self._playlist_items = playlist_items or {}   # playlist_id -> response
+        self._videos = videos or {}                   # video_id -> snippet dict
+
+    def channels(self):
+        return _FakeEndpoint(lambda kw: self._channels)
+
+    def playlists(self):
+        return _FakeEndpoint(lambda kw: self._playlists)
+
+    def playlistItems(self):  # noqa: N802 (mirror the API surface)
+        return _FakeEndpoint(
+            lambda kw: self._playlist_items.get(kw.get("playlistId"), {"items": []})
+        )
+
+    def videos(self):
+        def _handle(kw):
+            ids = [vid for vid in (kw.get("id") or "").split(",") if vid]
+            return {
+                "items": [
+                    {"id": vid, "snippet": self._videos[vid]}
+                    for vid in ids
+                    if vid in self._videos
+                ]
+            }
+
+        return _FakeEndpoint(_handle)
+
+
+@pytest.fixture()
+def youtube_service() -> FakeYouTubeService:
+    """A fake service with two playlists sharing one video (dedupe coverage)."""
+    return FakeYouTubeService(
+        channels={
+            "items": [
+                {"contentDetails": {"relatedPlaylists": {"likes": "LL_LIKED"}}}
+            ]
+        },
+        playlists={
+            "items": [
+                {"id": "PL_TALKS", "snippet": {"title": "Conference Talks"}},
+            ]
+        },
+        playlist_items={
+            "LL_LIKED": {
+                "items": [
+                    {
+                        "snippet": {
+                            "publishedAt": "2024-01-02T10:00:00Z",
+                            "resourceId": {"videoId": "vid_raft"},
+                        },
+                        "contentDetails": {"videoId": "vid_raft"},
+                    },
+                    {
+                        "snippet": {
+                            "publishedAt": "2024-03-01T08:00:00Z",
+                            "resourceId": {"videoId": "vid_paxos"},
+                        },
+                        "contentDetails": {"videoId": "vid_paxos"},
+                    },
+                ]
+            },
+            "PL_TALKS": {
+                "items": [
+                    {
+                        # Same video, added to this playlist earlier than to Likes
+                        "snippet": {
+                            "publishedAt": "2023-12-01T09:00:00Z",
+                            "resourceId": {"videoId": "vid_raft"},
+                        },
+                        "contentDetails": {"videoId": "vid_raft"},
+                    },
+                ]
+            },
+        },
+        videos={
+            "vid_raft": {
+                "title": "The Raft Consensus Algorithm",
+                "channelTitle": "Distributed Systems Talks",
+                "description": "A talk explaining the Raft consensus protocol.",
+                "tags": ["raft", "consensus", "distributed systems"],
+            },
+            "vid_paxos": {
+                "title": "Paxos Made Live",
+                "channelTitle": "Systems Channel",
+                "description": "Lessons from implementing Paxos in production.",
+                "tags": ["paxos"],
+            },
+        },
+    )
+
+
 FAKE_DIM = 8   # tiny dimension for mock Chroma vectors
 
 

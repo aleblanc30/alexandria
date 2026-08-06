@@ -34,6 +34,11 @@ SOURCE_PATH_SPECS: dict[str, SourcePathSpec] = {
     "zotero": SourcePathSpec("zotero_db", "file", "Select zotero.sqlite"),
     "calibre": SourcePathSpec("book_archive", "dir", "Select Calibre library folder"),
     "image": SourcePathSpec("images_dir", "dir", "Select image folder"),
+    # YouTube has no data folder; the configurable "path" is its OAuth client
+    # secret JSON (used to authorise read-only Data API access).
+    "youtube": SourcePathSpec(
+        "youtube_client_secret", "file", "Select YouTube OAuth client secret (JSON)"
+    ),
 }
 
 

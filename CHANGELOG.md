@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — YouTube saved-videos connector
+
+- New source connector: **YouTube saved videos** (`Source.YOUTUBE`). Reads the
+  authenticated user's playlists (Liked videos + all owned playlists) via the
+  **YouTube Data API v3** and ingests one document per unique video. A video in
+  multiple playlists collapses to one document (each playlist recorded as a
+  source collection; earliest save time wins). Content is **metadata only** —
+  title, channel, description, and the video's own tags embed as the searchable
+  text; every video also gets an inferred `video` browse tag. Transcript-based
+  enrichment is deferred (`BACKLOG.md`).
+- **Deliberate cloud exception:** Alexandria stays local-first everywhere else.
+  This is the one sanctioned outbound integration and is inert unless
+  `ALEXANDRIA_YOUTUBE_CLIENT_SECRET` (a desktop-app OAuth client) is set. Scope
+  is read-only (`youtube.readonly`); the refresh token is cached under `data/`
+  and never committed. Google client libraries are an opt-in extra
+  (`pip install -e '.[youtube]'`) and are lazy-imported, so the connector module
+  stays importable/testable without them.
+- CLI: `alexandria youtube [--metadata-only|--embed-only|--dry-run]`
+  (`scripts/run_youtube.py`). Sidebar gains a YouTube source; its configurable
+  "path" is the OAuth client-secret JSON. Status polling never touches the API
+  (network-free pending/corpus counts).
+
 ## Unreleased — maintainability pass (June 2026)
 
 ### Correctness fixes

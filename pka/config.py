@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     book_archive: Path = Path.home() / "Documents/books"
     images_dir: Path = Path.home() / "Pictures" / "research"
 
+    # ── YouTube (Data API v3 — the one sanctioned cloud connector) ───────────
+    # OAuth *desktop app* client secret JSON downloaded from Google Cloud Console.
+    # The connector is inert until this file exists (or a cached token is present).
+    youtube_client_secret: Path = (
+        Path.home() / ".config" / "alexandria" / "youtube_client_secret.json"
+    )
+
     # ── Output paths ────────────────────────────────────────────────────────
     data_dir: Path = Path("data")
     dev: bool = False  # ALEXANDRIA_DEV=1 — dev API, Firefox places snapshot, Zotero library snapshot
@@ -40,10 +47,16 @@ class Settings(BaseSettings):
     dev_ingestion_limit_zotero: int = 10
     dev_ingestion_limit_calibre: int = 10
     dev_ingestion_limit_image: int = 10
+    dev_ingestion_limit_youtube: int = 10
 
     @property
     def archive_db(self) -> Path:
         return self.data_dir / "archive.db"
+
+    @property
+    def youtube_token_path(self) -> Path:
+        """Cached OAuth refresh token (lives under data/, git-ignored)."""
+        return self.data_dir / "youtube_token.json"
 
     @property
     def chroma_dir(self) -> Path:
@@ -107,7 +120,9 @@ class Settings(BaseSettings):
             return False
         return str(v).strip().lower() in ("1", "true", "yes", "on")
 
-    @field_validator("zotero_db", "firefox_db", "book_archive", "images_dir")
+    @field_validator(
+        "zotero_db", "firefox_db", "book_archive", "images_dir", "youtube_client_secret"
+    )
     @classmethod
     def _expand_and_check(cls, v: Path) -> Path:
         if v is None:
