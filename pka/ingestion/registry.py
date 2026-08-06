@@ -31,6 +31,11 @@ def get_source_handlers() -> dict[str, SourceHandlers]:
         sync_images_ingest,
         sync_images_metadata,
     )
+    from pka.ingestion.reddit_sync import (
+        sync_reddit,
+        sync_reddit_ingest,
+        sync_reddit_metadata,
+    )
     from pka.ingestion.zotero_sync import (
         sync_zotero,
         sync_zotero_ingest,
@@ -63,6 +68,11 @@ def get_source_handlers() -> dict[str, SourceHandlers]:
             sync_metadata=sync_images_metadata,
             sync_ingest=sync_images_ingest,
             sync_full=sync_images,
+        ),
+        Source.REDDIT: SourceHandlers(
+            sync_metadata=sync_reddit_metadata,
+            sync_ingest=sync_reddit_ingest,
+            sync_full=sync_reddit,
         ),
     }
 

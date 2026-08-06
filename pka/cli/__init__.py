@@ -27,6 +27,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "init":                    ("init_db", "Create/upgrade the SQLite archive (idempotent)"),
     "zotero":                  ("zotero", "Sync the Zotero library"),
     "firefox":                 ("firefox", "Ingest Firefox bookmarks (metadata + fetch + embed)"),
+    "reddit":                  ("reddit", "Ingest Reddit saved posts (metadata + embed + fetch)"),
     "calibre":                 ("calibre", "Ingest a Calibre library"),
     "images":                  ("images", "Scan and index the images folder"),
     "clustering":              ("clustering", "Run the clustering pipeline"),

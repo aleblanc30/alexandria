@@ -78,6 +78,16 @@ chunks are re-queued automatically on the next ingest run. When a Firefox URL
 returns HTTP 404, the fetcher can fall back to the closest Internet Archive
 snapshot (`fetch_wayback_fallback`, default on).
 
+**Reddit saved posts** are a *network* source (OAuth API via optional `praw`,
+credentials in `.env`, no filesystem path) rather than a local DB. Phase 1
+persists every saved item; phase 2 embeds the inline body of self-posts and
+comments (the cheap text) and fetches external link posts through the shared
+fetcher (`fetch_and_embed_pending(source=Source.REDDIT)`, backed by the
+generalized `source_ingest_queue`). Because probing the API on every status poll
+would be slow and rate-limited, `count_pending_metadata` / `source_corpus_size`
+return 0 for Reddit and the metadata sync computes its own pending count from the
+freshly loaded saved list.
+
 Firefox phase 2 also uses domain-specific handlers instead of raw HTML scrape
 where APIs exist: Wikipedia (MediaWiki), Amazon product pages, **arXiv**
 (`export.arxiv.org` metadata + PDF — updates `documents.title` and

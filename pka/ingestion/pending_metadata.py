@@ -28,6 +28,11 @@ def archive_document_count(source: Source | str) -> int:
 def count_pending_metadata(source: Source | str) -> int:
     """Source items not yet present in the archive (metadata still to import)."""
     src = str(source)
+    if src == Source.REDDIT:
+        # Network source: probing here would hit the Reddit API on every status
+        # poll. The metadata sync computes its own pending count instead.
+        return 0
+
     if src == Source.FIREFOX:
         from pka.connectors.firefox import load_bookmarks
 
@@ -73,6 +78,11 @@ def source_corpus_size(source: Source | str) -> int:
     Firefox ``_plan_counts`` / ``set_corpus_total`` pattern.
     """
     src = str(source)
+    if src == Source.REDDIT:
+        # Network source: don't call the Reddit API from status/baseline probes.
+        # The ingest job sets its own phase totals from the loaded saved list.
+        return 0
+
     if src == Source.FIREFOX:
         from pka.connectors.firefox import load_bookmarks
 
