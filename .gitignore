@@ -29,6 +29,10 @@ data/
 *.sqlite*
 chroma/
 
+# YouTube OAuth secrets (never commit)
+youtube_token.json
+*client_secret*.json
+
 # Frontend
 node_modules/
 dist/

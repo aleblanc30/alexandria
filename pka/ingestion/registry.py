@@ -31,6 +31,11 @@ def get_source_handlers() -> dict[str, SourceHandlers]:
         sync_images_ingest,
         sync_images_metadata,
     )
+    from pka.ingestion.youtube_sync import (
+        sync_youtube,
+        sync_youtube_ingest,
+        sync_youtube_metadata,
+    )
     from pka.ingestion.zotero_sync import (
         sync_zotero,
         sync_zotero_ingest,
@@ -63,6 +68,11 @@ def get_source_handlers() -> dict[str, SourceHandlers]:
             sync_metadata=sync_images_metadata,
             sync_ingest=sync_images_ingest,
             sync_full=sync_images,
+        ),
+        Source.YOUTUBE: SourceHandlers(
+            sync_metadata=sync_youtube_metadata,
+            sync_ingest=sync_youtube_ingest,
+            sync_full=sync_youtube,
         ),
     }
 

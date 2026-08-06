@@ -63,6 +63,12 @@ def count_pending_metadata(source: Source | str) -> int:
                 pending += 1
         return pending
 
+    # YouTube is a network source; never hit the Data API on a status poll.
+    # The real pending count is computed inline from loaded videos in
+    # ``sync_youtube_metadata``.
+    if src == Source.YOUTUBE:
+        return 0
+
     return 0
 
 

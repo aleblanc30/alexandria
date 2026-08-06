@@ -7,6 +7,7 @@ Installed as the ``alexandria`` console script::
     alexandria firefox --limit 100
     alexandria calibre --fulltext
     alexandria images --search "neural network diagram"
+    alexandria youtube --metadata-only
     alexandria clustering --accept
     alexandria domain-report --json
     alexandria purge-source firefox --dry-run
@@ -29,6 +30,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "firefox":                 ("firefox", "Ingest Firefox bookmarks (metadata + fetch + embed)"),
     "calibre":                 ("calibre", "Ingest a Calibre library"),
     "images":                  ("images", "Scan and index the images folder"),
+    "youtube":                 ("youtube", "Ingest saved YouTube videos (metadata + embed)"),
     "clustering":              ("clustering", "Run the clustering pipeline"),
     "domain-report":           ("domain_report", "Domain frequency report over ingested URLs"),
     "purge-source":            ("purge_source", "Remove archived data for a source"),

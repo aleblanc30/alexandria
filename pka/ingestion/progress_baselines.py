@@ -9,7 +9,11 @@ from pka.constants import ALL_SOURCES, FetchStatus, Source
 from pka.db.schema import chunks, documents, images
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.pending_metadata import count_pending_metadata, source_corpus_size
-from pka.ingestion.source_access import calibre_available, images_available
+from pka.ingestion.source_access import (
+    calibre_available,
+    images_available,
+    youtube_available,
+)
 
 log = logging.getLogger(__name__)
 
@@ -175,6 +179,7 @@ def build_ingestion_status(engine) -> dict:
         ).scalar()
     calibre_ok, calibre_msg = calibre_available()
     images_ok, images_msg = images_available()
+    youtube_ok, youtube_msg = youtube_available()
     return {
         "total": doc_total + image_total,
         "by_source": by_source,
@@ -185,5 +190,6 @@ def build_ingestion_status(engine) -> dict:
         "source_unavailable": {
             Source.CALIBRE: None if calibre_ok else calibre_msg,
             Source.IMAGE: None if images_ok else images_msg,
+            Source.YOUTUBE: None if youtube_ok else youtube_msg,
         },
     }

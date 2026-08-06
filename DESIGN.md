@@ -76,6 +76,36 @@ To add a new source (e.g. Pocket, Raindrop, Readwise):
 
 9. Add an entry to the sidebar in `frontend/src/components/AppSidebar.vue`.
 
+### 2.1 YouTube saved-videos connector (cloud exception)
+
+The YouTube connector (`Source.YOUTUBE`) is the **only** connector that reaches
+an external network API rather than a local file. This is a deliberate, scoped
+exception to the local-first rule, not a precedent for other cloud sources:
+
+- **Inert by default.** Nothing happens unless the user configures a desktop-app
+  OAuth client secret (`ALEXANDRIA_YOUTUBE_CLIENT_SECRET`). No credentials → the
+  source reports "unavailable" and every status poll stays network-free
+  (`count_pending_metadata` / `source_corpus_size` return 0 for YouTube; the real
+  pending count is computed inline from the loaded videos in
+  `sync_youtube_metadata`).
+- **Read-only, local token.** Scope is `youtube.readonly`; the OAuth refresh
+  token is cached at `data/youtube_token.json` (git-ignored) and never leaves the
+  machine. No telemetry, no writes back to YouTube.
+- **Optional dependency.** `google-api-python-client` / `google-auth-oauthlib`
+  live in the `youtube` extra and are lazy-imported inside the auth helpers, so
+  `pka.connectors.youtube` imports (and unit-tests, via an injected fake
+  `service`) without them installed.
+- **Metadata only.** `load_saved_videos()` lists the Liked-videos playlist plus
+  all owned playlists, dedupes videos across playlists (playlists → source
+  collections, earliest add time → `date_added`), and hydrates title/channel/
+  description/tags via `videos.list`. Embed text is
+  `title + channel + description + tags`. Note: the Data API no longer exposes
+  *Watch Later*, so it is not included. Transcript enrichment is deferred
+  (`BACKLOG.md`).
+
+Otherwise the connector follows the standard §2 checklist and the Zotero-style
+two-phase flow (metadata import, then embed — no async fetch phase).
+
 ## 3. Two-phase ingestion model
 
 Calibre and Firefox follow a two-phase pattern:

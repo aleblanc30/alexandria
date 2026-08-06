@@ -50,6 +50,12 @@ dev = [
 spacy = [
     "spacy>=3.7",                # optional sentence splitter backend
 ]
+youtube = [
+    # Saved-video connector (YouTube Data API v3). Opt-in so the core install
+    # stays local-first; the connector is inert without these + OAuth creds.
+    "google-api-python-client>=2.100",
+    "google-auth-oauthlib>=1.2",
+]
 
 [project.scripts]
 alexandria = "pka.cli:main"
