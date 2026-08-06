@@ -38,6 +38,10 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(ip, "_clip_client", None)
     monkeypatch.setattr(ip, "_clip_col", None)
 
+    # Reset cached provider instances so per-test config changes take effect
+    import pka.providers as providers
+    providers.reset_providers()
+
     # Reset in-memory sync progress so job state never leaks between tests
     from pka.constants import ALL_SOURCES
     from pka.ingestion import sync_progress as sp

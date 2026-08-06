@@ -26,6 +26,28 @@ graph TD
     K --> L[Vue Frontend]
 ```
 
+### Model backends (providers)
+
+Every LLM / vision / OCR / image-embedding call goes through a swappable
+**provider** in `pka/providers/` rather than talking to a backend directly.
+Selection is **per-capability** via config, so remote chat can run alongside
+local OCR/embeddings:
+
+| Capability | Config setting | Backends | Interface (`pka/providers/base.py`) |
+|-----------|----------------|----------|-------------------------------------|
+| Chat (text→JSON) | `chat_provider` | ollama, openrouter, ovh | `ChatProvider` |
+| Vision (image→text) | `vision_provider` | ollama, openrouter, ovh | `VisionProvider` |
+| OCR (image→text) | `ocr_provider` | tesseract | `OcrProvider` |
+| Image embed (CLIP) | `image_embed_provider` | clip | `ImageEmbedder` |
+
+OpenRouter and OVH share one OpenAI-compatible implementation
+(`openai_compat.py`); credentials/models come from `ALEXANDRIA_OPENROUTER_*` /
+`ALEXANDRIA_OVH_*`. Callers use the accessors in `pka/providers/__init__.py`
+(`get_chat_provider()` etc.); the historical `pka.ollama_chat.chat_json` and
+`image_extractor.classify_and_describe` / `ocr_image` / `clip_embed_*` are thin
+shims over these. **Text-chunk** embeddings are intentionally *not* here — they
+stay inside ChromaDB's built-in function (see `pka/storage/vector_store.py`).
+
 ## 2. Adding a new source connector
 
 To add a new source (e.g. Pocket, Raindrop, Readwise):

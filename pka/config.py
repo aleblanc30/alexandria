@@ -4,6 +4,7 @@ Project-wide settings.
 All paths default to sensible per-user locations and can be overridden via the
 ``ALEXANDRIA_`` env prefix or a ``.env`` file in the working directory.
 """
+
 from pathlib import Path
 
 from pydantic import field_validator
@@ -27,13 +28,15 @@ def reject_system_path(v: Path) -> Path:
 class Settings(BaseSettings):
     # ── Source paths ────────────────────────────────────────────────────────
     zotero_db: Path = Path.home() / "Zotero" / "zotero.sqlite"
-    firefox_db: Path = Path.home() / ".mozilla/firefox"   # profile auto-detected
+    firefox_db: Path = Path.home() / ".mozilla/firefox"  # profile auto-detected
     book_archive: Path = Path.home() / "Documents/books"
     images_dir: Path = Path.home() / "Pictures" / "research"
 
     # ── Output paths ────────────────────────────────────────────────────────
     data_dir: Path = Path("data")
-    dev: bool = False  # ALEXANDRIA_DEV=1 — dev API, Firefox places snapshot, Zotero library snapshot
+    dev: bool = (
+        False  # ALEXANDRIA_DEV=1 — dev API, Firefox places snapshot, Zotero library snapshot
+    )
     # Max docs synced/ingested per source when dev=True. Edit via
     # ALEXANDRIA_DEV_INGESTION_LIMIT_<SOURCE> env vars (e.g. ALEXANDRIA_DEV_INGESTION_LIMIT_ZOTERO).
     dev_ingestion_limit_firefox: int = 10
@@ -57,22 +60,42 @@ class Settings(BaseSettings):
     def firefox_places_copy(self) -> Path:
         return self.data_dir / "firefox_places_copy.sqlite"
 
-    # ── Ollama ──────────────────────────────────────────────────────────────
+    # ── Providers (per-capability backend selection) ────────────────────────
+    # Each capability picks its own backend, so e.g. OpenRouter chat can run
+    # alongside local Tesseract OCR + CLIP. See pka/providers/.
+    chat_provider: str = "ollama"  # ollama | openrouter | ovh
+    vision_provider: str = "ollama"  # ollama | openrouter | ovh
+    ocr_provider: str = "tesseract"  # tesseract
+    image_embed_provider: str = "clip"  # clip
+
+    # ── Ollama (local chat / vision) ────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
-    chat_model: str = ""   # auto-detect first non-embedding model when empty
-    vision_model: str = "llava-phi3"   # swap via ALEXANDRIA_VISION_MODEL (e.g. "llava")
+    chat_model: str = ""  # auto-detect first non-embedding model when empty
+    vision_model: str = "llava-phi3"  # swap via ALEXANDRIA_VISION_MODEL (e.g. "llava")
+
+    # ── OpenRouter (OpenAI-compatible remote chat / vision) ─────────────────
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_chat_model: str = ""  # e.g. "openai/gpt-4o-mini"
+    openrouter_vision_model: str = ""  # e.g. "openai/gpt-4o-mini"
+
+    # ── OVH AI Endpoints (OpenAI-compatible remote chat / vision) ───────────
+    ovh_api_key: str = ""
+    ovh_base_url: str = ""  # region endpoint, e.g. https://…/v1
+    ovh_chat_model: str = ""
+    ovh_vision_model: str = ""
 
     # ── Chunking ────────────────────────────────────────────────────────────
-    chunk_sentences: int = 5      # sentence-window size
-    chunk_overlap: int = 1        # sentences of overlap between windows
-    min_chunk_chars: int = 80     # discard chunks shorter than this
+    chunk_sentences: int = 5  # sentence-window size
+    chunk_overlap: int = 1  # sentences of overlap between windows
+    min_chunk_chars: int = 80  # discard chunks shorter than this
 
     # ── Firefox fetch ───────────────────────────────────────────────────────
-    fetch_timeout_seconds: float = 10.0       # max seconds to read response body
+    fetch_timeout_seconds: float = 10.0  # max seconds to read response body
     fetch_connect_timeout_seconds: float = 5.0  # max seconds to establish connection
-    fetch_concurrency: int = 8                # parallel URL fetches
-    fetch_pdf_max_pages: int | None = None    # cap PDF pages (None = all)
-    fetch_pdf_max_bytes: int = 50_000_000     # reject larger PDF downloads
+    fetch_concurrency: int = 8  # parallel URL fetches
+    fetch_pdf_max_pages: int | None = None  # cap PDF pages (None = all)
+    fetch_pdf_max_bytes: int = 50_000_000  # reject larger PDF downloads
     fetch_pdf_timeout_seconds: float = 120.0  # read timeout for .pdf bookmark URLs
     fetch_pdf_budget_extra_seconds: float = 30.0  # extraction slack on top of PDF timeouts
     fetch_wayback_fallback: bool = True  # on HTTP 404, query archive.org for a snapshot
@@ -84,14 +107,14 @@ class Settings(BaseSettings):
     )
 
     # ── Images ──────────────────────────────────────────────────────────────
-    ocr_lang: str = "eng"                                  # passed to pytesseract
-    clip_model: str = "openai/clip-vit-base-patch32"       # HuggingFace hub id
+    ocr_lang: str = "eng"  # passed to pytesseract
+    clip_model: str = "openai/clip-vit-base-patch32"  # HuggingFace hub id
 
     # ── Clustering ──────────────────────────────────────────────────────────
-    cluster_space: str = "pca"              # pca | legacy_umap
+    cluster_space: str = "pca"  # pca | legacy_umap
     cluster_pca_components: int = 50
     cluster_label_workers: int = 4
-    cluster_async_labelling: bool = False     # TF-IDF first, LLM relabel in background
+    cluster_async_labelling: bool = False  # TF-IDF first, LLM relabel in background
     cluster_regenerate_temperature: float = 0.85  # higher on manual Regenerate label (Ollama)
 
     # ── Tag training ───────────────────────────────────────────────────────

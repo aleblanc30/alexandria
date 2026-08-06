@@ -1,25 +1,25 @@
 """
 Four extraction passes for each image:
 
-  1. classify()     — vision LLM (llava/moondream) → image_type label
+  1. classify()     — vision LLM (llava/moondream/remote) → image_type label
   2. describe()     — vision LLM → prose description (reuses the classify call)
-  3. ocr()          — Tesseract → raw text
-  4. clip_embed()   — CLIP model via transformers → float vector
+  3. ocr()          — OCR provider (Tesseract) → raw text
+  4. clip_embed()   — image-embed provider (CLIP) → float vector
 
-All passes are independent and can be skipped selectively. The vision LLM
-calls are batched into a single prompt that returns both classification and
-description, avoiding two round-trips.
+All passes are independent and can be skipped selectively. Every pass delegates
+to the backend selected in ``pka/providers/`` (Ollama/OpenRouter/OVH for vision,
+Tesseract for OCR, CLIP for embeddings); this module owns only the prompt,
+image encoding, and JSON-salvage logic.
 """
+
 import base64
 import json
 import logging
 import re
 from pathlib import Path
 
-import httpx
-
-from pka.config import settings as cfg
 from pka.json_utils import parse_llm_json as _parse_llm_json
+from pka.providers import get_image_embedder, get_ocr_provider, get_vision_provider
 
 log = logging.getLogger(__name__)
 
@@ -46,9 +46,7 @@ No markdown, no explanation. Only the JSON object."""
 
 
 _IMAGE_TYPE_RE = re.compile(r'"?image_type"?\s*[:=]\s*"?([a-z_]+)', re.IGNORECASE)
-_DESCRIPTION_RE = re.compile(
-    r'"?description"?\s*[:=]\s*"(.*)"\s*}?\s*$', re.IGNORECASE | re.DOTALL
-)
+_DESCRIPTION_RE = re.compile(r'"?description"?\s*[:=]\s*"(.*)"\s*}?\s*$', re.IGNORECASE | re.DOTALL)
 
 
 def _salvage_vision_fields(content: str) -> tuple[str, str]:
@@ -72,6 +70,7 @@ def _salvage_vision_fields(content: str) -> tuple[str, str]:
 
 # ── Image encoding ────────────────────────────────────────────────────────────
 
+
 def _encode_image(path: Path, max_px: int = 1024) -> str:
     """Return base64-encoded JPEG, downsampled to ``max_px`` on the longest side."""
     import io
@@ -89,36 +88,20 @@ def _encode_image(path: Path, max_px: int = 1024) -> str:
         return base64.b64encode(buf.getvalue()).decode()
 
 
-# ── Pass 1 + 2: classify + describe (single LLM call) ────────────────────────
+# ── Pass 1 + 2: classify + describe (single vision call) ─────────────────────
+
 
 def classify_and_describe(
     path: Path,
     model: str = "llava",
 ) -> tuple[str, str]:
-    """Call the Ollama vision model. Returns ``(image_type, description)``.
+    """Call the vision provider. Returns ``(image_type, description)``.
 
     Falls back to ``("unknown", "")`` on any failure.
     """
     try:
         b64 = _encode_image(path)
-        resp = httpx.post(
-            f"{cfg.ollama_base_url}/api/chat",
-            json={
-                "model": model,
-                "messages": [{
-                    "role": "user",
-                    "content": _CLASSIFY_PROMPT,
-                    "images": [b64],
-                }],
-                # Grammar-constrain the output to valid JSON so descriptions
-                # containing quotes don't produce unparseable responses.
-                "format": "json",
-                "stream": False,
-            },
-            timeout=120,
-        )
-        resp.raise_for_status()
-        content = resp.json()["message"]["content"]
+        content = get_vision_provider().complete(_CLASSIFY_PROMPT, b64, model=model)
 
         try:
             parsed = _parse_llm_json(content)
@@ -140,115 +123,27 @@ def classify_and_describe(
 
 # ── Pass 3: OCR ───────────────────────────────────────────────────────────────
 
+
 def ocr_image(path: Path, lang: str = "eng") -> str:
-    """Run Tesseract OCR. Returns extracted text or empty string on failure."""
-    try:
-        import pytesseract
-        from PIL import Image
-
-        with Image.open(path) as img:
-            grey = img.convert("L")  # greyscale boosts Tesseract accuracy
-            text = pytesseract.image_to_string(grey, lang=lang)
-            return text.strip()
-
-    except ImportError:
-        log.debug("pytesseract not installed — OCR skipped for %s", path.name)
-        return ""
-    except Exception as exc:
-        log.warning("OCR failed for %s: %s", path.name, exc)
-        return ""
+    """Run OCR via the configured provider. Returns text or ``""`` on failure."""
+    return get_ocr_provider().ocr(path, lang=lang)
 
 
 # ── Pass 4: CLIP embedding ────────────────────────────────────────────────────
 
-_clip_model = None
-_clip_processor = None
-
-
-def _load_clip():
-    global _clip_model, _clip_processor
-    if _clip_model is None:
-        import os
-
-        # Load the cached model without a HF Hub round-trip. Even with weights
-        # cached, from_pretrained otherwise re-checks the revision online on
-        # every load — adding latency, emitting the "unauthenticated request"
-        # warning, and failing when offline. HF_HUB_OFFLINE (set before the
-        # first transformers/huggingface_hub import) forces a pure local load,
-        # matching Alexandria's local-first design. (The kwarg local_files_only
-        # alone does not suppress the round-trip in current huggingface_hub.)
-        os.environ.setdefault("HF_HUB_OFFLINE", "1")
-        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-        from transformers import CLIPModel, CLIPProcessor
-        model_name = cfg.clip_model
-
-        def _load():
-            proc = CLIPProcessor.from_pretrained(model_name)
-            mdl = CLIPModel.from_pretrained(model_name)
-            return proc, mdl
-
-        try:
-            log.info("Loading CLIP model %s from cache…", model_name)
-            _clip_processor, _clip_model = _load()
-        except OSError:
-            # Not cached yet — allow a one-time download for this process.
-            log.info("CLIP model %s not cached — downloading once…", model_name)
-            os.environ["HF_HUB_OFFLINE"] = "0"
-            os.environ["TRANSFORMERS_OFFLINE"] = "0"
-            _clip_processor, _clip_model = _load()
-        _clip_model.eval()
-        log.info("CLIP model loaded.")
-    return _clip_model, _clip_processor
-
-
-def _pooled(features):
-    """Unwrap ``get_image_features``/``get_text_features`` return value.
-
-    transformers >= 4.56 wraps these in ``BaseModelOutputWithPooling`` (the
-    projected embedding lives at ``.pooler_output``) instead of returning a
-    plain tensor directly.
-    """
-    return features if hasattr(features, "norm") else features.pooler_output
-
 
 def clip_embed_image(path: Path) -> list[float] | None:
-    """Return a normalised CLIP image embedding, or ``None`` on failure."""
-    try:
-        import torch
-        from PIL import Image
-
-        model, processor = _load_clip()
-        with Image.open(path) as img:
-            img = img.convert("RGB")
-            inputs = processor(images=img, return_tensors="pt")
-
-        with torch.no_grad():
-            features = _pooled(model.get_image_features(**inputs))
-            features = features / features.norm(dim=-1, keepdim=True)
-
-        return features.squeeze().tolist()
-
-    except Exception as exc:
-        log.warning("CLIP embedding failed for %s: %s", path.name, exc)
-        return None
+    """Return a normalised image embedding, or ``None`` on failure."""
+    return get_image_embedder().embed_image(path)
 
 
 def clip_embed_text(query: str) -> list[float] | None:
-    """Embed a text query in the CLIP text space (for cross-modal search)."""
-    try:
-        import torch
-        model, processor = _load_clip()
-        inputs = processor(text=[query], return_tensors="pt", padding=True)
-        with torch.no_grad():
-            features = _pooled(model.get_text_features(**inputs))
-            features = features / features.norm(dim=-1, keepdim=True)
-        return features.squeeze().tolist()
-    except Exception as exc:
-        log.warning("CLIP text embedding failed: %s", exc)
-        return None
+    """Embed a text query in the image-embedding space (for cross-modal search)."""
+    return get_image_embedder().embed_text(query)
 
 
 # ── Searchable text for description + OCR ────────────────────────────────────
+
 
 def image_search_text(ocr_text: str, description: str) -> str | None:
     """Combine OCR + description for Chroma text search (same collection as chunks)."""
