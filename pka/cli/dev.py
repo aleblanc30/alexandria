@@ -37,18 +37,13 @@ STARTUP_TIMEOUT_S = 15.0
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 
-_open_lock = threading.Lock()
-_browser_opened = False
-
 
 def _stream_output(
     proc: subprocess.Popen,
     prefix: str,
     ready_marker: str,
     ready_event: threading.Event,
-    on_ready,
 ) -> None:
-    global _browser_opened
     assert proc.stdout is not None
     for raw_line in proc.stdout:
         line = raw_line.rstrip()
@@ -57,10 +52,6 @@ def _stream_output(
         # "\x1b[1mLocal\x1b[22m:"), so match against the color-stripped line.
         if ready_marker in _ANSI_RE.sub("", line) and not ready_event.is_set():
             ready_event.set()
-            with _open_lock:
-                if not _browser_opened:
-                    _browser_opened = True
-                    on_ready()
 
 
 def _kill(proc: subprocess.Popen) -> None:
@@ -110,7 +101,8 @@ def main(argv: list[str] | None = None) -> int:
         backend = subprocess.Popen(
             [
                 sys.executable, "-m", "uvicorn", "pka.api.main:app",
-                "--reload", "--port", str(BACKEND_PORT),
+                "--reload", "--reload-dir", str(REPO_ROOT / "pka"),
+                "--port", str(BACKEND_PORT),
             ],
             cwd=REPO_ROOT,
             env=backend_env,
@@ -128,22 +120,18 @@ def main(argv: list[str] | None = None) -> int:
             bufsize=1,
         )
 
-        def open_browser() -> None:
-            webbrowser.open(FRONTEND_URL)
-
-        on_frontend_ready = (lambda: None) if args.no_open else open_browser
         backend_ready = threading.Event()
         frontend_ready = threading.Event()
 
         threads = [
             threading.Thread(
                 target=_stream_output,
-                args=(backend, "api", "Uvicorn running on", backend_ready, lambda: None),
+                args=(backend, "api", "Uvicorn running on", backend_ready),
                 daemon=True,
             ),
             threading.Thread(
                 target=_stream_output,
-                args=(frontend, "web", "Local:", frontend_ready, on_frontend_ready),
+                args=(frontend, "web", "Local:", frontend_ready),
                 daemon=True,
             ),
         ]
@@ -157,6 +145,13 @@ def main(argv: list[str] | None = None) -> int:
             if backend.poll() is not None or frontend.poll() is not None:
                 break
             time.sleep(0.2)
+
+        # Open the browser only once BOTH servers are ready. The frontend (Vite)
+        # reports ready before the backend finishes its init_db() startup; opening
+        # on the frontend alone means the first wave of API calls races the backend
+        # and the Vite proxy surfaces the unreachable target as 500 toasts.
+        if backend_ready.is_set() and frontend_ready.is_set() and not args.no_open:
+            webbrowser.open(FRONTEND_URL)
 
         if not (backend_ready.is_set() and frontend_ready.is_set()):
             which = []
