@@ -58,7 +58,11 @@ def sync_images_ingest(
     sp.skip_phase(key, "fetching")
     sp.set_phase(key, "embedding", n)
     stats = ingest_images(
-        images, vision_model=cfg.vision_model, dry_run=dry_run, progress_key=key,
+        images,
+        vision_model=cfg.vision_model,
+        skip_ocr=not cfg.ocr_enabled,
+        dry_run=dry_run,
+        progress_key=key,
     )
     log.info("Image ingest: %s", stats)
     return {"ingest": stats, "stopped": stats.get("stopped")}

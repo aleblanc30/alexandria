@@ -120,13 +120,20 @@ class Settings(BaseSettings):
     # alongside local Tesseract OCR + CLIP. See pka/providers/.
     chat_provider: str = "ollama"  # ollama | openrouter | ovh
     vision_provider: str = "ollama"  # ollama | openrouter | ovh
-    ocr_provider: str = "tesseract"  # tesseract
+    ocr_provider: str = "vlm"  # vlm (vision model transcribes) | tesseract
     image_embed_provider: str = "clip"  # clip
+
+    # Master switch for the OCR pass. Set ALEXANDRIA_OCR_ENABLED=0 to skip text
+    # extraction entirely (UI + CLI + sync), relying only on the VLM description.
+    ocr_enabled: bool = True
 
     # ── Ollama (local chat / vision) ────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
     chat_model: str = ""  # auto-detect first non-embedding model when empty
-    vision_model: str = "llava-phi3"  # swap via ALEXANDRIA_VISION_MODEL (e.g. "llava")
+    vision_model: str = "llava"  # swap via ALEXANDRIA_VISION_MODEL (e.g. "llava-phi3")
+    # Model used by the "vlm" OCR provider to transcribe image text. Empty ⇒ reuse
+    # ``vision_model`` so classification, description, and OCR share one model.
+    vlm_ocr_model: str = ""
 
     # ── OpenRouter (OpenAI-compatible remote chat / vision) ─────────────────
     openrouter_api_key: str = ""
@@ -187,7 +194,9 @@ class Settings(BaseSettings):
     tag_training_llm_chat_timeout_seconds: float = 60.0  # per doc in LLM pseudo-label
 
     # ── Validators ──────────────────────────────────────────────────────────
-    @field_validator("dev", "fetch_wayback_fallback", "cluster_async_labelling", mode="before")
+    @field_validator(
+        "dev", "fetch_wayback_fallback", "cluster_async_labelling", "ocr_enabled", mode="before"
+    )
     @classmethod
     def _parse_bool(cls, v: object) -> bool:
         if isinstance(v, bool):

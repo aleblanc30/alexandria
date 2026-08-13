@@ -1,5 +1,8 @@
 """Provider registry dispatch + OpenAI-compatible backend behaviour (HTTP mocked)."""
 
+from pathlib import Path
+from unittest.mock import MagicMock
+
 import pytest
 
 import pka.providers as providers
@@ -10,6 +13,7 @@ from pka.providers.openai_compat import (
     OpenAICompatVisionProvider,
 )
 from pka.providers.tesseract import TesseractOcrProvider
+from pka.providers.vlm_ocr import VlmOcrProvider
 
 # ── Registry dispatch ─────────────────────────────────────────────────────────
 
@@ -57,11 +61,58 @@ class TestRegistryDispatch:
         assert p.base_url == "https://ovh.example/v1"
         assert p.model == "vision-x"
 
+    def test_ocr_provider_vlm_selects_vision_backend(self, monkeypatch):
+        monkeypatch.setattr(providers.cfg, "ocr_provider", "vlm")
+        providers.reset_providers()
+        assert isinstance(providers.get_ocr_provider(), VlmOcrProvider)
+
     def test_unknown_provider_raises(self, monkeypatch):
         monkeypatch.setattr(providers.cfg, "chat_provider", "bogus")
         providers.reset_providers()
         with pytest.raises(ValueError, match="Unknown chat provider"):
             providers.get_chat_provider()
+
+    def test_unknown_ocr_provider_raises(self, monkeypatch):
+        monkeypatch.setattr(providers.cfg, "ocr_provider", "bogus")
+        providers.reset_providers()
+        with pytest.raises(ValueError, match="Unknown OCR provider"):
+            providers.get_ocr_provider()
+
+
+# ── VLM OCR provider ──────────────────────────────────────────────────────────
+
+
+class TestVlmOcr:
+    def _patch_vision(self, monkeypatch, content: str):
+        """Stub the vision provider + image encoding so no HTTP/PIL is touched."""
+        fake = MagicMock()
+        fake.complete.return_value = content
+        monkeypatch.setattr("pka.providers.vlm_ocr.get_vision_provider", lambda: fake)
+        monkeypatch.setattr(
+            "pka.ingestion.image_extractor._encode_image", lambda p, max_px=1024: "QUJD"
+        )
+        return fake
+
+    def test_parses_transcribed_text(self, monkeypatch):
+        fake = self._patch_vision(monkeypatch, '{"text": "Hello\\nWorld"}')
+        out = VlmOcrProvider().ocr(Path("slide.png"))
+        assert out == "Hello\nWorld"
+        # Uses the vision model, not Tesseract.
+        assert fake.complete.called
+
+    def test_salvages_text_from_invalid_json(self, monkeypatch):
+        # Unescaped inner quotes break strict JSON; the field is still recovered.
+        self._patch_vision(monkeypatch, '{"text": "He said "hi" loudly"}')
+        assert VlmOcrProvider().ocr(Path("slide.png")) == 'He said "hi" loudly'
+
+    def test_returns_empty_on_failure(self, monkeypatch):
+        fake = MagicMock()
+        fake.complete.side_effect = RuntimeError("boom")
+        monkeypatch.setattr("pka.providers.vlm_ocr.get_vision_provider", lambda: fake)
+        monkeypatch.setattr(
+            "pka.ingestion.image_extractor._encode_image", lambda p, max_px=1024: "QUJD"
+        )
+        assert VlmOcrProvider().ocr(Path("slide.png")) == ""
 
 
 # ── OpenAI-compatible chat ────────────────────────────────────────────────────

@@ -96,7 +96,11 @@ def _build_ocr(name: str) -> OcrProvider:
         from pka.providers.tesseract import TesseractOcrProvider
 
         return TesseractOcrProvider()
-    raise ValueError(f"Unknown OCR provider: {name!r} (expected tesseract)")
+    if name == "vlm":
+        from pka.providers.vlm_ocr import VlmOcrProvider
+
+        return VlmOcrProvider()
+    raise ValueError(f"Unknown OCR provider: {name!r} (expected vlm|tesseract)")
 
 
 def _build_embedder(name: str) -> ImageEmbedder:

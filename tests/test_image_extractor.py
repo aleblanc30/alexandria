@@ -117,6 +117,13 @@ class TestClassifyAndDescribe:
 
 
 class TestOcrImage:
+    @pytest.fixture(autouse=True)
+    def _use_tesseract(self, monkeypatch):
+        """Pin the Tesseract backend — these tests exercise that provider."""
+        import pka.providers as providers
+        monkeypatch.setattr(providers.cfg, "ocr_provider", "tesseract")
+        providers.reset_providers()
+
     def test_success(self, sample_png, monkeypatch):
         monkeypatch.setattr(
             "pytesseract.image_to_string",

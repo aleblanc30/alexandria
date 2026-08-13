@@ -37,7 +37,7 @@ local OCR/embeddings:
 |-----------|----------------|----------|-------------------------------------|
 | Chat (text→JSON) | `chat_provider` | ollama, openrouter, ovh | `ChatProvider` |
 | Vision (image→text) | `vision_provider` | ollama, openrouter, ovh | `VisionProvider` |
-| OCR (image→text) | `ocr_provider` | tesseract | `OcrProvider` |
+| OCR (image→text) | `ocr_provider` | vlm, tesseract | `OcrProvider` |
 | Image embed (CLIP) | `image_embed_provider` | clip | `ImageEmbedder` |
 
 OpenRouter and OVH share one OpenAI-compatible implementation
