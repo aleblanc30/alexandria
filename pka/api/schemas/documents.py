@@ -27,10 +27,17 @@ class DocumentOut(BaseModel):
     note: str | None = None
 
 
+class ImageDetail(BaseModel):
+    """Image-specific fields, present only when ``source == image``."""
+    image_type: str | None = None
+    ocr_text: str | None = None
+
+
 class DocumentDetail(DocumentOut):
     description: str = ""
     chunks_count: int
     collections: list[str]
+    image: ImageDetail | None = None
 
 
 class TagPatchRequest(BaseModel):

@@ -119,3 +119,32 @@ class TestDocumentDetail:
         assert detail.cluster_id == cluster_id
         assert detail.chunks_count == 1
         assert detail.description == "Detail chunk."
+
+    def test_non_image_detail_has_no_image_block(self):
+        init_db()
+        doc_id = _seed_doc()
+        with get_engine().connect() as con:
+            detail = document_detail(con, doc_id, None)
+        assert detail.image is None
+
+    def test_image_detail_carries_type_and_ocr(self):
+        import sqlalchemy as sa
+
+        init_db()
+        doc_id = upsert_document(
+            "image", "/tmp/pic.png", "pic.png",
+            "/tmp/pic.png", int(time.time()),
+        )
+        update_card_summary(doc_id, "A prose description of the picture.")
+        with get_engine().begin() as con:
+            con.execute(sa.text("""
+                INSERT INTO images
+                    (document_id, path, filename, image_type, ocr_text, indexed_at)
+                VALUES (:d, '/tmp/pic.png', 'pic.png', 'slide', 'Extracted text.', 1)
+            """), {"d": doc_id})
+        with get_engine().connect() as con:
+            detail = document_detail(con, doc_id, None)
+        assert detail.image is not None
+        assert detail.image.image_type == "slide"
+        assert detail.image.ocr_text == "Extracted text."
+        assert detail.description == "A prose description of the picture."

@@ -7,13 +7,15 @@ description), so they live here to avoid drift and N+1 duplication.
 import sqlalchemy as sa
 
 from pka.api.db_rows import fetchall_mappings, fetchone_mapping
-from pka.api.schemas.documents import DocumentDetail, DocumentOut
+from pka.api.schemas.documents import DocumentDetail, DocumentOut, ImageDetail
+from pka.constants import Source
 from pka.db.queries import _batch_first_chunk_map, document_description, resolve_description
 from pka.db.schema import (
     chunks,
     cluster_assignments,
     clusters,
     documents,
+    images,
     overlay_tags,
     source_collections,
     source_tags,
@@ -132,6 +134,18 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
     ).scalar() or 0
     description = document_description(con, doc_id)
 
+    image_detail = None
+    if row["source"] == Source.IMAGE:
+        img_row = fetchone_mapping(con.execute(
+            sa.select(images.c.image_type, images.c.ocr_text)
+            .where(images.c.document_id == doc_id)
+        ))
+        if img_row:
+            image_detail = ImageDetail(
+                image_type=img_row["image_type"],
+                ocr_text=img_row["ocr_text"],
+            )
+
     cluster_id = cluster_label = None
     if run_id:
         ca = con.execute(
@@ -161,4 +175,5 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
         description=description,
         note=row.get("note"),
         collections=colls, chunks_count=n_chunks,
+        image=image_detail,
     )

@@ -13,7 +13,24 @@
     </div>
 
     <div v-if="doc" class="panel-body">
-      <section v-if="doc.description" class="section">
+      <template v-if="doc.image">
+        <section v-if="doc.image.image_type" class="section">
+          <div class="section-label">Image type</div>
+          <p class="panel-summary">{{ doc.image.image_type }}</p>
+        </section>
+
+        <section v-if="doc.description" class="section">
+          <div class="section-label">Description</div>
+          <p class="panel-summary">{{ doc.description }}</p>
+        </section>
+
+        <section v-if="doc.image.ocr_text" class="section">
+          <div class="section-label">OCR text</div>
+          <p class="panel-summary panel-ocr">{{ doc.image.ocr_text }}</p>
+        </section>
+      </template>
+
+      <section v-else-if="doc.description" class="section">
         <div class="section-label">Summary</div>
         <p class="panel-summary">{{ doc.description }}</p>
       </section>
@@ -160,6 +177,7 @@ async function addTag() {
 .hint-text   { font-size: 12px; color: var(--muted) }
 .panel-summary { font-size: 13px; color: var(--muted); line-height: 1.45; margin: 0 }
 .panel-note    { white-space: pre-line }
+.panel-ocr     { white-space: pre-line; font-size: 12px; max-height: 220px; overflow-y: auto; background: #f5f4f0; border-radius: var(--radius); padding: 10px }
 .score-bar   { height: 6px; background: #E6F1FB; border-radius: 3px; overflow: hidden; margin-bottom: 4px }
 .score-fill  { height: 100%; background: #378ADD; border-radius: 3px }
 </style>

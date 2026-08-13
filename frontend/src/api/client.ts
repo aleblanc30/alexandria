@@ -71,9 +71,11 @@ export interface DocumentOut  {
   description: string
   note: string | null
 }
+export interface ImageDetail { image_type: string | null; ocr_text: string | null }
 export interface DocumentDetail extends DocumentOut {
   description: string
   chunks_count: number; collections: string[]
+  image: ImageDetail | null
 }
 export interface DocumentListItem {
   id: number; source: string; source_id: string; title: string; description: string
