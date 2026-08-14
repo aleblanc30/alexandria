@@ -3,12 +3,12 @@ Four extraction passes for each image:
 
   1. classify()     — vision LLM (llava/moondream/remote) → image_type label
   2. describe()     — vision LLM → prose description (reuses the classify call)
-  3. ocr()          — OCR provider (Tesseract) → raw text
+  3. ocr()          — OCR provider (VLM/EasyOCR) → raw text
   4. clip_embed()   — image-embed provider (CLIP) → float vector
 
 All passes are independent and can be skipped selectively. Every pass delegates
 to the backend selected in ``pka/providers/`` (Ollama/OpenRouter/OVH for vision,
-Tesseract for OCR, CLIP for embeddings); this module owns only the prompt,
+VLM or EasyOCR for OCR, CLIP for embeddings); this module owns only the prompt,
 image encoding, and JSON-salvage logic.
 """
 

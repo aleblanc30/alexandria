@@ -1,4 +1,4 @@
-"""Unit tests for image extraction helpers (no real Ollama/CLIP/Tesseract)."""
+"""Unit tests for image extraction helpers (no real Ollama/CLIP/OCR)."""
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -118,25 +118,27 @@ class TestClassifyAndDescribe:
 
 class TestOcrImage:
     @pytest.fixture(autouse=True)
-    def _use_tesseract(self, monkeypatch):
-        """Pin the Tesseract backend — these tests exercise that provider."""
+    def _use_easyocr(self, monkeypatch):
+        """Pin the EasyOCR backend — these tests exercise that provider."""
         import pka.providers as providers
-        monkeypatch.setattr(providers.cfg, "ocr_provider", "tesseract")
+        monkeypatch.setattr(providers.cfg, "ocr_provider", "easyocr")
         providers.reset_providers()
 
     def test_success(self, sample_png, monkeypatch):
-        monkeypatch.setattr(
-            "pytesseract.image_to_string",
-            lambda img, lang="eng": "  Hello OCR  ",
-        )
+        from pka.providers.easy_ocr import EasyOcrProvider
+        reader = MagicMock()
+        reader.readtext.return_value = ["  Hello OCR  "]
+        monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
         from pka.ingestion.image_extractor import ocr_image
         assert ocr_image(sample_png) == "Hello OCR"
 
     def test_failure_returns_empty(self, sample_png, monkeypatch):
-        monkeypatch.setattr(
-            "pytesseract.image_to_string",
-            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("ocr fail")),
-        )
+        from pka.providers.easy_ocr import EasyOcrProvider
+
+        def _boom(self, langs):
+            raise RuntimeError("ocr fail")
+
+        monkeypatch.setattr(EasyOcrProvider, "_reader", _boom)
         from pka.ingestion.image_extractor import ocr_image
         assert ocr_image(sample_png) == ""
 

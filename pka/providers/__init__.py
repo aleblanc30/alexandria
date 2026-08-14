@@ -92,15 +92,15 @@ def _build_vision(name: str) -> VisionProvider:
 
 
 def _build_ocr(name: str) -> OcrProvider:
-    if name == "tesseract":
-        from pka.providers.tesseract import TesseractOcrProvider
+    if name == "easyocr":
+        from pka.providers.easy_ocr import EasyOcrProvider
 
-        return TesseractOcrProvider()
+        return EasyOcrProvider()
     if name == "vlm":
         from pka.providers.vlm_ocr import VlmOcrProvider
 
         return VlmOcrProvider()
-    raise ValueError(f"Unknown OCR provider: {name!r} (expected vlm|tesseract)")
+    raise ValueError(f"Unknown OCR provider: {name!r} (expected vlm|easyocr)")
 
 
 def _build_embedder(name: str) -> ImageEmbedder:

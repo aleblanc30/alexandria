@@ -34,7 +34,7 @@ dependencies = [
 
     # Images
     "Pillow>=10",
-    "pytesseract>=0.3",          # requires the Tesseract binary on PATH
+    "easyocr>=1.7",              # deep-learning OCR (torch-backed; no system binary)
     "transformers>=4.40",        # CLIP
     "torch>=2.2",                # CPU build is fine
 ]

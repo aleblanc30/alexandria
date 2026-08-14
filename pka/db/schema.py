@@ -146,7 +146,7 @@ images = sa.Table(
     sa.Column("height",         sa.Integer),
     sa.Column("file_size",      sa.Integer),               # bytes
     sa.Column("date_taken",     sa.Integer),               # unix ts from EXIF or mtime
-    sa.Column("ocr_text",       sa.Text),                  # raw Tesseract output
+    sa.Column("ocr_text",       sa.Text),                  # raw OCR output
     sa.Column("description",    sa.Text),                  # vision LLM prose description
     sa.Column("clip_vector_id", sa.Text),                  # Chroma vector id for CLIP embedding
     sa.Column("text_vector_id", sa.Text),                  # Chroma vector id for text embedding

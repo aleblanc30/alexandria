@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vision-model", type=str,  default=None,
                         help="Ollama vision model name (llava, moondream, …)")
     parser.add_argument("--ocr-lang",     type=str,  default=None,
-                        help="Tesseract language code(s), e.g. eng+fra")
+                        help="OCR language code(s), e.g. eng+fra")
     parser.add_argument("--skip-ocr",     action="store_true")
     parser.add_argument("--skip-clip",    action="store_true")
     parser.add_argument("--skip-vision",  action="store_true")

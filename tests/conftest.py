@@ -24,6 +24,15 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "book_archive", tmp_path / "books")
     monkeypatch.setattr(s, "image_dirs",   [tmp_path / "images"])
 
+    # Pin provider selectors to their code defaults so a developer's local
+    # ``.env`` (e.g. ALEXANDRIA_VISION_PROVIDER=openrouter) can't leak into the
+    # suite and swap the backend a test mocks. Individual tests still override
+    # these via monkeypatch where they exercise a specific provider.
+    monkeypatch.setattr(s, "chat_provider",        "ollama")
+    monkeypatch.setattr(s, "vision_provider",      "ollama")
+    monkeypatch.setattr(s, "ocr_provider",         "vlm")
+    monkeypatch.setattr(s, "image_embed_provider", "clip")
+
     # Reset cached SQLAlchemy engine so each test gets a fresh DB
     import pka.db.queries as q
     monkeypatch.setattr(q, "_engine", None)

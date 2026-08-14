@@ -64,8 +64,10 @@ System prerequisites:
 - **Ollama** for clustering labels and image vision (`ollama pull llava` or your
   chat model). Text chunk embeddings use Chroma's built-in Sentence Transformers
   model (`all-MiniLM-L6-v2`, downloaded on first use).
-- **Tesseract OCR** for image text extraction
-  (`brew install tesseract` / `apt install tesseract-ocr`).
+- **Image OCR** runs through the vision model by default (`ocr_provider=vlm`,
+  no extra install). Set `ocr_provider=easyocr` to use the bundled **EasyOCR**
+  backend instead — a pip dependency (no system binary); its recognition models
+  download on first use.
 
 ## Running
 

@@ -38,7 +38,7 @@ Windows, where the same venv steps work (`py -3.12 -m venv .venv`). Keep code
 Windows-safe: close SQLite connections and temp files before renaming or
 reopening them (Windows locks open files).
 
-System prerequisites: Ollama (chat/vision), Tesseract OCR (images). Copy `.env.example` to `.env` only when overriding defaults; settings use the `ALEXANDRIA_` env prefix via `pka/config.py`.
+System prerequisites: Ollama (chat/vision). OCR runs through the vision model by default; the alternative `ocr_provider=easyocr` backend is a pip dependency (no system binary). Copy `.env.example` to `.env` only when overriding defaults; settings use the `ALEXANDRIA_` env prefix via `pka/config.py`.
 
 ## Commands
 

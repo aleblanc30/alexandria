@@ -7,12 +7,12 @@ import pytest
 
 import pka.providers as providers
 from pka.providers.clip import ClipImageEmbedder
+from pka.providers.easy_ocr import EasyOcrProvider
 from pka.providers.ollama import OllamaChatProvider, OllamaVisionProvider
 from pka.providers.openai_compat import (
     OpenAICompatChatProvider,
     OpenAICompatVisionProvider,
 )
-from pka.providers.tesseract import TesseractOcrProvider
 from pka.providers.vlm_ocr import VlmOcrProvider
 
 # ── Registry dispatch ─────────────────────────────────────────────────────────
@@ -22,13 +22,13 @@ class TestRegistryDispatch:
     def test_defaults_are_local_backends(self, monkeypatch):
         monkeypatch.setattr(providers.cfg, "chat_provider", "ollama")
         monkeypatch.setattr(providers.cfg, "vision_provider", "ollama")
-        monkeypatch.setattr(providers.cfg, "ocr_provider", "tesseract")
+        monkeypatch.setattr(providers.cfg, "ocr_provider", "easyocr")
         monkeypatch.setattr(providers.cfg, "image_embed_provider", "clip")
         providers.reset_providers()
 
         assert isinstance(providers.get_chat_provider(), OllamaChatProvider)
         assert isinstance(providers.get_vision_provider(), OllamaVisionProvider)
-        assert isinstance(providers.get_ocr_provider(), TesseractOcrProvider)
+        assert isinstance(providers.get_ocr_provider(), EasyOcrProvider)
         assert isinstance(providers.get_image_embedder(), ClipImageEmbedder)
 
     def test_chat_provider_is_cached(self, monkeypatch):
@@ -97,7 +97,7 @@ class TestVlmOcr:
         fake = self._patch_vision(monkeypatch, '{"text": "Hello\\nWorld"}')
         out = VlmOcrProvider().ocr(Path("slide.png"))
         assert out == "Hello\nWorld"
-        # Uses the vision model, not Tesseract.
+        # Uses the vision model, not a local OCR engine.
         assert fake.complete.called
 
     def test_salvages_text_from_invalid_json(self, monkeypatch):
@@ -113,6 +113,32 @@ class TestVlmOcr:
             "pka.ingestion.image_extractor._encode_image", lambda p, max_px=1024: "QUJD"
         )
         assert VlmOcrProvider().ocr(Path("slide.png")) == ""
+
+
+# ── EasyOCR provider ──────────────────────────────────────────────────────────
+
+
+class TestEasyOcr:
+    def test_lang_codes_are_mapped(self):
+        from pka.providers.easy_ocr import _to_easyocr_langs
+
+        assert _to_easyocr_langs("eng") == ["en"]
+        assert _to_easyocr_langs("eng+fra") == ["en", "fr"]
+        assert _to_easyocr_langs("en") == ["en"]  # native code passes through
+        assert _to_easyocr_langs("") == ["en"]  # empty ⇒ default
+
+    def test_ocr_joins_recognised_lines(self, monkeypatch):
+        reader = MagicMock()
+        reader.readtext.return_value = ["Line one", "  Line two  "]
+        monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
+        assert EasyOcrProvider().ocr(Path("slide.png")) == "Line one\nLine two"
+
+    def test_ocr_returns_empty_on_failure(self, monkeypatch):
+        def _boom(self, langs):
+            raise RuntimeError("model load failed")
+
+        monkeypatch.setattr(EasyOcrProvider, "_reader", _boom)
+        assert EasyOcrProvider().ocr(Path("slide.png")) == ""
 
 
 # ── OpenAI-compatible chat ────────────────────────────────────────────────────

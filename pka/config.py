@@ -117,10 +117,10 @@ class Settings(BaseSettings):
 
     # ── Providers (per-capability backend selection) ────────────────────────
     # Each capability picks its own backend, so e.g. OpenRouter chat can run
-    # alongside local Tesseract OCR + CLIP. See pka/providers/.
+    # alongside local EasyOCR + CLIP. See pka/providers/.
     chat_provider: str = "ollama"  # ollama | openrouter | ovh
     vision_provider: str = "ollama"  # ollama | openrouter | ovh
-    ocr_provider: str = "vlm"  # vlm (vision model transcribes) | tesseract
+    ocr_provider: str = "vlm"  # vlm (vision model transcribes) | easyocr
     image_embed_provider: str = "clip"  # clip
 
     # Master switch for the OCR pass. Set ALEXANDRIA_OCR_ENABLED=0 to skip text
@@ -180,7 +180,7 @@ class Settings(BaseSettings):
     reddit_saved_limit: int | None = None   # None = fetch all saved items
 
     # ── Images ──────────────────────────────────────────────────────────────
-    ocr_lang: str = "eng"  # passed to pytesseract
+    ocr_lang: str = "eng"  # OCR language(s), e.g. "eng+fra"; mapped to EasyOCR codes
     clip_model: str = "openai/clip-vit-base-patch32"  # HuggingFace hub id
 
     # ── Clustering ──────────────────────────────────────────────────────────
