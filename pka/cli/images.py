@@ -38,7 +38,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-ocr",     action="store_true")
     parser.add_argument("--skip-clip",    action="store_true")
     parser.add_argument("--skip-vision",  action="store_true")
+    parser.add_argument("--skip-gate",    action="store_true",
+                        help="Bypass the two-step admission gate (text coverage + VLM category)")
     parser.add_argument("--force-reindex", action="store_true")
+    parser.add_argument("--reset-rejections", action="store_true",
+                        help="Clear the gate rejection cache before scanning, so "
+                             "previously-rejected images are re-evaluated")
     parser.add_argument("--dry-run",      action="store_true")
     parser.add_argument("--search",       type=str, default=None,
                         help="Run a CLIP text search instead of indexing")
@@ -46,6 +51,12 @@ def main(argv: list[str] | None = None) -> int:
 
     setup_logging()
     init_db()
+
+    if args.reset_rejections:
+        from pka.db.queries import clear_image_rejections
+
+        removed = clear_image_rejections()
+        log.info("Cleared %d entries from the gate rejection cache", removed)
 
     if args.search:
         results = search_images_by_text(args.search)
@@ -71,14 +82,17 @@ def main(argv: list[str] | None = None) -> int:
         skip_ocr      = args.skip_ocr or not cfg.ocr_enabled,
         skip_clip     = args.skip_clip,
         skip_vision   = args.skip_vision,
+        skip_gate     = args.skip_gate,
         dry_run       = args.dry_run,
     )
 
     log.info(
-        "Done. processed=%d  skipped=%d  failed=%d",
-        stats["processed"], stats["skipped"], stats["failed"],
+        "Done. processed=%d  skipped=%d  rejected=%d  failed=%d",
+        stats["processed"], stats["skipped"], stats.get("rejected", 0), stats["failed"],
     )
     log.info("By type: %s", stats["by_type"])
+    if stats.get("by_reason"):
+        log.info("Rejected by reason: %s", stats["by_reason"])
     return 0
 
 

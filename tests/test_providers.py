@@ -131,6 +131,11 @@ class TestEasyOcr:
         reader = MagicMock()
         reader.readtext.return_value = ["Line one", "  Line two  "]
         monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
+        # ocr() decodes the file (EXIF-orienting it) before OCR; stub that out so
+        # the test exercises only the line-joining, not image loading.
+        monkeypatch.setattr(
+            "pka.providers.easy_ocr._oriented_rgb_array", lambda path: object()
+        )
         assert EasyOcrProvider().ocr(Path("slide.png")) == "Line one\nLine two"
 
     def test_ocr_returns_empty_on_failure(self, monkeypatch):
@@ -139,6 +144,75 @@ class TestEasyOcr:
 
         monkeypatch.setattr(EasyOcrProvider, "_reader", _boom)
         assert EasyOcrProvider().ocr(Path("slide.png")) == ""
+
+    # ── Missing-install detection (must surface, never silently degrade) ───────
+
+    def test_ensure_available_raises_when_wheel_missing(self, monkeypatch):
+        import importlib.util
+
+        from pka.providers.easy_ocr import EasyOcrUnavailable, ensure_easyocr_available
+
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+        with pytest.raises(EasyOcrUnavailable):
+            ensure_easyocr_available()
+
+    def test_ensure_available_passes_when_wheel_present(self, monkeypatch):
+        import importlib.util
+
+        from pka.providers.easy_ocr import ensure_easyocr_available
+
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+        ensure_easyocr_available()  # no raise
+
+    def test_text_coverage_raises_when_unavailable(self, tmp_path, monkeypatch):
+        """A missing install must raise, not return 0.0 (which the gate reads as
+        'reject')."""
+        from PIL import Image as PILImg
+
+        from pka.providers.easy_ocr import EasyOcrProvider, EasyOcrUnavailable
+
+        img = tmp_path / "x.png"
+        PILImg.new("RGB", (40, 40), "white").save(img)
+
+        def _unavailable(self, langs):
+            from pka.providers.easy_ocr import EasyOcrUnavailable as _U
+            raise _U("no easyocr")
+
+        monkeypatch.setattr(EasyOcrProvider, "_reader", _unavailable)
+        with pytest.raises(EasyOcrUnavailable):
+            EasyOcrProvider().text_coverage(img)
+
+    def test_ocr_raises_when_unavailable(self, tmp_path, monkeypatch):
+        from PIL import Image as PILImg
+
+        from pka.providers.easy_ocr import EasyOcrProvider, EasyOcrUnavailable
+
+        img = tmp_path / "x.png"
+        PILImg.new("RGB", (40, 40), "white").save(img)
+
+        def _unavailable(self, langs):
+            raise EasyOcrUnavailable("no easyocr")
+
+        monkeypatch.setattr(EasyOcrProvider, "_reader", _unavailable)
+        with pytest.raises(EasyOcrUnavailable):
+            EasyOcrProvider().ocr(img)
+
+    # ── EXIF orientation handling ─────────────────────────────────────────────
+
+    def test_oriented_rgb_array_applies_exif_transpose(self, tmp_path):
+        """orientation=6 (rotate 90° CW) landscape → portrait array."""
+        from PIL import Image as PILImg
+
+        from pka.providers.easy_ocr import _oriented_rgb_array
+
+        p = tmp_path / "rot.jpg"
+        im = PILImg.new("RGB", (120, 60), "white")
+        exif = im.getexif()
+        exif[274] = 6
+        im.save(p, exif=exif)
+
+        arr = _oriented_rgb_array(p)
+        assert arr.shape[:2] == (120, 60)  # H, W swapped from the stored 60x120
 
 
 # ── OpenAI-compatible chat ────────────────────────────────────────────────────

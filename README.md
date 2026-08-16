@@ -68,6 +68,12 @@ System prerequisites:
   no extra install). Set `ocr_provider=easyocr` to use the bundled **EasyOCR**
   backend instead — a pip dependency (no system binary); its recognition models
   download on first use.
+- **Image admission gate** (on by default) filters incoming images before the
+  expensive passes: an image is kept only if EasyOCR finds it is at least 5%
+  text *and* a fast VLM (Ollama `moondream` by default) classifies it into a
+  category of interest. Rejected paths are cached in the `image_rejections`
+  table and skipped on later runs. Tune with `ALEXANDRIA_IMAGE_GATE_*` (see
+  `.env.example`) or bypass per-run with `alexandria images --skip-gate`.
 
 ## Running
 

@@ -14,9 +14,15 @@ from pka.config import settings as cfg
 from pka.constants import FetchStatus, Source, TagOrigin
 from pka.db.schema import (
     chunks,
+    cluster_assignments,
     documents,
+    fetch_log,
+    image_rejections,
+    image_tags,
+    images,
     meta,
     overlay_tags,
+    reading_list_items,
     source_collections,
     source_tags,
 )
@@ -456,6 +462,105 @@ def update_card_summary(doc_id: int, summary: str | None) -> None:
         )
 
 
+# ── Image gate rejection cache ────────────────────────────────────────────────
+
+def record_image_rejection(
+    path: str,
+    reason: str,
+    text_coverage: float | None = None,
+    image_type: str | None = None,
+) -> None:
+    """Cache an image path rejected by the admission gate (upsert by path)."""
+    now = int(time.time())
+    with get_engine().begin() as con:
+        con.execute(sa.text("""
+            INSERT INTO image_rejections
+                (path, reason, text_coverage, image_type, rejected_at)
+            VALUES
+                (:path, :reason, :cov, :itype, :now)
+            ON CONFLICT(path) DO UPDATE SET
+                reason        = excluded.reason,
+                text_coverage = excluded.text_coverage,
+                image_type    = excluded.image_type,
+                rejected_at   = excluded.rejected_at
+        """), {
+            "path": path, "reason": reason, "cov": text_coverage,
+            "itype": image_type, "now": now,
+        })
+
+
+def get_rejected_paths() -> set[str]:
+    """Return the set of image paths currently in the rejection cache."""
+    with get_engine().connect() as con:
+        rows = con.execute(sa.select(image_rejections.c.path)).fetchall()
+    return {r[0] for r in rows}
+
+
+def clear_image_rejections() -> int:
+    """Empty the gate rejection cache; return the number of rows removed.
+
+    The cache is consulted by the metadata pass (``register_images``) as well as
+    the embed pass, so a stale entry keeps a path skipped even after its image
+    rows are gone. Cleared on a full image purge and by ``images
+    --reset-rejections`` when re-tuning the gate.
+    """
+    with get_engine().begin() as con:
+        return con.execute(image_rejections.delete()).rowcount
+
+
+# Child tables keyed by document_id, cleared before the parent document row.
+_IMAGE_DOC_CHILD_TABLES = (
+    reading_list_items,
+    cluster_assignments,
+    overlay_tags,
+    fetch_log,
+    chunks,
+    source_tags,
+    source_collections,
+)
+
+
+def delete_image_document(path: str) -> dict[str, Any]:
+    """Delete the ``images`` sidecar + backing ``documents`` row for ``path``.
+
+    Called when the admission gate rejects an image that an earlier metadata
+    pass already registered, so no orphan document/image row lingers in browse.
+    Returns ``{"chunk_vector_ids", "clip_vector_id"}`` so the caller can purge
+    any Chroma vectors (present only if the image had been fully ingested
+    before, e.g. under ``--force-reindex``). Idempotent: a no-op when ``path``
+    is not registered.
+    """
+    empty: dict[str, Any] = {"chunk_vector_ids": [], "clip_vector_id": None}
+    eng = get_engine()
+    with eng.connect() as con:
+        row = con.execute(
+            sa.select(images.c.id, images.c.document_id, images.c.clip_vector_id)
+            .where(images.c.path == path)
+        ).fetchone()
+    if row is None:
+        return empty
+    image_id, doc_id, clip_vid = row
+
+    with eng.connect() as con:
+        chunk_vids = [
+            r[0]
+            for r in con.execute(
+                sa.select(chunks.c.vector_id)
+                .where(chunks.c.document_id == doc_id)
+                .where(chunks.c.vector_id.isnot(None))
+            ).fetchall()
+        ]
+
+    with eng.begin() as con:
+        con.execute(image_tags.delete().where(image_tags.c.image_id == image_id))
+        con.execute(images.delete().where(images.c.id == image_id))
+        for tbl in _IMAGE_DOC_CHILD_TABLES:
+            con.execute(tbl.delete().where(tbl.c.document_id == doc_id))
+        con.execute(documents.delete().where(documents.c.id == doc_id))
+
+    return {"chunk_vector_ids": chunk_vids, "clip_vector_id": clip_vid}
+
+
 def _batch_first_chunk_map(con: sa.Connection, doc_ids: list[int]) -> dict[int, str]:
     if not doc_ids:
         return {}
@@ -593,6 +698,25 @@ def _apply_document_browse_filters(
     return q
 
 
+def _exclude_pending_images(q: sa.Select) -> sa.Select:
+    """Hide image documents that haven't finished ingestion yet.
+
+    A registered-but-not-embedded image has an ``images`` row with
+    ``indexed_at IS NULL`` (created by the metadata pass, set by the embed
+    pass). Keep those out of browse until ingestion completes, so the panel
+    only shows images that are fully processed. Non-image documents have no
+    ``images`` row and are unaffected. The subquery correlates on
+    ``documents.id``, so the outer query must select FROM ``documents``.
+    """
+    pending = (
+        sa.select(images.c.id)
+        .where(images.c.document_id == documents.c.id)
+        .where(images.c.indexed_at.is_(None))
+        .exists()
+    )
+    return q.where(~pending)
+
+
 def filter_document_ids(
     con: sa.Connection,
     doc_ids: list[int],
@@ -696,24 +820,28 @@ def list_documents(
     }
 
     with get_engine().connect() as con:
-        count_q = _apply_document_browse_filters(
-            sa.select(sa.func.count()).select_from(documents),
-            **filter_kwargs,
+        count_q = _exclude_pending_images(
+            _apply_document_browse_filters(
+                sa.select(sa.func.count()).select_from(documents),
+                **filter_kwargs,
+            )
         )
         total = con.execute(count_q).scalar() or 0
 
-        page_q = _apply_document_browse_filters(
-            sa.select(
-                documents.c.id,
-                documents.c.source,
-                documents.c.source_id,
-                documents.c.title,
-                documents.c.url_or_path,
-                documents.c.archive_url,
-                documents.c.zotero_attachment_key,
-                documents.c.card_summary,
-            ),
-            **filter_kwargs,
+        page_q = _exclude_pending_images(
+            _apply_document_browse_filters(
+                sa.select(
+                    documents.c.id,
+                    documents.c.source,
+                    documents.c.source_id,
+                    documents.c.title,
+                    documents.c.url_or_path,
+                    documents.c.archive_url,
+                    documents.c.zotero_attachment_key,
+                    documents.c.card_summary,
+                ),
+                **filter_kwargs,
+            )
         ).order_by(
             documents.c.date_added.is_(None),
             documents.c.date_added.desc(),

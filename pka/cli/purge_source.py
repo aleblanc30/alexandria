@@ -20,6 +20,7 @@ from pka.db.schema import (
     cluster_assignments,
     documents,
     fetch_log,
+    image_rejections,
     image_tags,
     images,
     overlay_tags,
@@ -107,11 +108,15 @@ def _purge_images(*, dry_run: bool = False) -> dict[str, int]:
     ``image_tags`` sidecar rows and the CLIP vectors, which live in a separate
     Chroma collection (``alexandria_clip``) rather than the chunk collection.
     """
+    from pka.db.queries import clear_image_rejections
     from pka.ingestion import image_pipeline
 
     eng = get_engine()
     with eng.connect() as con:
         image_ids = [r[0] for r in con.execute(sa.select(images.c.id)).fetchall()]
+        rejection_count = con.execute(
+            sa.select(sa.func.count()).select_from(image_rejections)
+        ).scalar() or 0
         clip_vector_ids = [
             r[0]
             for r in con.execute(
@@ -125,6 +130,13 @@ def _purge_images(*, dry_run: bool = False) -> dict[str, int]:
     counts = _purge_documents(str(Source.IMAGE), dry_run=dry_run)
     counts["images"] = len(image_ids)
     counts["clip_vectors"] = len(clip_vector_ids)
+    counts["image_rejections"] = rejection_count
+
+    # The gate rejection cache is keyed by path and consulted by the metadata
+    # pass, so it must be cleared even when no image rows remain — otherwise a
+    # purge leaves previously-rejected paths skipped forever on re-sync.
+    if not dry_run and rejection_count:
+        clear_image_rejections()
 
     if not image_ids:
         return counts

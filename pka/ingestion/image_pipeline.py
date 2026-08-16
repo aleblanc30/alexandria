@@ -15,9 +15,17 @@ from pathlib import Path
 import sqlalchemy as sa
 
 from pka.clustering.cluster_tags import insert_overlay_tags
+from pka.config import settings as cfg
 from pka.connectors.images import ImageFile
 from pka.constants import FetchStatus, Source, TagOrigin
-from pka.db.queries import get_engine, update_card_summary, upsert_document
+from pka.db.queries import (
+    delete_image_document,
+    get_engine,
+    get_rejected_paths,
+    record_image_rejection,
+    update_card_summary,
+    upsert_document,
+)
 from pka.db.schema import images
 from pka.ingestion.core import ingest_text_block
 from pka.ingestion.image_extractor import (
@@ -124,7 +132,13 @@ def register_images(
     progress_key: str | None = None,
 ) -> dict:
     """Scan pass: persist image file records without OCR / CLIP / embedding."""
+    # Images the gate previously rejected must not be re-registered on later
+    # metadata runs — skip them up front (only while the gate is active).
+    rejected_paths = get_rejected_paths() if cfg.image_gate_enabled else set()
+
     def _register_one(img: ImageFile) -> str:
+        if str(img.path) in rejected_paths:
+            return "skipped"
         if _image_already_indexed(img.path):
             return "skipped"
         if dry_run:
@@ -165,9 +179,37 @@ def ingest_image(
     skip_ocr: bool = False,
     skip_clip: bool = False,
     skip_vision: bool = False,
+    skip_gate: bool = False,
     dry_run: bool = False,
 ) -> dict:
     """Run all extraction passes for a single image and persist results."""
+    # ── Admission gate: text coverage + category of interest ─────────────────
+    # Fail either gate → cache the path and stop before the expensive passes.
+    if cfg.image_gate_enabled and not skip_gate:
+        from pka.ingestion.image_gate import gate_image
+
+        gate = gate_image(img.path, vision_model=cfg.image_gate_vision_model, ocr_lang=ocr_lang)
+        if not gate.passed:
+            if not dry_run:
+                record_image_rejection(
+                    str(img.path), gate.reason, gate.text_coverage, gate.image_type
+                )
+                # Drop any rows a prior metadata pass registered for this path so
+                # rejected images leave nothing behind in the document/image
+                # tables (and purge vectors if it had been fully ingested before).
+                removed = delete_image_document(str(img.path))
+                if removed["chunk_vector_ids"]:
+                    from pka.storage import vector_store
+                    vector_store.purge_vectors(removed["chunk_vector_ids"])
+                if removed["clip_vector_id"]:
+                    delete_clip_vectors([removed["clip_vector_id"]])
+            return {
+                "status":        "rejected",
+                "reason":        gate.reason,
+                "image_type":    gate.image_type,
+                "text_coverage": gate.text_coverage,
+            }
+
     # ── Pass 1+2: classify + describe ────────────────────────────────────────
     image_type, description = ("unknown", "")
     if not skip_vision:
@@ -283,12 +325,25 @@ def ingest_images(
     skip_ocr: bool = False,
     skip_clip: bool = False,
     skip_vision: bool = False,
+    skip_gate: bool = False,
     dry_run: bool = False,
     progress_key: str | None = None,
 ) -> dict:
     by_type: dict[str, int] = {}
+    by_reason: dict[str, int] = {}
+    rejected = 0
+
+    # Images previously rejected by the gate are cached; skip re-gating them.
+    gate_active = cfg.image_gate_enabled and not skip_gate
+    rejected_paths = get_rejected_paths() if (skip_existing and gate_active) else set()
+
+    def _should_skip(img: ImageFile) -> bool:
+        if skip_existing and _image_already_embedded(img.path):
+            return True
+        return str(img.path) in rejected_paths
 
     def _process(img: ImageFile) -> tuple[bool, int]:
+        nonlocal rejected
         result = ingest_image(
             img,
             vision_model = vision_model,
@@ -296,21 +351,32 @@ def ingest_images(
             skip_ocr     = skip_ocr,
             skip_clip    = skip_clip,
             skip_vision  = skip_vision,
+            skip_gate    = skip_gate,
             dry_run      = dry_run,
         )
+        if result["status"] == "rejected":
+            rejected += 1
+            reason = result.get("reason") or "unknown"
+            by_reason[reason] = by_reason.get(reason, 0) + 1
+            return False, 0
         t = result["image_type"]
         by_type[t] = by_type.get(t, 0) + 1
         return True, 0
 
     stats = run_embed_loop(
         image_files,
-        should_skip=lambda img: skip_existing and _image_already_embedded(img.path),
+        should_skip=_should_skip,
         process=_process,
         progress_key=progress_key,
         on_error_log=lambda img, exc: log.exception("Failed image %s: %s", img.path.name, exc),
     )
     stats.pop("chunks", None)
+    # Rejections surface as ``process`` returning False, which the loop tallies
+    # under ``skipped``; split them back out into their own count.
+    stats["skipped"] = max(0, stats["skipped"] - rejected)
+    stats["rejected"] = rejected
     stats["by_type"] = by_type
+    stats["by_reason"] = by_reason
     return stats
 
 

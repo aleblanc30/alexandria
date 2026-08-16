@@ -1,13 +1,60 @@
 """Compare source connectors against the archive to count pending metadata imports."""
 from __future__ import annotations
 
+import threading
+import time
+from collections.abc import Callable
+
 import sqlalchemy as sa
 
+from pka.config import settings
 from pka.constants import Source
 from pka.db.queries import document_index, get_engine
 from pka.db.schema import documents, images
 from pka.ingestion.dev_limits import take
 from pka.ingestion.source_access import try_load_calibre_books, try_scan_images
+
+# ── Source-probe cache ────────────────────────────────────────────────────────
+# ``count_pending_metadata`` and ``source_corpus_size`` re-probe the live source
+# (Firefox parse, Zotero DB copy, image-folder walk + EXIF) on every call. The
+# status/progress endpoints poll them ~2×/sec while a sync runs, so results are
+# cached for ``settings.ingestion_probe_cache_ttl_seconds`` and invalidated at
+# job start/finish/purge via ``invalidate_source_probes``.
+_probe_cache: dict[tuple[str, str], tuple[float, int]] = {}
+_probe_lock = threading.Lock()
+
+
+def _cached_probe(kind: str, src: str, compute: Callable[[], int]) -> int:
+    ttl = settings.ingestion_probe_cache_ttl_seconds
+    if ttl <= 0:
+        return compute()
+    now = time.monotonic()
+    key = (kind, src)
+    with _probe_lock:
+        hit = _probe_cache.get(key)
+        if hit is not None and hit[0] > now:
+            return hit[1]
+    # Compute outside the lock: the probe is slow I/O and callers tolerate a
+    # brief double-compute over serializing every poll behind one another.
+    value = compute()
+    with _probe_lock:
+        _probe_cache[key] = (now + ttl, value)
+    return value
+
+
+def invalidate_source_probes(source: Source | str | None = None) -> None:
+    """Drop cached pending/corpus probe results so the next read recomputes.
+
+    Called when the source or archive changes (sync start/finish, purge). Pass a
+    source to clear just that one, or ``None`` to clear all.
+    """
+    with _probe_lock:
+        if source is None:
+            _probe_cache.clear()
+            return
+        src = str(source)
+        for key in [k for k in _probe_cache if k[1] == src]:
+            del _probe_cache[key]
 
 
 def archive_document_count(source: Source | str) -> int:
@@ -26,8 +73,16 @@ def archive_document_count(source: Source | str) -> int:
 
 
 def count_pending_metadata(source: Source | str) -> int:
-    """Source items not yet present in the archive (metadata still to import)."""
+    """Source items not yet present in the archive (metadata still to import).
+
+    Cached (see ``_cached_probe``): the underlying probe re-parses/re-scans the
+    live source, which is too costly to run on every status poll.
+    """
     src = str(source)
+    return _cached_probe("pending", src, lambda: _compute_pending_metadata(src))
+
+
+def _compute_pending_metadata(src: str) -> int:
     if src == Source.REDDIT:
         # Network source: probing here would hit the Reddit API on every status
         # poll. The metadata sync computes its own pending count instead.
@@ -81,9 +136,15 @@ def source_corpus_size(source: Source | str) -> int:
     """Source connector item count at job scope (respects dev ingestion cap).
 
     Used to pin ingest phase totals before slow connector I/O, matching the
-    Firefox ``_plan_counts`` / ``set_corpus_total`` pattern.
+    Firefox ``_plan_counts`` / ``set_corpus_total`` pattern. Cached (see
+    ``_cached_probe``) since the status/progress polls hit it repeatedly and the
+    source size is effectively static across a running job.
     """
     src = str(source)
+    return _cached_probe("corpus", src, lambda: _compute_source_corpus_size(src))
+
+
+def _compute_source_corpus_size(src: str) -> int:
     if src == Source.REDDIT:
         # Network source: don't call the Reddit API from status/baseline probes.
         # The ingest job sets its own phase totals from the loaded saved list.

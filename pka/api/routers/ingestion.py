@@ -198,7 +198,11 @@ def _finish_job(src: str, stats: dict | None, *, error: str | None = None) -> No
 
 def _seed_baselines(src: str) -> None:
     from pka.db.queries import get_engine
+    from pka.ingestion.pending_metadata import invalidate_source_probes
 
+    # Source/archive state just changed (job start, finish, or purge); drop the
+    # cached source-probe counts so the next status/progress poll recomputes.
+    invalidate_source_probes(src)
     seed_progress_from_db(get_engine(), src)
 
 

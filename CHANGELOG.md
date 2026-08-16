@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased — image admission gate
+
+- New **two-step gate** in front of the image pipeline
+  (`pka/ingestion/image_gate.py`), on by default (`image_gate_enabled`). An
+  image is only carried into the expensive describe/OCR/CLIP passes when it
+  clears **both**: (1) EasyOCR-measured text coverage ≥
+  `image_gate_text_coverage_min` (default `0.05`), and (2) a fast VLM classifies
+  it into a non-`unknown` category of interest. The cheap local coverage check
+  runs first; the VLM is only called if it passes.
+- The gate classifier is a **distinct, configurable backend**
+  (`image_gate_vision_provider` / `image_gate_vision_model`, default Ollama
+  `moondream`) — separate from the main `vision_model`, which re-classifies
+  independently later in the pipeline. Remote (OpenRouter/OVH) gate models are
+  supported via a dedicated `get_gate_vision_provider()` accessor that bakes the
+  gate model in (the OpenAI-compatible provider lets its constructor model win).
+- Rejections are cached in a new **`image_rejections`** table (path, reason,
+  coverage, type). A rejected image now **leaves no rows behind**:
+  `delete_image_document` drops the `images` + backing `documents` row that the
+  metadata pass registered (and purges chunk/CLIP vectors if it had been fully
+  ingested). Both `register_images` (metadata sync) and `ingest_images` skip
+  cached rejects on later runs — no re-registration, no re-gating.
+- **Deferred display:** images are hidden from browse until fully ingested
+  (`indexed_at` set). The document browse list (`_exclude_pending_images`) and
+  the `/images` gallery both filter out registered-but-not-yet-embedded images,
+  so the panel never shows half-processed items.
+- EasyOCR gained `text_coverage()`; the gate uses it directly, independent of
+  `ocr_provider`, so `easyocr` (a core dep) is required when the gate is on.
+  CLI: `alexandria images --skip-gate`; env: `ALEXANDRIA_IMAGE_GATE_*`.
+- **Rejection cache is now cleared with the images.** Purging the image source
+  empties `image_rejections` (previously it lingered, so the metadata pass kept
+  skipping purged paths forever). New `alexandria images --reset-rejections`
+  clears the cache without a full purge, for re-tuning gate thresholds.
+- **EXIF orientation handling.** Portrait phone photos (`Orientation=6`) are now
+  transposed upright before both EasyOCR (`_oriented_rgb_array`) and the vision
+  encoder (`_encode_image`). Previously EasyOCR crashed on them
+  (`cv2.resize !ssize.empty()`), scoring `0.0` coverage and wrongly rejecting
+  every such image; the VLM also saw them sideways.
+- **Gate failures now surface instead of silently rejecting.** A missing EasyOCR
+  install raises `EasyOcrUnavailable` (checked via the real wheel, not the lazy
+  wrapper import); a vision-backend outage raises `VisionUnavailable` (gate calls
+  the classifier in `strict=True` mode). Both come back as *failed* (retryable),
+  never *rejected*, so a broken backend can no longer poison the cache for a whole
+  library. A genuine `unknown` verdict from a working VLM still rejects as before.
+
 ## Unreleased — YouTube saved-videos connector
 
 - New source connector: **YouTube saved videos** (`Source.YOUTUBE`). Reads the

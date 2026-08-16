@@ -127,6 +127,19 @@ class Settings(BaseSettings):
     # extraction entirely (UI + CLI + sync), relying only on the VLM description.
     ocr_enabled: bool = True
 
+    # ── Image gate (two-step admission filter) ──────────────────────────────
+    # Before an image runs the expensive describe/OCR/CLIP passes it must clear
+    # two gates: (1) EasyOCR-measured text coverage ≥ the threshold, and (2) a
+    # fast VLM classification into a non-"unknown" category of interest. Failing
+    # either records the path in the ``image_rejections`` cache and skips it now
+    # and on future runs. The gate classifier is deliberately distinct (and
+    # smaller/faster, e.g. moondream) from the main describe pass, which
+    # re-classifies with ``vision_model`` later in the pipeline.
+    image_gate_enabled: bool = True
+    image_gate_text_coverage_min: float = 0.05  # fraction of pixels covered by text
+    image_gate_vision_provider: str = "ollama"  # ollama | openrouter | ovh
+    image_gate_vision_model: str = "moondream"  # small local classifier by default
+
     # ── Ollama (local chat / vision) ────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
     chat_model: str = ""  # auto-detect first non-embedding model when empty
@@ -146,6 +159,15 @@ class Settings(BaseSettings):
     ovh_base_url: str = ""  # region endpoint, e.g. https://…/v1
     ovh_chat_model: str = ""
     ovh_vision_model: str = ""
+
+    # ── Ingestion progress ──────────────────────────────────────────────────
+    # The ``/ingestion/status`` and ``/ingestion/sync/progress`` endpoints are
+    # polled ~2×/sec by the frontend while a sync runs. Deriving the "pending"
+    # and "corpus size" numbers re-probes the live sources each call (Firefox
+    # parse, Zotero DB copy, image-folder walk + per-file EXIF), so those probe
+    # results are cached for this many seconds and invalidated at job
+    # start/finish/purge. Set to 0 to disable caching (always recompute).
+    ingestion_probe_cache_ttl_seconds: float = 30.0
 
     # ── Chunking ────────────────────────────────────────────────────────────
     chunk_sentences: int = 5  # sentence-window size
@@ -195,7 +217,12 @@ class Settings(BaseSettings):
 
     # ── Validators ──────────────────────────────────────────────────────────
     @field_validator(
-        "dev", "fetch_wayback_fallback", "cluster_async_labelling", "ocr_enabled", mode="before"
+        "dev",
+        "fetch_wayback_fallback",
+        "cluster_async_labelling",
+        "ocr_enabled",
+        "image_gate_enabled",
+        mode="before",
     )
     @classmethod
     def _parse_bool(cls, v: object) -> bool:

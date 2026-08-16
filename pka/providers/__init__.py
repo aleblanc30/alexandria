@@ -20,14 +20,15 @@ log = logging.getLogger(__name__)
 
 _chat: ChatProvider | None = None
 _vision: VisionProvider | None = None
+_gate_vision: VisionProvider | None = None
 _ocr: OcrProvider | None = None
 _embedder: ImageEmbedder | None = None
 
 
 def reset_providers() -> None:
     """Drop cached provider instances — used by the test suite."""
-    global _chat, _vision, _ocr, _embedder
-    _chat = _vision = _ocr = _embedder = None
+    global _chat, _vision, _gate_vision, _ocr, _embedder
+    _chat = _vision = _gate_vision = _ocr = _embedder = None
 
 
 # ── Remote (OpenAI-compatible) config resolution ─────────────────────────────
@@ -91,6 +92,32 @@ def _build_vision(name: str) -> VisionProvider:
     raise ValueError(f"Unknown vision provider: {name!r} (expected ollama|openrouter|ovh)")
 
 
+def _build_gate_vision(name: str) -> VisionProvider:
+    """Vision provider for the admission gate's fast classifier.
+
+    Distinct from :func:`_build_vision`: for remote (OpenAI-compatible) backends
+    the gate model is baked in at construction, because
+    ``OpenAICompatVisionProvider.complete`` lets ``self.model`` win over a
+    per-call override. Ollama takes the model per call, so its provider is
+    plain and the gate passes ``image_gate_vision_model`` at call time.
+    """
+    if name == "ollama":
+        from pka.providers.ollama import OllamaVisionProvider
+
+        return OllamaVisionProvider()
+    if name in ("openrouter", "ovh"):
+        from pka.providers.openai_compat import OpenAICompatVisionProvider
+
+        conf = _openai_compat_config(name)
+        return OpenAICompatVisionProvider(
+            base_url=conf["base_url"],
+            api_key=conf["api_key"],
+            model=cfg.image_gate_vision_model,
+            label=f"{name}-gate",
+        )
+    raise ValueError(f"Unknown gate vision provider: {name!r} (expected ollama|openrouter|ovh)")
+
+
 def _build_ocr(name: str) -> OcrProvider:
     if name == "easyocr":
         from pka.providers.easy_ocr import EasyOcrProvider
@@ -128,6 +155,13 @@ def get_vision_provider() -> VisionProvider:
     return _vision
 
 
+def get_gate_vision_provider() -> VisionProvider:
+    global _gate_vision
+    if _gate_vision is None:
+        _gate_vision = _build_gate_vision(cfg.image_gate_vision_provider)
+    return _gate_vision
+
+
 def get_ocr_provider() -> OcrProvider:
     global _ocr
     if _ocr is None:
@@ -149,6 +183,7 @@ __all__ = [
     "ImageEmbedder",
     "get_chat_provider",
     "get_vision_provider",
+    "get_gate_vision_provider",
     "get_ocr_provider",
     "get_image_embedder",
     "reset_providers",

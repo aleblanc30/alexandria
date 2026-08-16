@@ -33,6 +33,12 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "ocr_provider",         "vlm")
     monkeypatch.setattr(s, "image_embed_provider", "clip")
 
+    # The image admission gate is opt-in for tests: pipeline tests feed synthetic
+    # images that would be rejected, so it stays off unless a test enables it.
+    monkeypatch.setattr(s, "image_gate_enabled",         False)
+    monkeypatch.setattr(s, "image_gate_vision_provider", "ollama")
+    monkeypatch.setattr(s, "image_gate_vision_model",    "moondream")
+
     # Reset cached SQLAlchemy engine so each test gets a fresh DB
     import pka.db.queries as q
     monkeypatch.setattr(q, "_engine", None)
@@ -51,11 +57,20 @@ def isolated_settings(tmp_path, monkeypatch):
     import pka.providers as providers
     providers.reset_providers()
 
+    # Reset the image gate's cached EasyOCR instance
+    import pka.ingestion.image_gate as image_gate
+    image_gate.reset_gate()
+
     # Reset in-memory sync progress so job state never leaks between tests
     from pka.constants import ALL_SOURCES
     from pka.ingestion import sync_progress as sp
     for src in ALL_SOURCES:
         sp.reset(src)
+
+    # Drop cached source-probe counts so a value computed against one test's DB
+    # never leaks into the next test's fresh DB within the TTL window.
+    from pka.ingestion.pending_metadata import invalidate_source_probes
+    invalidate_source_probes()
 
     yield
 

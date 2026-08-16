@@ -146,6 +146,46 @@ where APIs exist: Wikipedia (MediaWiki), Amazon product pages, **arXiv**
 `documents.card_summary` from the abstract), and **bioRxiv** (`api.biorxiv.org`
 DOI lookup + PDF, same card fields).
 
+### 3.1 Image admission gate
+
+Before an image runs the expensive describe / OCR / CLIP passes, `ingest_image`
+runs a two-step gate (`pka/ingestion/image_gate.py`), on by default
+(`image_gate_enabled`). Both steps must pass:
+
+1. **Text coverage** — `EasyOcrProvider.text_coverage()` detects text boxes and
+   sums their area; the fraction of the image covered must be ≥
+   `image_gate_text_coverage_min` (default `0.05`). This runs first because it
+   is cheap and local; the VLM is only called when it passes. The gate uses
+   EasyOCR **directly**, independent of `ocr_provider` (which may be the VLM
+   backend), so `easyocr` — a core dependency — is required whenever the gate is
+   enabled.
+
+2. **Category of interest** — a *distinct*, deliberately small/fast VLM
+   (`image_gate_vision_provider` / `image_gate_vision_model`, default Ollama
+   `moondream`) classifies the image; anything landing on `unknown` is rejected.
+   This gate classification is only a filter — the main pipeline **re-classifies
+   with `vision_model`** (llava) later, so the two are independent.
+
+Failing either step records the path in the **`image_rejections`** table
+(`record_image_rejection`, upsert by path) with the reason
+(`low_text_coverage` | `not_category_of_interest`), then **drops any rows a
+prior metadata pass registered** for that path (`delete_image_document` removes
+the `images` sidecar + backing `documents` row, and purges chunk/CLIP vectors if
+the image had been fully ingested before). So a rejected image leaves nothing
+behind. On later runs both `register_images` and `ingest_images` load
+`get_rejected_paths()` and skip cached rejections — metadata sync won't
+re-register them and ingest won't re-gate them. `--skip-gate` (CLI) or
+`ALEXANDRIA_IMAGE_GATE_ENABLED=0` bypasses the gate entirely; `dry_run` reports
+the rejection without caching or deleting.
+
+**Deferred display.** Images are registered (a `documents` + `images` row with
+`indexed_at IS NULL`) during the fast metadata phase, but the describe/OCR/CLIP
+work and the gate run in the later ingest phase. To avoid showing half-processed
+images, both browse surfaces hide images until `indexed_at` is set: the document
+browse list (`list_documents` via `_exclude_pending_images`) and the `/images`
+gallery (`indexed_at IS NOT NULL`). A pending image appears only once its embed
+pass completes (or disappears entirely if the gate rejects it).
+
 ## 4. Cluster lifecycle
 
 Every clustering run is stored regardless of acceptance. The UI surfaces

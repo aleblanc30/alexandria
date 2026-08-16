@@ -23,7 +23,9 @@ async def list_images(
     engine=Depends(get_engine),
 ):
     with engine.connect() as con:
-        q = sa.select(images_tbl)
+        # Only surface fully-ingested images; a registered-but-not-yet-embedded
+        # image has indexed_at IS NULL and is deferred until ingestion completes.
+        q = sa.select(images_tbl).where(images_tbl.c.indexed_at.isnot(None))
         if image_type:
             q = q.where(images_tbl.c.image_type == image_type)
         rows = fetchall_mappings(con.execute(q.limit(limit).offset(offset)))

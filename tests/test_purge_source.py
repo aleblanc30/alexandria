@@ -109,6 +109,80 @@ def test_purge_images_clears_sidecar_and_documents(empty_vector_store, monkeypat
         ).scalar() == 0
 
 
+def test_purge_images_clears_rejection_cache(empty_vector_store, monkeypatch):
+    """A purge must empty image_rejections; otherwise the metadata pass keeps
+    skipping previously-rejected paths forever (the gate never runs there)."""
+    init_db()
+    from pka.db.queries import get_rejected_paths, record_image_rejection
+
+    record_image_rejection("/tmp/bad.jpg", "low_text_coverage")
+    monkeypatch.setattr(
+        "pka.ingestion.image_pipeline.delete_clip_vectors", lambda vids: len(vids)
+    )
+
+    counts = purge_source("image")
+
+    assert counts["image_rejections"] == 1
+    assert get_rejected_paths() == set()
+
+
+def test_purge_images_reports_rejections_dry_run(empty_vector_store):
+    """Dry run reports the cache size without clearing it."""
+    init_db()
+    from pka.db.queries import get_rejected_paths, record_image_rejection
+
+    record_image_rejection("/tmp/bad.jpg", "low_text_coverage")
+
+    counts = purge_source("image", dry_run=True)
+
+    assert counts["image_rejections"] == 1
+    assert get_rejected_paths() == {"/tmp/bad.jpg"}  # untouched
+
+
+def test_purge_then_reregisters_previously_rejected(empty_vector_store, monkeypatch, tmp_path):
+    """End-to-end: after a purge, a metadata rerun re-registers a path that had
+    been cached as rejected."""
+    from pka.config import settings
+    monkeypatch.setattr(settings, "image_gate_enabled", True)  # cache is consulted
+    init_db()
+    from pka.connectors.images import ImageFile
+    from pka.db.queries import record_image_rejection
+    from pka.ingestion.image_pipeline import register_images
+
+    img = ImageFile(tmp_path / "reborn.jpg", "reborn.jpg", 10, 10, 1, 0, {})
+    record_image_rejection(str(img.path), "low_text_coverage")
+
+    # Before the purge the cache short-circuits registration.
+    assert register_images([img])["skipped"] == 1
+
+    purge_source("image")
+
+    # After the purge the same path is registered fresh.
+    stats = register_images([img])
+    assert stats["processed"] == 1
+    with get_engine().connect() as con:
+        assert con.execute(
+            sa.select(sa.func.count()).select_from(images)
+            .where(images.c.path == str(img.path))
+        ).scalar() == 1
+
+
+def test_reset_rejections_flag_clears_cache(empty_vector_store, monkeypatch):
+    """`alexandria images --reset-rejections` empties the cache before scanning."""
+    init_db()
+    from pka.cli import images as images_cli
+    from pka.db.queries import get_rejected_paths, record_image_rejection
+
+    record_image_rejection("/tmp/bad.jpg", "low_text_coverage")
+
+    # Stub the scan so the run does no real work beyond the reset.
+    monkeypatch.setattr(images_cli, "scan_image_dirs", lambda folders: [])
+
+    images_cli.main(["--reset-rejections"])
+
+    assert get_rejected_paths() == set()
+
+
 def test_purge_endpoint(client):
     _seed_document("firefox", "F1")
     _seed_document("zotero", "Z1")

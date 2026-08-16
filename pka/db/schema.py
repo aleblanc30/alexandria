@@ -161,6 +161,18 @@ image_tags = sa.Table(
     sa.Column("origin",   sa.Text, nullable=False),        # see pka.constants.TagOrigin
 )
 
+# Images that failed the two-step admission gate (text coverage + VLM category).
+# Cached by path so rejected images are skipped on subsequent ingestion runs.
+image_rejections = sa.Table(
+    "image_rejections", meta,
+    sa.Column("id",            sa.Integer, primary_key=True),
+    sa.Column("path",          sa.Text, nullable=False, unique=True),
+    sa.Column("reason",        sa.Text, nullable=False),   # low_text_coverage|not_category_of_interest
+    sa.Column("text_coverage", sa.Float),                  # measured fraction (0..1)
+    sa.Column("image_type",    sa.Text),                   # gate classifier label
+    sa.Column("rejected_at",   sa.Integer),                # unix ts
+)
+
 # ── Tag training (active learning) ────────────────────────────────────────────
 
 tag_training_sessions = sa.Table(

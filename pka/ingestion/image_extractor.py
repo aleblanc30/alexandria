@@ -17,9 +17,13 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pka.json_utils import parse_llm_json as _parse_llm_json
 from pka.providers import get_image_embedder, get_ocr_provider, get_vision_provider
+
+if TYPE_CHECKING:
+    from pka.providers.base import VisionProvider
 
 log = logging.getLogger(__name__)
 
@@ -75,10 +79,12 @@ def _encode_image(path: Path, max_px: int = 1024) -> str:
     """Return base64-encoded JPEG, downsampled to ``max_px`` on the longest side."""
     import io
 
-    from PIL import Image
+    from PIL import Image, ImageOps
 
     with Image.open(path) as img:
-        img = img.convert("RGB")
+        # Respect EXIF orientation so portrait phone photos aren't sent sideways
+        # to the vision model (which classifies/describes rotated text poorly).
+        img = ImageOps.exif_transpose(img).convert("RGB")
         w, h = img.size
         if max(w, h) > max_px:
             scale = max_px / max(w, h)
@@ -91,17 +97,46 @@ def _encode_image(path: Path, max_px: int = 1024) -> str:
 # ── Pass 1 + 2: classify + describe (single vision call) ─────────────────────
 
 
+class VisionUnavailable(RuntimeError):
+    """The vision backend itself failed to produce a classification.
+
+    Deliberately distinct from a *genuine* ``"unknown"`` result: that means the
+    model ran and judged the image uninteresting, which the admission gate
+    rejects on purpose. A backend error (Ollama down, timeout, transport
+    failure) is instead an environment problem. In ``strict`` mode
+    :func:`classify_and_describe` raises this rather than returning ``"unknown"``,
+    so the gate never mistakes an outage for a library full of uninteresting
+    images and rejects (and caches) every one of them.
+    """
+
+
 def classify_and_describe(
     path: Path,
     model: str = "llava",
+    provider: "VisionProvider | None" = None,
+    *,
+    strict: bool = False,
 ) -> tuple[str, str]:
     """Call the vision provider. Returns ``(image_type, description)``.
 
-    Falls back to ``("unknown", "")`` on any failure.
+    ``provider`` overrides the configured vision backend — used by the admission
+    gate to run a distinct (smaller/faster) classifier.
+
+    On failure the behaviour depends on ``strict``:
+
+    - ``strict=False`` (default, the main describe pass): degrade to
+      ``("unknown", "")`` so an image still ingests without a type/description.
+    - ``strict=True`` (the admission gate): raise :class:`VisionUnavailable`, so a
+      backend outage surfaces as a *failed* image rather than a silent rejection.
+
+    Note that a successful call which genuinely classifies the image as
+    ``"unknown"`` never raises, even under ``strict`` — that is a real result the
+    gate is entitled to reject.
     """
     try:
+        vision = provider or get_vision_provider()
         b64 = _encode_image(path)
-        content = get_vision_provider().complete(_CLASSIFY_PROMPT, b64, model=model)
+        content = vision.complete(_CLASSIFY_PROMPT, b64, model=model)
 
         try:
             parsed = _parse_llm_json(content)
@@ -117,6 +152,10 @@ def classify_and_describe(
         return image_type, description
 
     except Exception as exc:
+        if strict:
+            raise VisionUnavailable(
+                f"Vision backend failed to classify {path.name}: {exc}"
+            ) from exc
         log.warning("Vision LLM failed for %s: %s", path.name, exc)
         return "unknown", ""
 

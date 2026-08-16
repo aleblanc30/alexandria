@@ -38,7 +38,7 @@ Windows, where the same venv steps work (`py -3.12 -m venv .venv`). Keep code
 Windows-safe: close SQLite connections and temp files before renaming or
 reopening them (Windows locks open files).
 
-System prerequisites: Ollama (chat/vision). OCR runs through the vision model by default; the alternative `ocr_provider=easyocr` backend is a pip dependency (no system binary). Copy `.env.example` to `.env` only when overriding defaults; settings use the `ALEXANDRIA_` env prefix via `pka/config.py`.
+System prerequisites: Ollama (chat/vision). OCR runs through the vision model by default; the alternative `ocr_provider=easyocr` backend is a pip dependency (no system binary). Images pass a two-step admission gate (`pka/ingestion/image_gate.py`, on by default): EasyOCR text-coverage ≥ `image_gate_text_coverage_min` **and** a fast gate VLM (`image_gate_vision_*`, default Ollama `moondream`) classifying it as a non-`unknown` category; failures are cached in the `image_rejections` table. Copy `.env.example` to `.env` only when overriding defaults; settings use the `ALEXANDRIA_` env prefix via `pka/config.py`.
 
 ## Commands
 
@@ -94,7 +94,7 @@ Before modifying an area, skim these entry points:
 | Ingestion / connectors | `pka/ingestion/core.py`, `pka/ingestion/runners/`, `pka/connectors/`, `DESIGN.md` §2–3 |
 | Search / vectors | `pka/storage/vector_store.py`, `pka/api/routers/search.py` |
 | Clustering | `pka/clustering/engine.py`, `pka/clustering/lifecycle.py`, `scripts/run_clustering.py` |
-| Images | `pka/ingestion/image_pipeline.py`, `pka/ingestion/image_extractor.py` |
+| Images | `pka/ingestion/image_pipeline.py`, `pka/ingestion/image_extractor.py`, `pka/ingestion/image_gate.py` |
 | API surface | `pka/api/main.py` (router list), matching router + schema modules |
 | Frontend views | `frontend/src/router.ts`, relevant store + `api/client.ts` methods |
 
