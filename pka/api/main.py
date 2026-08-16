@@ -19,7 +19,16 @@ from pka.api.routers import (
     tags,
     trends,
 )
+from pka.cli._logging import setup_logging
 from pka.db.queries import init_db
+
+# Configure logging as soon as the app is imported. uvicorn configures only its
+# own loggers and leaves the root handler-less, so every ``pka.*`` INFO log —
+# and the tracebacks from background ingestion jobs — would otherwise be dropped
+# by Python's last-resort handler (WARNING+ only). Running this at import means
+# it also applies inside each ``--reload`` worker. uvicorn's own loggers have
+# ``propagate=False``, so this doesn't double-print their lines.
+setup_logging()
 
 log = logging.getLogger(__name__)
 
