@@ -141,13 +141,17 @@ images = sa.Table(
     sa.Column("document_id",    sa.Integer, sa.ForeignKey("documents.id")),  # unified document row
     sa.Column("path",           sa.Text, nullable=False, unique=True),
     sa.Column("filename",       sa.Text, nullable=False),
-    sa.Column("image_type",     sa.Text),                  # book_cover|slide|poster|notes|whiteboard|unknown
+    sa.Column("image_type",     sa.Text),                  # see _VALID_TYPES in pka/ingestion/image_extractor.py
     sa.Column("width",          sa.Integer),
     sa.Column("height",         sa.Integer),
     sa.Column("file_size",      sa.Integer),               # bytes
     sa.Column("date_taken",     sa.Integer),               # unix ts from EXIF or mtime
     sa.Column("ocr_text",       sa.Text),                  # raw OCR output
     sa.Column("description",    sa.Text),                  # vision LLM prose description
+    # Book fields the per-type cover prompt extracted (JSON list of
+    # {title, authors, isbn}); cached so a later identifier lookup does not
+    # re-run the VLM. See DESIGN.md §3.2.
+    sa.Column("books_json",     sa.Text),
     sa.Column("clip_vector_id", sa.Text),                  # Chroma vector id for CLIP embedding
     sa.Column("text_vector_id", sa.Text),                  # Chroma vector id for text embedding
     sa.Column("indexed_at",     sa.Integer),

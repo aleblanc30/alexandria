@@ -95,7 +95,11 @@ class TestClassifyAndDescribe:
             ("Book Cover", "book_cover"),
             ("book-cover", "book_cover"),
             ("  WHITEBOARD  ", "whiteboard"),
-            ("book covers", "unknown"),   # not a label, must not fuzzy-match
+            ("multiple book covers", "multiple_book_covers"),
+            ("book covers", "multiple_book_covers"),   # alias, not the single-cover label
+            ("Bookshelves", "bookshelf"),
+            ("bookcase", "bookshelf"),
+            ("book cover shelf thing", "unknown"),     # not a label, must not fuzzy-match
             ("", "unknown"),
         ],
     )
@@ -154,6 +158,190 @@ class TestClassifyAndDescribe:
         from pka.ingestion.image_extractor import classify_and_describe
         classify_and_describe(sample_png)
         assert captured["payload"]["format"] == "json"
+
+
+class TestPerTypeContentPrompts:
+    """The main vision pass prompts for *content*, chosen by the image category."""
+
+    def _provider(self, reply: str):
+        """A vision provider that records every prompt and returns ``reply``."""
+        prov = MagicMock()
+        prov.complete.return_value = reply
+        return prov
+
+    @pytest.mark.parametrize(
+        ("image_type", "marker"),
+        [
+            ("slide", '"transcript"'),
+            ("notes", '"transcript"'),
+            ("whiteboard", '"transcript"'),
+            ("poster", '"content"'),
+            ("book_cover", '"books"'),
+            ("multiple_book_covers", '"books"'),
+            ("bookshelf", '"books"'),
+        ],
+    )
+    def test_prompt_selected_by_type(self, sample_png, image_type, marker):
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prov = self._provider('{"transcript": "x", "description": "y"}')
+        extract_image_content(sample_png, image_type=image_type, provider=prov)
+        prompt = prov.complete.call_args[0][0]
+        assert marker in prompt
+        assert prov.complete.call_count == 1  # gate label ⇒ no extra classify call
+
+    def test_book_prompt_carries_label_hint(self, sample_png):
+        """One book prompt covers all three labels, hinted by what is readable."""
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prompts = {}
+        for label in ("book_cover", "multiple_book_covers", "bookshelf"):
+            prov = self._provider('{"books": [], "description": "d"}')
+            extract_image_content(sample_png, image_type=label, provider=prov)
+            prompts[label] = prov.complete.call_args[0][0]
+
+        assert "exactly one entry" in prompts["book_cover"]
+        assert "one entry per cover" in prompts["multiple_book_covers"]
+        assert "SPINES" in prompts["bookshelf"]
+        assert all('"books"' in p and "NEVER invent" in p for p in prompts.values())
+
+    def test_gate_label_path_makes_one_call(self, sample_png):
+        """Passing the gate's label costs exactly one vision call, and keeps it."""
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prov = self._provider(
+            '{"transcript": "sketch of the retrieval pipeline", "description": "A whiteboard."}'
+        )
+        out = extract_image_content(sample_png, image_type="whiteboard", provider=prov)
+        assert prov.complete.call_count == 1
+        assert out.image_type == "whiteboard"
+        assert out.content == "sketch of the retrieval pipeline"
+        assert out.description == "A whiteboard."
+
+    def test_fallback_classifies_then_prompts(self, sample_png):
+        """No gate label (gate off / --skip-gate): classify first, then the content prompt."""
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prov = MagicMock()
+        prov.complete.side_effect = [
+            '{"image_type": "notes", "description": "A notebook page."}',
+            '{"transcript": "hypothesis: retrieval is the bottleneck", "description": ""}',
+        ]
+        out = extract_image_content(sample_png, provider=prov)
+        assert prov.complete.call_count == 2
+        first, second = (call[0][0] for call in prov.complete.call_args_list)
+        assert '"image_type"' in first          # classify prompt
+        assert '"transcript"' in second         # per-type content prompt
+        assert out.image_type == "notes"
+        assert out.content == "hypothesis: retrieval is the bottleneck"
+        assert out.description == "A notebook page."  # kept from the classify call
+
+    def test_unknown_keeps_generic_behaviour(self, sample_png):
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prov = self._provider('{"image_type": "unknown", "description": "A blank wall."}')
+        out = extract_image_content(sample_png, provider=prov)
+        assert prov.complete.call_count == 1    # no content prompt exists for unknown
+        assert out.image_type == "unknown"
+        assert out.description == "A blank wall."
+        assert out.content == ""
+        assert out.books == []
+
+    def test_content_pass_failure_keeps_the_label(self, sample_png):
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prov = MagicMock()
+        prov.complete.side_effect = RuntimeError("backend down")
+        out = extract_image_content(sample_png, image_type="slide", provider=prov)
+        assert out.image_type == "slide"
+        assert out.content == ""
+        assert out.books == []
+
+
+class TestBookExtraction:
+    def test_multiple_books_extracted(self, sample_png):
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prov = MagicMock()
+        prov.complete.return_value = """{
+          "books": [
+            {"title": "Godel, Escher, Bach", "authors": ["Douglas Hofstadter"],
+             "isbn": "978-0-465-02656-2"},
+            {"title": "The Society of Mind", "authors": ["Marvin Minsky"], "isbn": null}
+          ],
+          "description": "Two paperbacks on a desk."
+        }"""
+        out = extract_image_content(sample_png, image_type="multiple_book_covers",
+                                    provider=prov)
+        assert out.books == [
+            {"title": "Godel, Escher, Bach", "authors": ["Douglas Hofstadter"],
+             "isbn": "9780465026562"},
+            {"title": "The Society of Mind", "authors": ["Marvin Minsky"], "isbn": None},
+        ]
+        # The same fields are what gets indexed, via image_search_text.
+        assert "Godel, Escher, Bach — Douglas Hofstadter" in out.content
+        assert "The Society of Mind" in out.content
+        assert out.description == "Two paperbacks on a desk."
+
+    def test_spine_entries_may_be_partial(self, sample_png):
+        """A shelf photo yields titles without authors or ISBNs — that is valid."""
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prov = MagicMock()
+        prov.complete.return_value = (
+            '{"books": [{"title": "Seeing Like a State", "authors": [], "isbn": null},'
+            ' {"title": "Data Feminism"}],'
+            ' "description": "A shelf of spines."}'
+        )
+        out = extract_image_content(sample_png, image_type="bookshelf", provider=prov)
+        assert [b["title"] for b in out.books] == ["Seeing Like a State", "Data Feminism"]
+        assert all(b["isbn"] is None and b["authors"] == [] for b in out.books)
+
+    def test_unreadable_titles_and_bogus_isbns_are_dropped(self, sample_png):
+        """A wrong title is worse than a missing one — it becomes a bogus lookup."""
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prov = MagicMock()
+        prov.complete.return_value = (
+            '{"books": [{"title": "unknown", "authors": ["Unknown"], "isbn": "123"},'
+            ' {"title": "Thinking in Systems", "authors": "Donella Meadows",'
+            '  "isbn": "1234"}],'
+            ' "description": "d"}'
+        )
+        out = extract_image_content(sample_png, image_type="bookshelf", provider=prov)
+        assert out.books == [
+            {"title": "Thinking in Systems", "authors": ["Donella Meadows"], "isbn": None},
+        ]
+
+    def test_salvages_books_from_malformed_json(self, sample_png):
+        """Trailing prose breaks strict JSON; the entries are still recoverable."""
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prov = MagicMock()
+        prov.complete.return_value = (
+            'Here is what I can read: {"books": ['
+            '{"title": "The Timeless Way of Building", "authors": ["Christopher Alexander"],'
+            ' "isbn": "0195024024"},'
+            '{"title": "A Pattern Language", "authors": ["Christopher Alexander"]}'
+            '], "description": "Two hardbacks."} — hope that helps!'
+        )
+        out = extract_image_content(sample_png, image_type="book_cover", provider=prov)
+        assert [b["title"] for b in out.books] == [
+            "The Timeless Way of Building", "A Pattern Language",
+        ]
+        assert out.books[0]["isbn"] == "0195024024"
+        assert out.books[1]["authors"] == ["Christopher Alexander"]
+
+    def test_salvages_transcript_with_unescaped_quotes(self, sample_png):
+        from pka.ingestion.image_extractor import extract_image_content
+
+        prov = MagicMock()
+        prov.complete.return_value = (
+            '{"transcript": "the "hard" part is retrieval", "description": "A whiteboard."}'
+        )
+        out = extract_image_content(sample_png, image_type="whiteboard", provider=prov)
+        assert "retrieval" in out.content
+        assert out.description == "A whiteboard."
 
 
 class TestOcrImage:
