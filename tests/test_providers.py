@@ -61,6 +61,29 @@ class TestRegistryDispatch:
         assert p.base_url == "https://ovh.example/v1"
         assert p.model == "vision-x"
 
+    def test_ollama_cloud_chat_uses_hosted_endpoint(self, monkeypatch):
+        monkeypatch.setattr(providers.cfg, "chat_provider", "ollama_cloud")
+        monkeypatch.setattr(providers.cfg, "ollama_cloud_base_url", "https://ollama.com")
+        monkeypatch.setattr(providers.cfg, "ollama_cloud_api_key", "oll-test")
+        monkeypatch.setattr(providers.cfg, "ollama_cloud_chat_model", "gpt-oss:120b")
+        providers.reset_providers()
+
+        p = providers.get_chat_provider()
+        assert isinstance(p, OllamaChatProvider)
+        assert p.base_url == "https://ollama.com"
+        assert p.resolve_model() == "gpt-oss:120b"
+        assert p.remote is True
+
+    def test_ollama_cloud_gate_vision_bakes_in_gate_model(self, monkeypatch):
+        monkeypatch.setattr(providers.cfg, "image_gate_vision_provider", "ollama_cloud")
+        monkeypatch.setattr(providers.cfg, "ollama_cloud_api_key", "oll-test")
+        monkeypatch.setattr(providers.cfg, "image_gate_vision_model", "qwen3.5:397b")
+        providers.reset_providers()
+
+        p = providers.get_gate_vision_provider()
+        assert isinstance(p, OllamaVisionProvider)
+        assert p.model == "qwen3.5:397b"
+
     def test_ocr_provider_vlm_selects_vision_backend(self, monkeypatch):
         monkeypatch.setattr(providers.cfg, "ocr_provider", "vlm")
         providers.reset_providers()
@@ -316,3 +339,116 @@ class TestOpenAICompatVision:
         p = OpenAICompatVisionProvider(base_url="https://host/v1", api_key="k", model="")
         with pytest.raises(ValueError, match="No vision model"):
             p.complete("describe", "QUJD")
+
+
+# ── Ollama Cloud (native API against ollama.com) ──────────────────────────────
+
+
+def _cloud_chat(**kw):
+    return OllamaChatProvider(
+        base_url="https://ollama.com", api_key="oll-key", label="ollama_cloud",
+        remote=True, **kw
+    )
+
+
+class TestOllamaCloudChat:
+    def test_sends_bearer_key_to_hosted_api_chat(self, monkeypatch):
+        captured = {}
+
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"message": {"content": '{"label": "AI"}'}}
+
+        def _post(url, json=None, headers=None, timeout=None):
+            captured.update(url=url, json=json, headers=headers)
+            return FakeResp()
+
+        monkeypatch.setattr("pka.providers.ollama.httpx.post", _post)
+        data, err = _cloud_chat(model="gpt-oss:120b").chat_json("prompt")
+
+        assert err is None
+        assert data["label"] == "AI"
+        # Cloud speaks the *native* Ollama API, not /v1/chat/completions.
+        assert captured["url"] == "https://ollama.com/api/chat"
+        assert captured["json"]["model"] == "gpt-oss:120b"
+        assert captured["json"]["format"] == "json"
+        assert captured["headers"]["Authorization"] == "Bearer oll-key"
+
+    def test_never_falls_back_to_local_chat_model(self, monkeypatch):
+        """A local model name must not be sent to the hosted endpoint."""
+        monkeypatch.setattr("pka.providers.ollama.cfg.chat_model", "llava")
+
+        def _boom(*a, **k):
+            raise AssertionError("must not call HTTP without a cloud model")
+
+        monkeypatch.setattr("pka.providers.ollama.httpx.post", _boom)
+        monkeypatch.setattr("pka.providers.ollama.httpx.get", _boom)
+        p = _cloud_chat(model="")
+        assert p.resolve_model() == ""
+        data, err = p.chat_json("prompt")
+        assert data == {}
+        assert "No chat model" in err
+
+    def test_missing_key_errors_without_http(self, monkeypatch):
+        def _boom(*a, **k):
+            raise AssertionError("must not call HTTP without a key")
+
+        monkeypatch.setattr("pka.providers.ollama.httpx.post", _boom)
+        p = OllamaChatProvider(
+            base_url="https://ollama.com", api_key="", model="gpt-oss:120b",
+            label="ollama_cloud", remote=True,
+        )
+        data, err = p.chat_json("prompt")
+        assert data == {}
+        assert "No API key" in err
+
+
+class TestOllamaCloudVision:
+    def test_configured_model_wins_over_plumbed_default(self, monkeypatch):
+        captured = {}
+
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"message": {"content": '{"image_type": "slide"}'}}
+
+        def _post(url, json=None, headers=None, timeout=None):
+            captured.update(url=url, json=json, headers=headers)
+            return FakeResp()
+
+        monkeypatch.setattr("pka.providers.ollama.httpx.post", _post)
+        p = OllamaVisionProvider(
+            base_url="https://ollama.com", api_key="oll-key", model="qwen3.5:397b",
+            label="ollama_cloud", remote=True,
+        )
+        content = p.complete("describe", "QUJD", model="moondream")
+
+        assert content == '{"image_type": "slide"}'
+        assert captured["json"]["model"] == "qwen3.5:397b"  # not the local "moondream"
+        assert captured["json"]["messages"][0]["images"] == ["QUJD"]
+        assert captured["headers"]["Authorization"] == "Bearer oll-key"
+
+    def test_local_provider_still_honours_per_call_model(self, monkeypatch):
+        captured = {}
+
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"message": {"content": "{}"}}
+
+        def _post(url, json=None, headers=None, timeout=None):
+            captured.update(url=url, json=json)
+            return FakeResp()
+
+        monkeypatch.setattr("pka.providers.ollama.httpx.post", _post)
+        OllamaVisionProvider().complete("describe", "QUJD", model="moondream")
+
+        assert captured["json"]["model"] == "moondream"
+        assert captured["url"].endswith("/api/chat")

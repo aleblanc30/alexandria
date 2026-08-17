@@ -5,7 +5,7 @@ from pka.config import settings as cfg
 from pka.constants import Source
 from pka.ingestion import sync_progress as sp
 from pka.ingestion.dev_limits import take
-from pka.ingestion.image_pipeline import ingest_images, register_images
+from pka.ingestion.image_pipeline import admitted_images, ingest_images, register_images
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.ingestion.source_access import try_scan_images
 from pka.ingestion.sync_shared import EMPTY_STATS, run_full_sync, unavailable_metadata
@@ -53,7 +53,9 @@ def sync_images_ingest(
     if unavailable:
         return _unavailable_ingest(key, unavailable)
     images = take(images, Source.IMAGE)
-    n = len(images)
+    # Phase totals cover only what the loop can act on: ``ingest_images`` skips
+    # gate-rejected paths, so including them would pin an unreachable total.
+    n = len(admitted_images(images))
     _plan_counts(key, n)
     sp.skip_phase(key, "fetching")
     sp.set_phase(key, "embedding", n)

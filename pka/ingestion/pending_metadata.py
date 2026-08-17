@@ -112,13 +112,16 @@ def _compute_pending_metadata(src: str) -> int:
         return sum(1 for book in take(books, Source.CALIBRE) if book.source_id not in known)
 
     if src == Source.IMAGE:
-        from pka.ingestion.image_pipeline import _image_already_indexed
+        from pka.ingestion.image_pipeline import _image_already_indexed, admitted_images
 
-        images, unavailable = try_scan_images()
+        scanned, unavailable = try_scan_images()
         if unavailable:
             return 0
+        # ``admitted_images`` mirrors what ``register_images`` will actually
+        # persist: gate-rejected paths are skipped there, so counting them as
+        # pending leaves a permanent gap the metadata job can never close.
         pending = 0
-        for img in take(images, Source.IMAGE):
+        for img in admitted_images(take(scanned, Source.IMAGE)):
             if _image_already_indexed(img.path) is None:
                 pending += 1
         return pending
@@ -172,10 +175,14 @@ def _compute_source_corpus_size(src: str) -> int:
         return n_files or len(books)
 
     if src == Source.IMAGE:
-        images, unavailable = try_scan_images()
+        from pka.ingestion.image_pipeline import admitted_images
+
+        scanned, unavailable = try_scan_images()
         if unavailable:
             return 0
-        return len(take(images, Source.IMAGE))
+        # Gate-rejected paths are skipped by both passes; leaving them in the
+        # corpus would hold every phase total above the reachable maximum.
+        return len(admitted_images(take(scanned, Source.IMAGE)))
 
     return 0
 

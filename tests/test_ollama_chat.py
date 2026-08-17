@@ -83,13 +83,16 @@ class TestChatJson:
             def json(self):
                 return {"message": {"content": '{"label": "AI"}'}}
 
-        def _post(url, json=None, timeout=None):
+        def _post(url, json=None, headers=None, timeout=None):
             captured["payload"] = json
+            captured["headers"] = headers
             return FakeResp()
 
         monkeypatch.setattr("httpx.post", _post)
         oc.chat_json("prompt")
         assert captured["payload"]["format"] == "json"
+        # Local Ollama is unauthenticated — no Authorization header.
+        assert captured["headers"] == {}
 
     def test_empty_content_returns_error(self, monkeypatch):
         monkeypatch.setattr(prov.OllamaChatProvider, "resolve_model", lambda self, m=None: "llama3")

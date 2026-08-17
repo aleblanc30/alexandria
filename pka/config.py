@@ -3,16 +3,118 @@ Project-wide settings.
 
 All paths default to sensible per-user locations and can be overridden via the
 ``ALEXANDRIA_`` env prefix or a ``.env`` file in the working directory.
+
+Credentials live apart from ordinary config in a ``.secrets`` file (same
+``KEY=value`` format, keys additionally prefixed with ``SECRET_``) so ``.env``
+can stay free of API keys and passwords. See ``SecretsFileSettingsSource``.
 """
 import json
+import logging
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings, NoDecode
+from pydantic_settings import BaseSettings, NoDecode, PydanticBaseSettingsSource
+
+log = logging.getLogger(__name__)
 
 FORBIDDEN_PATH_PREFIXES = (Path("/etc"), Path("/usr"), Path("/var"), Path("/sys"))
+
+# ── Secrets file ─────────────────────────────────────────────────────────────
+# Default location (relative to cwd) and the key prefix that marks a line in it.
+# Override the path with ALEXANDRIA_SECRETS_FILE; set it empty to disable.
+SECRETS_FILE = ".secrets"
+SECRET_KEY_PREFIX = "SECRET_"
+
+
+def _secrets_file_path() -> Path | None:
+    """Resolve the secrets file location, honouring ALEXANDRIA_SECRETS_FILE."""
+    override = os.environ.get("ALEXANDRIA_SECRETS_FILE")
+    raw = SECRETS_FILE if override is None else override
+    if not raw:
+        return None
+    return Path(raw).expanduser()
+
+
+def parse_secrets_file(path: Path) -> dict[str, str]:
+    """Parse ``SECRET_ALEXANDRIA_FOO=bar`` lines into ``{"ALEXANDRIA_FOO": "bar"}``.
+
+    Same shape as ``.env``: ``KEY=value`` per line, ``#`` comments, blank lines
+    and an optional ``export`` prefix ignored, surrounding quotes stripped. Keys
+    without the ``SECRET_`` prefix are ignored so the file can't be used to set
+    arbitrary config behind ``.env``'s back.
+    """
+    out: dict[str, str] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        log.warning("Could not read secrets file %s: %s", path, exc)
+        return out
+
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        key, sep, value = line.partition("=")
+        if not sep:
+            log.warning("Ignoring malformed line %d in %s", lineno, path)
+            continue
+        key = key.strip()
+        if not key.startswith(SECRET_KEY_PREFIX):
+            log.warning("Ignoring key without %s prefix on line %d in %s",
+                        SECRET_KEY_PREFIX, lineno, path)
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        out[key[len(SECRET_KEY_PREFIX):]] = value
+    return out
+
+
+class SecretsFileSettingsSource(PydanticBaseSettingsSource):
+    """Settings source backed by the ``.secrets`` file.
+
+    Sits between the process environment and ``.env`` in precedence: a real env
+    var still wins, but a secret overrides anything left in ``.env``. Keys are
+    matched the same way as env vars — ``SECRET_`` stripped, then the
+    ``ALEXANDRIA_`` prefix, then lowercased to a field name.
+    """
+
+    def __init__(self, settings_cls: type[BaseSettings]):
+        super().__init__(settings_cls)
+        self._values = self._load()
+
+    def _load(self) -> dict[str, Any]:
+        path = _secrets_file_path()
+        if path is None or not path.is_file():
+            return {}
+
+        prefix = self.config.get("env_prefix", "")
+        fields = self.settings_cls.model_fields
+        values: dict[str, Any] = {}
+        for key, value in parse_secrets_file(path).items():
+            if prefix and not key.upper().startswith(prefix.upper()):
+                log.warning("Secret %s%s does not start with %s — ignoring",
+                            SECRET_KEY_PREFIX, key, prefix)
+                continue
+            name = key[len(prefix):].lower()
+            if name not in fields:
+                log.warning("Secret %s%s does not match any setting — ignoring",
+                            SECRET_KEY_PREFIX, key)
+                continue
+            values[name] = value
+        return values
+
+    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
+        if field_name in self._values:
+            return self._values[field_name], field_name, False
+        return None, field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        return dict(self._values)
 
 
 def _parse_path_list(value: object) -> list[Path]:
@@ -118,8 +220,8 @@ class Settings(BaseSettings):
     # ── Providers (per-capability backend selection) ────────────────────────
     # Each capability picks its own backend, so e.g. OpenRouter chat can run
     # alongside local EasyOCR + CLIP. See pka/providers/.
-    chat_provider: str = "ollama"  # ollama | openrouter | ovh
-    vision_provider: str = "ollama"  # ollama | openrouter | ovh
+    chat_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh
+    vision_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh
     ocr_provider: str = "vlm"  # vlm (vision model transcribes) | easyocr
     image_embed_provider: str = "clip"  # clip
 
@@ -137,7 +239,7 @@ class Settings(BaseSettings):
     # re-classifies with ``vision_model`` later in the pipeline.
     image_gate_enabled: bool = True
     image_gate_text_coverage_min: float = 0.05  # fraction of pixels covered by text
-    image_gate_vision_provider: str = "ollama"  # ollama | openrouter | ovh
+    image_gate_vision_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh
     image_gate_vision_model: str = "moondream"  # small local classifier by default
 
     # ── Ollama (local chat / vision) ────────────────────────────────────────
@@ -147,6 +249,16 @@ class Settings(BaseSettings):
     # Model used by the "vlm" OCR provider to transcribe image text. Empty ⇒ reuse
     # ``vision_model`` so classification, description, and OCR share one model.
     vlm_ocr_model: str = ""
+
+    # ── Ollama Cloud (hosted ollama.com — same native API, Bearer key) ──────
+    # Set *_PROVIDER=ollama_cloud to route a capability here. Distinct from the
+    # local-daemon route (``ollama signin`` + a ``:cloud`` model tag in
+    # ``chat_model``), which needs no settings beyond the model name. The API
+    # key is a credential — supply it the same way as the other keys below.
+    ollama_cloud_base_url: str = "https://ollama.com"
+    ollama_cloud_api_key: str = ""  # created at ollama.com/settings/keys
+    ollama_cloud_chat_model: str = ""  # e.g. "gpt-oss:120b"
+    ollama_cloud_vision_model: str = ""  # must be a vision model, e.g. "qwen3.5:397b"
 
     # ── OpenRouter (OpenAI-compatible remote chat / vision) ─────────────────
     openrouter_api_key: str = ""
@@ -243,6 +355,25 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_image_dirs(cls, v: object) -> list[Path]:
         return _parse_path_list(v)
+
+    # ── Sources ─────────────────────────────────────────────────────────────
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Insert ``.secrets`` between the environment and ``.env``."""
+        return (
+            init_settings,
+            env_settings,
+            SecretsFileSettingsSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )
 
     class Config:
         env_file = ".env"

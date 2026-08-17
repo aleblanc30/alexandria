@@ -24,6 +24,11 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "book_archive", tmp_path / "books")
     monkeypatch.setattr(s, "image_dirs",   [tmp_path / "images"])
 
+    # Disable the .secrets file for the whole suite so a developer's real
+    # credentials can never reach a ``Settings()`` built inside a test. Tests
+    # that exercise the loader point this at their own tmp_path file.
+    monkeypatch.setenv("ALEXANDRIA_SECRETS_FILE", "")
+
     # Pin provider selectors to their code defaults so a developer's local
     # ``.env`` (e.g. ALEXANDRIA_VISION_PROVIDER=openrouter) can't leak into the
     # suite and swap the backend a test mocks. Individual tests still override

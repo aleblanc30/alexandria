@@ -38,7 +38,9 @@ Windows, where the same venv steps work (`py -3.12 -m venv .venv`). Keep code
 Windows-safe: close SQLite connections and temp files before renaming or
 reopening them (Windows locks open files).
 
-System prerequisites: Ollama (chat/vision). OCR runs through the vision model by default; the alternative `ocr_provider=easyocr` backend is a pip dependency (no system binary). Images pass a two-step admission gate (`pka/ingestion/image_gate.py`, on by default): EasyOCR text-coverage ≥ `image_gate_text_coverage_min` **and** a fast gate VLM (`image_gate_vision_*`, default Ollama `moondream`) classifying it as a non-`unknown` category; failures are cached in the `image_rejections` table. Copy `.env.example` to `.env` only when overriding defaults; settings use the `ALEXANDRIA_` env prefix via `pka/config.py`.
+System prerequisites: Ollama (chat/vision) — optionally Ollama Cloud, either via
+`ollama signin` + a `:cloud` model tag, or `*_PROVIDER=ollama_cloud` with
+`ALEXANDRIA_OLLAMA_CLOUD_*` pointed straight at ollama.com. OCR runs through the vision model by default; the alternative `ocr_provider=easyocr` backend is a pip dependency (no system binary). Images pass a two-step admission gate (`pka/ingestion/image_gate.py`, on by default): EasyOCR text-coverage ≥ `image_gate_text_coverage_min` **and** a fast gate VLM (`image_gate_vision_*`, default Ollama `moondream`) classifying it as a non-`unknown` category; failures are cached in the `image_rejections` table. Copy `.env.example` to `.env` only when overriding defaults; settings use the `ALEXANDRIA_` env prefix via `pka/config.py`.
 
 ## Commands
 

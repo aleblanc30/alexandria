@@ -71,6 +71,46 @@ class TestClassifyAndDescribe:
         itype, _ = classify_and_describe(sample_png)
         assert itype == "unknown"
 
+    def test_spaced_label_maps_to_enum(self, sample_png, monkeypatch):
+        """Models answer "book cover", not "book_cover" — that is a hit, not unknown.
+
+        Regression: the strict membership test discarded it, so the admission
+        gate rejected (and permanently cached) correctly classified book covers.
+        """
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {
+            "message": {"content": '{"image_type": "book cover", "description": "A cover."}'},
+        }
+        monkeypatch.setattr("pka.providers.ollama.httpx.post", lambda *a, **kw: resp)
+
+        from pka.ingestion.image_extractor import classify_and_describe
+        itype, desc = classify_and_describe(sample_png)
+        assert itype == "book_cover"
+        assert desc == "A cover."
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("Book Cover", "book_cover"),
+            ("book-cover", "book_cover"),
+            ("  WHITEBOARD  ", "whiteboard"),
+            ("book covers", "unknown"),   # not a label, must not fuzzy-match
+            ("", "unknown"),
+        ],
+    )
+    def test_label_normalisation(self, raw, expected):
+        from pka.ingestion.image_extractor import _normalize_type
+        assert _normalize_type(raw) == expected
+
+    def test_salvage_maps_spaced_label(self):
+        """The invalid-JSON salvage path must fold labels the same way."""
+        from pka.ingestion.image_extractor import _salvage_vision_fields
+        broken = '{"image_type": "book cover", "description": "A "signed" first edition."}'
+        itype, desc = _salvage_vision_fields(broken)
+        assert itype == "book_cover"
+        assert desc == 'A "signed" first edition.'
+
     def test_failure_returns_unknown(self, sample_png, monkeypatch):
         monkeypatch.setattr(
             "pka.providers.ollama.httpx.post",
@@ -101,7 +141,7 @@ class TestClassifyAndDescribe:
         """The vision call must ask Ollama to grammar-constrain valid JSON."""
         captured = {}
 
-        def _post(url, json=None, timeout=None):
+        def _post(url, json=None, headers=None, timeout=None):
             captured["payload"] = json
             resp = MagicMock()
             resp.raise_for_status.return_value = None

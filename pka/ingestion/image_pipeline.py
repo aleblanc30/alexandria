@@ -126,6 +126,28 @@ def _image_already_embedded(path: Path) -> bool:
     return bool(row and row[0] is not None)
 
 
+def gate_rejected_paths() -> set[str]:
+    """Image paths the admission gate has already rejected.
+
+    Empty when the gate is off, so a cached rejection from an earlier gated run
+    cannot keep an image out once the user disables the gate.
+    """
+    return get_rejected_paths() if cfg.image_gate_enabled else set()
+
+
+def admitted_images(image_files: list[ImageFile]) -> list[ImageFile]:
+    """Drop gate-rejected paths — the images a pass can actually act on.
+
+    Progress counters must be scoped to this set, not the raw scan: both passes
+    skip rejected paths, so counting them as outstanding work pins a phase total
+    the job can never reach.
+    """
+    rejected = gate_rejected_paths()
+    if not rejected:
+        return list(image_files)
+    return [img for img in image_files if str(img.path) not in rejected]
+
+
 def register_images(
     image_files: list[ImageFile],
     dry_run: bool = False,
@@ -134,7 +156,7 @@ def register_images(
     """Scan pass: persist image file records without OCR / CLIP / embedding."""
     # Images the gate previously rejected must not be re-registered on later
     # metadata runs — skip them up front (only while the gate is active).
-    rejected_paths = get_rejected_paths() if cfg.image_gate_enabled else set()
+    rejected_paths = gate_rejected_paths()
 
     def _register_one(img: ImageFile) -> str:
         if str(img.path) in rejected_paths:

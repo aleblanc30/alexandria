@@ -49,8 +49,24 @@ Rules:
 No markdown, no explanation. Only the JSON object."""
 
 
-_IMAGE_TYPE_RE = re.compile(r'"?image_type"?\s*[:=]\s*"?([a-z_]+)', re.IGNORECASE)
+_IMAGE_TYPE_RE = re.compile(
+    r'"?image_type"?\s*[:=]\s*"?([a-z]+(?:[ _-][a-z]+)*)', re.IGNORECASE
+)
 _DESCRIPTION_RE = re.compile(r'"?description"?\s*[:=]\s*"(.*)"\s*}?\s*$', re.IGNORECASE | re.DOTALL)
+
+
+def _normalize_type(raw: object) -> str:
+    """Map a model's label onto :data:`_VALID_TYPES`, or ``"unknown"``.
+
+    Vision models answer with the label as prose — ``"book cover"``,
+    ``"Book Cover"``, ``"book-cover"`` — rather than the exact enum spelling.
+    A strict membership test threw those away as ``unknown``, which at the
+    admission gate rejects a *correctly* classified image and caches the
+    rejection permanently. Case, spaces, and hyphens are therefore folded to the
+    underscore form before matching.
+    """
+    slug = re.sub(r"[\s-]+", "_", str(raw).strip().lower())
+    return slug if slug in _VALID_TYPES else "unknown"
 
 
 def _salvage_vision_fields(content: str) -> tuple[str, str]:
@@ -61,10 +77,8 @@ def _salvage_vision_fields(content: str) -> tuple[str, str]:
     answer, pull the two fields directly; the greedy description match keeps any
     inner quotes as literal text.
     """
-    image_type = "unknown"
     m = _IMAGE_TYPE_RE.search(content)
-    if m and m.group(1).lower() in _VALID_TYPES:
-        image_type = m.group(1).lower()
+    image_type = _normalize_type(m.group(1)) if m else "unknown"
     description = ""
     d = _DESCRIPTION_RE.search(content.strip())
     if d:
@@ -147,9 +161,7 @@ def classify_and_describe(
             # salvage the fields instead of dropping to unknown/empty.
             image_type, description = _salvage_vision_fields(content)
 
-        if image_type not in _VALID_TYPES:
-            image_type = "unknown"
-        return image_type, description
+        return _normalize_type(image_type), description
 
     except Exception as exc:
         if strict:

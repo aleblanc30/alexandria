@@ -1,5 +1,60 @@
 # Changelog
 
+## Unreleased — Ollama Cloud provider
+
+- New **`ollama_cloud`** backend for the `chat`, `vision`, and
+  `image_gate_vision` capabilities, alongside the existing `ollama`,
+  `openrouter`, and `ovh`. It targets hosted `ollama.com`, which speaks the same
+  native `/api/chat` as the local daemon, so `pka/providers/ollama.py` covers
+  both: the two provider classes gained `base_url` / `api_key` / `model` /
+  `label` / `remote` constructor args and send `Authorization: Bearer …` when a
+  key is set. Zero-arg construction is unchanged, so local behaviour is
+  byte-identical.
+- `remote=True` disables the local-only conveniences that would misfire against
+  a hosted endpoint: no `/api/tags` auto-detection, and no fallback to
+  `chat_model` / `vision_model`. A missing key or model is returned as an error
+  (chat) or raised (vision) instead of silently sending a local model name to
+  the cloud. As with the OpenAI-compatible backends, a model baked in at
+  construction wins over the per-call override — which is what lets the image
+  gate pin `image_gate_vision_model`.
+- Config: `ollama_cloud_base_url` (default `https://ollama.com`),
+  `ollama_cloud_api_key`, `ollama_cloud_chat_model`, `ollama_cloud_vision_model`.
+  The key is a credential and belongs with the others as
+  `SECRET_ALEXANDRIA_OLLAMA_CLOUD_API_KEY`.
+- The pre-existing route — `ollama signin` plus a `:cloud`-tagged model in
+  `chat_model`, proxied by the local daemon — still works and needs none of
+  these settings; `.env.example` and `README.md` now document both.
+
+## Unreleased — credentials move to `.secrets`
+
+- **Credentials now live in a `.secrets` file**, separate from `.env`. Same
+  `KEY=value` shape, but each key carries a `SECRET_` prefix on top of the usual
+  one (`SECRET_ALEXANDRIA_OPENROUTER_API_KEY`). A new
+  `SecretsFileSettingsSource` in `pka/config.py` strips the prefix and feeds the
+  rest through the normal settings machinery, so the same `Settings` fields are
+  populated with **no call-site changes**.
+- **Precedence:** process environment > `.secrets` > `.env` > code defaults. A
+  real env var still wins; a secret overrides anything left in `.env`.
+- Keys lacking the `SECRET_` prefix, and keys matching no setting, are ignored
+  with a warning — the file can't be used to set arbitrary config behind
+  `.env`'s back. `ALEXANDRIA_SECRETS_FILE` relocates it; setting that empty
+  disables the source, which `conftest.py` now does suite-wide so tests can
+  never pick up a developer's real credentials.
+- `.env.example` documents the split, `.secrets.example` is the new template,
+  and `.secrets` is git-ignored.
+- **Agent guardrail:** `Read` deny rules for `.secrets` in
+  `.claude/settings.json`. Per the Claude Code permissions docs these cover the
+  built-in file tools *and* the Bash file commands it recognises (`cat`, `head`,
+  `tail`, `sed`) — verified: `head -c 1 .secrets` is refused.
+  They do **not** cover arbitrary subprocesses that open the file themselves
+  (`python -c "..."`). OS-level enforcement for those needs the Bash sandbox
+  (`sandbox.filesystem.denyRead` / `sandbox.credentials.files`), which runs on
+  macOS/Linux/WSL2 only — not native Windows. Worth enabling if this repo's
+  Claude Code sessions move to WSL2.
+  A regex `PreToolUse` hook was tried and removed: extending it to catch
+  programmatic reads means denylisting identifiers, which any indirection
+  defeats. The real mitigation is that credentials are no longer in `.env`.
+
 ## Unreleased — image admission gate
 
 - New **two-step gate** in front of the image pipeline
@@ -37,6 +92,22 @@
   encoder (`_encode_image`). Previously EasyOCR crashed on them
   (`cv2.resize !ssize.empty()`), scoring `0.0` coverage and wrongly rejecting
   every such image; the VLM also saw them sideways.
+- **Classifier labels are normalised before the enum check.** Vision models
+  answer with the label as prose — moondream returns `"book cover"`, not
+  `"book_cover"` — and the strict `not in _VALID_TYPES` test folded every such
+  answer to `unknown`. At the gate that rejected *correctly classified* images
+  and cached the rejection permanently: a 10-image book-cover library was
+  rejected 10/10 while the model was identifying every one of them. Case,
+  spaces, and hyphens are now folded to the underscore form (`_normalize_type`,
+  applied on both the JSON and salvage paths).
+- **Progress counters are scoped to admissible images.** `count_pending_metadata`
+  and `source_corpus_size` counted every scanned file, including cached
+  rejections that both passes skip — so a metadata sync pinned a total it could
+  never reach (stuck at e.g. `8 / 10`), and because a gate rejection *deletes*
+  the registered rows, the processed count then walked backwards (`8 → 2 → 0`)
+  against that fixed total. Both probes (and the ingest phase plan in
+  `sync_images_ingest`) now count through `admitted_images`, matching what the
+  passes actually persist.
 - **Gate failures now surface instead of silently rejecting.** A missing EasyOCR
   install raises `EasyOcrUnavailable` (checked via the real wheel, not the lazy
   wrapper import); a vision-backend outage raises `VisionUnavailable` (gate calls

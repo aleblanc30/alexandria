@@ -1,4 +1,17 @@
-"""Ollama-backed chat and vision providers (local ``/api/chat``)."""
+"""Ollama-backed chat and vision providers (native ``/api/chat``).
+
+One implementation covers two deployments, because Ollama Cloud speaks the same
+native API as the local daemon — only the host and an ``Authorization`` header
+differ:
+
+* **local** (``ollama``) — zero-arg construction. Talks to ``ollama_base_url``,
+  no auth, and resolves the chat model from ``cfg.chat_model`` or by probing
+  ``/api/tags``.
+* **cloud** (``ollama_cloud``) — constructed with ``remote=True`` plus a
+  ``base_url``, ``api_key`` and explicit ``model``. Auto-detection is off, and a
+  missing key or model is reported instead of guessed, so a local model name can
+  never be sent to the hosted endpoint.
+"""
 
 from __future__ import annotations
 
@@ -20,22 +33,58 @@ def _is_chat_model(name: str) -> bool:
     return not any(marker in lower for marker in _EMBED_MARKERS)
 
 
-class OllamaChatProvider:
+class _OllamaEndpoint:
+    """Shared host/auth resolution for the native Ollama API."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str = "",
+        api_key: str = "",
+        model: str = "",
+        label: str = "ollama",
+        remote: bool = False,
+    ):
+        self._base_url = base_url
+        self.api_key = api_key
+        self.model = model
+        self.label = label
+        self.remote = remote
+
+    @property
+    def base_url(self) -> str:
+        # Resolved per call rather than frozen at construction so the local
+        # provider still follows a monkeypatched/updated ``ollama_base_url``.
+        return (self._base_url or cfg.ollama_base_url).rstrip("/")
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+
+
+class OllamaChatProvider(_OllamaEndpoint):
     """Chat completions via Ollama, grammar-constrained to JSON."""
 
     def resolve_model(self, explicit: str | None = None) -> str:
-        """Return the chat model, auto-detecting from Ollama when unset."""
+        """Return the chat model, auto-detecting from Ollama when unset.
+
+        Remote (cloud) instances never auto-detect: they return ``""`` when no
+        model is configured so :meth:`chat_json` can report it.
+        """
         global _cached_chat_model
 
         if explicit:
             return explicit
+        if self.model:
+            return self.model
+        if self.remote:
+            return ""
         if cfg.chat_model:
             return cfg.chat_model
         if _cached_chat_model:
             return _cached_chat_model
 
         try:
-            resp = httpx.get(f"{cfg.ollama_base_url}/api/tags", timeout=5)
+            resp = httpx.get(f"{self.base_url}/api/tags", timeout=5)
             resp.raise_for_status()
             for entry in resp.json().get("models", []):
                 name = entry.get("name", "")
@@ -59,6 +108,11 @@ class OllamaChatProvider:
         from pka.json_utils import parse_llm_json
 
         chosen = self.resolve_model(model)
+        if not chosen:
+            return {}, f"No chat model configured for provider '{self.label}'"
+        if self.remote and not self.api_key:
+            return {}, f"No API key configured for provider '{self.label}'"
+
         payload: dict[str, Any] = {
             "model": chosen,
             "messages": [{"role": "user", "content": prompt}],
@@ -72,8 +126,9 @@ class OllamaChatProvider:
             payload["options"] = {"temperature": temperature}
         try:
             resp = httpx.post(
-                f"{cfg.ollama_base_url}/api/chat",
+                f"{self.base_url}/api/chat",
                 json=payload,
+                headers=self._headers(),
                 timeout=timeout,
             )
             resp.raise_for_status()
@@ -83,11 +138,11 @@ class OllamaChatProvider:
                 return {}, f"Empty response from model {chosen}"
             return parse_llm_json(content), None
         except Exception as exc:
-            log.warning("Ollama chat failed (model=%s): %s", chosen, exc)
+            log.warning("%s chat failed (model=%s): %s", self.label, chosen, exc)
             return {}, str(exc)
 
 
-class OllamaVisionProvider:
+class OllamaVisionProvider(_OllamaEndpoint):
     """Vision completions via Ollama (image passed in the ``images`` array)."""
 
     def complete(
@@ -98,9 +153,17 @@ class OllamaVisionProvider:
         model: str | None = None,
         timeout: float = 120,
     ) -> str:
-        chosen = model or cfg.vision_model
+        # A model baked in at construction (cloud) wins over the plumbed-in
+        # default, which carries a local Ollama model name. The local provider
+        # leaves ``self.model`` empty, so per-call override → cfg as before.
+        chosen = self.model or model or cfg.vision_model
+        if not chosen:
+            raise ValueError(f"No vision model configured for provider '{self.label}'")
+        if self.remote and not self.api_key:
+            raise ValueError(f"No API key configured for provider '{self.label}'")
+
         resp = httpx.post(
-            f"{cfg.ollama_base_url}/api/chat",
+            f"{self.base_url}/api/chat",
             json={
                 "model": chosen,
                 "messages": [
@@ -115,6 +178,7 @@ class OllamaVisionProvider:
                 "format": "json",
                 "stream": False,
             },
+            headers=self._headers(),
             timeout=timeout,
         )
         resp.raise_for_status()

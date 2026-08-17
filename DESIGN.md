@@ -35,14 +35,27 @@ local OCR/embeddings:
 
 | Capability | Config setting | Backends | Interface (`pka/providers/base.py`) |
 |-----------|----------------|----------|-------------------------------------|
-| Chat (text→JSON) | `chat_provider` | ollama, openrouter, ovh | `ChatProvider` |
-| Vision (image→text) | `vision_provider` | ollama, openrouter, ovh | `VisionProvider` |
+| Chat (text→JSON) | `chat_provider` | ollama, ollama_cloud, openrouter, ovh | `ChatProvider` |
+| Vision (image→text) | `vision_provider` | ollama, ollama_cloud, openrouter, ovh | `VisionProvider` |
 | OCR (image→text) | `ocr_provider` | vlm, easyocr | `OcrProvider` |
 | Image embed (CLIP) | `image_embed_provider` | clip | `ImageEmbedder` |
 
 OpenRouter and OVH share one OpenAI-compatible implementation
 (`openai_compat.py`); credentials/models come from `ALEXANDRIA_OPENROUTER_*` /
-`ALEXANDRIA_OVH_*`. Callers use the accessors in `pka/providers/__init__.py`
+`ALEXANDRIA_OVH_*`.
+
+`ollama` and `ollama_cloud` likewise share `ollama.py`, because Ollama Cloud
+serves the same native `/api/chat`; the cloud form is the same classes built
+with `remote=True` plus `ALEXANDRIA_OLLAMA_CLOUD_*` (host, Bearer key, model).
+`remote=True` also switches off the local niceties that would be wrong against a
+hosted endpoint: no `/api/tags` model auto-detection and no fallback to
+`chat_model`/`vision_model`, so a local model name can never be sent to the
+cloud, and a missing key or model is reported rather than guessed. Cloud models
+can alternatively be reached with `chat_provider=ollama` by pointing
+`chat_model` at a `:cloud`-tagged model, which the signed-in local daemon
+proxies — that route needs no `ollama_cloud` settings at all.
+
+Callers use the accessors in `pka/providers/__init__.py`
 (`get_chat_provider()` etc.); the historical `pka.ollama_chat.chat_json` and
 `image_extractor.classify_and_describe` / `ocr_image` / `clip_embed_*` are thin
 shims over these. **Text-chunk** embeddings are intentionally *not* here — they

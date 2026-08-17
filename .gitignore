@@ -25,6 +25,7 @@ Thumbs.db
 
 # Project
 .env
+.secrets
 data/
 *.sqlite*
 chroma/

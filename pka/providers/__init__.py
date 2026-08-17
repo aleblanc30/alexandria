@@ -12,6 +12,7 @@ Instances are cached for the process lifetime; tests reset them via
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from pka.config import settings as cfg
 from pka.providers.base import ChatProvider, ImageEmbedder, OcrProvider, VisionProvider
@@ -53,6 +54,17 @@ def _openai_compat_config(name: str) -> dict[str, str]:
     raise ValueError(f"Unknown OpenAI-compatible provider: {name!r}")
 
 
+def _ollama_cloud_kwargs(model: str) -> dict[str, Any]:
+    """Constructor kwargs for a hosted (ollama.com) Ollama provider."""
+    return {
+        "base_url": cfg.ollama_cloud_base_url,
+        "api_key": cfg.ollama_cloud_api_key,
+        "model": model,
+        "label": "ollama_cloud",
+        "remote": True,
+    }
+
+
 # ── Builders ─────────────────────────────────────────────────────────────────
 
 
@@ -61,6 +73,10 @@ def _build_chat(name: str) -> ChatProvider:
         from pka.providers.ollama import OllamaChatProvider
 
         return OllamaChatProvider()
+    if name == "ollama_cloud":
+        from pka.providers.ollama import OllamaChatProvider
+
+        return OllamaChatProvider(**_ollama_cloud_kwargs(cfg.ollama_cloud_chat_model))
     if name in ("openrouter", "ovh"):
         from pka.providers.openai_compat import OpenAICompatChatProvider
 
@@ -71,7 +87,9 @@ def _build_chat(name: str) -> ChatProvider:
             model=conf["chat_model"],
             label=name,
         )
-    raise ValueError(f"Unknown chat provider: {name!r} (expected ollama|openrouter|ovh)")
+    raise ValueError(
+        f"Unknown chat provider: {name!r} (expected ollama|ollama_cloud|openrouter|ovh)"
+    )
 
 
 def _build_vision(name: str) -> VisionProvider:
@@ -79,6 +97,10 @@ def _build_vision(name: str) -> VisionProvider:
         from pka.providers.ollama import OllamaVisionProvider
 
         return OllamaVisionProvider()
+    if name == "ollama_cloud":
+        from pka.providers.ollama import OllamaVisionProvider
+
+        return OllamaVisionProvider(**_ollama_cloud_kwargs(cfg.ollama_cloud_vision_model))
     if name in ("openrouter", "ovh"):
         from pka.providers.openai_compat import OpenAICompatVisionProvider
 
@@ -89,22 +111,27 @@ def _build_vision(name: str) -> VisionProvider:
             model=conf["vision_model"],
             label=name,
         )
-    raise ValueError(f"Unknown vision provider: {name!r} (expected ollama|openrouter|ovh)")
+    raise ValueError(
+        f"Unknown vision provider: {name!r} (expected ollama|ollama_cloud|openrouter|ovh)"
+    )
 
 
 def _build_gate_vision(name: str) -> VisionProvider:
     """Vision provider for the admission gate's fast classifier.
 
-    Distinct from :func:`_build_vision`: for remote (OpenAI-compatible) backends
-    the gate model is baked in at construction, because
-    ``OpenAICompatVisionProvider.complete`` lets ``self.model`` win over a
-    per-call override. Ollama takes the model per call, so its provider is
+    Distinct from :func:`_build_vision`: for remote backends the gate model is
+    baked in at construction, because a constructed ``self.model`` wins over a
+    per-call override. Local Ollama takes the model per call, so its provider is
     plain and the gate passes ``image_gate_vision_model`` at call time.
     """
     if name == "ollama":
         from pka.providers.ollama import OllamaVisionProvider
 
         return OllamaVisionProvider()
+    if name == "ollama_cloud":
+        from pka.providers.ollama import OllamaVisionProvider
+
+        return OllamaVisionProvider(**_ollama_cloud_kwargs(cfg.image_gate_vision_model))
     if name in ("openrouter", "ovh"):
         from pka.providers.openai_compat import OpenAICompatVisionProvider
 
@@ -115,7 +142,9 @@ def _build_gate_vision(name: str) -> VisionProvider:
             model=cfg.image_gate_vision_model,
             label=f"{name}-gate",
         )
-    raise ValueError(f"Unknown gate vision provider: {name!r} (expected ollama|openrouter|ovh)")
+    raise ValueError(
+        f"Unknown gate vision provider: {name!r} (expected ollama|ollama_cloud|openrouter|ovh)"
+    )
 
 
 def _build_ocr(name: str) -> OcrProvider:

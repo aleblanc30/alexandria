@@ -64,6 +64,16 @@ System prerequisites:
 - **Ollama** for clustering labels and image vision (`ollama pull llava` or your
   chat model). Text chunk embeddings use Chroma's built-in Sentence Transformers
   model (`all-MiniLM-L6-v2`, downloaded on first use).
+- **Ollama Cloud** (optional) runs bigger models than the machine fits, without
+  the prompts touching a third-party aggregator. Two routes, both per-capability
+  so chat can go remote while OCR and embeddings stay local:
+  - *Through the local daemon* — `ollama signin`, `ollama pull gpt-oss:120b-cloud`,
+    then set `ALEXANDRIA_CHAT_MODEL=gpt-oss:120b-cloud`. Provider stays `ollama`.
+  - *Direct to ollama.com* — set `ALEXANDRIA_CHAT_PROVIDER=ollama_cloud` (and/or
+    `_VISION_PROVIDER`), an API key from https://ollama.com/settings/keys as
+    `SECRET_ALEXANDRIA_OLLAMA_CLOUD_API_KEY`, and
+    `ALEXANDRIA_OLLAMA_CLOUD_CHAT_MODEL` (no `-cloud` suffix on this route). No
+    local daemon needed.
 - **Image OCR** runs through the vision model by default (`ocr_provider=vlm`,
   no extra install). Set `ocr_provider=easyocr` to use the bundled **EasyOCR**
   backend instead — a pip dependency (no system binary); its recognition models
