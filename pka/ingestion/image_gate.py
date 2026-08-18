@@ -70,7 +70,7 @@ class GateResult:
 
     passed: bool
     reason: str | None            # None when passed
-    image_type: str               # gate classifier label (for the reject record)
+    image_type: str               # gate classifier label (reject record + content prompt)
     description: str              # gate classifier description (not reused downstream)
     text_coverage: float          # measured fraction 0..1
 
@@ -84,9 +84,11 @@ def gate_image(
 ) -> GateResult:
     """Run the two-step gate for a single image path.
 
-    The classification here is deliberately independent of the main describe
-    pass: it uses the gate's own (smaller/faster) model and its result is used
-    only for the gate decision and rejection record, not carried downstream.
+    The classification runs on the gate's own (smaller/faster) model. Its
+    **label** is carried downstream — ``ingest_image`` reuses it to pick the
+    per-type content prompt (DESIGN.md §3.2) rather than classifying a second
+    time — while its **description** is not: the main pass produces its own with
+    the larger ``vision_model``.
     """
     threshold = cfg.image_gate_text_coverage_min if coverage_min is None else coverage_min
     model = vision_model or cfg.image_gate_vision_model

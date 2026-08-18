@@ -320,6 +320,75 @@ class TestGateInPipeline:
             ).scalar() == 0
 
 
+class TestGateLabelThreadedToContentPass:
+    """The gate's label picks the main pass's per-type prompt — no third call."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_gate(self, monkeypatch):
+        from pka.config import settings
+        monkeypatch.setattr(settings, "image_gate_enabled", True)
+        init_db()
+
+    def test_main_pass_reuses_gate_label_without_reclassifying(
+        self, tmp_path, monkeypatch, mock_chroma
+    ):
+        import pka.ingestion.image_extractor as extractor
+        import pka.ingestion.image_gate as gate
+        from pka.ingestion.image_pipeline import ingest_image
+
+        cov = MagicMock()
+        cov.text_coverage.return_value = 0.5
+        monkeypatch.setattr(gate, "_get_easyocr", lambda: cov)
+        monkeypatch.setattr(gate, "get_gate_vision_provider", lambda: MagicMock())
+        monkeypatch.setattr(
+            gate, "classify_and_describe",
+            lambda *a, **k: ("whiteboard", "gate model's throwaway description"),
+        )
+
+        main = MagicMock()
+        main.complete.return_value = (
+            '{"transcript": "attention is all you need -> retrieval",'
+            ' "description": "A whiteboard covered in marker."}'
+        )
+        monkeypatch.setattr(extractor, "get_vision_provider", lambda: main)
+        monkeypatch.setattr("pka.ingestion.image_pipeline.ocr_image", lambda p, lang="eng": "")
+        monkeypatch.setattr("pka.ingestion.image_pipeline.clip_embed_image", lambda p: None)
+
+        res = ingest_image(_image_file(tmp_path / "board.png"))
+
+        assert res["status"] == "ok"
+        assert res["image_type"] == "whiteboard"        # gate label, not re-derived
+        assert main.complete.call_count == 1            # one main call, no reclassify
+        prompt = main.complete.call_args[0][0]
+        assert '"transcript"' in prompt                 # transcript prompt for whiteboard
+        assert '"image_type"' not in prompt             # not the classify prompt
+
+    def test_skip_gate_falls_back_to_two_calls(self, tmp_path, monkeypatch, mock_chroma):
+        import pka.ingestion.image_extractor as extractor
+        import pka.ingestion.image_gate as gate
+        from pka.ingestion.image_pipeline import ingest_image
+
+        def _boom():
+            raise AssertionError("gate should be skipped")
+
+        monkeypatch.setattr(gate, "_get_easyocr", _boom)
+        main = MagicMock()
+        main.complete.side_effect = [
+            '{"image_type": "poster", "description": "A conference poster."}',
+            '{"content": "a study of retrieval quality", "description": "A poster."}',
+        ]
+        monkeypatch.setattr(extractor, "get_vision_provider", lambda: main)
+        monkeypatch.setattr("pka.ingestion.image_pipeline.ocr_image", lambda p, lang="eng": "")
+        monkeypatch.setattr("pka.ingestion.image_pipeline.clip_embed_image", lambda p: None)
+
+        res = ingest_image(_image_file(tmp_path / "poster.png"), skip_gate=True)
+
+        assert res["image_type"] == "poster"
+        assert main.complete.call_count == 2            # classify, then content prompt
+        assert '"image_type"' in main.complete.call_args_list[0][0][0]
+        assert '"content"' in main.complete.call_args_list[1][0][0]
+
+
 class TestClassifyStrict:
     """The gate's step-2 classifier must distinguish a backend outage (raise)
     from a genuine 'unknown' verdict (return, so the gate legitimately rejects)."""

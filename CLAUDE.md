@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repository.
 
 ## Project overview
 
-**Alexandria v0.2.0** is a local-first research library. It ingests Firefox bookmarks, Zotero papers, Calibre ebooks, and image folders into a single semantically indexed SQLite + ChromaDB archive. Inference runs on-device via Ollama; no data leaves the machine.
+**Alexandria v0.2.0** is a local-first research library. It ingests Firefox bookmarks, Zotero papers, Calibre ebooks, and image folders into a single semantically indexed SQLite + ChromaDB archive. Inference runs on-device via Ollama by default, or against a hosted provider where local hardware is insufficient — local-*first*, not local-*only*. Every outbound path is a named, default-off setting; see **`DESIGN.md` §1.1** for the network-access policy and **§3.2** for the retrieval-enrichment design (per-type VLM prompts, identifier lookups, generated summaries).
 
 This repo is the Python backend + Vue frontend. 
 Read **`README.md`** for human-oriented setup and usage. Read **`DESIGN.md`** for architecture, data flow, and how to add a new source connector.
@@ -97,6 +97,7 @@ Before modifying an area, skim these entry points:
 | Search / vectors | `pka/storage/vector_store.py`, `pka/api/routers/search.py` |
 | Clustering | `pka/clustering/engine.py`, `pka/clustering/lifecycle.py`, `scripts/run_clustering.py` |
 | Images | `pka/ingestion/image_pipeline.py`, `pka/ingestion/image_extractor.py`, `pka/ingestion/image_gate.py` |
+| Retrieval enrichment | `DESIGN.md` §3.2, `pka/ingestion/openlibrary.py`, per-type prompts in `image_extractor.py` |
 | API surface | `pka/api/main.py` (router list), matching router + schema modules |
 | Frontend views | `frontend/src/router.ts`, relevant store + `api/client.ts` methods |
 
@@ -104,7 +105,7 @@ Adding a new source connector: follow the checklist in **`DESIGN.md` §2** (conn
 
 ## Boundaries
 
-- **Local-first / privacy**: do not add cloud APIs, telemetry, or outbound data paths unless explicitly requested.
+- **Local-first / privacy**: outbound paths are allowed but must follow `DESIGN.md` §1.1 — a named setting, default off, no implicit escalation from another flag, credentials in `.secrets`. A fresh checkout with no `.env` must still make no calls beyond `localhost`. **Telemetry and analytics remain prohibited in every configuration.**
 - **Do not commit** `.env`, real database paths, or user data under `data/`.
 - **Do not create git commits or PRs** unless the user asks.
 - **Do not edit** `.venv/`, `frontend/dist/`, `pka.egg-info/`, or generated caches.

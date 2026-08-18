@@ -6,8 +6,16 @@ A local-first research library that unifies a Firefox bookmark collection, a
 Zotero academic library, a Calibre ebook collection, and an unstructured
 images folder into a single semantically indexed, searchable knowledge base.
 
-All inference runs on-device via [Ollama](https://ollama.com). No data ever
-leaves the machine.
+Inference runs through swappable providers — on-device via
+[Ollama](https://ollama.com) by default, or against a hosted endpoint when the
+local machine cannot run a model large enough to be useful.
+
+Alexandria is local-*first*, not local-*only*: the default configuration keeps
+your library contents and your queries on the machine, and every outbound path
+is a separate named setting that is off until you turn it on. Nothing phones
+home, and there is no telemetry or analytics in any configuration. See
+[DESIGN.md](DESIGN.md) §1.1 for the network-access policy and what crosses the
+wire in each case.
 
 ## Repository layout
 

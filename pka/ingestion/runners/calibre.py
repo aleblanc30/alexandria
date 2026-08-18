@@ -15,11 +15,61 @@ from pka.db.queries import (
     upsert_document,
 )
 from pka.ingestion.book_extractor import extract_book_text, metadata_text
-from pka.ingestion.core import ingest_text_block
+from pka.ingestion.core import attach_summary_chunk, ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 from pka.ingestion.runners._common import progress_tick, stop_requested
 
 log = logging.getLogger(__name__)
+
+
+
+def _attach_book_synopsis(book: CalibreBook, doc_id: int, *, dry_run: bool) -> int:
+    """Attach an external synopsis chunk when the book has none of its own.
+
+    Skipped when Calibre already carries a description: pass 1 embeds that
+    already, so a looked-up synopsis would be redundant text and a wasted
+    request. The ladder itself (ISBN → Open Library → second catalogue) and the
+    ``external_lookup_enabled`` gate live in ``lookup_book``, so with the flag
+    off this resolves nothing. Never raises.
+    """
+    if dry_run or (book.description or "").strip():
+        return 0
+    from pka.ingestion.openlibrary import lookup_book
+
+    try:
+        synopsis = lookup_book(
+            title=book.title, authors=book.authors, isbn=book.isbn,
+        )
+    except Exception as exc:
+        log.warning("Book lookup failed for %s: %s", book.source_id, exc)
+        return 0
+    if synopsis is None:
+        return 0
+
+    text = synopsis.embed_text()
+    if not text:
+        return 0
+
+    meta = {
+        "title":       book.title,
+        "pass":        "external_synopsis",
+        "book_title":  synopsis.title or book.title,
+        "resolved_by": synopsis.resolved_by,
+    }
+    if synopsis.isbn:
+        meta["isbn"] = synopsis.isbn
+    if synopsis.work_key:
+        meta["work_key"] = synopsis.work_key
+
+    result = ingest_text_block(
+        doc_id,
+        text,
+        Source.CALIBRE,
+        extra_metadata=meta,
+        chunk_offset=existing_chunk_count(doc_id),
+        min_chars=1,
+    )
+    return 0 if result["skipped"] else result["chunks_added"]
 
 
 def ingest_calibre_metadata(
@@ -105,7 +155,8 @@ def ingest_calibre_books(
         if result["skipped"]:
             return False, 0
         embedded.add(book.source_id)
-        return True, result["chunks_added"]
+        synopsis_chunks = _attach_book_synopsis(book, doc_id, dry_run=dry_run)
+        return True, result["chunks_added"] + synopsis_chunks
 
     return run_embed_loop(
         books,
@@ -175,6 +226,19 @@ def ingest_calibre_fulltext(
             if total_added == 0:
                 stats["skipped"] += 1
             else:
+                # The §3.2 gap this closes: hundreds of body chunks and not one
+                # of them says what the book is about, and /search collapses to
+                # the best single chunk per document.
+                full_text = "\n\n".join(
+                    sec.get("text", "") for sec in sections
+                )
+                total_added += attach_summary_chunk(
+                    doc_id,
+                    full_text,
+                    Source.CALIBRE,
+                    title=book.title,
+                    dry_run=dry_run,
+                )
                 stats["processed"] += 1
                 stats["chunks"] += total_added
 

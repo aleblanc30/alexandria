@@ -30,9 +30,15 @@ def sample_image(tmp_path) -> Path:
 
 @pytest.fixture()
 def mock_vision(monkeypatch):
+    from pka.ingestion.image_extractor import ImageContent
+
     monkeypatch.setattr(
-        "pka.ingestion.image_pipeline.classify_and_describe",
-        lambda path, model="llava": ("slide", "A slide about machine learning."),
+        "pka.ingestion.image_pipeline.extract_image_content",
+        lambda path, image_type=None, model="llava": ImageContent(
+            image_type="slide",
+            description="A slide about machine learning.",
+            content="Title: gradient descent\nbullet: learning rate schedules",
+        ),
     )
 
 
@@ -60,7 +66,7 @@ def mock_clip(monkeypatch):
 def mock_text_embed(monkeypatch):
     monkeypatch.setattr(
         "pka.ingestion.image_pipeline.image_search_text",
-        lambda ocr, desc: "description and ocr combined",
+        lambda ocr, desc, content="": "description and ocr combined",
     )
 
 
@@ -227,6 +233,56 @@ class TestIngestImage:
                 .where(images.c.path == str(sample_image))
             ).fetchone()
         assert row[0] is None
+
+    def test_content_text_reaches_the_index(self, sample_image, mock_vision, mock_ocr,
+                                            mock_clip, mock_chroma_clip, mock_chroma):
+        """The per-type extraction (not just the description) is what gets embedded."""
+        from pka.connectors.images import ImageFile
+        from pka.ingestion.image_pipeline import ingest_image
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
+                        int(time.time()), {})
+        ingest_image(img)
+        with get_engine().connect() as con:
+            text = con.execute(
+                sa.select(chunks.c.text)
+                .join(images, images.c.document_id == chunks.c.document_id)
+                .where(images.c.path == str(sample_image))
+            ).scalar()
+        assert "learning rate schedules" in text          # transcript content
+        assert "Neural Networks" in text                  # OCR still included
+
+    def test_book_fields_exposed_and_cached(self, sample_image, all_mocks, monkeypatch):
+        """Cover extraction is returned by ingest_image and cached in books_json."""
+        import json
+
+        from pka.connectors.images import ImageFile
+        from pka.ingestion.image_extractor import ImageContent
+        from pka.ingestion.image_pipeline import ingest_image
+
+        extracted = [
+            {"title": "Godel, Escher, Bach", "authors": ["Douglas Hofstadter"],
+             "isbn": "9780465026562"},
+            {"title": "The Society of Mind", "authors": ["Marvin Minsky"], "isbn": None},
+        ]
+        monkeypatch.setattr(
+            "pka.ingestion.image_pipeline.extract_image_content",
+            lambda path, image_type=None, model="llava": ImageContent(
+                image_type="multiple_book_covers",
+                description="Two paperbacks on a desk.",
+                content="Godel, Escher, Bach — Douglas Hofstadter",
+                books=extracted,
+            ),
+        )
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
+                        int(time.time()), {})
+        result = ingest_image(img)
+        assert result["books"] == extracted
+        with get_engine().connect() as con:
+            stored = con.execute(
+                sa.select(images.c.books_json)
+                .where(images.c.path == str(sample_image))
+            ).scalar()
+        assert json.loads(stored) == extracted
 
     def test_upsert_on_reindex(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
@@ -401,3 +457,162 @@ class TestIngestImagesStop:
         stats = ingest_images(imgs, progress_key="image")
         assert stats.get("stopped") == "cancel"
         assert stats["processed"] == 0
+
+
+class TestBookSynopsisCascade:
+    """Cover/shelf synopsis lookup (DESIGN.md §3.2), default-off."""
+
+    @pytest.fixture()
+    def book_vision(self, monkeypatch):
+        from pka.ingestion.image_extractor import ImageContent
+
+        monkeypatch.setattr(
+            "pka.ingestion.image_pipeline.extract_image_content",
+            lambda path, image_type=None, model="llava": ImageContent(
+                image_type="multiple_book_covers",
+                description="Two books on a table.",
+                content="Dune by Frank Herbert; Neuromancer by William Gibson",
+                books=[
+                    {"title": "Dune", "authors": ["Frank Herbert"], "isbn": None},
+                    {"title": "Neuromancer", "authors": ["William Gibson"], "isbn": None},
+                ],
+            ),
+        )
+
+    @pytest.fixture()
+    def fake_lookup(self, monkeypatch):
+        from pka.ingestion.openlibrary import BookSynopsis
+
+        def _lookup(title="", authors=None, isbn=None):
+            return BookSynopsis(
+                title=title,
+                description=f"{title} is a novel. It concerns its own themes.",
+                authors=authors or [],
+                work_key=f"/works/{title}",
+                resolved_by="search",
+            )
+
+        monkeypatch.setattr("pka.ingestion.openlibrary.lookup_book", _lookup)
+
+    def _synopsis_meta(self, mock_chroma):
+        """Synopsis chunk metadata out of the in-memory Chroma store."""
+        store, _col = mock_chroma
+        return [
+            item["meta"] for item in store.values()
+            if item["meta"].get("pass") == "external_synopsis"
+        ]
+
+    def test_one_chunk_per_visible_book(
+        self, sample_image, book_vision, fake_lookup, mock_ocr, mock_clip,
+        mock_chroma_clip, mock_chroma,
+    ):
+        from pka.ingestion.image_pipeline import ingest_image
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
+                        int(time.time()), {})
+        result = ingest_image(img, skip_gate=True)
+
+        assert result["synopsis_chunks"] == 2
+        metas = self._synopsis_meta(mock_chroma)
+        assert {m["book_title"] for m in metas} == {"Dune", "Neuromancer"}
+        assert all(m["modality"] == "image" for m in metas)
+        assert all(m["resolved_by"] == "search" for m in metas)
+
+    def test_card_summary_and_description_stay_the_photo_caption(
+        self, sample_image, book_vision, fake_lookup, mock_ocr, mock_clip,
+        mock_chroma_clip, mock_chroma,
+    ):
+        """Enrichment must not rewrite what the browse card says about the image."""
+        from pka.ingestion.image_pipeline import ingest_image
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
+                        int(time.time()), {})
+        ingest_image(img, skip_gate=True)
+
+        with get_engine().connect() as con:
+            row = con.execute(sa.select(images.c.description)).fetchone()
+            card = con.execute(sa.select(documents.c.card_summary)).fetchone()
+        assert row[0] == "Two books on a table."
+        assert card[0] == "Two books on a table."
+
+    def test_synopsis_chunks_do_not_collide_with_the_main_chunk(
+        self, sample_image, book_vision, fake_lookup, mock_ocr, mock_clip,
+        mock_chroma_clip, mock_chroma,
+    ):
+        from pka.ingestion.image_pipeline import ingest_image
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
+                        int(time.time()), {})
+        ingest_image(img, skip_gate=True)
+
+        with get_engine().connect() as con:
+            idxs = [r[0] for r in con.execute(sa.select(chunks.c.chunk_index)).fetchall()]
+        assert len(idxs) == len(set(idxs)), f"duplicate chunk_index: {idxs}"
+
+    def test_disabled_lookup_adds_nothing(
+        self, sample_image, book_vision, mock_ocr, mock_clip,
+        mock_chroma_clip, mock_chroma,
+    ):
+        """conftest pins external_lookup_enabled off; the real lookup must no-op."""
+        from pka.ingestion.image_pipeline import ingest_image
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
+                        int(time.time()), {})
+        result = ingest_image(img, skip_gate=True)
+        assert result["synopsis_chunks"] == 0
+        assert self._synopsis_meta(mock_chroma) == []
+
+    def test_lookup_failure_does_not_break_ingestion(
+        self, sample_image, book_vision, monkeypatch, mock_ocr, mock_clip,
+        mock_chroma_clip, mock_chroma,
+    ):
+        def _boom(title="", authors=None, isbn=None):
+            raise RuntimeError("openlibrary down")
+
+        monkeypatch.setattr("pka.ingestion.openlibrary.lookup_book", _boom)
+        from pka.ingestion.image_pipeline import ingest_image
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
+                        int(time.time()), {})
+        result = ingest_image(img, skip_gate=True)
+        assert result["status"] == "ok"
+        assert result["synopsis_chunks"] == 0
+
+    def test_non_book_image_never_looks_anything_up(
+        self, sample_image, mock_vision, mock_ocr, mock_clip,
+        mock_chroma_clip, mock_chroma, monkeypatch,
+    ):
+        calls = []
+        monkeypatch.setattr(
+            "pka.ingestion.openlibrary.lookup_book",
+            lambda **kw: calls.append(kw),
+        )
+        from pka.ingestion.image_pipeline import ingest_image
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
+                        int(time.time()), {})
+        result = ingest_image(img, skip_gate=True)
+        assert result["synopsis_chunks"] == 0
+        assert calls == []
+
+    def test_entry_without_title_or_isbn_is_skipped(
+        self, sample_image, monkeypatch, fake_lookup, mock_ocr, mock_clip,
+        mock_chroma_clip, mock_chroma,
+    ):
+        from pka.ingestion.image_extractor import ImageContent
+
+        monkeypatch.setattr(
+            "pka.ingestion.image_pipeline.extract_image_content",
+            lambda path, image_type=None, model="llava": ImageContent(
+                image_type="bookshelf",
+                description="A shelf.",
+                content="spines",
+                books=[{"title": "", "authors": [], "isbn": None},
+                       {"title": "Dune", "authors": [], "isbn": None}],
+            ),
+        )
+        from pka.ingestion.image_pipeline import ingest_image
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
+                        int(time.time()), {})
+        assert ingest_image(img, skip_gate=True)["synopsis_chunks"] == 1

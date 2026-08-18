@@ -300,6 +300,126 @@ class TestIngestFetchedTexts:
         assert "Fourth paragraph should not appear" not in row[0]
 
 
+class TestFetchedTextEnrichment:
+    """Title + card summary reach the vector index for fetched pages (DESIGN §3.2)."""
+
+    @staticmethod
+    def _records(store, doc_id) -> list[dict]:
+        return [it for it in store.values() if it["meta"]["document_id"] == doc_id]
+
+    @staticmethod
+    def _new_doc(source_id: str, title: str) -> int:
+        from pka.db.queries import upsert_document
+
+        return upsert_document(
+            "firefox", source_id, title, f"https://example.com/{source_id}", None,
+        )
+
+    def test_title_embedded_and_in_chunk_metadata(self, mock_chroma):
+        from pka.ingestion.runners.firefox import embed_fetched_text
+
+        store, _ = mock_chroma
+        doc_id = self._new_doc("F100", "Paxos Made Simple")
+        body = (
+            "The protocol proceeds in two phases. A proposer picks a number and "
+            "asks the acceptors to promise. Nothing here names the subject."
+        )
+        embed_fetched_text(doc_id, body, skip_existing=False)
+
+        records = self._records(store, doc_id)
+        assert records
+        assert all(r["meta"]["title"] == "Paxos Made Simple" for r in records)
+        assert any("Paxos Made Simple" in r["text"] for r in records)
+
+    def test_thin_page_yields_one_fallback_chunk_and_doc_embedding(self, mock_chroma):
+        from pka.db.schema import chunks
+        from pka.ingestion.runners.firefox import embed_fetched_text
+
+        doc_id = self._new_doc("F101", "Tiny page")
+        outcome = embed_fetched_text(doc_id, "Too short.", skip_existing=False)
+
+        assert outcome["processed"] and outcome["chunks"] == 1
+        with get_engine().connect() as con:
+            n_chunks = con.execute(
+                sa.select(sa.func.count()).select_from(chunks)
+                .where(chunks.c.document_id == doc_id)
+            ).scalar()
+            text, embedding = con.execute(
+                sa.select(chunks.c.text, documents.c.doc_embedding)
+                .select_from(chunks.join(documents, documents.c.id == chunks.c.document_id))
+                .where(chunks.c.document_id == doc_id)
+            ).fetchone()
+        assert n_chunks == 1
+        assert "Tiny page" in text
+        assert embedding is not None
+
+    def test_card_summary_contributes_to_embedded_text(self, mock_chroma):
+        from pka.ingestion.runners.firefox import embed_fetched_text
+
+        store, _ = mock_chroma
+        doc_id = self._new_doc("F102", "Attention Is All You Need")
+        abstract = "We revisit transformer architectures for language modelling."
+        body = "Opening line of the PDF that says nothing about the contribution. " * 3
+        embed_fetched_text(doc_id, body, card_summary=abstract, skip_existing=False)
+
+        assert any(abstract in r["text"] for r in self._records(store, doc_id))
+
+    def test_handler_overridden_title_is_the_embedded_one(self, mock_chroma):
+        from pka.constants import FetchStatus
+        from pka.ingestion.fetcher import FetchResult, _persist_fetch_result
+        from pka.ingestion.runners.firefox import embed_fetched_text
+
+        store, _ = mock_chroma
+        doc_id = self._new_doc("F103", "Old bookmark title")
+        body = "Paper body text long enough to survive the minimum chunk filter here."
+        # The arXiv/bioRxiv/Amazon handlers overwrite documents.title on persist.
+        _persist_fetch_result(FetchResult(
+            doc_id,
+            "https://arxiv.org/abs/2301.00001",
+            str(FetchStatus.FETCHED),
+            body,
+            200,
+            None,
+            title="Attention Is All You Need Again",
+        ))
+        embed_fetched_text(doc_id, body, skip_existing=False)
+
+        records = self._records(store, doc_id)
+        assert records
+        assert all(r["meta"]["title"] == "Attention Is All You Need Again" for r in records)
+        assert not any("Old bookmark title" in r["text"] for r in records)
+
+    def test_batch_path_looks_up_titles_once(self, monkeypatch, mock_chroma):
+        import pka.ingestion.runners.firefox as firefox_runner
+
+        store, _ = mock_chroma
+        doc_ids = {
+            self._new_doc(f"F11{i}", f"Bookmark title {i}"): i for i in range(3)
+        }
+        calls: list[list[int]] = []
+        real = firefox_runner.document_titles
+
+        def _spy(ids):
+            calls.append(list(ids))
+            return real(ids)
+
+        monkeypatch.setattr(firefox_runner, "document_titles", _spy)
+        ingest_fetched_texts({
+            doc_id: (
+                "Body text with several sentences. It is long enough to chunk "
+                "without help from the fallback path in this test case."
+            )
+            for doc_id in doc_ids
+        })
+
+        assert len(calls) == 1
+        assert sorted(calls[0]) == sorted(doc_ids)
+        for doc_id, i in doc_ids.items():
+            records = self._records(store, doc_id)
+            assert records
+            assert all(r["meta"]["title"] == f"Bookmark title {i}" for r in records)
+
+
 class TestPipelineStop:
     def test_firefox_bookmarks_stops_on_cancel(self):
         from pka.ingestion import sync_progress as sp

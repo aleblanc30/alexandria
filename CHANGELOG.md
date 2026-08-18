@@ -1,5 +1,117 @@
 # Changelog
 
+## Unreleased — local-first relaxed; retrieval enrichment
+
+- **Local-only is now a default, not a constraint** (`DESIGN.md` §1.1). The
+  motivation is hardware: the primary machine cannot run models large enough for
+  long-document summarisation or reliable vision extraction, and capping every
+  capability at what it fits held quality below usefulness. The replacing rules —
+  local by default, every outbound path a named default-off setting, no implicit
+  escalation between flags, credentials in `.secrets` — are written down, along
+  with a table of what actually crosses the wire per category: inference
+  providers see **document content**, enrichment lookups see **derived
+  identifiers** (library inventory), source connectors see **nothing new**.
+  Telemetry and analytics stay prohibited in every configuration.
+- `DESIGN.md` §2.1 no longer claims YouTube is the *only* network connector — it
+  never was, since Reddit is one too (§3 already said so). The section is now a
+  template for the shape a network connector should have.
+- New `DESIGN.md` §3.2 documents the retrieval-enrichment design: the systematic
+  gaps in what each source contributes to the index (Firefox/Reddit embed body
+  text with no title and can yield zero chunks; Calibre full text has no
+  document-level statement; image descriptions describe *appearance*), and the
+  three mechanisms that close them in ascending cost — deterministic title +
+  `card_summary`, per-type local VLM prompts, then external lookup or generated
+  summaries. Includes the per-doctype table, the shared resolution ladder
+  (checksum-validated ISBN → Open Library round-tripped → web search, always
+  queried from `(title, authors)` rather than a model-authored string), and the
+  guardrails (`pass=` tagging, never overwrite `description` / `card_summary`,
+  CLIP untouched, cache generated text, 2–4 sentences for MiniLM).
+- **Per-type image prompts implemented** (§3.2 mechanism 2). The single generic
+  "describe this image" prompt is replaced by one prompt per category:
+  a *transcript* for `slide` / `notes` / `whiteboard`, a *content summary* for
+  `poster` (explicitly told not to resolve a publication), and structured
+  `{"books": [{title, authors, isbn}]}` extraction for all three book labels
+  (`book_cover`, `multiple_book_covers`, `bookshelf`), differing only by a hint
+  line about what is legible — spines yield partial entries, and the prompt
+  forbids inventing a title, since these feed identifier lookups later.
+  `extract_image_content` selects the prompt from the label the admission gate
+  already resolved, so the better prompt costs **no extra model call**; with the
+  gate off (or `--skip-gate`) it falls back to classify-then-prompt. Consequence
+  worth knowing: when the gate runs, `images.image_type` and the
+  `TagOrigin.INFERRED` overlay tag now come from the gate model's label rather
+  than the main `vision_model`'s. Each content prompt also returns its own
+  artifact-level `description`, so `images.description` / `card_summary` stay a
+  truthful caption of the photo while the transcript/summary/book lines are what
+  `image_search_text` (still the single assembly point) puts in the index.
+  Extracted book fields are returned from `ingest_image` and cached in the new
+  `images.books_json` column for a later lookup — no lookup, network call, or
+  flag is added here.
+- **Book-synopsis cascade wired into the image pipeline** (§3.2 mechanism 3,
+  default off). Each book the cover/shelf prompt extracted is resolved through
+  `pka/ingestion/openlibrary.py` — checksum-validated ISBN first, then a
+  title+author search whose canonical result must round-trip against what was
+  extracted — and the description is attached as **its own chunk per book**,
+  tagged `pass="external_synopsis"` with the resolved identity. One chunk per
+  book rather than one blob, so a shelf photo can match a query for any single
+  title on it instead of diluting ten synopses into one vector.
+  `images.description` and `card_summary` are untouched, so the browse card
+  stays a truthful caption of the photograph; CLIP vectors are untouched too.
+  A lookup
+  failure is logged and skipped — enrichment never costs an image its ordinary
+  ingestion. The gate is `lookup_book`'s single `external_lookup_enabled` check,
+  so with the flag off the loop resolves nothing and issues no request.
+- **Third rung of the book ladder** (`pka/ingestion/book_search.py`, default
+  off). Reached only when Open Library does not hold a book. Implemented as a
+  *second catalogue* rather than the general web search originally planned:
+  the job is turning `(title, authors)` into a description, and a search engine
+  answers that with retailer pages needing scraping where a catalogue answers
+  directly with canonical fields the same round-trip check can verify. Google
+  Books is the default — documented, free, and **keyless**, so a default-off
+  feature is switch-on-and-try; a key only raises the quota. The rung sits behind
+  a `(title, authors) -> BookSynopsis | None` provider registry, so Brave or
+  Tavily drops in as one callable and one entry with no cascade change. Gated on
+  `cover_search_active`, not `cover_search_fallback`, so the fallback flag
+  genuinely cannot be what first opens a network path.
+- `search_provider` is now a comma-separated **chain** tried in order, so a
+  weaker backend can run *after* a stronger one rather than replacing it
+  (`google_books,brave`). A **Brave** web-search provider ships alongside Google
+  Books: it needs a key, returns a search snippet rather than a curated synopsis,
+  and verifies one-directionally (a search engine has no canonical title field,
+  so the extracted title must appear in the page title and an extracted author in
+  the title or snippet) — looser by necessity, hence last. Results are tagged
+  `resolved_by="brave"` so they stay auditable and separately purgeable. Listing a
+  backend with no key configured skips that rung instead of erroring.
+- **Generated summaries wired in** (§3.2 mechanism 3, default off).
+  `pka/ingestion/summarize.py` does bounded local map-reduce: input already
+  within the sentence cap (most bookmarks) short-circuits with no model call,
+  and longer input is chunked, mapped and reduced under hard caps on both
+  chunks-per-pass and reduce depth, so a bulk ingest cannot run away. Attached
+  via `core.attach_summary_chunk` as its own `pass="summary"` chunk and cached in
+  the new `documents.generated_summary` column, so a purge-and-reingest replays
+  without paying for inference twice. Wired into the Firefox/Reddit fetched-text
+  path (which is also where long articles live) and the Calibre full-text pass.
+  Gated per source: `bookmark_summary_enabled` for bookmarks and posts,
+  `book_summary_enabled` for Calibre — separate because a book is map-reduced
+  over its whole text where a bookmark is usually one call, and enabling the
+  cheap case must not enable the expensive one.
+- **Calibre joins the book ladder.** The metadata pass attaches an external
+  synopsis chunk, but *only when Calibre holds no description of its own* — pass
+  1 already embeds the publisher blurb, so looking one up would be redundant text
+  and a wasted request. `CalibreBook.isbn` feeds the ISBN rung directly, so books
+  with an identifier resolve exactly rather than by title match.
+- `trim_to_sentences` moved from `openlibrary.py` into `chunker.py`, where both
+  callers can reach it — a summariser importing a book-lookup module for generic
+  sentence handling was the wrong dependency edge.
+- `DESIGN.md` §3.1 corrected: it still claimed the main pipeline re-classifies
+  with `vision_model` after the gate, which the per-type prompt work made untrue.
+- `tests/conftest.py` pins the three enrichment flags off suite-wide, so a
+  developer's real `ALEXANDRIA_EXTERNAL_LOOKUP_ENABLED=1` cannot send the tests
+  to openlibrary.org.
+- Settings documented in `.env.example`: `bookmark_summary_enabled`,
+  `external_lookup_enabled`, `cover_search_fallback` (requires the former),
+  `search_provider` + `SECRET_ALEXANDRIA_SEARCH_API_KEY`. All default off. The
+  per-type VLM prompts are on by default and purely local — no flag.
+
 ## Unreleased — Ollama Cloud provider
 
 - New **`ollama_cloud`** backend for the `chat`, `vision`, and

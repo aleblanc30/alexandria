@@ -4,9 +4,11 @@ Image ingestion pipeline.
 Orchestrates the four extraction passes and persists results to:
   - ``archive.db`` : ``images`` + ``image_tags`` tables
   - ChromaDB      : two collections — ``alexandria_clip`` (CLIP vectors) and
-                    ``alexandria_chunks`` (text vectors from OCR + description,
-                    so images appear in unified text search).
+                    ``alexandria_chunks`` (text vectors from the per-type content
+                    extraction + description + OCR, so images appear in unified
+                    text search).
 """
+import json
 import logging
 import time
 import uuid
@@ -20,6 +22,7 @@ from pka.connectors.images import ImageFile
 from pka.constants import FetchStatus, Source, TagOrigin
 from pka.db.queries import (
     delete_image_document,
+    existing_chunk_count,
     get_engine,
     get_rejected_paths,
     record_image_rejection,
@@ -29,8 +32,8 @@ from pka.db.queries import (
 from pka.db.schema import images
 from pka.ingestion.core import ingest_text_block
 from pka.ingestion.image_extractor import (
-    classify_and_describe,
     clip_embed_image,
+    extract_image_content,
     image_search_text,
     ocr_image,
 )
@@ -194,6 +197,70 @@ def register_images(
     )
 
 
+def _attach_book_synopses(doc_id: int, img: ImageFile, books: list[dict]) -> int:
+    """Look each extracted book up and embed its synopsis as its own chunk.
+
+    One chunk **per book**, not one blob: a shelf photo should match a query for
+    any single title on it, and merging ten synopses into one vector would dilute
+    every one of them.
+
+    Returns the number of synopsis chunks added. Never raises — a lookup failure
+    must not cost the image its ordinary ingestion. The network gate lives inside
+    :func:`lookup_book` (``external_lookup_enabled``), so there is no flag check
+    here; with the flag off this loop simply resolves nothing.
+    """
+    if not books:
+        return 0
+    from pka.ingestion.openlibrary import lookup_book
+
+    added = 0
+    for entry in books:
+        title = str(entry.get("title") or "").strip()
+        authors = [str(a) for a in (entry.get("authors") or []) if str(a).strip()]
+        isbn = entry.get("isbn")
+        if not title and not isbn:
+            continue
+        try:
+            synopsis = lookup_book(title=title, authors=authors, isbn=isbn)
+        except Exception as exc:
+            log.warning("Book lookup failed for %r: %s", title or isbn, exc)
+            continue
+        if synopsis is None:
+            continue
+
+        text = synopsis.embed_text()
+        if not text:
+            continue
+
+        # Chroma metadata takes scalars only — drop anything unresolved rather
+        # than sending None.
+        meta = {
+            "title":       img.filename,
+            "modality":    "image",
+            "pass":        "external_synopsis",
+            "book_title":  synopsis.title or title,
+            "resolved_by": synopsis.resolved_by,
+        }
+        if synopsis.isbn:
+            meta["isbn"] = synopsis.isbn
+        if synopsis.work_key:
+            meta["work_key"] = synopsis.work_key
+
+        result = ingest_text_block(
+            doc_id,
+            text,
+            Source.IMAGE,
+            extra_metadata=meta,
+            chunk_offset=existing_chunk_count(doc_id),
+            min_chars=1,
+        )
+        if not result["skipped"]:
+            added += result["chunks_added"]
+    if added:
+        log.info("Attached %d book synopsis chunk(s) to image %s", added, img.filename)
+    return added
+
+
 def ingest_image(
     img: ImageFile,
     vision_model: str = "llava",
@@ -205,6 +272,10 @@ def ingest_image(
     dry_run: bool = False,
 ) -> dict:
     """Run all extraction passes for a single image and persist results."""
+    # Label resolved by the gate (None when the gate did not run), used to pick
+    # the per-type content prompt below.
+    gate_type: str | None = None
+
     # ── Admission gate: text coverage + category of interest ─────────────────
     # Fail either gate → cache the path and stop before the expensive passes.
     if cfg.image_gate_enabled and not skip_gate:
@@ -231,11 +302,27 @@ def ingest_image(
                 "image_type":    gate.image_type,
                 "text_coverage": gate.text_coverage,
             }
+        # NOTE: the gate's label — not the main pass's — is what becomes
+        # ``images.image_type`` and the ``TagOrigin.INFERRED`` overlay tag whenever
+        # the gate runs. That is a deliberate change: the gate model already
+        # decided admission on this label and cached it in the rejection record, so
+        # it is the authoritative one, and reusing it is what lets the main pass
+        # spend its single call on the per-type content prompt instead of a third
+        # classification. When the gate is off (or --skip-gate), the label still
+        # comes from the main ``vision_model``, as before.
+        gate_type = gate.image_type
 
-    # ── Pass 1+2: classify + describe ────────────────────────────────────────
-    image_type, description = ("unknown", "")
+    # ── Pass 1+2: classify (or reuse the gate label) + per-type content ───────
+    # ``gate_type`` also survives skip_vision: it was resolved before this pass,
+    # so the type/tag stays correct even with the describe pass turned off.
+    image_type, description, content_text = (gate_type or "unknown"), "", ""
+    books: list[dict] = []
     if not skip_vision:
-        image_type, description = classify_and_describe(img.path, model=vision_model)
+        extracted = extract_image_content(img.path, image_type=gate_type, model=vision_model)
+        image_type   = extracted.image_type
+        description  = extracted.description
+        content_text = extracted.content
+        books        = extracted.books
 
     # ── Pass 3: OCR ───────────────────────────────────────────────────────────
     ocr_text = ""
@@ -247,13 +334,14 @@ def ingest_image(
     if not skip_clip:
         clip_vector = clip_embed_image(img.path)
 
-    # ── Pass 4b: searchable text (OCR + description → Chroma embeds) ─────────
-    text_doc = image_search_text(ocr_text, description)
+    # ── Pass 4b: searchable text (content + description + OCR → Chroma embeds) ─
+    text_doc = image_search_text(ocr_text, description, content_text)
 
     if dry_run:
         return {
             "status":       "dry_run",
             "image_type":   image_type,
+            "books":        books,
             "has_ocr":      bool(ocr_text),
             "has_clip":     clip_vector is not None,
             "has_text_emb": text_doc is not None,
@@ -269,15 +357,17 @@ def ingest_image(
         con.execute(sa.text("""
             INSERT INTO images
                 (document_id, path, filename, image_type, width, height,
-                 file_size, date_taken, ocr_text, description, clip_vector_id,
-                 indexed_at)
+                 file_size, date_taken, ocr_text, description, books_json,
+                 clip_vector_id, indexed_at)
             VALUES
-                (:doc_id,:path,:fname,:itype,:w,:h,:sz,:dt,:ocr,:desc,:cvid,:now)
+                (:doc_id,:path,:fname,:itype,:w,:h,:sz,:dt,:ocr,:desc,:books,
+                 :cvid,:now)
             ON CONFLICT(path) DO UPDATE SET
                 document_id    = excluded.document_id,
                 image_type     = excluded.image_type,
                 ocr_text       = excluded.ocr_text,
                 description    = excluded.description,
+                books_json     = excluded.books_json,
                 clip_vector_id = excluded.clip_vector_id,
                 indexed_at     = excluded.indexed_at
         """), {
@@ -287,6 +377,7 @@ def ingest_image(
             "w": img.width, "h": img.height, "sz": img.file_size,
             "dt": img.date_taken,
             "ocr": ocr_text or None, "desc": description or None,
+            "books": json.dumps(books) if books else None,
             "cvid": clip_vid, "now": now,
         })
 
@@ -309,6 +400,11 @@ def ingest_image(
         extra_metadata={"title": img.filename, "modality": "image"},
         fallback_text=img.filename,
     )
+
+    # ── Book synopses (default-off identifier lookup; DESIGN.md §3.2) ─────────
+    # Added as separate chunks so the browse card and ``images.description``
+    # stay a truthful caption of the photograph itself.
+    synopsis_chunks = _attach_book_synopses(doc_id, img, books)
 
     # ── CLIP vector for cross-modal (text → image) search ─────────────────────
     if clip_vector and clip_vid:
@@ -333,6 +429,11 @@ def ingest_image(
     return {
         "status":       "ok",
         "image_type":   image_type,
+        # Extracted cover fields, also cached in ``images.books_json``. A later
+        # (default-off) identifier lookup consumes these; nothing here looks
+        # anything up or touches the network.
+        "books":        books,
+        "synopsis_chunks": synopsis_chunks,
         "has_ocr":      bool(ocr_text),
         "has_clip":     clip_vector is not None,
         "has_text_emb": text_doc is not None,

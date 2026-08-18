@@ -175,7 +175,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("ALEXANDRIA_IMAGE_DIRS", "ALEXANDRIA_IMAGES_DIR"),
     )
 
-    # ── YouTube (Data API v3 — the one sanctioned cloud connector) ───────────
+    # ── YouTube (Data API v3 — a network source; see DESIGN.md §1.1, §2.1) ───
     # OAuth *desktop app* client secret JSON downloaded from Google Cloud Console.
     # The connector is inert until this file exists (or a cached token is present).
     youtube_client_secret: Path = (
@@ -235,8 +235,9 @@ class Settings(BaseSettings):
     # fast VLM classification into a non-"unknown" category of interest. Failing
     # either records the path in the ``image_rejections`` cache and skips it now
     # and on future runs. The gate classifier is deliberately distinct (and
-    # smaller/faster, e.g. moondream) from the main describe pass, which
-    # re-classifies with ``vision_model`` later in the pipeline.
+    # smaller/faster, e.g. moondream) from the main describe pass; the label it
+    # resolves is reused to pick that pass's per-type content prompt, so the main
+    # ``vision_model`` never re-classifies when the gate is on.
     image_gate_enabled: bool = True
     image_gate_text_coverage_min: float = 0.05  # fraction of pixels covered by text
     image_gate_vision_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh
@@ -317,6 +318,34 @@ class Settings(BaseSettings):
     ocr_lang: str = "eng"  # OCR language(s), e.g. "eng+fra"; mapped to EasyOCR codes
     clip_model: str = "openai/clip-vit-base-patch32"  # HuggingFace hub id
 
+    # ── Retrieval enrichment (DESIGN.md §3.2) ───────────────────────────────
+    # What each document type contributes to the vector index. The per-type VLM
+    # prompts (transcript for slide/notes/whiteboard, content summary for
+    # poster, structured {title, authors, isbn} extraction for book_cover) are
+    # always on and purely local, so they carry no flag. Everything below either
+    # reaches the network or spends chat tokens, so it is off by default per §1.1.
+    bookmark_summary_enabled: bool = False  # local LLM summary chunk for bookmarks/posts
+    # Separate from the bookmark flag on purpose: a book is map-reduced over its
+    # full text (many calls), a bookmark is usually one. Enabling the cheap case
+    # must not silently enable the expensive one.
+    book_summary_enabled: bool = False  # local LLM summary chunk for Calibre full text
+    external_lookup_enabled: bool = False  # Open Library by ISBN or title+author
+    cover_search_fallback: bool = False  # web search when the lookup misses
+    search_provider: str = "google_books"  # see pka/ingestion/book_search.py registry
+    search_api_key: str = ""  # credential — SECRET_ALEXANDRIA_SEARCH_API_KEY
+    openlibrary_base_url: str = "https://openlibrary.org"
+    summary_max_sentences: int = 4  # MiniLM truncates in the low hundreds of word-pieces
+
+    @property
+    def cover_search_active(self) -> bool:
+        """Web search runs only when the identifier lookup it falls back from is on.
+
+        §1.1 forbids implicit escalation: enabling one outbound path must not
+        enable another. Call sites use this rather than ``cover_search_fallback``
+        so the flag genuinely has no effect on its own.
+        """
+        return self.cover_search_fallback and self.external_lookup_enabled
+
     # ── Clustering ──────────────────────────────────────────────────────────
     cluster_space: str = "pca"  # pca | legacy_umap
     cluster_pca_components: int = 50
@@ -334,6 +363,10 @@ class Settings(BaseSettings):
         "cluster_async_labelling",
         "ocr_enabled",
         "image_gate_enabled",
+        "bookmark_summary_enabled",
+        "book_summary_enabled",
+        "external_lookup_enabled",
+        "cover_search_fallback",
         mode="before",
     )
     @classmethod

@@ -16,13 +16,18 @@ from pka.constants import FetchStatus, Source
 from pka.db.queries import (
     document_ids_with_chunks,
     document_index,
+    document_titles,
     insert_document_if_new,
     insert_source_collections,
     source_ids_with_chunks,
     update_card_summary,
     upsert_document,
 )
-from pka.ingestion.core import ingest_text_block
+from pka.ingestion.core import (
+    attach_summary_chunk,
+    fetched_embed_text,
+    ingest_text_block,
+)
 from pka.ingestion.fetcher import bookmark_url_unfetchable_reason
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 
@@ -82,27 +87,50 @@ def embed_fetched_text(
     text: str,
     card_summary: str | None = None,
     *,
+    title: str | None = None,
     skip_existing: bool = True,
     dry_run: bool = False,
     chunked: set[int] | None = None,
 ) -> dict:
-    """Chunk + embed one fetched link-post document (phase-2 interleaved worker)."""
+    """Chunk + embed one fetched link-post document (phase-2 interleaved worker).
+
+    ``title`` defaults to a lookup of the persisted ``documents.title`` (a fetch
+    handler may have overridden it before this runs); pass it explicitly — ``""``
+    when the document has none — to reuse an already batched lookup.
+    """
     if skip_existing:
         if chunked is not None and doc_id in chunked:
             return {"processed": False, "chunks": 0, "skipped": True, "failed": False}
         if chunked is None and doc_id in document_ids_with_chunks(Source.REDDIT):
             return {"processed": False, "chunks": 0, "skipped": True, "failed": False}
     try:
-        result = ingest_text_block(doc_id, text, Source.REDDIT, dry_run=dry_run)
+        if title is None:
+            title = document_titles([doc_id]).get(doc_id, "")
+        summary = card_summary or body_excerpt(text)
+        embed_text = fetched_embed_text(title, summary, text)
+        result = ingest_text_block(
+            doc_id,
+            embed_text,
+            Source.REDDIT,
+            extra_metadata={"title": title},
+            fallback_text=embed_text,
+            dry_run=dry_run,
+        )
         if result["skipped"]:
             return {"processed": False, "chunks": 0, "skipped": True, "failed": False}
+        # Generated summary as its own chunk (DESIGN.md §3.2; default off).
+        # Summarise the *body*, not the composed blob — the title and card
+        # summary are already their own signal.
+        summary_chunks = attach_summary_chunk(
+            doc_id, text, Source.REDDIT, title=title or "", dry_run=dry_run,
+        )
         if not dry_run and card_summary is None:
-            update_card_summary(doc_id, body_excerpt(text))
+            update_card_summary(doc_id, summary)
         if chunked is not None:
             chunked.add(doc_id)
         return {
             "processed": True,
-            "chunks": result["chunks_added"],
+            "chunks": result["chunks_added"] + summary_chunks,
             "skipped": False,
             "failed": False,
         }

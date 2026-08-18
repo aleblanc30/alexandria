@@ -89,3 +89,18 @@ def sentence_window_chunks(
         if len(chunk) >= min_chars:
             out.append(chunk)
     return out
+
+
+def trim_to_sentences(text: str, max_sentences: int) -> str:
+    """First ``max_sentences`` sentences of *text*, cleaned.
+
+    Lives here so sentence boundaries agree with :func:`sentence_window_chunks` —
+    anything trimmed for embedding is later windowed by the same splitter.
+    """
+    cleaned = clean_text(text or "")
+    if not cleaned or max_sentences <= 0:
+        return cleaned
+    sentences = _split_sentences(cleaned)
+    if len(sentences) <= max_sentences:
+        return cleaned
+    return " ".join(sentences[:max_sentences])

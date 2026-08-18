@@ -44,6 +44,14 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "image_gate_vision_provider", "ollama")
     monkeypatch.setattr(s, "image_gate_vision_model",    "moondream")
 
+    # Retrieval enrichment (DESIGN.md §3.2) pinned off, regardless of the
+    # developer's .env. These flags gate the only outbound paths in ingestion,
+    # so leaving them to config would let a real ALEXANDRIA_EXTERNAL_LOOKUP_ENABLED=1
+    # send the suite to openlibrary.org.
+    monkeypatch.setattr(s, "bookmark_summary_enabled", False)
+    monkeypatch.setattr(s, "external_lookup_enabled",  False)
+    monkeypatch.setattr(s, "cover_search_fallback",    False)
+
     # Reset cached SQLAlchemy engine so each test gets a fresh DB
     import pka.db.queries as q
     monkeypatch.setattr(q, "_engine", None)

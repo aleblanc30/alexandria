@@ -27,6 +27,7 @@ documents = sa.Table(
     sa.Column("card_summary", sa.Text),                    # card excerpt (abstract, body lines, …)
     sa.Column("note",         sa.Text),                    # free-text notes (e.g. long Calibre tags)
     sa.Column("doc_embedding", sa.LargeBinary),            # mean-pooled float32 vector (384-d)
+    sa.Column("generated_summary", sa.Text),               # cached LLM summary (DESIGN.md §3.2)
     sa.UniqueConstraint("source", "source_id", name="uq_source_item"),
 )
 

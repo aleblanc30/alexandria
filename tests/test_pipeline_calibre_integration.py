@@ -162,3 +162,85 @@ def test_embed_stops_on_cancel(mock_chroma):
         progress_key="calibre",
     )
     assert stats.get("stopped") == "cancel"
+
+
+class TestCalibreEnrichment:
+    """Synopsis on the metadata pass, summary on the full-text pass (§3.2)."""
+
+    @pytest.fixture
+    def lookup_on(self, monkeypatch):
+        from pka.config import settings as cfg
+        monkeypatch.setattr(cfg, "external_lookup_enabled", True)
+
+    @pytest.fixture
+    def fake_lookup(self, monkeypatch):
+        from pka.ingestion.openlibrary import BookSynopsis
+        calls = []
+
+        def _lookup(title="", authors=None, isbn=None):
+            calls.append({"title": title, "authors": authors, "isbn": isbn})
+            return BookSynopsis(
+                title=title, description="A resolved synopsis. It has two sentences.",
+                authors=authors or [], isbn=isbn, resolved_by="isbn",
+            )
+
+        monkeypatch.setattr("pka.ingestion.openlibrary.lookup_book", _lookup)
+        return calls
+
+    def _book(self, tmp_path, description=None, isbn=None):
+        from pka.connectors.calibre import CalibreBook
+        return CalibreBook(
+            source_id="1", title="Dune", authors=["Frank Herbert"],
+            description=description, publisher=None, series=None,
+            series_index=None, year=None, isbn=isbn, tags=[],
+            formats=[], preferred_path=None, date_added=0, rating=None,
+        )
+
+    def test_synopsis_skipped_when_calibre_has_a_description(
+        self, tmp_path, lookup_on, fake_lookup, mock_chroma,
+    ):
+        """Pass 1 already embeds the publisher blurb — looking one up is waste."""
+        from pka.ingestion.runners.calibre import ingest_calibre_books
+
+        ingest_calibre_books([self._book(tmp_path, description="Publisher blurb here.")])
+        assert fake_lookup == []
+
+    def test_synopsis_attached_when_calibre_has_none(
+        self, tmp_path, lookup_on, fake_lookup, mock_chroma,
+    ):
+        from pka.ingestion.runners.calibre import ingest_calibre_books
+
+        ingest_calibre_books([self._book(tmp_path, isbn="9780306406157")])
+        assert len(fake_lookup) == 1
+        assert fake_lookup[0]["isbn"] == "9780306406157"
+
+        store, _col = mock_chroma
+        metas = [
+            i["meta"] for i in store.values()
+            if i["meta"].get("pass") == "external_synopsis"
+        ]
+        assert len(metas) == 1
+        assert metas[0]["book_title"] == "Dune"
+
+    def test_disabled_lookup_attaches_nothing(self, tmp_path, mock_chroma):
+        from pka.ingestion.runners.calibre import ingest_calibre_books
+
+        ingest_calibre_books([self._book(tmp_path)])
+        store, _col = mock_chroma
+        assert not [
+            i for i in store.values()
+            if i["meta"].get("pass") == "external_synopsis"
+        ]
+
+    def test_lookup_failure_does_not_break_the_pass(
+        self, tmp_path, lookup_on, monkeypatch, mock_chroma,
+    ):
+        def _boom(title="", authors=None, isbn=None):
+            raise RuntimeError("catalogue down")
+
+        monkeypatch.setattr("pka.ingestion.openlibrary.lookup_book", _boom)
+        from pka.ingestion.runners.calibre import ingest_calibre_books
+
+        stats = ingest_calibre_books([self._book(tmp_path)])
+        assert stats["failed"] == 0
+        assert stats["processed"] == 1

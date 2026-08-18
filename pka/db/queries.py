@@ -63,6 +63,12 @@ def init_db() -> None:
                 "UPDATE documents SET ingested_at = date_added "
                 "WHERE ingested_at IS NULL"
             ))
+        # Migration: cache generated summaries so a re-ingest never re-infers
+        # (DESIGN.md §3.2)
+        if "generated_summary" not in cols:
+            con.execute(sa.text(
+                "ALTER TABLE documents ADD COLUMN generated_summary TEXT"
+            ))
         if "zotero_attachment_key" not in cols:
             con.execute(sa.text(
                 "ALTER TABLE documents ADD COLUMN zotero_attachment_key TEXT"
@@ -96,6 +102,11 @@ def init_db() -> None:
             con.execute(sa.text(
                 "ALTER TABLE images ADD COLUMN document_id INTEGER "
                 "REFERENCES documents(id)"
+            ))
+        # Migration: cache the per-type cover extraction (DESIGN.md §3.2)
+        if img_cols and "books_json" not in img_cols:
+            con.execute(sa.text(
+                "ALTER TABLE images ADD COLUMN books_json TEXT"
             ))
 
         # Migration: add umap_points to cluster_runs
@@ -352,6 +363,47 @@ def document_index(source: Source | str) -> dict[str, int]:
             )
         ).fetchall()
     return {row[0]: row[1] for row in rows}
+
+
+
+def get_generated_summary(doc_id: int) -> str | None:
+    """Cached LLM summary for a document, or ``None``.
+
+    Cached in SQLite so a purge-and-reingest replays without paying for
+    inference again (DESIGN.md §3.2).
+    """
+    with get_engine().connect() as con:
+        row = con.execute(
+            sa.select(documents.c.generated_summary).where(documents.c.id == doc_id)
+        ).fetchone()
+    return (row[0] or None) if row else None
+
+
+def set_generated_summary(doc_id: int, summary: str | None) -> None:
+    """Persist (or clear) the cached LLM summary for a document."""
+    with get_engine().begin() as con:
+        con.execute(
+            documents.update()
+            .where(documents.c.id == doc_id)
+            .values(generated_summary=summary or None)
+        )
+
+def document_titles(doc_ids: list[int]) -> dict[int, str]:
+    """Batched ``documents.id`` → title (missing ids omitted, NULL title → "").
+
+    Used by the fetched-text embed paths, which know only a document id but need
+    the persisted title — a fetch handler may have overridden it — in the
+    embedded text. Batched so the phase-2 loop stays a single query.
+    """
+    if not doc_ids:
+        return {}
+    with get_engine().connect() as con:
+        rows = con.execute(
+            sa.select(documents.c.id, documents.c.title).where(
+                documents.c.id.in_(doc_ids)
+            )
+        ).fetchall()
+    return {row[0]: row[1] or "" for row in rows}
 
 
 def source_ids_with_chunks(source: Source | str) -> set[str]:

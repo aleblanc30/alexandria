@@ -61,6 +61,43 @@ Callers use the accessors in `pka/providers/__init__.py`
 shims over these. **Text-chunk** embeddings are intentionally *not* here — they
 stay inside ChromaDB's built-in function (see `pka/storage/vector_store.py`).
 
+### 1.1 Network access policy
+
+Alexandria was originally specified as local-only. That has been **relaxed**:
+the primary development machine cannot run models large enough for several of
+the tasks the design calls for (long-document summarisation, reliable vision
+extraction), and capping every capability at what the local hardware fits held
+output quality below the point of usefulness. Local-only is therefore a
+*default*, not a constraint.
+
+The rules that replace it:
+
+- **Local by default.** A fresh checkout with no `.env` performs no network
+  calls except to `localhost` (Ollama). Every outbound path is a named setting
+  that defaults to off.
+- **No implicit escalation.** Enabling one outbound path never enables another.
+  Where a feature has a primary and a fallback route (e.g. identifier lookup vs.
+  web search), each gets its own flag and the fallback additionally requires the
+  primary's flag.
+- **Telemetry stays prohibited**, in every configuration. Relaxing local-first
+  covers work the user asks for; it does not cover the project reporting on its
+  users. `anonymized_telemetry=False` is set on every Chroma client.
+- **Credentials live in `.secrets`** (`SECRET_`-prefixed), never in `.env`, and
+  never in the repository.
+
+What actually crosses the wire differs by category, and the distinction matters
+more than the on/off state:
+
+| Category | Settings | What is sent |
+|---|---|---|
+| Inference providers | `chat_provider`, `vision_provider`, `image_gate_vision_provider`, `ocr_provider` | **Document content** — chunk text, or image bytes. The largest exposure; a hosted provider sees the material itself. |
+| Enrichment lookups | `external_lookup_enabled`, `cover_search_fallback` | **Derived identifiers** — an ISBN, or a title+author string. Reveals *library inventory* (what is on the shelf) rather than content. |
+| Source connectors | `ALEXANDRIA_YOUTUBE_*`, `ALEXANDRIA_REDDIT_*`, Firefox phase-2 fetch | **Nothing new** — these read back your own data from a service you already gave it to, or fetch a URL you bookmarked. |
+
+Text-chunk embeddings are the one capability with no remote option: they stay
+inside ChromaDB's built-in function, so the embedding of every document is
+computed locally regardless of configuration.
+
 ## 2. Adding a new source connector
 
 To add a new source (e.g. Pocket, Raindrop, Readwise):
@@ -89,11 +126,12 @@ To add a new source (e.g. Pocket, Raindrop, Readwise):
 
 9. Add an entry to the sidebar in `frontend/src/components/AppSidebar.vue`.
 
-### 2.1 YouTube saved-videos connector (cloud exception)
+### 2.1 YouTube saved-videos connector (network source)
 
-The YouTube connector (`Source.YOUTUBE`) is the **only** connector that reaches
-an external network API rather than a local file. This is a deliberate, scoped
-exception to the local-first rule, not a precedent for other cloud sources:
+The YouTube connector (`Source.YOUTUBE`) reaches an external API rather than a
+local file, as does Reddit (§3). Both predate the §1.1 policy and both already
+satisfy it. The properties below are the shape any network connector should
+have — a template to copy, not an exception to be argued down:
 
 - **Inert by default.** Nothing happens unless the user configures a desktop-app
   OAuth client secret (`ALEXANDRIA_YOUTUBE_CLIENT_SECRET`). No credentials → the
@@ -176,8 +214,14 @@ runs a two-step gate (`pka/ingestion/image_gate.py`), on by default
 2. **Category of interest** — a *distinct*, deliberately small/fast VLM
    (`image_gate_vision_provider` / `image_gate_vision_model`, default Ollama
    `moondream`) classifies the image; anything landing on `unknown` is rejected.
-   This gate classification is only a filter — the main pipeline **re-classifies
-   with `vision_model`** (llava) later, so the two are independent.
+   Since §3.2 landed, this label is **no longer only a filter**: it also selects
+   the per-type content prompt, and `images.image_type` plus the
+   `TagOrigin.INFERRED` overlay tag are taken from it rather than from a second
+   classification by `vision_model`. That is what makes the better prompt free —
+   re-classifying with the main model would cost the extra call the design exists
+   to avoid. The trade is real and worth knowing: with the gate **on**, the
+   user-visible image type comes from the small gate model; with the gate **off**
+   (or `--skip-gate`), the pipeline classifies with `vision_model` as before.
 
 Failing either step records the path in the **`image_rejections`** table
 (`record_image_rejection`, upsert by path) with the reason
@@ -198,6 +242,95 @@ images, both browse surfaces hide images until `indexed_at` is set: the document
 browse list (`list_documents` via `_exclude_pending_images`) and the `/images`
 gallery (`indexed_at IS NOT NULL`). A pending image appears only once its embed
 pass completes (or disappears entirely if the gate rejects it).
+
+### 3.2 Retrieval enrichment
+
+What reaches the vector index is uneven across sources, and the gaps are
+systematic rather than incidental:
+
+- **Firefox / Reddit link posts** embed fetched body text *only* — no title, no
+  URL, no `card_summary` (which is computed and then used solely for the browse
+  card). With the 80-char `min_chunk_chars` floor and no `fallback_text`, a thin
+  page yields **zero chunks**, hence no `doc_embedding`, hence no cluster
+  membership and no learned tags.
+- **Calibre full text** produces hundreds of body chunks, none of which states
+  what the book is about. Because `/search` collapses to the best-matching chunk
+  per document, a book can never accumulate score from many weak chunks, so
+  document-level queries ("book about X") have nothing to match.
+- **Images** embed `description + ocr_text`, where the description came from a
+  prompt asking what the image *looks like*. For a whiteboard that yields "a
+  whiteboard with diagrams"; for a book cover, the jacket art. Near-zero
+  retrieval value against the reason the photo was taken.
+
+Three mechanisms close these, in ascending cost:
+
+1. **Deterministic** — embed the title and the existing `card_summary`. No
+   inference, no network, no flag. Also supplies `fallback_text` so a document
+   can no longer end up with zero chunks.
+2. **Local VLM prompting** — replace the single generic image prompt with
+   per-type prompts keyed on the category the gate already resolved
+   (§3.1): a *transcript* for `slide` / `notes` / `whiteboard`, a *content*
+   summary for `poster`, and structured `{title, authors, isbn}` extraction for
+   `book_cover`. The gate already calls `classify_and_describe` and discards its
+   description, so the type is known before the main pass — a per-type content
+   prompt costs no extra call, it spends the existing one better. Falls back to
+   classify-then-prompt (two calls) when the gate is disabled or `--skip-gate`.
+3. **External lookup / summarisation** — see the table below. All default-off
+   per §1.1.
+
+| Document type | Enrichment | Default |
+|---|---|---|
+| Firefox bookmark, Reddit link post | Title + `card_summary` embedded | **on** |
+| " | Local LLM summary chunk, `pass="summary"`, cached in `documents.generated_summary` | off (`bookmark_summary_enabled`) |
+| Image `book_cover` | ISBN → Open Library → second catalogue; one chunk per visible book | off (`external_lookup_enabled`, `cover_search_fallback`) |
+| Image `poster` | VLM content summary | **on** |
+| Image `slide`, `notes`, `whiteboard` | VLM transcript | **on** |
+| Calibre, ISBN present | Open Library by ISBN | off (`external_lookup_enabled`) |
+| Calibre, no ISBN | Title/author lookup → second catalogue. Skipped entirely when Calibre already holds a description, since pass 1 embeds that | off (`external_lookup_enabled`) |
+| Calibre full text | Local map-reduce summary over the extracted sections | off (`book_summary_enabled`) |
+| Long fetched articles | Same path as bookmarks — they are the same runner | off (`bookmark_summary_enabled`) |
+| Zotero | *No summary* — the abstract already is one. The real gap is that attached PDFs are never ingested. | — |
+| YouTube | *No summary* — nothing to summarise beyond uploader metadata. Transcripts (`BACKLOG.md`). | — |
+
+**Resolution ladder.** Covers and no-ISBN Calibre books share one cascade:
+checksum-validated ISBN → Open Library by title+author with the canonical result
+round-tripped against what was extracted → **a second catalogue** for books Open
+Library does not hold (self-published work, foreign editions, theses). That third
+rung is Google Books by default: documented, free, and keyless, so a default-off
+feature is switch-on-and-try rather than switch-on-and-register. A general web
+search engine was the original plan and is the worse tool for it — it answers
+"what is this book about" with retailer and review pages that must then be
+scraped and trusted, where a catalogue answers directly with canonical title and
+author fields the same round-trip check can verify. `pka/ingestion/book_search.py`
+keeps the rung behind a provider registry, and `search_provider` is a
+comma-separated **chain** rather than a single choice, so a weaker backend runs
+*after* a stronger one instead of replacing it: `google_books,brave` consults the
+catalogue first and falls to web snippets only when it misses. A Brave web-search
+provider ships alongside Google Books; it needs a key, returns a search snippet
+rather than a curated synopsis, and can only verify one-directionally (the
+extracted title must appear in the page title, since a search engine has no
+canonical title field), which is why it belongs last in a chain. Listing a
+backend whose key is absent is harmless — that rung skips rather than erroring. The query is always a pure function of `(title, authors)`,
+never a model-authored string, so results are cacheable by that key and the
+whole ladder is replayable without re-running the VLM. An empty title is a clean
+stop condition: no identifier, no query, record the reason.
+
+The governing principle: **the more identifiable a document, the better an
+external lookup serves it; the more unique, the more it needs local inference.**
+`slide` / `notes` / `whiteboard` sit at the far end — they depict the user's own
+thinking and have no external identity, so prompting is the only lever.
+
+**Guardrails.** Enrichment text is added as its own chunk tagged
+`pass="external_synopsis"` or `pass="summary"` (mirroring Calibre's existing
+`pass=metadata` / `pass=fulltext`), carrying the resolved identity where one
+exists. It never overwrites `images.description` or `card_summary`, so the
+browse card stays truthful about the artifact itself, and a bad batch is
+purgeable and auditable without re-ingesting. CLIP vectors are untouched —
+they are visual, and a synopsis has no business in them. Generated summaries are
+cached in a column so purge-and-reingest does not re-run inference, and are kept
+to 2–4 sentences because MiniLM truncates in the low hundreds of word-pieces.
+A multi-book cover attaches one chunk per book; note that a shelf photo with a
+dozen synopses will dominate that document's mean-pooled `doc_embedding`.
 
 ## 4. Cluster lifecycle
 

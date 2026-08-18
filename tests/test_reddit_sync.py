@@ -119,6 +119,40 @@ def test_ingest_fetches_link_posts(monkeypatch, fake_reddit_client, mock_chroma)
     assert document_has_chunks(link_id)
 
 
+def test_link_post_embeds_title(monkeypatch, fake_reddit_client, mock_chroma):
+    """Fetched link-post text carries the post title into the index (DESIGN §3.2)."""
+    from pka.ingestion.runners.reddit import embed_fetched_text
+
+    store, _ = mock_chroma
+    _patch_load(monkeypatch, fake_reddit_client)
+    rs.sync_reddit_metadata()
+    doc_id = document_index(Source.REDDIT)["t3_linkpost"]
+
+    body = (
+        "The protocol tolerates crash failures. A quorum of acceptors must "
+        "promise before a value can be chosen by any proposer."
+    )
+    embed_fetched_text(doc_id, body, skip_existing=False)
+
+    records = [it for it in store.values() if it["meta"]["document_id"] == doc_id]
+    assert records
+    assert all(r["meta"]["title"] == "Paxos Made Simple (PDF)" for r in records)
+    assert any("Paxos Made Simple (PDF)" in r["text"] for r in records)
+
+
+def test_thin_link_post_still_gets_one_chunk(monkeypatch, fake_reddit_client, mock_chroma):
+    from pka.ingestion.runners.reddit import embed_fetched_text
+
+    _patch_load(monkeypatch, fake_reddit_client)
+    rs.sync_reddit_metadata()
+    doc_id = document_index(Source.REDDIT)["t3_linkpost"]
+
+    outcome = embed_fetched_text(doc_id, "404.", skip_existing=False)
+
+    assert outcome["processed"] and outcome["chunks"] == 1
+    assert document_has_chunks(doc_id)
+
+
 def test_reingest_is_idempotent(monkeypatch, fake_reddit_client, mock_chroma):
     _patch_load(monkeypatch, fake_reddit_client)
 
