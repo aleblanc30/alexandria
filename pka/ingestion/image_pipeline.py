@@ -503,10 +503,31 @@ def ingest_images(
     return stats
 
 
-# ── Cross-modal search helper ─────────────────────────────────────────────────
+# ── Search helpers ────────────────────────────────────────────────────────────
+#
+# Two independent paths reach an image from a text query (DESIGN.md §3.3):
+#
+#   1. ``search_images_by_text``          — CLIP, query text → pixels. Opt-in.
+#   2. ``search_images_by_inferred_text`` — MiniLM, query text → the text the
+#      pipeline inferred *from* the picture (per-type content + description +
+#      OCR, plus any synopsis chunks), i.e. the ``alexandria_chunks`` rows this
+#      module already writes for every image.
+#
+# The second path is always available: those chunks are written whether or not
+# CLIP ran, so an image stays findable with the visual index turned off.
+
 
 def search_images_by_text(query: str, n: int = 10) -> list[dict]:
-    """Return images whose CLIP embedding is nearest to the CLIP text embedding of ``query``."""
+    """Return images whose CLIP embedding is nearest to the CLIP text embedding of ``query``.
+
+    Returns ``[]`` immediately when ``clip_enabled`` is off — the gate lives here
+    rather than in each caller so the CLI, ``/search`` and ``/images/search`` all
+    inherit it, and so nothing loads the CLIP model just to answer a query
+    against vectors that were never written.
+    """
+    if not cfg.clip_enabled:
+        return []
+
     from pka.ingestion.image_extractor import clip_embed_text
 
     vec = clip_embed_text(query)
@@ -527,3 +548,50 @@ def search_images_by_text(query: str, n: int = 10) -> list[dict]:
             "distance":    res["distances"][0][i],
         })
     return out
+
+
+def search_images_by_inferred_text(query: str, n: int = 10) -> list[dict]:
+    """Return images whose *inferred* text best matches ``query``.
+
+    Queries the shared chunk collection restricted to ``source=image``, so this
+    searches exactly what the extraction passes read out of the picture. Chunks
+    are collapsed to their best-scoring one per document — a slide deck photo
+    with a transcript chunk and a synopsis chunk is one result, not two.
+
+    Hits carry ``document_id`` (not ``clip_vector_id``); resolve them with
+    :func:`pka.api.image_hits.inferred_hits_to_image_out`.
+    """
+    from pka.storage import vector_store
+
+    try:
+        # Over-fetch: several chunks of the same image can occupy the top-n, and
+        # non-image sources are excluded by the filter, not by re-ranking.
+        hits = vector_store.query(
+            query, n_results=max(n * 3, 10), where={"source": str(Source.IMAGE)},
+        )
+    except Exception as exc:
+        log.warning("Image text search unavailable: %s", exc)
+        return []
+
+    best: dict[int, dict] = {}
+    for hit in hits:
+        meta = hit.get("metadata") or {}
+        doc_id = meta.get("document_id")
+        if doc_id is None:
+            continue
+        doc_id = int(doc_id)
+        current = best.get(doc_id)
+        if current is None or hit["distance"] < current["distance"]:
+            best[doc_id] = {
+                "document_id": doc_id,
+                "vector_id":   hit["vector_id"],
+                "distance":    hit["distance"],
+                "text":        hit.get("text") or "",
+                # Which extraction rung produced the matching chunk
+                # ("external_synopsis", "summary", … ; absent for the main
+                # content+description+OCR block).
+                "pass":        meta.get("pass"),
+                "filename":    meta.get("title"),
+            }
+    ranked = sorted(best.values(), key=lambda h: h["distance"])
+    return ranked[:n]

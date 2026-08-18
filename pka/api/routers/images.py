@@ -1,4 +1,4 @@
-"""``/images`` — list, search-by-text (CLIP), file, and detail view."""
+"""``/images`` — list, search-by-text, file, and detail view."""
 import mimetypes
 from pathlib import Path
 
@@ -8,7 +8,13 @@ from fastapi.responses import FileResponse
 
 from pka.api.db_rows import fetchall_mappings, fetchone_mapping
 from pka.api.dependencies import get_engine
-from pka.api.image_hits import clip_hits_to_image_out, image_row_to_out, image_tags_for
+from pka.api.image_hits import (
+    clip_hits_to_image_out,
+    image_row_to_out,
+    image_tags_for,
+    inferred_hits_to_image_out,
+    merge_image_hits,
+)
 from pka.api.schemas.images import ImageOut
 from pka.db.schema import images as images_tbl
 
@@ -37,13 +43,31 @@ async def list_images(
 async def search_images(
     q: str = Query(...),
     n: int = 10,
+    mode: str = Query("hybrid", pattern="^(hybrid|clip|text)$"),
     engine=Depends(get_engine),
 ):
-    from pka.ingestion.image_pipeline import search_images_by_text
+    """Search images by text over both paths (DESIGN.md §3.3).
 
-    hits = search_images_by_text(q, n=n)
+    ``clip`` matches the query against the picture itself; ``text`` matches it
+    against what the extraction passes read out of the picture. ``hybrid`` (the
+    default) runs both and merges them — and is what keeps this endpoint useful
+    with ``clip_enabled`` off, where the CLIP path yields nothing. Each result
+    reports which path found it in ``matched_by``.
+    """
+    from pka.ingestion.image_pipeline import (
+        search_images_by_inferred_text,
+        search_images_by_text,
+    )
+
+    clip_hits = search_images_by_text(q, n=n) if mode in ("hybrid", "clip") else []
+    text_hits = search_images_by_inferred_text(q, n=n) if mode in ("hybrid", "text") else []
+
     with engine.connect() as con:
-        return clip_hits_to_image_out(con, hits, round_similarity=True)
+        merged = merge_image_hits(
+            clip_hits_to_image_out(con, clip_hits, round_similarity=True),
+            inferred_hits_to_image_out(con, text_hits, round_similarity=True),
+        )
+    return merged[:n]
 
 
 @router.get("/{image_id}/file")

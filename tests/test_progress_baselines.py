@@ -68,6 +68,7 @@ def test_get_phase_baselines_image_counts():
                 path="/img/a.jpg",
                 filename="a.jpg",
                 clip_vector_id="clip-1",
+                indexed_at=123,
             )
         )
         con.execute(
@@ -80,6 +81,19 @@ def test_get_phase_baselines_image_counts():
     assert totals == {"metadata": 2, "fetching": 2, "embedding": 2}
     assert processed == {"metadata": 2, "fetching": 2, "embedding": 1}
     assert fetch_outcomes is None
+
+
+def test_get_phase_baselines_image_counts_without_clip_vectors():
+    """An image ingested with CLIP off still counts as embedded (indexed_at)."""
+    eng = get_engine()
+    with eng.begin() as con:
+        con.execute(
+            images.insert().values(
+                path="/img/a.jpg", filename="a.jpg", indexed_at=123,
+            )
+        )
+    _, processed, _ = get_phase_baselines(eng, Source.IMAGE)
+    assert processed["embedding"] == 1
 
 
 def test_build_ingestion_status_zotero_fetch_stats():
@@ -107,6 +121,23 @@ def test_build_ingestion_status_image_uses_images_table():
         "pending": 1,
     }
     assert status["total"] == 1
+
+
+def test_build_ingestion_status_image_embedded_without_clip():
+    """Registered vs embedded must not depend on the (opt-in) CLIP vector."""
+    eng = get_engine()
+    with eng.begin() as con:
+        con.execute(
+            images.insert().values(
+                path="/img/a.jpg", filename="a.jpg", indexed_at=123,
+            )
+        )
+    status = build_ingestion_status(eng)
+    assert status["fetch_by_source"][Source.IMAGE] == {
+        "registered": 1,
+        "embedded": 1,
+        "pending": 0,
+    }
 
 
 def test_build_ingestion_status_embedded_count():

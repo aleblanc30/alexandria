@@ -38,6 +38,11 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "ocr_provider",         "vlm")
     monkeypatch.setattr(s, "image_embed_provider", "clip")
 
+    # CLIP is off by default in production; pin that here too so a developer's
+    # ALEXANDRIA_CLIP_ENABLED=1 cannot leak in. Tests that exercise the visual
+    # index turn it on explicitly.
+    monkeypatch.setattr(s, "clip_enabled", False)
+
     # The image admission gate is opt-in for tests: pipeline tests feed synthetic
     # images that would be rejected, so it stays off unless a test enables it.
     monkeypatch.setattr(s, "image_gate_enabled",         False)

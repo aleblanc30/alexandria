@@ -63,6 +63,7 @@ def sync_images_ingest(
         images,
         vision_model=cfg.vision_model,
         skip_ocr=not cfg.ocr_enabled,
+        skip_clip=not cfg.clip_enabled,
         dry_run=dry_run,
         progress_key=key,
     )

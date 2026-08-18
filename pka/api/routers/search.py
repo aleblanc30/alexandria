@@ -75,9 +75,13 @@ async def search(req: SearchRequest, engine=Depends(get_engine)):
                     results.append((row[0], None))
 
         # ── CLIP cross-modal matches merged into the same result list ────────
-        # Image documents already surface via their OCR/description text
-        # vectors; CLIP adds purely-visual matches (query text → image) that
-        # share no words with the image, folded in by (max) similarity.
+        # Image documents already surface via their inferred-text vectors (the
+        # semantic branch above queries the same collection those chunks live
+        # in); CLIP adds purely-visual matches (query text → image) that share
+        # no words with the image, folded in by (max) similarity. It is off by
+        # default — ``search_images_by_text`` short-circuits to [] unless
+        # ``clip_enabled``, leaving the text path as the only one, which is why
+        # nothing here needs a flag check of its own.
         images_in_scope = (not req.sources) or (Source.IMAGE in req.sources)
         if req.query.strip() and images_in_scope:
             try:

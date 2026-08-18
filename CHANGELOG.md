@@ -2,6 +2,30 @@
 
 ## Unreleased — local-first relaxed; retrieval enrichment
 
+- **CLIP is now opt-in and off by default** (`ALEXANDRIA_CLIP_ENABLED`, new
+  `DESIGN.md` §3.3). It buys one thing the rest of the pipeline cannot —
+  matching a query whose words appear nowhere in the image's inferred text — and
+  charges a ~600 MB model download, a fourth pass per image, and a second Chroma
+  collection for it. Ingestion applies the flag where `ocr_enabled` is applied
+  (`image_sync` and the CLI pass `skip_clip`), and `search_images_by_text`
+  returns `[]` before loading the model, so `/search`, `/images/search` and
+  `alexandria images --search` inherit the gate without their own flag checks.
+- **Second image search path: the text inferred from the picture.**
+  `search_images_by_inferred_text` queries the shared chunk collection filtered
+  to `source=image` — the per-type content extraction, description, and OCR that
+  §3.2 already writes — and collapses chunks to the best one per document, so a
+  shelf photo is one result rather than one per synopsis. This is what keeps
+  images findable with the visual index off. `/images/search` now runs both
+  paths (`mode=hybrid|clip|text`, default hybrid), merges them by best
+  similarity, and reports `matched_by` (`clip` | `text` | `clip+text`) on each
+  hit; `/search` needed no change, since its semantic branch already queries the
+  collection those image chunks live in.
+- **Ingestion progress counts images by `indexed_at`**, not by the presence of
+  a `clip_vector_id` / `text_vector_id`. The old predicate would have reported
+  zero embedded images once CLIP went opt-in — and `text_vector_id` has never
+  been written at all (image chunks are keyed by `document_id` in `chunks`),
+  so it was carrying the count alone.
+
 - **Local-only is now a default, not a constraint** (`DESIGN.md` §1.1). The
   motivation is hardware: the primary machine cannot run models large enough for
   long-document summarisation or reliable vision extraction, and capping every

@@ -113,6 +113,8 @@ export interface ImageOut {
   width: number | null; height: number | null
   description: string | null; ocr_text: string | null
   date_taken: number | null; tags: string[]; similarity: number | null
+  // Which search path found this hit; null outside search results.
+  matched_by?: 'clip' | 'text' | 'clip+text' | null
 }
 export interface SearchResponse { query: string; total: number; documents: DocumentOut[] }
 export interface ClusterOut    {
@@ -381,8 +383,8 @@ export const listImages   = (params?: { image_type?: string; limit?: number; off
   const qs = new URLSearchParams(params as Record<string,string>).toString()
   return req<ImageOut[]>(`/images${qs ? '?' + qs : ''}`)
 }
-export const searchImages = (q: string, n = 10) =>
-  req<ImageOut[]>(`/images/search?q=${encodeURIComponent(q)}&n=${n}`)
+export const searchImages = (q: string, n = 10, mode: 'hybrid' | 'clip' | 'text' = 'hybrid') =>
+  req<ImageOut[]>(`/images/search?q=${encodeURIComponent(q)}&n=${n}&mode=${mode}`)
 export const getImage     = (id: number) => req<ImageOut>(`/images/${id}`)
 
 // ── Reading lists ─────────────────────────────────────────────────────────────

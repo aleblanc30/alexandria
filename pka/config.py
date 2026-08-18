@@ -229,6 +229,17 @@ class Settings(BaseSettings):
     # extraction entirely (UI + CLI + sync), relying only on the VLM description.
     ocr_enabled: bool = True
 
+    # Master switch for the CLIP image-embedding pass, off by default. CLIP buys
+    # exactly one thing: *purely visual* matching, where the query words appear
+    # nowhere in the image's inferred text. That is a narrow slice of real
+    # queries, and it costs a ~600 MB model download plus an extra pass and a
+    # second Chroma collection on every image. The inferred-text path (per-type
+    # content + description + OCR, already embedded into the shared chunk
+    # collection) answers the rest, so the visual index is opt-in: set
+    # ALEXANDRIA_CLIP_ENABLED=1 to index and search it. With it off, both the
+    # ingest pass and the text->image query path short-circuit (DESIGN.md §3.3).
+    clip_enabled: bool = False
+
     # ── Image gate (two-step admission filter) ──────────────────────────────
     # Before an image runs the expensive describe/OCR/CLIP passes it must clear
     # two gates: (1) EasyOCR-measured text coverage ≥ the threshold, and (2) a
@@ -362,6 +373,7 @@ class Settings(BaseSettings):
         "fetch_wayback_fallback",
         "cluster_async_labelling",
         "ocr_enabled",
+        "clip_enabled",
         "image_gate_enabled",
         "bookmark_summary_enabled",
         "book_summary_enabled",

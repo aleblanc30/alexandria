@@ -40,7 +40,7 @@ reopening them (Windows locks open files).
 
 System prerequisites: Ollama (chat/vision) — optionally Ollama Cloud, either via
 `ollama signin` + a `:cloud` model tag, or `*_PROVIDER=ollama_cloud` with
-`ALEXANDRIA_OLLAMA_CLOUD_*` pointed straight at ollama.com. OCR runs through the vision model by default; the alternative `ocr_provider=easyocr` backend is a pip dependency (no system binary). Images pass a two-step admission gate (`pka/ingestion/image_gate.py`, on by default): EasyOCR text-coverage ≥ `image_gate_text_coverage_min` **and** a fast gate VLM (`image_gate_vision_*`, default Ollama `moondream`) classifying it as a non-`unknown` category; failures are cached in the `image_rejections` table. Copy `.env.example` to `.env` only when overriding defaults; settings use the `ALEXANDRIA_` env prefix via `pka/config.py`.
+`ALEXANDRIA_OLLAMA_CLOUD_*` pointed straight at ollama.com. OCR runs through the vision model by default; the alternative `ocr_provider=easyocr` backend is a pip dependency (no system binary). Images pass a two-step admission gate (`pka/ingestion/image_gate.py`, on by default): EasyOCR text-coverage ≥ `image_gate_text_coverage_min` **and** a fast gate VLM (`image_gate_vision_*`, default Ollama `moondream`) classifying it as a non-`unknown` category; failures are cached in the `image_rejections` table. The CLIP image-embedding pass is **off by default** (`clip_enabled`); images stay searchable through their inferred text (`DESIGN.md` §3.3). Copy `.env.example` to `.env` only when overriding defaults; settings use the `ALEXANDRIA_` env prefix via `pka/config.py`.
 
 ## Commands
 
@@ -97,6 +97,7 @@ Before modifying an area, skim these entry points:
 | Search / vectors | `pka/storage/vector_store.py`, `pka/api/routers/search.py` |
 | Clustering | `pka/clustering/engine.py`, `pka/clustering/lifecycle.py`, `scripts/run_clustering.py` |
 | Images | `pka/ingestion/image_pipeline.py`, `pka/ingestion/image_extractor.py`, `pka/ingestion/image_gate.py` |
+| Image search (CLIP vs inferred text) | `DESIGN.md` §3.3, `search_images_by_*` in `image_pipeline.py`, `pka/api/image_hits.py` |
 | Retrieval enrichment | `DESIGN.md` §3.2, `pka/ingestion/openlibrary.py`, per-type prompts in `image_extractor.py` |
 | API surface | `pka/api/main.py` (router list), matching router + schema modules |
 | Frontend views | `frontend/src/router.ts`, relevant store + `api/client.ts` methods |

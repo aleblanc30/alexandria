@@ -60,6 +60,21 @@ def _display_corpus_total(src: str, archive_count: int) -> int:
     return archive_count
 
 
+def _image_embedded():
+    """Predicate for "this image has been through the embed pass".
+
+    ``indexed_at`` is what ``ingest_image`` stamps at the end of that pass, and
+    what every other surface uses to tell a registered image from an ingested
+    one (``_image_already_embedded``, the ``/images`` gallery, the browse list).
+    Counting vector ids instead would undercount as soon as a pass is disabled —
+    with ``clip_enabled`` off nothing writes ``clip_vector_id``, and
+    ``text_vector_id`` has never been written at all (image chunks are keyed by
+    ``document_id`` in the ``chunks`` table), so the old check reported zero
+    embedded images for a fully ingested library.
+    """
+    return images.c.indexed_at.isnot(None)
+
+
 def get_phase_baselines(
     engine,
     src: str,
@@ -80,8 +95,7 @@ def get_phase_baselines(
             ).scalar() or 0
             embedded = con.execute(
                 sa.select(sa.func.count()).select_from(images).where(
-                    images.c.clip_vector_id.isnot(None)
-                    | images.c.text_vector_id.isnot(None)
+                    _image_embedded()
                 )
             ).scalar() or 0
             corpus = _display_corpus_total(src, archive_count)
@@ -152,8 +166,7 @@ def build_ingestion_status(engine) -> dict:
                 n = image_total
                 embedded = con.execute(
                     sa.select(sa.func.count()).select_from(images).where(
-                        images.c.clip_vector_id.isnot(None)
-                        | images.c.text_vector_id.isnot(None)
+                        _image_embedded()
                     )
                 ).scalar() or 0
                 by_source[src] = n

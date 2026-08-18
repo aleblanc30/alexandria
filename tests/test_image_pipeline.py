@@ -6,6 +6,7 @@ import pytest
 import sqlalchemy as sa
 from PIL import Image as PILImage
 
+from pka.config import settings as cfg
 from pka.connectors.images import ImageFile
 from pka.db.queries import get_engine, init_db
 from pka.db.schema import chunks, documents, images, overlay_tags
@@ -328,6 +329,7 @@ class TestIngestImages:
 
 class TestSearchImagesByText:
     def test_returns_hits(self, monkeypatch):
+        monkeypatch.setattr(cfg, "clip_enabled", True)
         monkeypatch.setattr(
             "pka.ingestion.image_extractor.clip_embed_text",
             lambda q: [0.1, 0.2, 0.3],
@@ -349,12 +351,96 @@ class TestSearchImagesByText:
         assert hits[0]["filename"] == "a.png"
 
     def test_returns_empty_when_clip_fails(self, monkeypatch):
+        monkeypatch.setattr(cfg, "clip_enabled", True)
         monkeypatch.setattr(
             "pka.ingestion.image_extractor.clip_embed_text",
             lambda q: None,
         )
         from pka.ingestion.image_pipeline import search_images_by_text
         assert search_images_by_text("query") == []
+
+    def test_returns_empty_when_clip_disabled(self, monkeypatch):
+        """Off by default: no model load, no query — the call short-circuits."""
+        called = {"n": 0}
+
+        def _embed(q):
+            called["n"] += 1
+            return [0.1, 0.2, 0.3]
+
+        monkeypatch.setattr("pka.ingestion.image_extractor.clip_embed_text", _embed)
+        monkeypatch.setattr(
+            "pka.ingestion.image_pipeline._get_clip_collection",
+            lambda: pytest.fail("CLIP collection opened with clip_enabled off"),
+        )
+        from pka.ingestion.image_pipeline import search_images_by_text
+        assert search_images_by_text("query") == []
+        assert called["n"] == 0
+
+
+class TestSearchImagesByInferredText:
+    """The non-CLIP path: query text vs the text inferred from the picture."""
+
+    def _hit(self, vid, doc_id, distance, text="", pass_=None):
+        meta = {"document_id": doc_id, "source": "image", "title": "a.png"}
+        if pass_:
+            meta["pass"] = pass_
+        return {"vector_id": vid, "text": text, "distance": distance, "metadata": meta}
+
+    def test_returns_best_chunk_per_document(self, monkeypatch):
+        hits = [
+            self._hit("v1", 7, 0.40, "transcript"),
+            self._hit("v2", 7, 0.10, "book synopsis", pass_="external_synopsis"),
+            self._hit("v3", 9, 0.25, "poster summary"),
+        ]
+        monkeypatch.setattr("pka.storage.vector_store.query", lambda *a, **kw: hits)
+        from pka.ingestion.image_pipeline import search_images_by_inferred_text
+        out = search_images_by_inferred_text("neural networks", n=5)
+        assert [h["document_id"] for h in out] == [7, 9]
+        assert out[0]["vector_id"] == "v2"          # nearer of the two doc-7 chunks
+        assert out[0]["pass"] == "external_synopsis"
+        assert out[1]["pass"] is None
+
+    def test_restricted_to_image_source(self, monkeypatch):
+        seen: dict = {}
+
+        def _query(text, n_results=10, where=None):
+            seen["where"] = where
+            seen["n_results"] = n_results
+            return []
+
+        monkeypatch.setattr("pka.storage.vector_store.query", _query)
+        from pka.ingestion.image_pipeline import search_images_by_inferred_text
+        search_images_by_inferred_text("q", n=5)
+        assert seen["where"] == {"source": "image"}
+        assert seen["n_results"] >= 5  # over-fetch: chunks collapse per document
+
+    def test_works_with_clip_disabled(self, monkeypatch):
+        """The whole point: images stay searchable without the visual index."""
+        monkeypatch.setattr(cfg, "clip_enabled", False)
+        monkeypatch.setattr(
+            "pka.storage.vector_store.query",
+            lambda *a, **kw: [self._hit("v1", 3, 0.2, "gradient descent")],
+        )
+        from pka.ingestion.image_pipeline import search_images_by_inferred_text
+        assert len(search_images_by_inferred_text("gradient descent")) == 1
+
+    def test_returns_empty_when_store_unavailable(self, monkeypatch):
+        def _boom(*a, **kw):
+            raise RuntimeError("chroma down")
+
+        monkeypatch.setattr("pka.storage.vector_store.query", _boom)
+        from pka.ingestion.image_pipeline import search_images_by_inferred_text
+        assert search_images_by_inferred_text("query") == []
+
+    def test_skips_hits_without_document_id(self, monkeypatch):
+        bad = {"vector_id": "v0", "text": "", "distance": 0.1, "metadata": {}}
+        monkeypatch.setattr(
+            "pka.storage.vector_store.query",
+            lambda *a, **kw: [bad, self._hit("v1", 4, 0.5)],
+        )
+        from pka.ingestion.image_pipeline import search_images_by_inferred_text
+        out = search_images_by_inferred_text("query")
+        assert [h["document_id"] for h in out] == [4]
 
 
 class TestRegisterImages:

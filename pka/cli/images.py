@@ -22,7 +22,11 @@ from pka.cli._logging import setup_logging
 from pka.config import settings as cfg
 from pka.connectors.images import scan_image_dirs
 from pka.db.queries import init_db
-from pka.ingestion.image_pipeline import ingest_images, search_images_by_text
+from pka.ingestion.image_pipeline import (
+    ingest_images,
+    search_images_by_inferred_text,
+    search_images_by_text,
+)
 
 log = logging.getLogger("run_images")
 
@@ -36,7 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ocr-lang",     type=str,  default=None,
                         help="OCR language code(s), e.g. eng+fra")
     parser.add_argument("--skip-ocr",     action="store_true")
-    parser.add_argument("--skip-clip",    action="store_true")
+    parser.add_argument("--skip-clip",    action="store_true",
+                        help="Skip the CLIP visual embedding pass "
+                             "(already skipped unless ALEXANDRIA_CLIP_ENABLED=1)")
     parser.add_argument("--skip-vision",  action="store_true")
     parser.add_argument("--skip-gate",    action="store_true",
                         help="Bypass the two-step admission gate (text coverage + VLM category)")
@@ -46,7 +52,8 @@ def main(argv: list[str] | None = None) -> int:
                              "previously-rejected images are re-evaluated")
     parser.add_argument("--dry-run",      action="store_true")
     parser.add_argument("--search",       type=str, default=None,
-                        help="Run a CLIP text search instead of indexing")
+                        help="Run an image text search instead of indexing "
+                             "(inferred text, plus CLIP when enabled)")
     args = parser.parse_args(argv)
 
     setup_logging()
@@ -59,13 +66,16 @@ def main(argv: list[str] | None = None) -> int:
         log.info("Cleared %d entries from the gate rejection cache", removed)
 
     if args.search:
-        results = search_images_by_text(args.search)
-        if not results:
+        # Both paths, labelled — the CLIP one is empty unless clip_enabled.
+        found = [("clip", r) for r in search_images_by_text(args.search)]
+        found += [("text", r) for r in search_images_by_inferred_text(args.search)]
+        if not found:
             log.info("No results.")
-        for r in results:
+        for path, r in sorted(found, key=lambda pr: pr[1]["distance"]):
             log.info(
-                "  [%s] %s  (dist=%.3f)",
-                r["image_type"], r["filename"], r["distance"],
+                "  [%s via %s] %s  (dist=%.3f)",
+                r.get("image_type") or "?", path,
+                r.get("filename") or r.get("document_id"), r["distance"],
             )
         return 0
 
@@ -80,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         vision_model  = args.vision_model or cfg.vision_model,
         ocr_lang      = args.ocr_lang or cfg.ocr_lang,
         skip_ocr      = args.skip_ocr or not cfg.ocr_enabled,
-        skip_clip     = args.skip_clip,
+        skip_clip     = args.skip_clip or not cfg.clip_enabled,
         skip_vision   = args.skip_vision,
         skip_gate     = args.skip_gate,
         dry_run       = args.dry_run,

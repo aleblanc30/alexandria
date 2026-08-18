@@ -86,6 +86,13 @@ System prerequisites:
   no extra install). Set `ocr_provider=easyocr` to use the bundled **EasyOCR**
   backend instead — a pip dependency (no system binary); its recognition models
   download on first use.
+- **CLIP visual search** is **off by default** (`ALEXANDRIA_CLIP_ENABLED=1` to
+  turn it on). With it off, no image embedding pass runs and no CLIP model is
+  downloaded; images are still searchable through the text the pipeline infers
+  from them (per-type content extraction + description + OCR), which is indexed
+  alongside every other document. Turn it on for *purely visual* queries whose
+  words appear nowhere in that text. `/images/search` accepts
+  `mode=hybrid|clip|text` and reports which path matched each hit.
 - **Image admission gate** (on by default) filters incoming images before the
   expensive passes: an image is kept only if EasyOCR finds it is at least 5%
   text *and* a fast VLM (Ollama `moondream` by default) classifies it into a

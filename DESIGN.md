@@ -40,6 +40,9 @@ local OCR/embeddings:
 | OCR (image→text) | `ocr_provider` | vlm, easyocr | `OcrProvider` |
 | Image embed (CLIP) | `image_embed_provider` | clip | `ImageEmbedder` |
 
+The image-embed capability is additionally gated by `clip_enabled` (default
+**off**) — see §3.3; the other three always run.
+
 OpenRouter and OVH share one OpenAI-compatible implementation
 (`openai_compat.py`); credentials/models come from `ALEXANDRIA_OPENROUTER_*` /
 `ALEXANDRIA_OVH_*`.
@@ -331,6 +334,49 @@ cached in a column so purge-and-reingest does not re-run inference, and are kept
 to 2–4 sentences because MiniLM truncates in the low hundreds of word-pieces.
 A multi-book cover attaches one chunk per book; note that a shelf photo with a
 dozen synopses will dominate that document's mean-pooled `doc_embedding`.
+
+### 3.3 Image search paths (CLIP is opt-in)
+
+A text query reaches an image two independent ways, and they are worth keeping
+distinct because they fail differently:
+
+| Path | Function | Space | Matches |
+|------|----------|-------|---------|
+| Visual | `search_images_by_text` | CLIP (`alexandria_clip`) | the query against the **picture** |
+| Inferred text | `search_images_by_inferred_text` | MiniLM (`alexandria_chunks`) | the query against the text read **out of** the picture |
+
+The second path needs nothing image-specific: §3.2's per-type content
+extraction, the description, and OCR are already assembled by
+`image_search_text` and written as ordinary chunks with `source=image`, so a
+filtered query over the shared collection *is* an image search. It collapses
+chunks to the best one per document — a shelf photo with a transcript chunk and
+several synopsis chunks is one result, not five.
+
+**CLIP is therefore opt-in** (`clip_enabled`, default off). It buys exactly one
+thing the other path cannot: matching a query whose words appear nowhere in the
+inferred text — a photo of a red bicycle found by "bicycle" when the VLM wrote
+"a bike leaning on a wall". That is a real capability and a narrow slice of real
+queries, and it costs a ~600 MB model download, a fourth pass per image, and a
+second Chroma collection to maintain and purge. Off by default, paid for
+deliberately.
+
+The switch is enforced in two places only. Ingestion: `image_sync` and the CLI
+pass `skip_clip=not clip_enabled`, so no vectors are written (`ingest_image`
+keeps its own `skip_clip` argument — the flag is applied by callers, exactly as
+`ocr_enabled` is). Query: `search_images_by_text` returns `[]` before touching
+the model, so `/search`, `/images/search` and `alexandria images --search`
+inherit the gate without a flag check of their own, and nothing loads CLIP to
+query vectors that were never written.
+
+Consumers differ in how much of this they see. `/search` folds CLIP hits into
+the unified document list and needs no second path — its semantic branch already
+queries the collection the image chunks live in, so images surface there whether
+or not CLIP ran. `/images/search` returns images, not documents, so it runs both
+paths itself (`mode=hybrid|clip|text`, default hybrid) and merges them by best
+similarity, tagging each hit with `matched_by` (`clip`, `text`, or `clip+text`).
+That merge compares scores from two embedding spaces, which is an approximation
+— the same one `/search` already makes — and it decides ordering only: both
+paths return their results either way.
 
 ## 4. Cluster lifecycle
 
