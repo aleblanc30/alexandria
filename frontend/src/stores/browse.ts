@@ -167,6 +167,15 @@ export const useBrowseStore = defineStore('browse', () => {
     void refreshTagsAndList()
   }
 
+  /** Drop source filters that are no longer displayed, so nothing filters invisibly. */
+  function pruneSources(allowed: readonly string[]) {
+    const next = sources.value.filter((s) => allowed.includes(s))
+    if (next.length === sources.value.length) return
+    sources.value = next
+    if (waybackOnly.value && !next.includes('firefox')) waybackOnly.value = false
+    void refreshTagsAndList()
+  }
+
   function toggleWayback() {
     waybackOnly.value = !waybackOnly.value
     if (waybackOnly.value) {
@@ -240,6 +249,7 @@ export const useBrowseStore = defineStore('browse', () => {
     loadMore,
     refresh,
     toggleSource,
+    pruneSources,
     toggleWayback,
     toggleAcademic,
     toggleAcademicKind,

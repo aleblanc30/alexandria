@@ -11,7 +11,7 @@
 
     <div class="source-grid">
       <RouterLink
-        v-for="src in INGESTION_SOURCES"
+        v-for="src in ui.sources"
         :key="src"
         :to="`/ingestion/${src}`"
         class="source-card"
@@ -24,16 +24,31 @@
         <span class="source-card-arrow">→</span>
       </RouterLink>
     </div>
+
+    <label class="experimental-toggle">
+      <input
+        type="checkbox"
+        :checked="ui.showExperimentalSources"
+        @change="ui.setShowExperimentalSources(($event.target as HTMLInputElement).checked)"
+      />
+      <span>
+        Show experimental sources
+        <span class="experimental-hint">({{ experimentalLabels }} — not functional yet)</span>
+      </span>
+    </label>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import { INGESTION_SOURCES, SOURCE_COLORS, SOURCE_LABELS } from '@/constants/sources'
+import { EXPERIMENTAL_SOURCES, SOURCE_COLORS, SOURCE_LABELS } from '@/constants/sources'
 import { useIngestionStore } from '@/stores/ingestion'
+import { useUiStore } from '@/stores/ui'
 
 const ingest = useIngestionStore()
+const ui = useUiStore()
 const st = computed(() => ingest.status)
+const experimentalLabels = EXPERIMENTAL_SOURCES.map((s) => SOURCE_LABELS[s]).join(', ')
 
 onMounted(() => ingest.load())
 </script>
@@ -64,4 +79,15 @@ onMounted(() => ingest.load())
 .source-card-name { font-size: 13px; font-weight: 500 }
 .source-card-count { font-size: 11px; color: var(--hint); margin-top: 2px }
 .source-card-arrow { font-size: 12px; color: var(--hint) }
+.experimental-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.experimental-hint { color: var(--hint) }
 </style>

@@ -30,7 +30,7 @@
         <div class="nav-divider" />
         <div class="nav-section">Sources</div>
         <RouterLink
-          v-for="src in INGESTION_SOURCES"
+          v-for="src in ui.sources"
           :key="`stat-${src}`"
           :to="`/ingestion/${src}`"
           class="nav-item"
@@ -45,8 +45,9 @@
 
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
-import { INGESTION_SOURCES, SOURCE_COLORS, SOURCE_LABELS } from '@/constants/sources'
+import { SOURCE_COLORS, SOURCE_LABELS } from '@/constants/sources'
 import { useIngestionStore } from '@/stores/ingestion'
+import { useUiStore } from '@/stores/ui'
 
 const props = defineProps<{ collapsed?: boolean; overlay?: boolean }>()
 
@@ -61,6 +62,7 @@ const IconList    = { template: `<svg class="icon" viewBox="0 0 16 16" fill="non
 const IconChevronRight = { template: `<svg class="icon icon-chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="6,4 10,8 6,12"/></svg>` }
 
 const ingest = useIngestionStore()
+const ui = useUiStore()
 
 onMounted(() => ingest.load())
 const counts = computed(() => ingest.status?.by_source ?? {})

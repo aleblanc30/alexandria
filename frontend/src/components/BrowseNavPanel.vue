@@ -12,7 +12,7 @@
       <div class="browse-nav-section-body">
         <div class="browse-nav-chips">
           <span
-            v-for="src in INGESTION_SOURCES"
+            v-for="src in ui.sources"
             :key="src"
             class="chip"
             :class="{ active: store.sources.includes(src) }"
@@ -167,10 +167,12 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { INGESTION_SOURCES, SOURCE_LABELS } from '@/constants/sources'
+import { SOURCE_LABELS } from '@/constants/sources'
 import { useBrowseStore } from '@/stores/browse'
+import { useUiStore } from '@/stores/ui'
 
 const store = useBrowseStore()
+const ui = useUiStore()
 const sourceQ = ref('')
 const level1Q = ref('')
 const level2Q = ref('')

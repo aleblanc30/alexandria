@@ -4,8 +4,10 @@ import {
   ingestJobLabel,
   isIngestionSource,
   sourceHasFetchPhase,
+  sourceIsExperimental,
   sourceIsPathBased,
   sourceSkipsEmbedPhase,
+  visibleSources,
 } from './sources'
 
 describe('sources', () => {
@@ -32,6 +34,17 @@ describe('sources', () => {
   it('reddit is credential-based, not path-based', () => {
     expect(sourceIsPathBased('reddit')).toBe(false)
     expect(sourceIsPathBased('firefox')).toBe(true)
+  })
+
+  it('youtube and reddit are experimental', () => {
+    expect(sourceIsExperimental('youtube')).toBe(true)
+    expect(sourceIsExperimental('reddit')).toBe(true)
+    expect(sourceIsExperimental('firefox')).toBe(false)
+  })
+
+  it('visibleSources hides experimental sources unless opted in', () => {
+    expect(visibleSources(false)).toEqual(['firefox', 'zotero', 'calibre', 'image'])
+    expect(visibleSources(true)).toEqual([...INGESTION_SOURCES])
   })
 
   it('ingestJobLabel reflects fetch phase', () => {

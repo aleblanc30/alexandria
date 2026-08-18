@@ -1,6 +1,21 @@
 export const INGESTION_SOURCES = ['firefox', 'zotero', 'calibre', 'image', 'youtube', 'reddit'] as const
 export type IngestionSource = (typeof INGESTION_SOURCES)[number]
 
+/**
+ * Connectors that exist end-to-end in the backend but are not usable yet. They
+ * are hidden from the UI unless the user opts in (see the `ui` store).
+ */
+export const EXPERIMENTAL_SOURCES: readonly IngestionSource[] = ['youtube', 'reddit']
+
+export function sourceIsExperimental(source: IngestionSource): boolean {
+  return EXPERIMENTAL_SOURCES.includes(source)
+}
+
+/** Sources to render, given whether experimental connectors are opted in. */
+export function visibleSources(showExperimental: boolean): readonly IngestionSource[] {
+  return showExperimental ? INGESTION_SOURCES : INGESTION_SOURCES.filter((s) => !sourceIsExperimental(s))
+}
+
 export const SOURCE_COLORS: Record<IngestionSource, string> = {
   firefox: '#378ADD',
   zotero: '#639922',
