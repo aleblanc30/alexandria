@@ -4,6 +4,7 @@ Requires the optional ``praw`` dependency and ``ALEXANDRIA_REDDIT_*`` credential
 
     pip install -e '.[reddit]'
     alexandria reddit
+    alexandria reddit --backfill        # walk the whole feed, not just what is new
     alexandria reddit --metadata-only   # persist saved list, skip embedding/fetch
     alexandria reddit --ingest-only      # embed inline bodies + fetch link posts
     alexandria reddit --dry-run
@@ -28,6 +29,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="alexandria reddit")
     parser.add_argument("--metadata-only", action="store_true")
     parser.add_argument("--ingest-only",   action="store_true")
+    parser.add_argument("--backfill",      action="store_true",
+                        help="Walk the whole feed instead of stopping at the "
+                             "first already-saved item (first run, or to fill "
+                             "gaps a failed run left)")
     parser.add_argument("--dry-run",       action="store_true")
     args = parser.parse_args(argv)
 
@@ -36,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     init_db()
 
     if args.metadata_only:
-        stats = sync_reddit_metadata(dry_run=args.dry_run)
+        stats = sync_reddit_metadata(dry_run=args.dry_run, backfill=args.backfill)
         log.info("Metadata: %s", stats)
         return 0
 
@@ -45,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         log.info("Ingest: %s", stats)
         return 0
 
-    stats = sync_reddit(dry_run=args.dry_run)
+    stats = sync_reddit(dry_run=args.dry_run, backfill=args.backfill)
     log.info("Done: %s", stats)
     return 0
 

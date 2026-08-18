@@ -4,8 +4,12 @@ export type IngestionSource = (typeof INGESTION_SOURCES)[number]
 /**
  * Connectors that exist end-to-end in the backend but are not usable yet. They
  * are hidden from the UI unless the user opts in (see the `ui` store).
+ *
+ * Reddit left this list once the private-feed loader was verified against a
+ * live account: it ingests saved posts without an OAuth app, so it is no longer
+ * "exists but cannot run".
  */
-export const EXPERIMENTAL_SOURCES: readonly IngestionSource[] = ['youtube', 'reddit']
+export const EXPERIMENTAL_SOURCES: readonly IngestionSource[] = ['youtube']
 
 export function sourceIsExperimental(source: IngestionSource): boolean {
   return EXPERIMENTAL_SOURCES.includes(source)

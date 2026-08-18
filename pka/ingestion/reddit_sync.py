@@ -27,20 +27,30 @@ log = logging.getLogger(__name__)
 _EMPTY_FETCH = {"fetched": 0, "skipped": 0, "unfetchable": 0}
 
 
-def _pending_count(saved: list[RedditSaved]) -> int:
-    known = set(document_index(Source.REDDIT))
+def _pending_count(saved: list[RedditSaved], known: set[str]) -> int:
     return sum(1 for s in saved if s.source_id not in known)
 
 
 def sync_reddit_metadata(
     progress_key: str | None = None,
     dry_run: bool = False,
+    backfill: bool = False,
 ) -> dict:
+    """Persist saved items.
+
+    Incremental by default: the feed is ordered by save time, so the walk stops
+    at the first item already in the archive — normally one request, no throttle
+    sleep. ``backfill=True`` walks the whole feed instead, for a first run or to
+    fill gaps a failed run left behind.
+    """
     init_db()
     key = progress_key or "reddit"
-    saved = take(load_saved(), Source.REDDIT)
+    known = set(document_index(Source.REDDIT))
+    saved = take(
+        load_saved(known_ids=known, stop_on_known=not backfill), Source.REDDIT,
+    )
     baseline = archive_document_count(Source.REDDIT)
-    pending = _pending_count(saved)
+    pending = _pending_count(saved, known)
     sp.begin_metadata_sync(key, pending, baseline)
     stats = ingest_reddit_metadata(saved, dry_run=dry_run, progress_key=key)
     log.info("Reddit metadata: %s", stats)
@@ -53,6 +63,8 @@ def sync_reddit_ingest(
     skip_existing: bool = True,
 ) -> dict:
     key = progress_key or "reddit"
+    # No stop_on_known here: this phase needs bodies for every item still
+    # missing chunks, and those are not necessarily the most recently saved.
     saved = take(load_saved(), Source.REDDIT)
     sp.set_corpus_total(key, len(saved))
 
@@ -105,10 +117,11 @@ def _fetch_link_posts(key: str, *, dry_run: bool) -> tuple[dict, str | None]:
 def sync_reddit(
     progress_key: str | None = None,
     dry_run: bool = False,
+    backfill: bool = False,
 ) -> dict:
     """Full pipeline (metadata then ingest). Kept for scripts/tests."""
     key = progress_key or "reddit"
-    meta = sync_reddit_metadata(progress_key=key, dry_run=dry_run)
+    meta = sync_reddit_metadata(progress_key=key, dry_run=dry_run, backfill=backfill)
     return run_full_sync(
         meta, lambda: sync_reddit_ingest(progress_key=key, dry_run=dry_run),
     )

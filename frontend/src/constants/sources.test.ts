@@ -36,14 +36,14 @@ describe('sources', () => {
     expect(sourceIsPathBased('firefox')).toBe(true)
   })
 
-  it('youtube and reddit are experimental', () => {
+  it('youtube is experimental; reddit is not, since the feed loader works', () => {
     expect(sourceIsExperimental('youtube')).toBe(true)
-    expect(sourceIsExperimental('reddit')).toBe(true)
+    expect(sourceIsExperimental('reddit')).toBe(false)
     expect(sourceIsExperimental('firefox')).toBe(false)
   })
 
   it('visibleSources hides experimental sources unless opted in', () => {
-    expect(visibleSources(false)).toEqual(['firefox', 'zotero', 'calibre', 'image'])
+    expect(visibleSources(false)).toEqual(['firefox', 'zotero', 'calibre', 'image', 'reddit'])
     expect(visibleSources(true)).toEqual([...INGESTION_SOURCES])
   })
 

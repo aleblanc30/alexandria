@@ -343,8 +343,16 @@ class Settings(BaseSettings):
     # can read the saved list — so it belongs in .secrets as
     # SECRET_ALEXANDRIA_REDDIT_FEED_URL, never in .env, and is redacted in logs.
     reddit_feed_url: str = ""
-    reddit_user_agent: str = "Alexandria/0.2 (local research library; saved-post indexer)"
+    # Reddit's API rules ask for "<platform>:<app id>:<version>" and serve
+    # "403 Blocked" to clients they do not recognise. The feed loader appends
+    # "(by /u/<user>)" from the feed URL when this carries no attribution.
+    reddit_user_agent: str = "python:alexandria:0.2 (local research library; saved-post indexer)"
     reddit_saved_limit: int | None = None   # None = fetch all saved items
+    # Pause between feed pages (seconds), plus up to this much random jitter.
+    # Only a backfill makes many requests in a row; an incremental sync usually
+    # stops after one page and never sleeps.
+    reddit_feed_poll_interval_seconds: float = 1.0
+    reddit_feed_poll_jitter_seconds: float = 0.5
 
     # ── Images ──────────────────────────────────────────────────────────────
     ocr_lang: str = "eng"  # OCR language(s), e.g. "eng+fra"; mapped to EasyOCR codes

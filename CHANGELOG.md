@@ -2,6 +2,55 @@
 
 ## Unreleased — local-first relaxed; retrieval enrichment
 
+- **Reddit saved posts can be loaded without an OAuth app**, via the private
+  token-bearing feed from `/prefs/feeds/` (`reddit_feed_url`, preferred over
+  PRAW when set). Creating a "script" app now requires a separate API-access
+  clearance a personal account does not get by default — the create form simply
+  re-renders — so the feed is the route that actually works. Verified against a
+  live account: 25 items, then 100/page once the loader started asking.
+  - Two endpoints, tried in order. `saved.json` returns the richer listing
+    payload but answers automated clients with a 403 whose body is the web app's
+    HTML — the token is never evaluated, so rotating it changes nothing. The
+    Atom form, `saved.rss`, is served normally; `load_saved_from_private_feed`
+    falls back to it and reports both failures together if neither works.
+  - No new dependency and no new item shape: the JSON form is what PRAW wraps,
+    and Atom is parsed with `ElementTree` as `arxiv.py` already does. Bodies
+    arrive inline in both, so self-posts and comments owe no fetch — unlike the
+    CSV data export, where every row would.
+  - Atom has no `after` field, so the cursor is derived from each entry's
+    `<id>`, which *is* a fullname. A page contributing no new fullnames ends the
+    walk, so a server ignoring the cursor cannot spin the page budget. Reddit
+    serves 25 without an explicit `limit`, so the loader always asks for 100.
+  - The URL is a credential: `.secrets` only, redacted in every error, and the
+    `httpx` logger is quietened around the request because httpx logs the full
+    URL — token included — at INFO.
+  - **Incremental by default, backfill on request.** The walk stops at the first
+    fullname already in the archive, which is correct because the listing is
+    ordered by save time. The stop signal is fullnames, not dates: Atom's
+    `<updated>` is creation time, so an old post saved today would end a
+    date-based walk on the very item that is new. `alexandria reddit --backfill`
+    walks everything. The ingest phase still walks fully — it needs bodies for
+    anything missing chunks, which are not necessarily recent saves.
+  - **Throttled paging** (`reddit_feed_poll_interval_seconds`, default 1.0, plus
+    up to `reddit_feed_poll_jitter_seconds` of jitter) between pages only, so an
+    incremental sync that ends on page one never sleeps.
+- **Reddit is no longer hidden behind the experimental-sources toggle** now that
+  it ingests end to end; YouTube still is.
+
+- **Reddit auth was broken by our own client construction.** `_build_client`
+  set `reddit.read_only = True`, which in PRAW is not a "never write" flag: the
+  setter swaps `_core` to the `ReadOnlyAuthorizer` (application-only
+  client-credentials grant), discarding the script/refresh authorization just
+  built. Saved items are user-scoped (`/user/<name>/saved`), so `user.me()`
+  raised `ReadOnlyException` before any credential was exercised — no login
+  could ever work. The line is gone; reads stay reads because the connector
+  only calls listing endpoints. Failures from `user.me()` and from the saved
+  listing now translate to `RedditConnectorError` naming the actual checks
+  (script-type app, developer on the app, client id vs app name, SSO accounts
+  have no password), with the original exception chained. Tests now exercise
+  `_build_client` against a stubbed `praw` module — every existing test injected
+  a ready-made client, which is how this survived.
+
 - **CLIP is now opt-in and off by default** (`ALEXANDRIA_CLIP_ENABLED`, new
   `DESIGN.md` §3.3). It buys one thing the rest of the pipeline cannot —
   matching a query whose words appear nowhere in the image's inferred text — and

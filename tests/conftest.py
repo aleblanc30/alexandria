@@ -43,6 +43,10 @@ def isolated_settings(tmp_path, monkeypatch):
     # index turn it on explicitly.
     monkeypatch.setattr(s, "clip_enabled", False)
 
+    # A developer's real Reddit feed URL must never select the network loader
+    # inside the suite: load_saved() dispatches on this being set.
+    monkeypatch.setattr(s, "reddit_feed_url", "")
+
     # The image admission gate is opt-in for tests: pipeline tests feed synthetic
     # images that would be rejected, so it stays off unless a test enables it.
     monkeypatch.setattr(s, "image_gate_enabled",         False)

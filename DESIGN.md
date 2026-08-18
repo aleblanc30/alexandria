@@ -95,7 +95,7 @@ more than the on/off state:
 |---|---|---|
 | Inference providers | `chat_provider`, `vision_provider`, `image_gate_vision_provider`, `ocr_provider` | **Document content** — chunk text, or image bytes. The largest exposure; a hosted provider sees the material itself. |
 | Enrichment lookups | `external_lookup_enabled`, `cover_search_fallback` | **Derived identifiers** — an ISBN, or a title+author string. Reveals *library inventory* (what is on the shelf) rather than content. |
-| Source connectors | `ALEXANDRIA_YOUTUBE_*`, `ALEXANDRIA_REDDIT_*`, Firefox phase-2 fetch | **Nothing new** — these read back your own data from a service you already gave it to, or fetch a URL you bookmarked. |
+| Source connectors | `ALEXANDRIA_YOUTUBE_*`, `ALEXANDRIA_REDDIT_*` (OAuth credentials or `reddit_feed_url`), Firefox phase-2 fetch | **Nothing new** — these read back your own data from a service you already gave it to, or fetch a URL you bookmarked. |
 
 Text-chunk embeddings are the one capability with no remote option: they stay
 inside ChromaDB's built-in function, so the embedding of every document is
@@ -184,8 +184,63 @@ chunks are re-queued automatically on the next ingest run. When a Firefox URL
 returns HTTP 404, the fetcher can fall back to the closest Internet Archive
 snapshot (`fetch_wayback_fallback`, default on).
 
-**Reddit saved posts** are a *network* source (OAuth API via optional `praw`,
-credentials in `.env`, no filesystem path) rather than a local DB. Phase 1
+**Reddit saved posts** are a *network* source (no filesystem path) rather than a
+local DB, with **two interchangeable loaders** behind one `RedditSaved` shape:
+
+1. **Private feed** (`reddit_feed_url`) — the token-bearing feed Reddit issues
+   from `/prefs/feeds/`. Preferred when set: registering a "script" app now
+   requires a separate API-access clearance that personal accounts do not get by
+   default (the create form simply re-renders), whereas the feed URL is handed
+   over on a preferences page. `load_saved_from_private_feed` tries **two
+   endpoints**, because only one of them is actually served:
+
+   * `saved.json` — Reddit's ordinary listing payload, the same fields PRAW
+     wraps, so `_to_saved` maps it unchanged. **Observed to fail**: automated
+     clients get a 403 whose body is the web app's HTML, meaning the request
+     never reached the feed's token auth. Tried first anyway — it is the richer
+     payload, and the block is a policy that may change either way.
+   * `saved.rss` — the Atom form feed readers use, and the one that works.
+     Thinner: no `is_self`, so a self-post and a link post are told apart only
+     by the anchor Reddit labels `[link]`; and no `after` field. The cursor is
+     *derived* instead — each entry's `<id>` is the fullname `after` expects, so
+     the last entry of a page pages the next. Both forms carry the body inline
+     (`<content type="html">`), so self-posts and comments owe no fetch, and
+     both accept `limit`; without it Reddit serves 25, so the loader always asks
+     for the 100-item maximum. Roughly 1000 items is where Reddit stops paging,
+     which covers a recent history but not the far end of an old saved list.
+
+   Failing pages are guarded against a server that ignores `after`: a page
+   contributing no new fullnames ends the walk. The URL *is* the credential, so
+   it lives in `.secrets`, is redacted (`_redact`) in every error, and the
+   `httpx` logger is quietened for the duration of the request — httpx logs the
+   full URL at INFO, which would otherwise print the token.
+
+   **Two walk modes.** `sync_reddit_metadata` is incremental by default: it
+   passes the archive's existing fullnames (`document_index`, already computed
+   for the pending count) and the walk stops at the *first* one it recognises,
+   mid-page. That is correct because the listing is ordered by **save** time,
+   newest first — everything past a known item was saved earlier and is already
+   held. Note the stop signal is deliberately fullnames rather than dates:
+   Atom's `<updated>` is when an item was *created*, so an old post saved today
+   sorts first while carrying an old timestamp, and a date cutoff would end the
+   walk on precisely the item that is new. `backfill=True` (`alexandria reddit
+   --backfill`) disables the early stop and walks the whole feed, for a first
+   run or to fill gaps a failed run left behind.
+
+   The ingest phase keeps the full walk on purpose: it needs bodies for every
+   item still missing chunks, and those are not necessarily the newest saves.
+
+   **Throttle.** `_throttle_poll` sleeps `reddit_feed_poll_interval_seconds`
+   (default 1.0) plus up to `reddit_feed_poll_jitter_seconds` (0.5) *between*
+   pages, never before the first request — so an incremental sync that finishes
+   in one page never sleeps. Only a backfill issues requests in a row, and a
+   fixed-rate burst is what bot protection is built to notice; the jitter keeps
+   a repeating loop from settling into a metronome.
+2. **PRAW** (`reddit_client_id` + secret) — the OAuth API, unchanged.
+
+Note `read_only` is deliberately *not* set on the PRAW client: in PRAW that
+setter swaps in the application-only authorizer, which cannot see a user's
+saved list at all. Phase 1
 persists every saved item; phase 2 embeds the inline body of self-posts and
 comments (the cheap text) and fetches external link posts through the shared
 fetcher (`fetch_and_embed_pending(source=Source.REDDIT)`, backed by the
