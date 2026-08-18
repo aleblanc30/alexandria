@@ -94,6 +94,16 @@ def init_db() -> None:
                 "ALTER TABLE documents ADD COLUMN doc_embedding BLOB"
             ))
 
+        # Migration: persist enrichment provenance alongside each chunk so the
+        # API can report which rung of the ladder produced it (DESIGN.md §3.2).
+        # Pre-existing chunks keep NULLs — there is no Chroma backfill.
+        chunk_cols = [r[1] for r in con.execute(
+            sa.text("PRAGMA table_info(chunks)")
+        ).fetchall()]
+        for col in ("chunk_pass", "resolved_by", "source_ref", "ref_title"):
+            if chunk_cols and col not in chunk_cols:
+                con.execute(sa.text(f"ALTER TABLE chunks ADD COLUMN {col} TEXT"))
+
         # Migration: link images to their unified documents row
         img_cols = [r[1] for r in con.execute(
             sa.text("PRAGMA table_info(images)")
@@ -337,13 +347,68 @@ def insert_source_collections(
         ])
 
 
+# Enrichment provenance columns, optional per row (see :func:`document_enrichment`).
+_CHUNK_PROVENANCE_KEYS = ("chunk_pass", "resolved_by", "source_ref", "ref_title")
+
+
 def insert_chunks(rows: list[dict[str, Any]]) -> None:
-    """rows: dicts with keys document_id, chunk_index, text, token_count, vector_id."""
+    """rows: dicts with keys document_id, chunk_index, text, token_count, vector_id.
+
+    Optionally also chunk_pass, resolved_by, source_ref, ref_title (enrichment
+    provenance — see :func:`document_enrichment`).
+    """
     if not rows:
         return
+    # ``executemany`` binds one compiled statement across the batch, so every
+    # dict must carry the same keys. Without this, a batch mixing an enriched
+    # row with a plain one raises "A value is required for bind parameter" —
+    # which would make the "optional" above a lie for any multi-row caller.
+    rows = [{**dict.fromkeys(_CHUNK_PROVENANCE_KEYS), **row} for row in rows]
     eng = get_engine()
     with eng.begin() as con:
         con.execute(chunks.insert(), rows)
+
+
+# Chunk passes that represent retrieval enrichment rather than an ordinary body
+# pass (``metadata``/``fulltext`` are Calibre's two normal passes).
+ENRICHMENT_PASSES = ("summary", "external_synopsis")
+
+
+def document_enrichment(doc_ids: list[int]) -> dict[int, list[dict]]:
+    """Map document id → its enrichment chunks, in one query (DESIGN.md §3.2).
+
+    Only ``summary`` and ``external_synopsis`` chunks are returned; the ordinary
+    body passes are not provenance. Documents with no enrichment are absent from
+    the mapping.
+    """
+    if not doc_ids:
+        return {}
+    with get_engine().connect() as con:
+        rows = con.execute(
+            sa.select(
+                chunks.c.document_id,
+                chunks.c.chunk_pass,
+                chunks.c.resolved_by,
+                chunks.c.source_ref,
+                chunks.c.ref_title,
+                chunks.c.text,
+            )
+            .where(
+                chunks.c.document_id.in_(doc_ids)
+                & chunks.c.chunk_pass.in_(ENRICHMENT_PASSES)
+            )
+            .order_by(chunks.c.document_id, chunks.c.chunk_index)
+        ).fetchall()
+    out: dict[int, list[dict]] = {}
+    for doc_id, chunk_pass, resolved_by, source_ref, ref_title, text in rows:
+        out.setdefault(doc_id, []).append({
+            "chunk_pass":  chunk_pass,
+            "resolved_by": resolved_by,
+            "source_ref":  source_ref,
+            "ref_title":   ref_title,
+            "text":        text,
+        })
+    return out
 
 
 def document_has_chunks(document_id: int) -> bool:

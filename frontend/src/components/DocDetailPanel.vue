@@ -40,6 +40,22 @@
         <p class="panel-summary panel-note">{{ doc.note }}</p>
       </section>
 
+      <section v-if="doc.enrichment?.length" class="section">
+        <div class="section-label">Generated text</div>
+        <div v-for="(e, i) in doc.enrichment" :key="i" class="enrich">
+          <div class="enrich-head">
+            <span
+              class="rung"
+              :class="rungClass(e.resolved_by)"
+              :title="rungHint(e.resolved_by)"
+            >{{ e.label }}</span>
+            <span v-if="e.ref_title" class="enrich-title">{{ e.ref_title }}</span>
+          </div>
+          <p class="panel-summary enrich-text">{{ e.text }}</p>
+          <p v-if="e.source_ref" class="enrich-ref">{{ e.source_ref }}</p>
+        </div>
+      </section>
+
       <section class="section">
         <div class="section-label">Metadata</div>
         <div class="meta-grid">
@@ -110,6 +126,7 @@ import { getDocument, patchTags } from '@/api/client'
 import type { DocumentDetail } from '@/api/client'
 import { useDocLinks } from '@/composables/useDocLinks'
 import { docCoverUrl } from '@/lib/docDisplay'
+import { rungClass, rungHint } from '@/lib/enrichment'
 import SourceBadge from './SourceBadge.vue'
 import ZoteroOpenButton from './ZoteroOpenButton.vue'
 
@@ -142,6 +159,7 @@ async function addTag() {
   doc.value = await getDocument(doc.value.id)
   newTag.value = ''
 }
+
 </script>
 
 <style scoped>
@@ -180,4 +198,19 @@ async function addTag() {
 .panel-ocr     { white-space: pre-line; font-size: 12px; max-height: 220px; overflow-y: auto; background: #f5f4f0; border-radius: var(--radius); padding: 10px }
 .score-bar   { height: 6px; background: #E6F1FB; border-radius: 3px; overflow: hidden; margin-bottom: 4px }
 .score-fill  { height: 100%; background: #378ADD; border-radius: 3px }
+.enrich        { padding: 10px 0; border-bottom: 0.5px solid var(--border) }
+.enrich:last-child { border-bottom: 0; padding-bottom: 0 }
+.enrich:first-child { padding-top: 0 }
+.enrich-head   { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px }
+.enrich-title  { font-size: 12px; font-weight: 500; color: var(--text) }
+.enrich-text   { max-height: 160px; overflow-y: auto }
+.enrich-ref    { font-size: 11px; color: var(--hint); margin: 6px 0 0; font-family: ui-monospace, monospace }
+.rung          { padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 500; cursor: help; white-space: nowrap }
+/* Confidence ramp: exact identifier → verified catalogue → loose web snippet. */
+.rung--isbn         { background: #EAF3DE; color: #3B6D11 }
+.rung--search       { background: #E6F1FB; color: #185FA5 }
+.rung--google_books { background: #E6F1FB; color: #185FA5 }
+.rung--brave        { background: #FAEEDA; color: #854F0B }
+.rung--local_model  { background: #EFEEEC; color: #55524C }
+.rung--unknown      { background: #EFEEEC; color: #55524C }
 </style>

@@ -33,11 +33,26 @@ class ImageDetail(BaseModel):
     ocr_text: str | None = None
 
 
+class EnrichmentOut(BaseModel):
+    """One retrieval-enrichment chunk's provenance (DESIGN.md §3.2).
+
+    ``label`` is rendered here rather than in the frontend so the enrichment
+    ladder stays the single source of truth for how each rung is named.
+    """
+    kind: str                  # summary | external_synopsis
+    resolved_by: str | None    # isbn|search|google_books|brave|local_model
+    label: str                 # human-readable, e.g. "Open Library · ISBN"
+    source_ref: str | None     # ISBN or Open Library work key
+    ref_title: str | None      # resolved book title
+    text: str
+
+
 class DocumentDetail(DocumentOut):
     description: str = ""
     chunks_count: int
     collections: list[str]
     image: ImageDetail | None = None
+    enrichment: list[EnrichmentOut] = []
 
 
 class TagPatchRequest(BaseModel):

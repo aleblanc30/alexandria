@@ -72,10 +72,24 @@ export interface DocumentOut  {
   note: string | null
 }
 export interface ImageDetail { image_type: string | null; ocr_text: string | null }
+export type EnrichmentKind     = 'summary' | 'external_synopsis'
+export type EnrichmentResolver = 'isbn' | 'search' | 'google_books' | 'brave' | 'local_model'
+/** One rung of the enrichment cascade that produced generated text (DESIGN.md §3.2). */
+export interface Enrichment {
+  kind: EnrichmentKind
+  /** Null when the backend could not name the rung. */
+  resolved_by: EnrichmentResolver | null
+  /** Human-readable, already localised by the backend — render as-is. */
+  label: string
+  source_ref: string | null
+  ref_title: string | null
+  text: string
+}
 export interface DocumentDetail extends DocumentOut {
   description: string
   chunks_count: number; collections: string[]
   image: ImageDetail | null
+  enrichment: Enrichment[]
 }
 export interface DocumentListItem {
   id: number; source: string; source_id: string; title: string; description: string
@@ -166,8 +180,11 @@ export const search = (body: SearchRequest) =>
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 
-export const getDocument = (id: number) =>
-  req<DocumentDetail>(`/documents/${id}`)
+export const getDocument = async (id: number): Promise<DocumentDetail> => {
+  const doc = await req<DocumentDetail>(`/documents/${id}`)
+  // Older backends omit `enrichment`; keep it an array so callers can iterate freely.
+  return Array.isArray(doc.enrichment) ? doc : { ...doc, enrichment: [] }
+}
 
 export const listDocuments = (params?: {
   sources?: string[]

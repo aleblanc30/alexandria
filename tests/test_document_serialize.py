@@ -1,5 +1,8 @@
 """Tests for shared document row → API model serialization."""
 import time
+from contextlib import contextmanager
+
+import pytest
 
 from pka.api.document_serialize import document_detail, documents_out_batch
 from pka.constants import TagOrigin
@@ -12,6 +15,13 @@ from pka.db.queries import (
     upsert_document,
 )
 from pka.db.schema import cluster_assignments, cluster_runs, clusters
+
+
+@contextmanager
+def file_engine_detail(doc_id: int):
+    """Open a connection and yield the serialized detail for one document."""
+    with get_engine().connect() as con:
+        yield document_detail(con, doc_id, None)
 
 
 def _seed_doc(i: int = 0) -> int:
@@ -148,3 +158,194 @@ class TestDocumentDetail:
         assert detail.image.image_type == "slide"
         assert detail.image.ocr_text == "Extracted text."
         assert detail.description == "A prose description of the picture."
+
+
+# ── Enrichment provenance (DESIGN.md §3.2) ────────────────────────────────────
+
+class TestEnrichmentProvenance:
+    """Which rung of the ladder produced a chunk, from ingest through to the API."""
+
+    @pytest.fixture(autouse=True)
+    def _db(self):
+        init_db()
+
+    def _chunk(self, doc_id: int, idx: int, **prov):
+        insert_chunks([{
+            "document_id": doc_id, "chunk_index": idx, "text": f"text {idx}",
+            "token_count": 2, "vector_id": f"v{doc_id}-{idx}", **prov,
+        }])
+
+    def test_migration_is_idempotent(self):
+        """init_db must stay safe to re-run — it is the documented setup step."""
+        init_db()
+        init_db()
+        import sqlalchemy as sa
+        with get_engine().connect() as con:
+            cols = [r[1] for r in con.execute(sa.text("PRAGMA table_info(chunks)")).fetchall()]
+        for col in ("chunk_pass", "resolved_by", "source_ref", "ref_title"):
+            assert cols.count(col) == 1
+
+    def test_ingest_text_block_persists_provenance(self, mock_chroma):
+        """The provenance Chroma gets must also land in SQLite, or the API is blind."""
+        import sqlalchemy as sa
+
+        from pka.constants import Source
+        from pka.db.schema import chunks as chunks_t
+        from pka.ingestion.core import ingest_text_block
+
+        doc_id = _seed_doc(90)
+        ingest_text_block(
+            doc_id, "A resolved synopsis for the book.", Source.IMAGE,
+            extra_metadata={
+                "title": "shelf.jpg", "pass": "external_synopsis",
+                "resolved_by": "isbn", "isbn": "9780306406157", "book_title": "Dune",
+            },
+            min_chars=1,
+        )
+        with get_engine().connect() as con:
+            row = con.execute(sa.select(
+                chunks_t.c.chunk_pass, chunks_t.c.resolved_by,
+                chunks_t.c.source_ref, chunks_t.c.ref_title,
+            ).where(chunks_t.c.document_id == doc_id)).fetchone()
+        assert row == ("external_synopsis", "isbn", "9780306406157", "Dune")
+
+    def test_ordinary_chunks_carry_no_provenance(self, mock_chroma):
+        import sqlalchemy as sa
+
+        from pka.constants import Source
+        from pka.db.schema import chunks as chunks_t
+        from pka.ingestion.core import ingest_text_block
+
+        doc_id = _seed_doc(91)
+        ingest_text_block(doc_id, "Just an ordinary body chunk of text.", Source.FIREFOX,
+                          min_chars=1)
+        with get_engine().connect() as con:
+            row = con.execute(sa.select(chunks_t.c.chunk_pass, chunks_t.c.resolved_by)
+                              .where(chunks_t.c.document_id == doc_id)).fetchone()
+        assert row == (None, None)
+
+    def test_work_key_used_when_no_isbn(self, mock_chroma):
+        import sqlalchemy as sa
+
+        from pka.constants import Source
+        from pka.db.schema import chunks as chunks_t
+        from pka.ingestion.core import ingest_text_block
+
+        doc_id = _seed_doc(92)
+        ingest_text_block(
+            doc_id, "Resolved by title match.", Source.IMAGE,
+            extra_metadata={"pass": "external_synopsis", "resolved_by": "search",
+                            "work_key": "/works/OL1W", "book_title": "Dune"},
+            min_chars=1,
+        )
+        with get_engine().connect() as con:
+            ref = con.execute(sa.select(chunks_t.c.source_ref)
+                              .where(chunks_t.c.document_id == doc_id)).scalar()
+        assert ref == "/works/OL1W"
+
+    def test_mixed_batch_inserts(self):
+        """executemany binds one statement for the batch, so keys must be uniform.
+
+        A caller writing an enriched row and a plain one together must not have to
+        know that — the helper documents the provenance fields as optional.
+        """
+        doc_id = _seed_doc(89)
+        insert_chunks([
+            {"document_id": doc_id, "chunk_index": 0, "text": "synopsis",
+             "token_count": 1, "vector_id": "m0",
+             "chunk_pass": "external_synopsis", "resolved_by": "isbn"},
+            {"document_id": doc_id, "chunk_index": 1, "text": "plain body",
+             "token_count": 2, "vector_id": "m1"},
+        ])
+        from pka.db.queries import document_enrichment
+        rows = document_enrichment([doc_id])[doc_id]
+        assert [r["resolved_by"] for r in rows] == ["isbn"]
+
+    def test_body_passes_are_not_enrichment(self):
+        """Calibre's metadata/fulltext passes are ordinary body text, not provenance."""
+        from pka.db.queries import document_enrichment
+
+        doc_id = _seed_doc(93)
+        self._chunk(doc_id, 0, chunk_pass="metadata")
+        self._chunk(doc_id, 1, chunk_pass="fulltext")
+        self._chunk(doc_id, 2, chunk_pass="summary")
+        rows = document_enrichment([doc_id])[doc_id]
+        assert [r["chunk_pass"] for r in rows] == ["summary"]
+
+    def test_batched_helper_issues_one_query(self):
+        """A list view must not degrade into an N+1 across documents."""
+        import sqlalchemy as sa
+
+        from pka.db.queries import document_enrichment
+
+        ids = []
+        for n in range(5):
+            doc_id = _seed_doc(100 + n)
+            self._chunk(doc_id, 0, chunk_pass="summary")
+            ids.append(doc_id)
+
+        seen: list[str] = []
+        eng = get_engine()
+
+        def _record(conn, cursor, statement, *args):
+            if "FROM chunks" in statement:
+                seen.append(statement)
+
+        sa.event.listen(eng, "before_cursor_execute", _record)
+        try:
+            out = document_enrichment(ids)
+        finally:
+            sa.event.remove(eng, "before_cursor_execute", _record)
+        assert set(out) == set(ids)
+        assert len(seen) == 1, f"expected one query, got {len(seen)}"
+
+    def test_empty_input_and_unenriched_docs(self):
+        from pka.db.queries import document_enrichment
+
+        assert document_enrichment([]) == {}
+        doc_id = _seed_doc(94)
+        self._chunk(doc_id, 0)
+        assert document_enrichment([doc_id]) == {}
+
+    def test_detail_reports_no_enrichment_as_empty_list(self):
+        doc_id = _seed_doc(95)
+        with get_engine().connect() as con:
+            detail = document_detail(con, doc_id, None)
+        assert detail is not None
+        assert detail.enrichment == []
+
+    def test_detail_labels_each_rung(self):
+        doc_id = _seed_doc(96)
+        self._chunk(doc_id, 0, chunk_pass="external_synopsis", resolved_by="isbn",
+                    source_ref="9780306406157", ref_title="Dune")
+        self._chunk(doc_id, 1, chunk_pass="external_synopsis", resolved_by="brave",
+                    ref_title="Neuromancer")
+        with get_engine().connect() as con:
+            detail = document_detail(con, doc_id, None)
+        labels = [e.label for e in detail.enrichment]
+        assert labels == ["Open Library · ISBN", "Brave search"]
+        assert [e.ref_title for e in detail.enrichment] == ["Dune", "Neuromancer"]
+
+    def test_summary_normalises_to_local_model(self):
+        """A summary chunk stores no resolver; the API must still name the rung."""
+        doc_id = _seed_doc(97)
+        self._chunk(doc_id, 0, chunk_pass="summary")
+        with file_engine_detail(doc_id) as detail:
+            assert detail.enrichment[0].resolved_by == "local_model"
+            assert detail.enrichment[0].label == "Local model"
+
+    def test_unknown_resolver_falls_back_rather_than_crashing(self):
+        doc_id = _seed_doc(98)
+        self._chunk(doc_id, 0, chunk_pass="external_synopsis", resolved_by="wat")
+        with file_engine_detail(doc_id) as detail:
+            assert detail.enrichment[0].label == "External source"
+
+    def test_multi_book_image_keeps_one_entry_per_book(self):
+        """A shelf photo carries several synopses; each must stay identifiable."""
+        doc_id = _seed_doc(99)
+        for i, title in enumerate(["Dune", "Neuromancer", "Solaris"]):
+            self._chunk(doc_id, i, chunk_pass="external_synopsis",
+                        resolved_by="search", ref_title=title)
+        with file_engine_detail(doc_id) as detail:
+            assert [e.ref_title for e in detail.enrichment] == ["Dune", "Neuromancer", "Solaris"]
+

@@ -77,6 +77,16 @@ def ingest_text_block(
             for i in range(len(chunk_texts))
         ],
     )
+    # Mirror the enrichment provenance Chroma already carries into SQLite, which
+    # is what the API serves documents from (DESIGN.md §3.2). Absent keys stay
+    # NULL; the Chroma payload above is untouched.
+    meta = extra_metadata or {}
+    provenance = {
+        "chunk_pass":  meta.get("pass"),
+        "resolved_by": meta.get("resolved_by"),
+        "source_ref":  meta.get("isbn") or meta.get("work_key"),
+        "ref_title":   meta.get("book_title"),
+    }
     insert_chunks([
         {
             "document_id": doc_id,
@@ -84,6 +94,7 @@ def ingest_text_block(
             "text":        t,
             "token_count": len(t.split()),
             "vector_id":   vid,
+            **provenance,
         }
         for i, (t, vid) in enumerate(zip(chunk_texts, vector_ids, strict=True))
     ])

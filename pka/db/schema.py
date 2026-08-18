@@ -55,6 +55,14 @@ chunks = sa.Table(
     sa.Column("text",          sa.Text, nullable=False),
     sa.Column("token_count",   sa.Integer),
     sa.Column("vector_id",     sa.Text),                   # Chroma document ID
+    # Enrichment provenance mirrored from the Chroma chunk metadata so the API,
+    # which serves documents from SQLite, can show which rung of the ladder
+    # produced a chunk (DESIGN.md §3.2). The Chroma key is ``pass``, but
+    # ``chunks.c.pass`` is a Python syntax error — hence ``chunk_pass``.
+    sa.Column("chunk_pass",    sa.Text),                   # summary|external_synopsis|metadata|fulltext
+    sa.Column("resolved_by",   sa.Text),                   # isbn|search|google_books|brave
+    sa.Column("source_ref",    sa.Text),                   # ISBN or Open Library work key
+    sa.Column("ref_title",     sa.Text),                   # resolved book title (shelf photos carry several)
 )
 
 fetch_log = sa.Table(

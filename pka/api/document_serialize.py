@@ -7,9 +7,14 @@ description), so they live here to avoid drift and N+1 duplication.
 import sqlalchemy as sa
 
 from pka.api.db_rows import fetchall_mappings, fetchone_mapping
-from pka.api.schemas.documents import DocumentDetail, DocumentOut, ImageDetail
+from pka.api.schemas.documents import DocumentDetail, DocumentOut, EnrichmentOut, ImageDetail
 from pka.constants import Source
-from pka.db.queries import _batch_first_chunk_map, document_description, resolve_description
+from pka.db.queries import (
+    _batch_first_chunk_map,
+    document_description,
+    document_enrichment,
+    resolve_description,
+)
 from pka.db.schema import (
     chunks,
     cluster_assignments,
@@ -107,6 +112,39 @@ def documents_out_batch(
     return out
 
 
+# Human-readable name for each rung of the enrichment ladder (DESIGN.md §3.2).
+# Owned by the backend so the ladder stays the single source of truth.
+_ENRICHMENT_LABELS = {
+    "isbn":         "Open Library · ISBN",
+    "search":       "Open Library · title match",
+    "google_books": "Google Books",
+    "brave":        "Brave search",
+    "local_model":  "Local model",
+}
+_ENRICHMENT_FALLBACK_LABEL = "External source"
+
+
+def enrichment_out(rows: list[dict]) -> list[EnrichmentOut]:
+    """Turn :func:`pka.db.queries.document_enrichment` rows into API models.
+
+    A ``summary`` chunk stores no ``resolved_by`` — it is normalised to
+    ``local_model`` so the frontend gets one uniform shape for every rung.
+    """
+    out: list[EnrichmentOut] = []
+    for row in rows:
+        kind = row["chunk_pass"]
+        resolved_by = row["resolved_by"] or ("local_model" if kind == "summary" else None)
+        out.append(EnrichmentOut(
+            kind        = kind,
+            resolved_by = resolved_by,
+            label       = _ENRICHMENT_LABELS.get(resolved_by, _ENRICHMENT_FALLBACK_LABEL),
+            source_ref  = row["source_ref"],
+            ref_title   = row["ref_title"],
+            text        = row["text"] or "",
+        ))
+    return out
+
+
 def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | None:
     """Build a single :class:`DocumentDetail`, or ``None`` if the document is missing."""
     row = fetchone_mapping(con.execute(
@@ -176,4 +214,5 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
         note=row.get("note"),
         collections=colls, chunks_count=n_chunks,
         image=image_detail,
+        enrichment=enrichment_out(document_enrichment([doc_id]).get(doc_id, [])),
     )
