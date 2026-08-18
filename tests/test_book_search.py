@@ -120,10 +120,21 @@ class TestGoogleBooks:
         bs.search_synopsis("Dune", ["Frank Herbert"])
         assert "key" not in captured["params"]
 
-        monkeypatch.setattr(cfg, "search_api_key", "abc123")
+        monkeypatch.setattr(cfg, "google_books_api_key", "abc123")
         captured = _respond(monkeypatch, _volumes())
         bs.search_synopsis("Dune", ["Frank Herbert"])
         assert captured["params"]["key"] == "abc123"
+
+    def test_brave_key_is_never_sent_to_google(self, monkeypatch, search_on):
+        """Separate vendors, separate credentials — no cross-provider bleed.
+
+        A shared key setting sent Brave's credential to googleapis.com in the
+        query string, where Google answered 400 and this rung went quietly dead.
+        """
+        monkeypatch.setattr(cfg, "search_api_key", "brave-key")
+        captured = _respond(monkeypatch, _volumes())
+        bs.search_synopsis("Dune", ["Frank Herbert"])
+        assert "key" not in captured["params"]
 
     def test_http_error_returns_none(self, monkeypatch, search_on):
         def boom(url, params=None, **kwargs):

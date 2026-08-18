@@ -53,8 +53,8 @@ def _google_books_search(title: str, authors: list[str]) -> BookSynopsis | None:
     if authors:
         terms.append(f'inauthor:"{authors[0]}"')
     params: dict[str, Any] = {"q": " ".join(terms), "maxResults": 5}
-    if cfg.search_api_key:
-        params["key"] = cfg.search_api_key
+    if cfg.google_books_api_key:
+        params["key"] = cfg.google_books_api_key
 
     _limiter.wait()
     try:

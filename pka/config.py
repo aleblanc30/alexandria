@@ -343,7 +343,15 @@ class Settings(BaseSettings):
     external_lookup_enabled: bool = False  # Open Library by ISBN or title+author
     cover_search_fallback: bool = False  # web search when the lookup misses
     search_provider: str = "google_books"  # see pka/ingestion/book_search.py registry
-    search_api_key: str = ""  # credential — SECRET_ALEXANDRIA_SEARCH_API_KEY
+    # One credential per backend, never a shared slot: the backends are separate
+    # vendors, and a single setting meant whichever key was configured got sent
+    # to whichever backend ran first — a Brave key ending up in a googleapis.com
+    # query string, where Google rejects it with a 400 and the rung silently
+    # stops working.
+    search_api_key: str = ""  # Brave credential — SECRET_ALEXANDRIA_SEARCH_API_KEY
+    # Optional even when the Google Books rung is on: keyless use only costs a
+    # lower per-IP quota, which is what keeps it the switch-on-and-try default.
+    google_books_api_key: str = ""  # credential — SECRET_ALEXANDRIA_GOOGLE_BOOKS_API_KEY
     openlibrary_base_url: str = "https://openlibrary.org"
     summary_max_sentences: int = 4  # MiniLM truncates in the low hundreds of word-pieces
 

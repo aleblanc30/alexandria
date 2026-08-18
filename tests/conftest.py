@@ -57,6 +57,15 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "external_lookup_enabled",  False)
     monkeypatch.setattr(s, "cover_search_fallback",    False)
 
+    # Credentials for the search rung pinned empty for the same reason: the
+    # "no key configured" branch has to actually run unconfigured, and a
+    # developer's real ALEXANDRIA_SEARCH_API_KEY would otherwise be asserted
+    # against (and, worse, sent on any request a test forgets to stub).
+    # Tests that exercise the configured branch set the key themselves.
+    monkeypatch.setattr(s, "search_api_key",        "")
+    monkeypatch.setattr(s, "google_books_api_key",  "")
+    monkeypatch.setattr(s, "search_provider",       "google_books")
+
     # Reset cached SQLAlchemy engine so each test gets a fresh DB
     import pka.db.queries as q
     monkeypatch.setattr(q, "_engine", None)
