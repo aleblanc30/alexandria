@@ -58,6 +58,16 @@
         >
           Sync metadata
         </button>
+        <button
+          v-if="sourceHasBackfill(source) && !ingest.isMetadataRunning(source)"
+          class="btn-xs"
+          type="button"
+          :disabled="ingest.isIngestRunning(source)"
+          title="Walk the whole history instead of stopping at the first item already saved"
+          @click="ingest.backfillMetadata(source)"
+        >
+          Backfill
+        </button>
         <template v-if="ingest.isIngestRunning(source)">
           <button class="btn-xs btn-xs--danger" @click="ingest.cancel(source)">Stop</button>
         </template>
@@ -147,7 +157,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import * as api from '@/api/client'
 import type { PhaseDetail, SyncProgress } from '@/api/client'
-import { SOURCE_COLORS, SOURCE_LABELS, SOURCE_PATH_LABELS, ingestJobLabel, sourceHasFetchPhase, sourceIsPathBased, sourceSkipsEmbedPhase, type IngestionSource } from '@/constants/sources'
+import { SOURCE_COLORS, SOURCE_LABELS, SOURCE_PATH_LABELS, ingestJobLabel, sourceHasBackfill, sourceHasFetchPhase, sourceIsPathBased, sourceSkipsEmbedPhase, type IngestionSource } from '@/constants/sources'
 import { ingestStatsSummary } from '@/lib/ingestStats'
 import { notifyError } from '@/lib/notifyError'
 import { useIngestionStore } from '@/stores/ingestion'

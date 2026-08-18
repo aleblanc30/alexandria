@@ -1133,6 +1133,13 @@ class TestTrends:
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
 
+def _join_worker(ing_module, src: str, timeout: float = 5.0) -> None:
+    """Wait for the background sync thread the router started for ``src``."""
+    worker = ing_module._workers.get(src)
+    if worker is not None:
+        worker.join(timeout=timeout)
+
+
 class TestIngestion:
     def setup_method(self):
         from pka.constants import ALL_SOURCES
@@ -1168,7 +1175,7 @@ class TestIngestion:
     def test_sync_valid_source_queued(self, client, monkeypatch):
         from pka.ingestion import sync_progress as sp
 
-        def fake_sync(src: str) -> None:
+        def fake_sync(src: str, backfill: bool = False) -> None:
             sp.finish(src)
 
         sp.reset("zotero")
@@ -1235,7 +1242,7 @@ class TestIngestion:
     def test_sync_metadata_queued(self, client, monkeypatch):
         from pka.ingestion import sync_progress as sp
 
-        def fake_meta(src: str) -> None:
+        def fake_meta(src: str, backfill: bool = False) -> None:
             sp.finish(src)
 
         sp.reset("zotero")
@@ -1247,7 +1254,7 @@ class TestIngestion:
     def test_sync_ingest_queued(self, client, monkeypatch):
         from pka.ingestion import sync_progress as sp
 
-        def fake_ingest(src: str) -> None:
+        def fake_ingest(src: str, backfill: bool = False) -> None:
             sp.finish(src)
 
         sp.reset("firefox")
@@ -1255,6 +1262,55 @@ class TestIngestion:
         r = client.post("/ingestion/sync/firefox/ingest")
         assert r.status_code == 202
         assert r.json()["job"] == "ingest"
+
+    def test_backfill_flag_reaches_the_reddit_handler(self, client, monkeypatch):
+        """Reddit's sync is incremental, so a full re-walk must be asked for."""
+        from pka.api.routers import ingestion as ing
+        from pka.ingestion import sync_progress as sp
+
+        seen: dict = {}
+
+        class _Handlers:
+            @staticmethod
+            def sync_metadata(progress_key=None, **kwargs):
+                seen.update(kwargs)
+                return {"metadata": {}}
+
+        sp.reset("reddit")
+        monkeypatch.setattr(ing, "require_handlers", lambda src: _Handlers)
+        r = client.post("/ingestion/sync/reddit/metadata?backfill=1")
+        _join_worker(ing, "reddit")
+
+        assert r.status_code == 202
+        assert r.json()["backfill"] is True
+        assert seen == {"backfill": True}
+
+    def test_metadata_sync_without_backfill_passes_nothing(self, client, monkeypatch):
+        from pka.api.routers import ingestion as ing
+        from pka.ingestion import sync_progress as sp
+
+        seen: dict = {"called": False}
+
+        class _Handlers:
+            @staticmethod
+            def sync_metadata(progress_key=None, **kwargs):
+                seen["called"] = True
+                seen["kwargs"] = kwargs
+                return {"metadata": {}}
+
+        sp.reset("reddit")
+        monkeypatch.setattr(ing, "require_handlers", lambda src: _Handlers)
+        client.post("/ingestion/sync/reddit/metadata")
+        _join_worker(ing, "reddit")
+
+        assert seen["called"] is True
+        assert seen["kwargs"] == {}
+
+    def test_backfill_rejected_for_sources_without_one(self, client):
+        """Every other connector reads its whole source each run; 400, not a no-op."""
+        r = client.post("/ingestion/sync/zotero/metadata?backfill=1")
+        assert r.status_code == 400
+        assert "backfill" in r.json()["detail"]
 
     def test_sync_metadata_routes_zotero(self, monkeypatch):
         from pka.api.routers import ingestion as ing
@@ -1300,7 +1356,7 @@ class TestIngestion:
 
         started: list[th.Event] = []
 
-        def fake_job(src: str) -> None:
+        def fake_job(src: str, backfill: bool = False) -> None:
             ev = th.Event()
             started.append(ev)
             sp.begin_job(src, "metadata")

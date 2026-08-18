@@ -36,6 +36,14 @@
     incremental sync that ends on page one never sleeps.
 - **Reddit is no longer hidden behind the experimental-sources toggle** now that
   it ingests end to end; YouTube still is.
+- **Backfill is reachable from the UI**, not just `alexandria reddit
+  --backfill`: `POST /ingestion/sync/{source}/metadata?backfill=1` threads the
+  flag to the handler, and a "Backfill" button sits beside "Sync metadata" for
+  sources that have one. Asking for a backfill on a source without an
+  incremental sync is a 400 rather than a silent no-op — every other connector
+  reads its whole local database each run, so the request can only be a caller
+  bug. `BACKFILL_SOURCES` exists on both sides (router and `sources.ts`) and the
+  frontend copy names the backend one.
 
 - **Reddit auth was broken by our own client construction.** `_build_client`
   set `reddit.read_only = True`, which in PRAW is not a "never write" flag: the

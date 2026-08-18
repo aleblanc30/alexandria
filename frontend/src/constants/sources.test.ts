@@ -4,6 +4,7 @@ import {
   ingestJobLabel,
   isIngestionSource,
   sourceHasFetchPhase,
+  sourceHasBackfill,
   sourceIsExperimental,
   sourceIsPathBased,
   sourceSkipsEmbedPhase,
@@ -45,6 +46,12 @@ describe('sources', () => {
   it('visibleSources hides experimental sources unless opted in', () => {
     expect(visibleSources(false)).toEqual(['firefox', 'zotero', 'calibre', 'image', 'reddit'])
     expect(visibleSources(true)).toEqual([...INGESTION_SOURCES])
+  })
+
+  it('reddit alone offers a backfill, since only its sync is incremental', () => {
+    expect(sourceHasBackfill('reddit')).toBe(true)
+    expect(sourceHasBackfill('firefox')).toBe(false)
+    expect(sourceHasBackfill('zotero')).toBe(false)
   })
 
   it('ingestJobLabel reflects fetch phase', () => {

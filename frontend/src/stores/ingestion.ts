@@ -198,6 +198,11 @@ export const useIngestionStore = defineStore('ingestion', () => {
     await runJob(source, 'metadata', api.syncMetadata)
   }
 
+  /** Same job as syncMetadata, but re-walks the source's whole history. */
+  async function backfillMetadata(source: string) {
+    await runJob(source, 'metadata', api.backfillMetadata)
+  }
+
   async function ingest(source: string) {
     await runJob(source, 'ingest', api.syncIngest)
   }
@@ -224,7 +229,7 @@ export const useIngestionStore = defineStore('ingestion', () => {
 
   return {
     status, unfetchable, progress, pendingJob,
-    load, syncMetadata, ingest, cancel, purge, stopPolling,
+    load, syncMetadata, backfillMetadata, ingest, cancel, purge, stopPolling,
     isMetadataRunning, isIngestRunning, isAnyJobRunning,
     applyJobFlags,
   }

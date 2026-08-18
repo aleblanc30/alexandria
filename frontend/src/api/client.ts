@@ -307,6 +307,14 @@ export const syncSource         = (source: string, force = false) =>
     { method: 'POST' },
     10000,
   )
+/** Re-walk a source's whole remote history rather than only what is new.
+ *  Only sources in the backend's BACKFILL_SOURCES accept this (reddit today);
+ *  anything else answers 400. */
+export const backfillMetadata   = (source: string, force = false) =>
+  req<{ status: string; backfill: boolean }>(
+    `/ingestion/sync/${source}/metadata?backfill=1${force ? '&force=1' : ''}`,
+    { method: 'POST' },
+  )
 export const syncMetadata       = (source: string, force = false) =>
   req<{ status: string; source: string; job: string }>(
     `/ingestion/sync/${source}/metadata${force ? '?force=1' : ''}`,

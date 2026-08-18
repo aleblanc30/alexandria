@@ -232,10 +232,24 @@ def _ingest_pre_begin(src: str) -> None:
         sp.begin_ingest(src, source_corpus_size(src))
 
 
-def _sync_metadata(src: str) -> None:
+# Sources whose metadata sync understands ``backfill``. Reddit's feed is walked
+# incrementally by default (it stops at the first already-saved item), so a full
+# re-walk has to be asked for; every other connector reads a local database or
+# folder in full every time and has no such distinction.
+BACKFILL_SOURCES = frozenset({str(Source.REDDIT)})
+
+
+def _backfill_kwargs(src: str, backfill: bool) -> dict:
+    """Pass ``backfill`` only where a handler accepts it."""
+    return {"backfill": True} if (backfill and src in BACKFILL_SOURCES) else {}
+
+
+def _sync_metadata(src: str, backfill: bool = False) -> None:
     _run_ingestion_job(
         src, begin_job="metadata", error_label="Metadata sync",
-        run=lambda: require_handlers(src).sync_metadata(progress_key=src),
+        run=lambda: require_handlers(src).sync_metadata(
+            progress_key=src, **_backfill_kwargs(src, backfill),
+        ),
     )
 
 
@@ -247,18 +261,20 @@ def _sync_ingest(src: str) -> None:
     )
 
 
-def _sync(src: str) -> None:
+def _sync(src: str, backfill: bool = False) -> None:
     """Background entry point for ``POST /ingestion/sync/{source}`` (full pipeline)."""
     _run_ingestion_job(
         src, begin_job="metadata", error_label="Ingestion sync",
-        run=lambda: require_handlers(src).sync_full(progress_key=src),
+        run=lambda: require_handlers(src).sync_full(
+            progress_key=src, **_backfill_kwargs(src, backfill),
+        ),
     )
 
 
 _JOB_TARGETS = {
-    "metadata": lambda src: _sync_metadata(src),
-    "ingest": lambda src: _sync_ingest(src),
-    "full": lambda src: _sync(src),
+    "metadata": lambda src, backfill=False: _sync_metadata(src, backfill),
+    "ingest": lambda src, backfill=False: _sync_ingest(src),
+    "full": lambda src, backfill=False: _sync(src, backfill),
 }
 
 
@@ -281,7 +297,9 @@ def _stop_running_job(src: str) -> None:
             )
 
 
-def _queue_job(src: str, job: str, force: bool) -> dict:
+def _queue_job(src: str, job: str, force: bool, backfill: bool = False) -> dict:
+    if backfill and src not in BACKFILL_SOURCES:
+        raise HTTPException(400, f"{src} has no backfill mode")
     if sp.is_running(src):
         if not force:
             raise HTTPException(409, f"Sync already in progress for {src}")
@@ -290,28 +308,28 @@ def _queue_job(src: str, job: str, force: bool) -> dict:
         sp.reset(src)
     thread = threading.Thread(
         target=_JOB_TARGETS[job],
-        args=(src,),
+        args=(src, backfill),
         daemon=True,
         name=f"alexandria-sync-{src}-{job}",
     )
     with _workers_lock:
         _workers[src] = thread
     thread.start()
-    return {"status": "queued", "source": src, "job": job}
+    return {"status": "queued", "source": src, "job": job, "backfill": backfill}
 
 
 # Plain ``def`` endpoints: _queue_job may block while joining a cancelled
 # worker, so FastAPI must run these in its threadpool, not on the event loop.
 @router.post("/sync/{source}", status_code=202)
-def sync_source(source: str, force: bool = False):
+def sync_source(source: str, force: bool = False, backfill: bool = False):
     require_source(source)
-    return _queue_job(source, "full", force)
+    return _queue_job(source, "full", force, backfill)
 
 
 @router.post("/sync/{source}/metadata", status_code=202)
-def sync_metadata(source: str, force: bool = False):
+def sync_metadata(source: str, force: bool = False, backfill: bool = False):
     require_source(source)
-    return _queue_job(source, "metadata", force)
+    return _queue_job(source, "metadata", force, backfill)
 
 
 @router.post("/sync/{source}/ingest", status_code=202)
