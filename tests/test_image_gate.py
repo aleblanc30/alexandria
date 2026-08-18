@@ -1,5 +1,6 @@
 """Tests for the two-step image admission gate (text coverage + VLM category)."""
 import time
+import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -98,6 +99,73 @@ class TestTextCoverage:
         # Array handed to EasyOCR is transposed to portrait (H=800, W=400).
         assert captured["shape"][:2] == (800, 400)
         assert cov == pytest.approx(40_000 / (800 * 400), rel=1e-3)
+
+
+# ── EasyOCR device / canvas settings ────────────────────────────────────
+
+class TestEasyOcrDeviceSettings:
+    """Both knobs must actually reach EasyOCR.
+
+    Running the gate on a GPU needs the pair: ``easyocr_gpu`` to use the device
+    at all, and ``easyocr_canvas_size`` to stop a camera-resolution photo's
+    activations from evicting a resident gate VLM on a small card.
+    """
+
+    @pytest.fixture()
+    def captured(self, monkeypatch):
+        import sys
+
+        seen: dict = {}
+
+        class _Reader:
+            def __init__(self, langs, gpu=False):
+                seen["gpu"] = gpu
+
+            def readtext(self, image, **kw):
+                seen["kwargs"] = kw
+                return []
+
+        mod = types.ModuleType("easyocr")
+        mod.Reader = _Reader
+        monkeypatch.setitem(sys.modules, "easyocr", mod)
+        return seen
+
+    def test_gpu_flag_is_forwarded(self, sample_png, monkeypatch, captured):
+        from pka.providers import easy_ocr
+
+        monkeypatch.setattr(easy_ocr.cfg, "easyocr_gpu", True)
+        easy_ocr.EasyOcrProvider().text_coverage(sample_png)
+        assert captured["gpu"] is True
+
+    def test_cpu_is_the_default(self, sample_png, monkeypatch, captured):
+        from pka.providers import easy_ocr
+
+        monkeypatch.setattr(easy_ocr.cfg, "easyocr_gpu", False)
+        easy_ocr.EasyOcrProvider().text_coverage(sample_png)
+        assert captured["gpu"] is False
+
+    def test_canvas_size_omitted_when_zero(self, sample_png, monkeypatch, captured):
+        """0 must leave EasyOCR's own default in place, not pass 0 through —
+        otherwise existing libraries' measured coverage would shift."""
+        from pka.providers import easy_ocr
+
+        monkeypatch.setattr(easy_ocr.cfg, "easyocr_canvas_size", 0)
+        easy_ocr.EasyOcrProvider().text_coverage(sample_png)
+        assert "canvas_size" not in captured["kwargs"]
+
+    def test_canvas_size_forwarded_when_set(self, sample_png, monkeypatch, captured):
+        from pka.providers import easy_ocr
+
+        monkeypatch.setattr(easy_ocr.cfg, "easyocr_canvas_size", 1600)
+        easy_ocr.EasyOcrProvider().text_coverage(sample_png)
+        assert captured["kwargs"]["canvas_size"] == 1600
+
+    def test_canvas_size_reaches_transcription_too(self, sample_png, monkeypatch, captured):
+        from pka.providers import easy_ocr
+
+        monkeypatch.setattr(easy_ocr.cfg, "easyocr_canvas_size", 1600)
+        easy_ocr.EasyOcrProvider().ocr(sample_png)
+        assert captured["kwargs"]["canvas_size"] == 1600
 
 
 # ── Gate decision logic ───────────────────────────────────────────────────────

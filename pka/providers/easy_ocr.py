@@ -12,6 +12,8 @@ import importlib.util
 import logging
 from pathlib import Path
 
+from pka.config import settings as cfg
+
 log = logging.getLogger(__name__)
 
 
@@ -118,15 +120,29 @@ class EasyOcrProvider:
         reader = self._readers.get(key)
         if reader is None:
             easyocr = _import_easyocr()
-            reader = easyocr.Reader(langs, gpu=False)
+            reader = easyocr.Reader(langs, gpu=cfg.easyocr_gpu)
             self._readers[key] = reader
         return reader
+
+    def _readtext_kwargs(self) -> dict:
+        """Extra ``readtext`` kwargs shared by both passes.
+
+        ``canvas_size`` caps the longest edge before detection. EasyOCR's own
+        default (2560) makes activations dominate VRAM — a 4032x2268 photo peaks
+        around 2.6 GB, which on a 4 GB card is enough to push a resident gate VLM
+        back onto the CPU. Omitted entirely when the setting is 0 so the upstream
+        default (and thus measured coverage) is untouched by default.
+        """
+        size = cfg.easyocr_canvas_size
+        return {"canvas_size": size} if size > 0 else {}
 
     def ocr(self, path: Path, lang: str = "eng") -> str:
         try:
             reader = self._reader(_to_easyocr_langs(lang))
             # detail=0 → plain strings; paragraph=True groups words into lines.
-            lines = reader.readtext(_oriented_rgb_array(path), detail=0, paragraph=True)
+            lines = reader.readtext(
+                _oriented_rgb_array(path), detail=0, paragraph=True, **self._readtext_kwargs()
+            )
             return "\n".join(s.strip() for s in lines if s and s.strip()).strip()
         except EasyOcrUnavailable:
             # Missing install → surface it; do not degrade to "no text".
@@ -156,7 +172,7 @@ class EasyOcrProvider:
                 return 0.0
 
             reader = self._reader(_to_easyocr_langs(lang))
-            results = reader.readtext(arr, detail=1, paragraph=False)
+            results = reader.readtext(arr, detail=1, paragraph=False, **self._readtext_kwargs())
 
             covered = 0.0
             for box, *_ in results:

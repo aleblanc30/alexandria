@@ -223,6 +223,21 @@ class Settings(BaseSettings):
     chat_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh
     vision_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh
     ocr_provider: str = "vlm"  # vlm (vision model transcribes) | easyocr
+
+    # EasyOCR device. Off by default because the pinned torch is a CPU build
+    # (pyproject: "torch>=2.2  # CPU build is fine"), so a fresh checkout must
+    # not ask for a device it has no kernels for. Turning this on requires a
+    # CUDA torch whose arch list actually covers the card — verify with
+    # `python -c "import torch; print(torch.cuda.get_arch_list())"`.
+    easyocr_gpu: bool = False
+
+    # Longest edge EasyOCR downscales to before detection; 0 keeps EasyOCR's own
+    # default (2560). Only matters for images larger than the cap. At 2560 a
+    # camera-resolution photo costs ~2.6 GB of VRAM, enough to evict a resident
+    # gate VLM from a 4 GB card, so set ~1600 when running `easyocr_gpu` on a
+    # small GPU. Left at 0 by default so enabling the GPU never silently changes
+    # measured coverage (and therefore gate decisions) for existing libraries.
+    easyocr_canvas_size: int = 0
     image_embed_provider: str = "clip"  # clip
 
     # Master switch for the OCR pass. Set ALEXANDRIA_OCR_ENABLED=0 to skip text
@@ -322,6 +337,12 @@ class Settings(BaseSettings):
     reddit_username: str = ""
     reddit_password: str = ""
     reddit_refresh_token: str = ""   # alternative to username/password auth
+    # Private token-bearing feed from https://www.reddit.com/prefs/feeds/ (RSS or
+    # JSON form; both accepted). Set, it is preferred over the OAuth API because
+    # it needs no registered app. The URL *is* the credential — anyone holding it
+    # can read the saved list — so it belongs in .secrets as
+    # SECRET_ALEXANDRIA_REDDIT_FEED_URL, never in .env, and is redacted in logs.
+    reddit_feed_url: str = ""
     reddit_user_agent: str = "Alexandria/0.2 (local research library; saved-post indexer)"
     reddit_saved_limit: int | None = None   # None = fetch all saved items
 
