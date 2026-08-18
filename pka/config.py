@@ -343,16 +343,23 @@ class Settings(BaseSettings):
     # can read the saved list — so it belongs in .secrets as
     # SECRET_ALEXANDRIA_REDDIT_FEED_URL, never in .env, and is redacted in logs.
     reddit_feed_url: str = ""
-    # Reddit's API rules ask for "<platform>:<app id>:<version>" and serve
-    # "403 Blocked" to clients they do not recognise. The feed loader appends
-    # "(by /u/<user>)" from the feed URL when this carries no attribution.
-    reddit_user_agent: str = "python:alexandria:0.2 (local research library; saved-post indexer)"
+    # Plain and descriptive on purpose. The "<platform>:<app id>:<version>"
+    # form Reddit's API rules ask for applies to OAuth API clients; the private
+    # feed is not that, and announcing "python:" there advertises a script to a
+    # WAF without buying anything. The feed loader still appends "(by /u/<user>)"
+    # from the feed URL when this carries no attribution.
+    reddit_user_agent: str = "Alexandria/0.2 (local research library; saved-post indexer)"
     reddit_saved_limit: int | None = None   # None = fetch all saved items
     # Pause between feed pages (seconds), plus up to this much random jitter.
     # Only a backfill makes many requests in a row; an incremental sync usually
     # stops after one page and never sleeps.
     reddit_feed_poll_interval_seconds: float = 1.0
     reddit_feed_poll_jitter_seconds: float = 0.5
+    # A failed feed response is always written to data_dir/diagnostics (a block
+    # page explains itself in HTML that does not fit in a log line). Set this to
+    # open that file in a browser tab as well — handy while diagnosing, noisy
+    # during a normal run, hence off.
+    reddit_feed_open_failed_page: bool = False
 
     # ── Images ──────────────────────────────────────────────────────────────
     ocr_lang: str = "eng"  # OCR language(s), e.g. "eng+fra"; mapped to EasyOCR codes
@@ -411,6 +418,7 @@ class Settings(BaseSettings):
         "cluster_async_labelling",
         "ocr_enabled",
         "clip_enabled",
+        "reddit_feed_open_failed_page",
         "image_gate_enabled",
         "bookmark_summary_enabled",
         "book_summary_enabled",

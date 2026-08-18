@@ -500,8 +500,10 @@ class TestFeedBlockMitigations:
         message = str(pytest.raises(
             RedditConnectorError, load_saved_from_feed, url=FEED_URL, limit=None,
         ).value)
-        assert len(message) < 700
-        assert message.endswith("…")
+        # The excerpt is cut short; the whole body goes to the saved file instead.
+        assert "…" in message
+        assert "x" * 500 not in message
+        assert "Full response saved to" in message
 
     def test_httpx_url_logging_is_suppressed_during_the_request(self, feed_http):
         from pka.connectors.reddit import load_saved_from_feed
@@ -870,3 +872,80 @@ class TestIncrementalVsBackfill:
 
         assert [i.source_id for i in items] == ["t3_new"]
         assert len(feed_http.calls) == 1
+
+class TestFailedResponseDump:
+    """A block page explains itself in HTML that will not fit in a log line."""
+
+    def test_body_is_written_to_diagnostics_and_named_in_the_error(self, feed_http):
+        from pka.connectors.reddit import RedditConnectorError, load_saved_from_rss
+        feed_http.pages.append(_FakeResponse(
+            None, status_code=403, text_body="<body>Blocked, and here is why</body>",
+        ))
+
+        with pytest.raises(RedditConnectorError) as excinfo:
+            load_saved_from_rss(url=FEED_URL, limit=None)
+
+        saved = sorted((cfg.data_dir / "diagnostics").glob("reddit-feed-403-*.html"))
+        assert len(saved) == 1
+        assert saved[0].read_text(encoding="utf-8") == "<body>Blocked, and here is why</body>"
+        assert str(saved[0]) in str(excinfo.value)
+
+    def test_token_never_reaches_the_file_or_its_name(self, feed_http):
+        from pka.connectors.reddit import RedditConnectorError, load_saved_from_rss
+        feed_http.pages.append(_FakeResponse(None, status_code=403, text_body="<body>x</body>"))
+
+        with pytest.raises(RedditConnectorError):
+            load_saved_from_rss(url=FEED_URL, limit=None)
+
+        for path in (cfg.data_dir / "diagnostics").iterdir():
+            assert "abc123token" not in path.name
+            assert "abc123token" not in path.read_text(encoding="utf-8")
+
+    def test_plain_text_body_keeps_a_txt_suffix(self, feed_http):
+        from pka.connectors.reddit import RedditConnectorError, load_saved_from_rss
+        feed_http.pages.append(_FakeResponse(None, status_code=403, text_body="Blocked"))
+
+        with pytest.raises(RedditConnectorError):
+            load_saved_from_rss(url=FEED_URL, limit=None)
+
+        assert list((cfg.data_dir / "diagnostics").glob("*.txt"))
+
+    def test_empty_body_writes_nothing(self, feed_http):
+        from pka.connectors.reddit import RedditConnectorError, load_saved_from_rss
+        feed_http.pages.append(_FakeResponse(None, status_code=429, text_body=""))
+
+        with pytest.raises(RedditConnectorError) as excinfo:
+            load_saved_from_rss(url=FEED_URL, limit=None)
+
+        assert not (cfg.data_dir / "diagnostics").exists()
+        assert "saved to" not in str(excinfo.value)
+
+    def test_browser_opens_only_when_asked(self, feed_http, monkeypatch):
+        from pka.connectors.reddit import RedditConnectorError, load_saved_from_rss
+        opened: list[str] = []
+        monkeypatch.setattr("webbrowser.open", opened.append)
+        feed_http.pages.append(_FakeResponse(None, status_code=403, text_body="<body>x</body>"))
+
+        with pytest.raises(RedditConnectorError):
+            load_saved_from_rss(url=FEED_URL, limit=None)
+        assert opened == []
+
+        monkeypatch.setattr(cfg, "reddit_feed_open_failed_page", True)
+        feed_http.pages.append(_FakeResponse(None, status_code=403, text_body="<body>x</body>"))
+        with pytest.raises(RedditConnectorError):
+            load_saved_from_rss(url=FEED_URL, limit=None)
+
+        assert len(opened) == 1
+        assert opened[0].startswith("file:")
+
+    def test_a_broken_dump_does_not_replace_the_real_error(self, feed_http, monkeypatch):
+        """The diagnostic must never eclipse the failure it exists to explain."""
+        from pka.connectors.reddit import RedditConnectorError, load_saved_from_rss
+        monkeypatch.setattr(
+            "pathlib.Path.write_text",
+            lambda *a, **kw: (_ for _ in ()).throw(OSError("disk full")),
+        )
+        feed_http.pages.append(_FakeResponse(None, status_code=403, text_body="<body>x</body>"))
+
+        with pytest.raises(RedditConnectorError, match="403"):
+            load_saved_from_rss(url=FEED_URL, limit=None)

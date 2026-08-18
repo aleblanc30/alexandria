@@ -29,11 +29,13 @@ from __future__ import annotations
 import logging
 import random
 import time
+import webbrowser
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from html.parser import HTMLParser
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
@@ -319,6 +321,44 @@ def _quiet_http_logs():
         httpx_log.setLevel(previous)
 
 
+def _save_failed_body(response, base: str) -> Path | None:
+    """Write a failed feed response to ``data_dir/diagnostics`` and return its path.
+
+    A block page explains itself in the body, and the excerpt in the error
+    message is truncated to keep logs readable — so the whole thing goes to a
+    file instead. Named by status and timestamp rather than overwritten, because
+    the interesting question is usually what changed between two attempts.
+
+    The URL is deliberately *not* written into the file or its name: it carries
+    the feed token. Never raises — a diagnostic that breaks the error path it
+    exists to explain would be worse than no diagnostic.
+    """
+    try:
+        body = response.text or ""
+    except Exception:  # pragma: no cover - undecodable body
+        return None
+    if not body.strip():
+        return None
+
+    try:
+        directory = cfg.data_dir / "diagnostics"
+        directory.mkdir(parents=True, exist_ok=True)
+        stripped = body.lstrip()
+        suffix = ".html" if stripped[:1] == "<" else ".txt"
+        path = directory / f"reddit-feed-{response.status_code}-{int(time.time())}{suffix}"
+        path.write_text(body, encoding="utf-8")
+    except Exception as exc:
+        log.warning("Could not save the failed Reddit feed response: %s", exc)
+        return None
+
+    if cfg.reddit_feed_open_failed_page:
+        try:
+            webbrowser.open(path.as_uri())
+        except Exception as exc:  # pragma: no cover - no browser available
+            log.warning("Could not open %s: %s", path, exc)
+    return path
+
+
 def _body_excerpt(response, limit: int = 200) -> str:
     """First bytes of a failed response — the only way to tell the cases apart.
 
@@ -423,9 +463,12 @@ def _fetch_feed_response(base: str, params: dict[str, str]):
         ) from exc
 
     if response.status_code != 200:
+        saved = _save_failed_body(response, base)
+        where = f" Full response saved to {saved}." if saved else ""
         raise RedditConnectorError(
             f"Reddit feed returned HTTP {response.status_code} for {_redact(base)}. "
             f"{_diagnose_status(response)} Server said: {_body_excerpt(response)}"
+            f"{where}"
         )
     return response
 
