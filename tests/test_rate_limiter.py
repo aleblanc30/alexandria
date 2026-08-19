@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from pka.ingestion.fetcher import _DomainRateLimiter
+from pka.ingestion.fetch_base import _DomainRateLimiter
 
 
 @pytest.mark.asyncio

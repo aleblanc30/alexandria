@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from pka.ingestion.fetcher import (
+from pka.ingestion.fetch_base import (
     _HTML_TYPES,
     FetchResult,
     _extract_text,

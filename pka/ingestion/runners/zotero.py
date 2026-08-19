@@ -3,9 +3,13 @@ from __future__ import annotations
 
 import logging
 
-from pka.card_summary import zotero_card_summary
 from pka.classification import classify_document, sync_classification_tags
-from pka.connectors.zotero import ZoteroItem, zotero_document_url_or_path, zotero_embed_text
+from pka.connectors.zotero import (
+    ZoteroItem,
+    zotero_card_summary,
+    zotero_document_url_or_path,
+    zotero_embed_text,
+)
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
     document_has_chunks,

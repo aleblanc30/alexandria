@@ -4,6 +4,7 @@ import pytest
 from pka.connectors.zotero import (
     ZoteroItem,
     load_items,
+    zotero_card_summary,
     zotero_document_url_or_path,
     zotero_embed_text,
 )
@@ -157,3 +158,30 @@ class TestDevZoteroCopy:
 
         load_items(zotero_db=zotero_db, refresh=True)
         assert copy_path.stat().st_mtime >= mtime
+
+
+class TestZoteroCardSummary:
+    def test_abstract(self):
+        item = ZoteroItem(
+            source_id="1", title="T", authors=[], abstract="Paper abstract.",
+            year=None, doi=None, url=None, item_type="journalArticle",
+            collections=[], tags=[], pdf_path=None, date_added=None,
+        )
+        assert zotero_card_summary(item) == "Paper abstract."
+
+    def test_annotation_uses_highlight(self):
+        item = ZoteroItem(
+            source_id="1", title="", authors=[], abstract=None,
+            year=None, doi=None, url=None, item_type="annotation",
+            collections=[], tags=[], pdf_path=None, date_added=None,
+            highlight_text="Highlighted passage.",
+        )
+        assert zotero_card_summary(item) == "Highlighted passage."
+
+    def test_missing_text_returns_none(self):
+        item = ZoteroItem(
+            source_id="1", title="T", authors=[], abstract=None,
+            year=None, doi=None, url=None, item_type="journalArticle",
+            collections=[], tags=[], pdf_path=None, date_added=None,
+        )
+        assert zotero_card_summary(item) is None

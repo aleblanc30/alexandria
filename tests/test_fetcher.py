@@ -27,7 +27,7 @@ class TestExtractTextFromPdfBytes:
     def test_extractor_reopens_temp_file_by_path(self, monkeypatch):
         """The temp PDF must be closed before extract_pdf reopens it by name
         (Windows locks files held open by NamedTemporaryFile)."""
-        from pka.ingestion import fetcher
+        from pka.ingestion import fetch_base
 
         seen: dict = {}
 
@@ -36,13 +36,13 @@ class TestExtractTextFromPdfBytes:
             assert Path(path).read_bytes().startswith(b"%PDF")
             return [{"title": "", "text": "extracted text"}]
 
-        monkeypatch.setattr(fetcher, "extract_pdf", fake_extract)
-        out = fetcher._extract_text_from_pdf_bytes(b"%PDF-1.4 fake body")
+        monkeypatch.setattr(fetch_base, "extract_pdf", fake_extract)
+        out = fetch_base._extract_text_from_pdf_bytes(b"%PDF-1.4 fake body")
         assert out == "extracted text"
         assert not seen["path"].exists()
 
     def test_temp_file_removed_when_extractor_raises(self, monkeypatch):
-        from pka.ingestion import fetcher
+        from pka.ingestion import fetch_base
 
         seen: dict = {}
 
@@ -50,9 +50,9 @@ class TestExtractTextFromPdfBytes:
             seen["path"] = Path(path)
             raise RuntimeError("boom")
 
-        monkeypatch.setattr(fetcher, "extract_pdf", fake_extract)
+        monkeypatch.setattr(fetch_base, "extract_pdf", fake_extract)
         with pytest.raises(RuntimeError):
-            fetcher._extract_text_from_pdf_bytes(b"%PDF-1.4 fake body")
+            fetch_base._extract_text_from_pdf_bytes(b"%PDF-1.4 fake body")
         assert not seen["path"].exists()
 
 
@@ -175,7 +175,7 @@ class TestFetchOne:
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.get.return_value = _pdf_response()
         monkeypatch.setattr(
-            "pka.ingestion.fetcher._extract_text_from_pdf_bytes",
+            "pka.ingestion.fetch_base._extract_text_from_pdf_bytes",
             lambda data, **kw: "Extracted PDF text with enough content to embed.",
         )
         result = await _fetch_one(mock_client, doc_id=1, url="https://arxiv.org/paper.pdf")
@@ -188,7 +188,7 @@ class TestFetchOne:
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.get.return_value = _pdf_response()
         monkeypatch.setattr(
-            "pka.ingestion.fetcher._extract_text_from_pdf_bytes",
+            "pka.ingestion.fetch_base._extract_text_from_pdf_bytes",
             lambda data, **kw: None,
         )
         result = await _fetch_one(mock_client, doc_id=1, url="https://arxiv.org/paper.pdf")
@@ -200,7 +200,7 @@ class TestFetchOne:
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.get.return_value = _pdf_response()
         monkeypatch.setattr(
-            "pka.ingestion.fetcher._extract_text_from_pdf_bytes",
+            "pka.ingestion.fetch_base._extract_text_from_pdf_bytes",
             lambda data, **kw: "PDF body from content-type route.",
         )
         result = await _fetch_one(mock_client, doc_id=1, url="https://example.com/download")

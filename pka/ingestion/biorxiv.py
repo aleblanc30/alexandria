@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import httpx
 
 from pka.card_summary import preprint_card_summary
-from pka.ingestion.fetcher import (
+from pka.ingestion.fetch_base import (
     FetchResult,
     _fetch_pdf_result,
     _http_timeout,

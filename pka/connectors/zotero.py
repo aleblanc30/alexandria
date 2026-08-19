@@ -65,6 +65,15 @@ def zotero_embed_text(item: ZoteroItem) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
+def zotero_card_summary(item: ZoteroItem) -> str | None:
+    """Card excerpt for a Zotero item: highlight for annotations, else abstract."""
+    if item.item_type == "annotation":
+        raw = (item.highlight_text or "").strip()
+    else:
+        raw = (item.abstract or "").strip()
+    return raw or None
+
+
 # Fields we care about from itemData. Tuple — not set — to guarantee
 # parameter ordering when bound to the SQL ``IN`` clause.
 _FIELD_NAMES: tuple[str, ...] = ("title", "abstractNote", "DOI", "date", "url")

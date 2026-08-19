@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import httpx
 
 from pka.config import settings as cfg
-from pka.ingestion.fetcher import FetchResult, _http_timeout, _limiter
+from pka.ingestion.fetch_base import FetchResult, _http_timeout, _limiter
 
 log = logging.getLogger(__name__)
 

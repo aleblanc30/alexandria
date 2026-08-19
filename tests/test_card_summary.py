@@ -1,11 +1,5 @@
 """Tests for card summary text helpers."""
-from pka.card_summary import (
-    body_excerpt,
-    preprint_card_summary,
-    truncate_summary,
-    zotero_card_summary,
-)
-from pka.connectors.zotero import ZoteroItem
+from pka.card_summary import body_excerpt, preprint_card_summary, truncate_summary
 
 
 class TestTruncateSummary:
@@ -43,30 +37,3 @@ class TestPreprintCardSummary:
     def test_empty_returns_none(self):
         assert preprint_card_summary(None) is None
         assert preprint_card_summary("   ") is None
-
-
-class TestZoteroCardSummary:
-    def test_abstract(self):
-        item = ZoteroItem(
-            source_id="1", title="T", authors=[], abstract="Paper abstract.",
-            year=None, doi=None, url=None, item_type="journalArticle",
-            collections=[], tags=[], pdf_path=None, date_added=None,
-        )
-        assert zotero_card_summary(item) == "Paper abstract."
-
-    def test_annotation_uses_highlight(self):
-        item = ZoteroItem(
-            source_id="1", title="", authors=[], abstract=None,
-            year=None, doi=None, url=None, item_type="annotation",
-            collections=[], tags=[], pdf_path=None, date_added=None,
-            highlight_text="Highlighted passage.",
-        )
-        assert zotero_card_summary(item) == "Highlighted passage."
-
-    def test_missing_text_returns_none(self):
-        item = ZoteroItem(
-            source_id="1", title="T", authors=[], abstract=None,
-            year=None, doi=None, url=None, item_type="journalArticle",
-            collections=[], tags=[], pdf_path=None, date_added=None,
-        )
-        assert zotero_card_summary(item) is None
