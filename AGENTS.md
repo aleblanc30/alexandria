@@ -105,6 +105,9 @@ Adding a new source connector: follow the checklist in **`DESIGN.md` §2** (conn
 - **Local-first / privacy**: do not add cloud APIs, telemetry, or outbound data paths unless explicitly requested.
 - **Do not commit** `.env`, real database paths, or user data under `data/`.
 - **Do not create git commits or PRs** unless the user asks.
+- When asked to commit, **commit directly to `trunk`** — do not create a
+  feature branch first. This is a single-maintainer local repo; the branch
+  round-trip buys nothing and leaves stray branches behind.
 - **Do not edit** `.venv/`, `frontend/dist/`, `pka.egg-info/`, or generated caches.
 - Schema changes: update `pka/db/schema.py` and ensure `init_db.py` remains idempotent; add/adjust tests.
 
