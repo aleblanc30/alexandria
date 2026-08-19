@@ -1,4 +1,9 @@
-"""DB-derived ingestion progress baselines and status aggregates."""
+"""DB counts feeding the progress display: job-start seeds and status aggregates.
+
+The only module under ``progress/`` allowed to touch the database or the source
+connectors. It reads counts and hands them to the tracker; it never reaches into
+state itself.
+"""
 from __future__ import annotations
 
 import logging
@@ -7,8 +12,11 @@ import sqlalchemy as sa
 
 from pka.constants import ALL_SOURCES, FetchStatus, Source
 from pka.db.schema import chunks, documents, images
-from pka.ingestion import sync_progress as sp
 from pka.ingestion.pending_metadata import count_pending_metadata, source_corpus_size
+from pka.ingestion.progress.state import apply_db_counts
+from pka.ingestion.progress.tracker import hydrate, snapshot_states
+from pka.ingestion.progress.view import to_dict
+from pka.ingestion.registry import phase_spec
 from pka.ingestion.source_access import (
     calibre_available,
     images_available,
@@ -83,8 +91,8 @@ def get_phase_baselines(
 
     Phase totals use archive row counts only (Firefox idle mechanism). Remaining
     source items not yet imported are surfaced via ``pending_metadata_by_source``
-    in ``build_ingestion_status`` and the stats summary line. Active metadata
-    jobs use ``metadata_job_progress`` instead of these totals.
+    in ``build_ingestion_status`` and the stats summary line. A running job is
+    never served from these counts — its worker owns them.
     """
     fetch_outcomes: dict[str, int] | None = None
 
@@ -114,7 +122,7 @@ def get_phase_baselines(
         corpus = _display_corpus_total(src, doc_count)
 
         fetching_done = doc_count
-        if src == Source.FIREFOX:
+        if not phase_spec(src).tracks_embedding:
             counts = _fetch_status_counts(con, src)
             success = counts.get(str(FetchStatus.FETCHED), 0) + counts.get(
                 str(FetchStatus.SKIPPED), 0
@@ -130,22 +138,81 @@ def get_phase_baselines(
         )
 
 
-def apply_progress_baselines(engine, src: str) -> None:
-    """Hydrate idle state or refresh display during a running ingest job."""
+# A job that has ended still owns its bars: it worked on a corpus it pinned, and
+# archive row counts must not redraw what it left on screen.
+_JOB_ENDED = ("done", "cancelled", "paused", "error")
+
+
+def _pinned_corpus(state) -> int:
+    """Corpus size the current or last job pinned on its phases, or 0."""
+    return max((plan.total for plan in state.phases), default=0)
+
+
+def display_snapshot(engine, src: str) -> dict:
+    """Serialized progress for one source — the read path, with no side effects.
+
+    While a job runs its worker owns the counters, so the state is served as-is.
+    Otherwise the bars come from the archive, applied to the detached copy this
+    call is serializing; the shared state is left alone.
+    """
+    state = snapshot_states(src)[src]
+    if state.status == "running":
+        return to_dict(state)
+
     totals, processed, fetch_outcomes = get_phase_baselines(engine, src)
-    if sp.is_running(src):
-        sp.refresh_display_from_db(src, totals, processed, fetch_outcomes)
-    else:
-        sp.hydrate(src, totals, processed, fetch_outcomes)
+    job_corpus = _pinned_corpus(state) if state.status in _JOB_ENDED else 0
+    if job_corpus > 0:
+        totals = dict.fromkeys(totals, job_corpus)
+    apply_db_counts(state, totals, processed, fetch_outcomes)
+    return to_dict(state)
 
 
 def seed_progress_from_db(engine, src: str) -> None:
     """Replace progress display from authoritative DB counts."""
     totals, processed, fetch_outcomes = get_phase_baselines(engine, src)
-    job_corpus = sp.job_corpus_total(src)
+    job_corpus = _pinned_corpus(snapshot_states(src)[src])
     if job_corpus > 0:
-        totals = {name: job_corpus for name in totals}
-    sp.hydrate(src, totals, processed, fetch_outcomes)
+        totals = dict.fromkeys(totals, job_corpus)
+    hydrate(src, totals, processed, fetch_outcomes)
+
+
+def source_counts(engine, src: str) -> dict:
+    """The per-source slice of ``/ingestion/status`` a source panel actually reads.
+
+    Streamed alongside progress so a running sync needs no second endpoint. The
+    unfiltered ``/ingestion/status`` still serves the sidebar and the index page.
+    """
+    with engine.connect() as con:
+        if src == Source.IMAGE:
+            registered = con.execute(
+                sa.select(sa.func.count()).select_from(images)
+            ).scalar() or 0
+            embedded = con.execute(
+                sa.select(sa.func.count()).select_from(images).where(_image_embedded())
+            ).scalar() or 0
+            fetch_stats = {
+                "registered": registered,
+                "embedded": embedded,
+                "pending": max(0, registered - embedded),
+            }
+        else:
+            fetch_stats = _doc_source_stats(con, src)
+    return {
+        "pending_metadata": _pending_metadata_count(src),
+        "fetch": fetch_stats,
+        "unavailable": _source_unavailable().get(src),
+    }
+
+
+def _source_unavailable() -> dict[str, str | None]:
+    calibre_ok, calibre_msg = calibre_available()
+    images_ok, images_msg = images_available()
+    youtube_ok, youtube_msg = youtube_available()
+    return {
+        Source.CALIBRE: None if calibre_ok else calibre_msg,
+        Source.IMAGE: None if images_ok else images_msg,
+        Source.YOUTUBE: None if youtube_ok else youtube_msg,
+    }
 
 
 def build_ingestion_status(engine) -> dict:
@@ -190,9 +257,6 @@ def build_ingestion_status(engine) -> dict:
             sa.select(sa.func.count()).select_from(documents)
             .where(documents.c.fetch_status == str(FetchStatus.PENDING))
         ).scalar()
-    calibre_ok, calibre_msg = calibre_available()
-    images_ok, images_msg = images_available()
-    youtube_ok, youtube_msg = youtube_available()
     return {
         "total": doc_total + image_total,
         "by_source": by_source,
@@ -200,9 +264,5 @@ def build_ingestion_status(engine) -> dict:
         "fetch_by_source": fetch_by_source,
         "unfetchable": unfetchable,
         "pending": pending,
-        "source_unavailable": {
-            Source.CALIBRE: None if calibre_ok else calibre_msg,
-            Source.IMAGE: None if images_ok else images_msg,
-            Source.YOUTUBE: None if youtube_ok else youtube_msg,
-        },
+        "source_unavailable": _source_unavailable(),
     }

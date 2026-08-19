@@ -1,22 +1,28 @@
 """``/ingestion`` — status overview and per-source background sync triggers."""
+import asyncio
+import json
 import logging
 import threading
+import time
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 
 from pka.api import source_paths as spaths
 from pka.api.dependencies import get_engine
 from pka.api.schemas.ingestion import SourcePathUpdate
 from pka.constants import ALL_SOURCES, FetchStatus, Source
 from pka.db.schema import documents, fetch_log
-from pka.ingestion import sync_progress as sp
-from pka.ingestion.progress_baselines import (
-    apply_progress_baselines,
+from pka.ingestion import progress as sp
+from pka.ingestion.progress.baselines import (
     build_ingestion_status,
+    display_snapshot,
     seed_progress_from_db,
+    source_counts,
 )
-from pka.ingestion.registry import require_handlers
+from pka.ingestion.registry import phase_spec, require_handlers
 
 log = logging.getLogger(__name__)
 
@@ -41,9 +47,60 @@ async def sync_progress(source: str | None = None, engine=Depends(get_engine)):
     if source:
         require_source(source)
     targets = [source] if source else ALL_SOURCES
-    for src in targets:
-        apply_progress_baselines(engine, src)
-    return sp.snapshot(source)
+    return {src: display_snapshot(engine, src) for src in targets}
+
+
+# ── Progress stream ─────────────────────────────────────────────────────────
+# One open connection replaces the 500 ms poll loop. Events carry the per-source
+# slice of ``/ingestion/status`` too, so a running sync hits no other endpoint.
+
+_EVENT_INTERVAL_SECONDS = 0.2      # coalesce to at most 5 events/sec
+_IDLE_INTERVAL_SECONDS = 1.0
+_HEARTBEAT_SECONDS = 15.0
+# Progress is in memory; the counts alongside it cost queries, and they move far
+# more slowly than a progress bar does.
+_COUNTS_INTERVAL_SECONDS = 1.0
+# A client opens the stream before the POST that starts the job has been picked
+# up, so "not running yet" cannot mean "nothing to watch" right away.
+_START_GRACE_SECONDS = 15.0
+
+
+async def _progress_events(engine, src: str):
+    started = time.monotonic()
+    last_data: str | None = None
+    last_emit = 0.0
+    counts: dict | None = None
+    counts_at = 0.0
+    while True:
+        if counts is None or time.monotonic() - counts_at >= _COUNTS_INTERVAL_SECONDS:
+            counts = await run_in_threadpool(source_counts, engine, src)
+            counts_at = time.monotonic()
+        progress = await run_in_threadpool(display_snapshot, engine, src)
+        payload = {"progress": progress, "counts": counts}
+        running = progress["status"] == "running"
+        data = json.dumps(payload)
+        now = time.monotonic()
+        if data != last_data:
+            yield f"data: {data}\n\n"
+            last_data, last_emit = data, now
+        elif now - last_emit >= _HEARTBEAT_SECONDS:
+            # Comment frame — keeps proxies from closing an idle connection.
+            yield ": keep-alive\n\n"
+            last_emit = now
+        if not running and now - started >= _START_GRACE_SECONDS:
+            return
+        await asyncio.sleep(_EVENT_INTERVAL_SECONDS if running else _IDLE_INTERVAL_SECONDS)
+
+
+@router.get("/sync/events")
+async def sync_events(source: str, engine=Depends(get_engine)):
+    """Stream one source's progress until its job reaches a terminal state."""
+    require_source(source)
+    return StreamingResponse(
+        _progress_events(engine, source),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ── Image folders (list-valued source) ──────────────────────────────────────
@@ -226,10 +283,9 @@ def _run_ingestion_job(src: str, *, begin_job: sp.JobKind, error_label: str, run
 def _ingest_pre_begin(src: str) -> None:
     from pka.ingestion.pending_metadata import source_corpus_size
 
-    if src == Source.FIREFOX:
-        sp.clear_embed_progress(src)
-    else:
-        sp.begin_ingest(src, source_corpus_size(src))
+    if phase_spec(src).plans_own_phases:
+        return   # its ingest sets the totals once it knows the work
+    sp.begin_ingest(src, source_corpus_size(src))
 
 
 # Sources whose metadata sync understands ``backfill``. Reddit's feed is walked

@@ -41,7 +41,7 @@ class TestDevLimits:
             dev_limits.effective_ingestion_limit("nope")
 
     def test_zotero_metadata_respects_dev_limit(self, monkeypatch):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         from pka.ingestion.zotero_sync import sync_zotero_metadata
 
         monkeypatch.setattr(dev_limits.settings, "dev", True)

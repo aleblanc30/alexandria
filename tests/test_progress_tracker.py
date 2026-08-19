@@ -1,9 +1,9 @@
 """Tests for sync progress tracking.
 
 State isolation: the autouse ``isolated_settings`` fixture in conftest resets
-``sync_progress`` around every test.
+``progress`` state around every test.
 """
-from pka.ingestion import sync_progress as sp
+from pka.ingestion import progress as sp
 
 
 def test_pipeline_overall_percent():
@@ -80,7 +80,7 @@ def test_finish_with_error():
 
 
 def test_plan_pipeline_creates_new_state():
-    sp.plan_pipeline("image", [("ingesting", 7)])
+    sp.plan_pipeline("image", [("embedding", 7)])
     snap = sp.snapshot("image")["image"]
     assert snap["phases"] == list(sp.STANDARD_PHASES)
     assert snap["overall_total"] == 21
@@ -106,8 +106,8 @@ def test_fetching_total_matches_metadata_after_set_phase():
     assert snap["phase_details"][0]["total"] == snap["phase_details"][1]["total"] == 600
 
 
-def test_sync_helpers_should_stop():
-    from pka.ingestion.sync_helpers import should_stop
+def test_should_stop_tracks_pause_request():
+    from pka.ingestion.progress import should_stop
 
     assert should_stop(None) is None
     sp.begin("firefox")
@@ -152,10 +152,10 @@ def test_embedding_overflow_does_not_inflate_metadata():
     assert snap["phase_details"][2]["processed"] == 10
 
 
-def test_clear_embed_progress_fetch_advance_no_inflate():
+def test_untracked_embed_phase_stays_empty_as_fetching_advances():
+    """Firefox embeds inside its fetch pass, so its embedding bar has no work."""
     sp.begin("firefox")
     sp.set_phase("firefox", "fetching", 10)
-    sp.clear_embed_progress("firefox")
     sp.advance("firefox", phase="fetching")
     fetch = sp.snapshot("firefox")["firefox"]["phase_details"][1]
     embed = sp.snapshot("firefox")["firefox"]["phase_details"][2]
@@ -205,20 +205,22 @@ def test_fetch_breakdown_updates_on_advance():
     assert fetch["processed"] == 3
 
 
-def test_metadata_job_progress_from_archive_db():
-    from pka.db.queries import init_db, insert_document_if_new
-    from pka.ingestion.pending_metadata import metadata_job_progress
-
-    init_db()
-    insert_document_if_new("firefox", "bm0", "T", "http://z", None)
+def test_metadata_job_advances_from_ticks():
+    """The importing worker owns metadata progress — no DB read on the poll."""
     sp.begin_metadata_sync("firefox", pending=3, baseline=1)
-    insert_document_if_new("firefox", "bm1", "T", "http://a", None)
-    insert_document_if_new("firefox", "bm2", "T", "http://b", None)
-    snap = sp.snapshot("firefox")["firefox"]
-    meta = snap["phase_details"][0]
+    sp.advance("firefox")
+    sp.advance("firefox")
+    meta = sp.snapshot("firefox")["firefox"]["phase_details"][0]
     assert meta["processed"] == 3
     assert meta["total"] == 4
-    assert metadata_job_progress("firefox", 1, 3) == (3, 4)
+
+
+def test_metadata_job_total_grows_past_an_underestimated_probe():
+    sp.begin_metadata_sync("zotero", pending=2, baseline=0)
+    for _ in range(5):
+        sp.advance("zotero")
+    meta = sp.snapshot("zotero")["zotero"]["phase_details"][0]
+    assert (meta["processed"], meta["total"]) == (5, 5)
 
 
 def test_advance_does_not_inflate_phase_total():
@@ -240,7 +242,8 @@ def test_begin_ingest_pins_corpus_before_handler():
     assert snap["phase_details"][1]["processed"] == 500
 
 
-def test_refresh_display_from_db_preserves_ingest_corpus_totals():
+def test_hydrate_is_ignored_while_a_job_runs():
+    """DB counts seed the idle display; a running job owns its own numbers."""
     sp.hydrate(
         "zotero",
         {"metadata": 500, "fetching": 500, "embedding": 500},
@@ -250,19 +253,22 @@ def test_refresh_display_from_db_preserves_ingest_corpus_totals():
     sp.set_corpus_total("zotero", 500)
     sp.skip_phase("zotero", "fetching")
     sp.set_phase("zotero", "embedding", 500)
-    sp.refresh_display_from_db(
+    sp.advance("zotero")
+    sp.hydrate(
         "zotero",
         {"metadata": 1000, "fetching": 1000, "embedding": 1000},
         {"metadata": 500, "fetching": 500, "embedding": 250},
     )
     snap = sp.snapshot("zotero")["zotero"]
     assert all(p["total"] == 500 for p in snap["phase_details"])
-    assert snap["phase_details"][2]["processed"] == 250
+    # 200 already embedded when the job started, plus the one item it ticked —
+    # not the 250 the late hydrate tried to impose.
+    assert snap["phase_details"][2]["processed"] == 201
 
 
 def test_embed_finish_preserves_job_corpus_over_doc_count(tmp_path, monkeypatch):
     from pka.db.queries import get_engine, init_db, insert_document_if_new
-    from pka.ingestion.progress_baselines import seed_progress_from_db
+    from pka.ingestion.progress.baselines import seed_progress_from_db
 
     monkeypatch.setenv("ALEXANDRIA_DATA_DIR", str(tmp_path))
     init_db()
@@ -271,7 +277,7 @@ def test_embed_finish_preserves_job_corpus_over_doc_count(tmp_path, monkeypatch)
             "zotero", f"z{i}", f"Title {i}", f"http://{i}", None,
         )
     monkeypatch.setattr(
-        "pka.ingestion.progress_baselines.source_corpus_size",
+        "pka.ingestion.progress.baselines.source_corpus_size",
         lambda _src: 10,
     )
     sp.begin_job("zotero", "ingest")
@@ -287,7 +293,7 @@ def test_embed_finish_preserves_job_corpus_over_doc_count(tmp_path, monkeypatch)
 
 def test_metadata_finish_hydrate_does_not_double_totals():
     from pka.db.queries import get_engine, init_db, insert_document_if_new
-    from pka.ingestion.progress_baselines import seed_progress_from_db
+    from pka.ingestion.progress.baselines import seed_progress_from_db
 
     init_db()
     for i in range(5):
@@ -295,6 +301,8 @@ def test_metadata_finish_hydrate_does_not_double_totals():
             "zotero", f"z{i}", f"Title {i}", f"http://{i}", None,
         )
     sp.begin_metadata_sync("zotero", pending=5, baseline=0)
+    for _ in range(5):
+        sp.advance("zotero")
     snap_running = sp.snapshot("zotero")["zotero"]
     assert snap_running["phase_details"][0]["total"] == 5
     assert snap_running["phase_details"][0]["processed"] == 5
@@ -347,7 +355,7 @@ def test_hydrate_before_job_uses_db_not_stale_memory():
 
 
 def test_snapshot_concurrent_with_advance_is_safe():
-    """snapshot() serializes under the lock — no races with worker advance()."""
+    """snapshot() copies under the lock and serializes outside it — no races."""
     import threading
 
     sp.begin_job("zotero", "ingest")
@@ -375,3 +383,58 @@ def test_snapshot_concurrent_with_advance_is_safe():
         t.join(timeout=2.0)
     assert not errors
     sp.finish("zotero")
+
+
+def test_snapshot_opens_no_db_connection(monkeypatch):
+    """The serializer is pure: a poll must not queue behind the archive DB."""
+    import pka.db.queries as queries
+
+    sp.begin_metadata_sync("zotero", pending=4, baseline=1)
+    sp.advance("zotero")
+
+    def fail():  # pragma: no cover - only runs on regression
+        raise AssertionError("snapshot() opened a database connection")
+
+    monkeypatch.setattr(queries, "get_engine", fail)
+    snap = sp.snapshot("zotero")["zotero"]
+    assert snap["phase_details"][0]["processed"] == 2
+
+
+def test_snapshot_does_not_mutate_shared_state():
+    """Reads are reads: serializing must not normalize the live state."""
+    sp.begin_job("zotero", "ingest")
+    sp.set_corpus_total("zotero", 10)
+    before = sp.snapshot("zotero")["zotero"]
+    assert sp.snapshot("zotero")["zotero"] == before
+
+
+def test_metadata_progress_advances_without_a_poll():
+    """A closed browser tab must not stall a running metadata import."""
+    from pka.ingestion.loops import run_metadata_loop
+
+    sp.begin_metadata_sync("zotero", pending=3, baseline=0)
+    run_metadata_loop(
+        ["a", "b", "c"],
+        known={},
+        get_source_id=lambda item: item,
+        persist=lambda item: "processed",
+        progress_key="zotero",
+    )
+    meta = sp.snapshot("zotero")["zotero"]["phase_details"][0]
+    assert (meta["processed"], meta["total"], meta["percent"]) == (3, 3, 100)
+
+
+def test_metadata_loop_does_not_tick_for_items_already_stored():
+    from pka.ingestion.loops import run_metadata_loop
+
+    sp.begin_metadata_sync("zotero", pending=1, baseline=2)
+    run_stats = run_metadata_loop(
+        ["known1", "known2", "new"],
+        known={"known1": 1, "known2": 2},
+        get_source_id=lambda item: item,
+        persist=lambda item: "processed",
+        progress_key="zotero",
+    )
+    assert run_stats["skipped"] == 2
+    meta = sp.snapshot("zotero")["zotero"]["phase_details"][0]
+    assert (meta["processed"], meta["total"]) == (3, 3)

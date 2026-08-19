@@ -45,6 +45,7 @@ from pka.ingestion.fetch_base import (  # re-exported: shared primitives live on
     _limiter,
     _url_looks_like_pdf,
 )
+from pka.ingestion.progress import advance, should_stop
 
 log = logging.getLogger(__name__)
 
@@ -353,8 +354,6 @@ async def _run_fetch_workers(
     branch is enabled: each fetched doc is embedded inline via ``embed_fn`` and the
     outcome merged into ``embed_stats`` (matching ``fetch_and_embed_pending``).
     """
-    from pka.ingestion.sync_helpers import should_stop
-
     workers = concurrency if concurrency is not None else cfg.fetch_concurrency
     sem = asyncio.Semaphore(workers)
     results: list[FetchResult] = []
@@ -387,7 +386,6 @@ async def _run_fetch_workers(
                     _persist_fetch_result(r)
             finally:
                 if progress_key:
-                    from pka.ingestion.sync_progress import advance
                     advance(progress_key, phase=advance_phase, failed=failed)
 
             if embed_stats is not None:
@@ -429,7 +427,6 @@ async def fetch_and_embed_pending(
     Work queue includes pending URLs and fetched docs missing chunks (orphan backfill).
     """
     from pka.db.queries import source_ingest_queue
-    from pka.ingestion.sync_helpers import should_stop
 
     reset_unfetchable_for_fetch(source)
 

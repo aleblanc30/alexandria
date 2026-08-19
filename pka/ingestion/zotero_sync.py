@@ -4,7 +4,7 @@ import logging
 from pka.connectors.zotero import ensure_zotero_copy, load_item_keys, load_items
 from pka.constants import Source
 from pka.db.queries import refresh_zotero_attachment_keys, source_ids_with_chunks
-from pka.ingestion import sync_progress as sp
+from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
 from pka.ingestion.runners.zotero import ingest_zotero_embed, ingest_zotero_metadata

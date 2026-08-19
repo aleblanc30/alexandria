@@ -151,7 +151,7 @@ def test_metadata_skips_known_books(mock_chroma):
 
 
 def test_embed_stops_on_cancel(mock_chroma):
-    from pka.ingestion import sync_progress as sp
+    from pka.ingestion import progress as sp
     from pka.ingestion.runners.calibre import ingest_calibre_books
 
     sp.begin("calibre")

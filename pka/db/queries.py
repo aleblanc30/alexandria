@@ -169,6 +169,16 @@ def init_db() -> None:
             "ON overlay_tags(document_id, tag, origin)"
         ))
 
+        # Migration: index the two columns the progress/status counts filter on.
+        # create_all() skips indexes on tables that already exist, so DBs
+        # predating these declarations need them created explicitly.
+        con.execute(sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_chunks_document_id ON chunks(document_id)"
+        ))
+        con.execute(sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_documents_source ON documents(source)"
+        ))
+
 
 # ── Documents ────────────────────────────────────────────────────────────────
 

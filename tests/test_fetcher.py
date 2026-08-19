@@ -313,7 +313,7 @@ class TestFetchPending:
 
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         d1 = upsert_document("firefox", "F20", "T20", "https://a.com", None)
         upsert_document("firefox", "F21", "T21", "https://b.com", None)
@@ -339,7 +339,7 @@ class TestFetchPending:
 
     @pytest.mark.asyncio
     async def test_stops_when_cancel_requested(self, monkeypatch):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         upsert_document("firefox", "F10", "T10", "https://a.com", None)
         upsert_document("firefox", "F11", "T11", "https://b.com", None)

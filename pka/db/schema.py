@@ -29,6 +29,8 @@ documents = sa.Table(
     sa.Column("doc_embedding", sa.LargeBinary),            # mean-pooled float32 vector (384-d)
     sa.Column("generated_summary", sa.Text),               # cached LLM summary (DESIGN.md §3.2)
     sa.UniqueConstraint("source", "source_id", name="uq_source_item"),
+    # Progress/status counts filter documents by source on every poll.
+    sa.Index("ix_documents_source", "source"),
 )
 
 source_tags = sa.Table(
@@ -63,6 +65,8 @@ chunks = sa.Table(
     sa.Column("resolved_by",   sa.Text),                   # isbn|search|google_books|brave
     sa.Column("source_ref",    sa.Text),                   # ISBN or Open Library work key
     sa.Column("ref_title",     sa.Text),                   # resolved book title (shelf photos carry several)
+    # Without this, "how many documents are embedded?" full-scans chunks.
+    sa.Index("ix_chunks_document_id", "document_id"),
 )
 
 fetch_log = sa.Table(

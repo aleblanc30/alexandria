@@ -114,6 +114,16 @@ def _image_already_indexed(path: Path) -> int | None:
     return row[0] if row else None
 
 
+def indexed_image_paths() -> set[str]:
+    """Every image path already registered, in one query.
+
+    The status probe asks "is this indexed?" once per scanned image; at a few
+    thousand images that is a few thousand connections per poll.
+    """
+    with get_engine().connect() as con:
+        return {row[0] for row in con.execute(sa.select(images.c.path))}
+
+
 def _image_already_embedded(path: Path) -> bool:
     """True if this image has already been through the OCR/CLIP/embed pass.
 

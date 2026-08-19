@@ -486,10 +486,10 @@ class TestRegisterImages:
         assert count == 0
 
     def test_stops_on_cancel(self, tmp_path):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         from pka.ingestion.image_pipeline import register_images
         sp.begin("image")
-        sp.set_phase("image", "ingesting", 5)
+        sp.set_phase("image", "embedding", 5)
         sp.request_cancel("image")
         imgs = [self._make_image_file(tmp_path / f"c{i}.jpg") for i in range(3)]
         stats = register_images(imgs, progress_key="image")
@@ -497,7 +497,7 @@ class TestRegisterImages:
         assert stats["processed"] == 0
 
     def test_failure_ticks_progress(self, tmp_path, monkeypatch):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         from pka.ingestion.image_pipeline import register_images
 
         class _BrokenEngine:
@@ -509,7 +509,7 @@ class TestRegisterImages:
             lambda: _BrokenEngine(),
         )
         sp.begin("image")
-        sp.set_phase("image", "ingesting", 1)
+        sp.set_phase("image", "embedding", 1)
         img = self._make_image_file(tmp_path / "fail.jpg")
         stats = register_images([img], progress_key="image")
         assert stats["failed"] == 1
@@ -528,11 +528,11 @@ class TestClipCollectionCache:
 class TestIngestImagesStop:
     def test_stops_on_cancel(self, tmp_path, all_mocks):
         from pka.connectors.images import ImageFile
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         from pka.ingestion.image_pipeline import ingest_images
 
         sp.begin("image")
-        sp.set_phase("image", "ingesting", 3)
+        sp.set_phase("image", "embedding", 3)
         sp.request_cancel("image")
         imgs = [
             ImageFile(tmp_path / f"i{i}.jpg", f"i{i}.jpg", 10, 10, 100, int(time.time()), {})

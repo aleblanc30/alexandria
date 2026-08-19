@@ -185,6 +185,16 @@ export interface SyncProgress {
   error: string | null
   last_result?: Record<string, unknown> | null
 }
+export interface SourceCounts {
+  pending_metadata: number
+  fetch: Record<string, number>
+  unavailable: string | null
+}
+/** One frame of ``GET /ingestion/sync/events``. */
+export interface SyncEvent {
+  progress: SyncProgress
+  counts: SourceCounts
+}
 export interface UnfetchableRow  { id: number; title: string; url: string; http_status: number | null; error: string | null; timestamp: number }
 export interface ReadingList   { list_id: number; name: string; description: string; created_at: number; item_count: number }
 export interface ReadingListItem { id: number; position: number; note: string; doc_id: number; title: string; source: string; url_or_path: string | null }
@@ -309,6 +319,23 @@ export const syncProgress       = (source?: string) =>
     {},
     0,
   )
+/**
+ * Live progress for one source over SSE. The server closes the stream once the
+ * job reaches a terminal state, so ``onEvent`` sees that last frame and the
+ * caller closes the source to stop EventSource from reconnecting.
+ */
+export function syncEvents(
+  source: string,
+  onEvent: (ev: SyncEvent) => void,
+  onError?: () => void,
+): EventSource {
+  const es = new EventSource(`${BASE}/ingestion/sync/events?source=${encodeURIComponent(source)}`)
+  es.onmessage = (msg) => {
+    try { onEvent(JSON.parse(msg.data) as SyncEvent) } catch { /* ignore malformed frame */ }
+  }
+  es.onerror = () => { onError?.() }
+  return es
+}
 export const unfetchableUrls    = (limit = 50, offset = 0) =>
   req<UnfetchableRow[]>(
     `/ingestion/unfetchable?limit=${limit}&offset=${offset}`,

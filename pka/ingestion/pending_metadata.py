@@ -112,7 +112,7 @@ def _compute_pending_metadata(src: str) -> int:
         return sum(1 for book in take(books, Source.CALIBRE) if book.source_id not in known)
 
     if src == Source.IMAGE:
-        from pka.ingestion.image_pipeline import _image_already_indexed, admitted_images
+        from pka.ingestion.image_pipeline import admitted_images, indexed_image_paths
 
         scanned, unavailable = try_scan_images()
         if unavailable:
@@ -120,11 +120,11 @@ def _compute_pending_metadata(src: str) -> int:
         # ``admitted_images`` mirrors what ``register_images`` will actually
         # persist: gate-rejected paths are skipped there, so counting them as
         # pending leaves a permanent gap the metadata job can never close.
-        pending = 0
-        for img in admitted_images(take(scanned, Source.IMAGE)):
-            if _image_already_indexed(img.path) is None:
-                pending += 1
-        return pending
+        known_paths = indexed_image_paths()
+        return sum(
+            1 for img in admitted_images(take(scanned, Source.IMAGE))
+            if str(img.path) not in known_paths
+        )
 
     # YouTube is a network source; never hit the Data API on a status poll.
     # The real pending count is computed inline from loaded videos in
@@ -186,14 +186,3 @@ def _compute_source_corpus_size(src: str) -> int:
 
     return 0
 
-
-def metadata_job_progress(source: Source | str, baseline: int, pending_total: int) -> tuple[int, int]:
-    """Return ``(archive_count, corpus_total)`` for an active metadata job.
-
-    ``archive_count`` is the live row count in Alexandria; ``corpus_total`` is the
-    source size at job start (``baseline + pending_total``), never below the
-    current archive count.
-    """
-    current = archive_document_count(source)
-    total = max(baseline + pending_total, current)
-    return current, total

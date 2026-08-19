@@ -2,6 +2,46 @@
 
 ## Unreleased — local-first relaxed; retrieval enrichment
 
+- **Ingestion progress rebuilt as a four-layer package and moved onto SSE**
+  (`pka/ingestion/progress/`: `state` → `tracker` → `view`/`baselines`). Plan and
+  measurements in `sync_refactor.md`.
+  - The reported "circular imports" were not cycles — an AST walk over `pka/` finds
+    zero. What multiplied the function-local imports was a *layering* cycle: state
+    reached down into `pending_metadata` for DB counts while `progress_baselines`
+    reached back up into state. With the layers separated, all six deferred imports
+    hoist, and `sync_helpers.py` and `runners/_common.py` — two files that existed
+    only to hold them — are gone.
+  - The stalls were DB I/O under the progress lock: `snapshot()` held it while
+    counting archive rows, so every worker's `advance()` queued behind a query
+    running twice a second. `snapshot_states()` now copies under the lock and
+    serializes outside it, and nothing under `tracker` opens a connection.
+  - Workers are the single writer. `run_metadata_loop` ticks each item it actually
+    persists instead of leaving metadata progress to be inferred from DB counts at
+    serialize time — a metadata sync used to stop advancing when the browser tab
+    was closed. Reads stopped mutating: `GET /ingestion/sync/progress` no longer
+    hydrates shared state as a side effect, and idle DB counts are applied to the
+    copy being serialized.
+  - Per-source behaviour is declared, not hardcoded: `PhaseSpec` in `registry.py`
+    replaces three `source == FIREFOX` branches. The `fulltext`/`ingesting` phase
+    aliases had no production callers left and are gone; `set_phase` now rejects an
+    unknown phase name instead of raising `KeyError` deeper in.
+  - `GET /ingestion/sync/events?source=` replaces the 500 ms poll loop: one stream
+    per running source, coalesced to 5 frames/sec, carrying the per-source slice of
+    `/ingestion/status` so nothing polls that endpoint during a sync either. The
+    server closes the stream at a terminal status; the store falls back to polling
+    if `EventSource` fails mid-job. `/ingestion/status` itself is unchanged — it
+    still serves the sidebar and the index metrics.
+  - Two missing indexes were doing real damage: `chunks.document_id` and
+    `documents.source` were unindexed, so "how many documents are embedded?"
+    full-scanned the chunks table at **15.1–15.8 ms** per source per poll (linear in
+    chunk count). With them, **0.02–0.37 ms**. Also on that path: `ensure_zotero_copy`
+    now reuses a recent snapshot via `ensure_sqlite_copy` instead of backing up the
+    whole library inside an HTTP request, and the image probe is one query rather
+    than one per image.
+  - `tests/test_progress_contract.py` pins the serialized payload for ten
+    source/phase/status combinations by full-dict equality; it is what proves the
+    rewrite did not move the numbers the UI draws.
+
 - **Reddit saved posts can be loaded without an OAuth app**, via the private
   token-bearing feed from `/prefs/feeds/` (`reddit_feed_url`, preferred over
   PRAW when set). Creating a "script" app now requires a separate API-access

@@ -422,7 +422,7 @@ class TestFetchedTextEnrichment:
 
 class TestPipelineStop:
     def test_firefox_bookmarks_stops_on_cancel(self):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         from pka.ingestion.runners.firefox import ingest_firefox_bookmarks
 
         sp.begin("firefox")
@@ -434,7 +434,7 @@ class TestPipelineStop:
 
     def test_calibre_fulltext_stops_on_pause(self, tmp_path, mock_chroma):
         from pka.connectors.calibre import CalibreBook
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         from pka.ingestion.runners.calibre import ingest_calibre_books, ingest_calibre_fulltext
 
         epub = tmp_path / "book.epub"
@@ -448,7 +448,7 @@ class TestPipelineStop:
         ingest_calibre_books([book])
 
         sp.begin("calibre")
-        sp.set_phase("calibre", "fulltext", 2)
+        sp.set_phase("calibre", "embedding", 2)
         sp.request_pause("calibre")
 
         import pka.ingestion.runners.calibre as calibre_runner

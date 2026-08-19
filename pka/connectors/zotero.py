@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pka.config import settings
-from pka.db.sqlite_copy import copy_sqlite_database, dev_sqlite_snapshot
+from pka.db.sqlite_copy import dev_sqlite_snapshot, ensure_sqlite_copy
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +89,10 @@ def ensure_zotero_copy(
 
     When ``ALEXANDRIA_DEV=1``, the library DB is copied once to ``data/zotero_copy.sqlite``
     and that snapshot is reused. Pass ``refresh=True`` (or delete the copy) to resnapshot.
+
+    Otherwise the copy goes through :func:`ensure_sqlite_copy`, which reuses a
+    recent snapshot instead of re-backing up the (multi-hundred-MB) library on
+    every call — status probes reach this from inside an HTTP request.
     """
     src = zotero_db or settings.zotero_db
     dst = copy_path or settings.zotero_db_copy
@@ -96,7 +100,7 @@ def ensure_zotero_copy(
         raise FileNotFoundError(f"Zotero database not found: {src}")
     if settings.dev:
         return dev_sqlite_snapshot(src, dst, label="Zotero", refresh=refresh)
-    return copy_sqlite_database(src, dst)
+    return ensure_sqlite_copy(src, dst, refresh=refresh)
 
 
 def _parse_year(date_str: str | None) -> int | None:

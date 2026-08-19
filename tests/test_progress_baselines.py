@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import pytest
+import sqlalchemy as sa
 
 from pka.constants import FetchStatus, Source
 from pka.db.queries import get_engine, init_db, insert_document_if_new
 from pka.db.schema import chunks, images
-from pka.ingestion.progress_baselines import (
+from pka.ingestion.progress.baselines import (
     build_ingestion_status,
+    display_snapshot,
     get_phase_baselines,
+    source_counts,
 )
 
 
@@ -30,7 +33,7 @@ def _insert_doc(source: str, source_id: str, fetch_status: str = FetchStatus.PEN
 def test_get_phase_baselines_uses_archive_count_when_source_unavailable(monkeypatch):
     _insert_doc(Source.ZOTERO, "z1", FetchStatus.AVAILABLE)
     monkeypatch.setattr(
-        "pka.ingestion.progress_baselines.source_corpus_size",
+        "pka.ingestion.progress.baselines.source_corpus_size",
         lambda _src: 0,
     )
     totals, processed, fetch_outcomes = get_phase_baselines(get_engine(), Source.ZOTERO)
@@ -42,7 +45,7 @@ def test_get_phase_baselines_uses_archive_count_when_source_unavailable(monkeypa
 def test_get_phase_baselines_prefers_source_corpus_size(monkeypatch):
     _insert_doc(Source.ZOTERO, "z1", FetchStatus.AVAILABLE)
     monkeypatch.setattr(
-        "pka.ingestion.progress_baselines.source_corpus_size",
+        "pka.ingestion.progress.baselines.source_corpus_size",
         lambda _src: 10,
     )
     totals, processed, _ = get_phase_baselines(get_engine(), Source.ZOTERO)
@@ -153,3 +156,47 @@ def test_build_ingestion_status_embedded_count():
         )
     status = build_ingestion_status(get_engine())
     assert status["fetch_by_source"][Source.CALIBRE]["embedded"] == 1
+
+
+class TestDisplaySnapshot:
+    """The read path: DB counts for an idle source, worker counts for a live one."""
+
+    def test_idle_source_reads_counts_from_the_archive(self):
+        for i in range(3):
+            insert_document_if_new(Source.ZOTERO, f"z{i}", f"T{i}", None, None)
+        snap = display_snapshot(get_engine(), Source.ZOTERO)
+        assert snap["status"] == "idle"
+        assert snap["phase_details"][0]["processed"] == 3
+
+    def test_idle_totals_follow_the_archive_down(self):
+        from pka.ingestion import progress as sp
+
+        for i in range(4):
+            insert_document_if_new(Source.ZOTERO, f"z{i}", f"T{i}", None, None)
+        assert display_snapshot(get_engine(), Source.ZOTERO)["phase_details"][0]["total"] == 4
+        with get_engine().begin() as con:
+            con.execute(sa.text("DELETE FROM documents WHERE source_id IN ('z2', 'z3')"))
+        snap = display_snapshot(get_engine(), Source.ZOTERO)
+        assert snap["phase_details"][0]["total"] == 2
+        sp.reset(Source.ZOTERO)
+
+    def test_running_job_is_served_from_memory_not_the_archive(self):
+        from pka.ingestion import progress as sp
+
+        for i in range(3):
+            insert_document_if_new(Source.ZOTERO, f"z{i}", f"T{i}", None, None)
+        sp.begin_job(Source.ZOTERO, "ingest")
+        sp.set_corpus_total(Source.ZOTERO, 50)
+        sp.set_phase(Source.ZOTERO, "embedding", 50)
+        sp.advance(Source.ZOTERO)
+        snap = display_snapshot(get_engine(), Source.ZOTERO)
+        assert snap["status"] == "running"
+        assert snap["phase_details"][2]["total"] == 50
+        assert snap["phase_details"][2]["processed"] == 1
+        sp.reset(Source.ZOTERO)
+
+    def test_source_counts_carries_the_status_slice_the_panel_needs(self):
+        insert_document_if_new(Source.ZOTERO, "z0", "T", None, None)
+        counts = source_counts(get_engine(), Source.ZOTERO)
+        assert set(counts) == {"pending_metadata", "fetch", "unavailable"}
+        assert counts["fetch"]["embedded"] == 0

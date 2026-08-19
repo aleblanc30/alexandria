@@ -5,7 +5,7 @@ from pka.connectors.calibre import CalibreBook
 from pka.connectors.firefox import FirefoxBookmark
 from pka.connectors.images import ImageFile
 from pka.connectors.zotero import ZoteroItem
-from pka.ingestion import sync_progress as sp
+from pka.ingestion import progress as sp
 
 
 def _mock_pending_counts(monkeypatch, sync_module: str, *, pending: int = 1, baseline: int = 0):

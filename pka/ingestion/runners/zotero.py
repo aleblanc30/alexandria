@@ -23,7 +23,7 @@ from pka.db.queries import (
 )
 from pka.ingestion.core import ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
-from pka.ingestion.runners._common import progress_tick, stop_requested
+from pka.ingestion.progress import should_stop, tick
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def ingest_zotero_items(
     stats = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
 
     for item in items:
-        if (stop := stop_requested(progress_key)):
+        if (stop := should_stop(progress_key)):
             stats["stopped"] = stop
             break
         failed = False
@@ -98,7 +98,7 @@ def ingest_zotero_items(
             stats["failed"] += 1
             failed = True
         finally:
-            progress_tick(progress_key, failed=failed)
+            tick(progress_key, failed=failed)
 
     return stats
 

@@ -94,7 +94,7 @@ def isolated_settings(tmp_path, monkeypatch):
 
     # Reset in-memory sync progress so job state never leaks between tests
     from pka.constants import ALL_SOURCES
-    from pka.ingestion import sync_progress as sp
+    from pka.ingestion import progress as sp
     for src in ALL_SOURCES:
         sp.reset(src)
 

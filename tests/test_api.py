@@ -1238,7 +1238,7 @@ def _join_worker(ing_module, src: str, timeout: float = 5.0) -> None:
 class TestIngestion:
     def setup_method(self):
         from pka.constants import ALL_SOURCES
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         for src in ALL_SOURCES:
             sp.reset(src)
 
@@ -1268,7 +1268,7 @@ class TestIngestion:
         assert isinstance(r.json(), list)
 
     def test_sync_valid_source_queued(self, client, monkeypatch):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         def fake_sync(src: str, backfill: bool = False) -> None:
             sp.finish(src)
@@ -1283,19 +1283,19 @@ class TestIngestion:
         assert r.status_code == 400
 
     def test_pause_sync_requires_active_job(self, client):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         sp.reset("zotero")
         r = client.post("/ingestion/sync/zotero/pause")
         assert r.status_code == 409
 
     def test_cancel_sync_requires_active_job(self, client):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         sp.reset("zotero")
         r = client.post("/ingestion/sync/zotero/cancel")
         assert r.status_code == 409
 
     def test_pause_sync_when_running(self, client):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         sp.reset("firefox")
         sp.begin("firefox", phase="fetching")
         sp.set_phase("firefox", "fetching", 10)
@@ -1305,7 +1305,7 @@ class TestIngestion:
         assert sp.check_stop("firefox") == "pause"
 
     def test_cancel_sync_when_running(self, client):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         sp.reset("zotero")
         sp.begin("zotero", phase="embedding")
         sp.set_phase("zotero", "embedding", 5)
@@ -1315,7 +1315,7 @@ class TestIngestion:
         assert sp.check_stop("zotero") == "cancel"
 
     def test_sync_progress_snapshot(self, client):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
         sp.reset("firefox")
         sp.begin("firefox")
         sp.plan_pipeline("firefox", [("metadata", 2), ("fetching", 2)])
@@ -1334,8 +1334,53 @@ class TestIngestion:
         assert data["phase_details"][2]["processed"] == 0
         sp.reset("firefox")
 
+    def test_sync_events_streams_a_frame_for_an_idle_source(self, client, monkeypatch):
+        import json
+
+        from pka.api.routers import ingestion as router
+
+        # No grace window: an idle source yields its snapshot and the stream ends.
+        monkeypatch.setattr(router, "_START_GRACE_SECONDS", 0.0)
+        with client.stream("GET", "/ingestion/sync/events?source=zotero") as r:
+            assert r.status_code == 200
+            assert r.headers["content-type"].startswith("text/event-stream")
+            frames = [
+                json.loads(line[len("data: "):])
+                for line in r.iter_lines() if line.startswith("data: ")
+            ]
+        assert len(frames) == 1
+        assert frames[0]["progress"]["source"] == "zotero"
+        assert set(frames[0]["counts"]) == {"pending_metadata", "fetch", "unavailable"}
+
+    def test_sync_events_ends_when_the_job_does(self, client, monkeypatch):
+        import json
+
+        from pka.api.routers import ingestion as router
+
+        snapshots = [
+            {"source": "zotero", "status": "running", "processed": 1},
+            {"source": "zotero", "status": "running", "processed": 2},
+            {"source": "zotero", "status": "done", "processed": 2},
+        ]
+        monkeypatch.setattr(router, "_EVENT_INTERVAL_SECONDS", 0.0)
+        monkeypatch.setattr(router, "_START_GRACE_SECONDS", 0.0)
+        monkeypatch.setattr(router, "display_snapshot", lambda _e, _s: snapshots.pop(0))
+        monkeypatch.setattr(router, "source_counts", lambda _e, _s: {})
+        with client.stream("GET", "/ingestion/sync/events?source=zotero") as r:
+            frames = [
+                json.loads(line[len("data: "):])
+                for line in r.iter_lines() if line.startswith("data: ")
+            ]
+        # Three snapshots, three distinct frames, and the stream closes itself.
+        assert [f["progress"]["status"] for f in frames] == ["running", "running", "done"]
+        assert snapshots == []
+
+    def test_sync_events_unknown_source_400(self, client):
+        r = client.get("/ingestion/sync/events?source=nope")
+        assert r.status_code == 400
+
     def test_sync_metadata_queued(self, client, monkeypatch):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         def fake_meta(src: str, backfill: bool = False) -> None:
             sp.finish(src)
@@ -1347,7 +1392,7 @@ class TestIngestion:
         assert r.json()["job"] == "metadata"
 
     def test_sync_ingest_queued(self, client, monkeypatch):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         def fake_ingest(src: str, backfill: bool = False) -> None:
             sp.finish(src)
@@ -1361,7 +1406,7 @@ class TestIngestion:
     def test_backfill_flag_reaches_the_reddit_handler(self, client, monkeypatch):
         """Reddit's sync is incremental, so a full re-walk must be asked for."""
         from pka.api.routers import ingestion as ing
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         seen: dict = {}
 
@@ -1382,7 +1427,7 @@ class TestIngestion:
 
     def test_metadata_sync_without_backfill_passes_nothing(self, client, monkeypatch):
         from pka.api.routers import ingestion as ing
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         seen: dict = {"called": False}
 
@@ -1409,7 +1454,7 @@ class TestIngestion:
 
     def test_sync_metadata_routes_zotero(self, monkeypatch):
         from pka.api.routers import ingestion as ing
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         called = []
         monkeypatch.setattr(
@@ -1424,7 +1469,7 @@ class TestIngestion:
 
     def test_sync_ingest_routes_firefox(self, monkeypatch):
         from pka.api.routers import ingestion as ing
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         called = []
         monkeypatch.setattr(
@@ -1447,7 +1492,7 @@ class TestIngestion:
         import threading as th
 
         from pka.api.routers import ingestion as ing
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         started: list[th.Event] = []
 
@@ -1512,7 +1557,7 @@ class TestIngestion:
 
     def test_sync_routes_zotero_via_sync_fn(self, monkeypatch):
         from pka.api.routers import ingestion as ing
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         called = []
         monkeypatch.setattr(
@@ -1526,7 +1571,7 @@ class TestIngestion:
 
     def test_sync_records_error_on_failure(self, monkeypatch):
         from pka.api.routers import ingestion as ing
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         def boom(**kw):
             raise RuntimeError("sync blew up")
@@ -1540,7 +1585,7 @@ class TestIngestion:
 
     def test_sync_firefox_source(self, monkeypatch):
         from pka.api.routers import ingestion as ing
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         monkeypatch.setattr(
             "pka.ingestion.firefox_sync.sync_firefox",
@@ -1552,7 +1597,7 @@ class TestIngestion:
 
     def test_sync_calibre_source(self, monkeypatch):
         from pka.api.routers import ingestion as ing
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         monkeypatch.setattr(
             "pka.ingestion.calibre_sync.sync_calibre",
@@ -1564,7 +1609,7 @@ class TestIngestion:
 
     def test_sync_image_source(self, monkeypatch):
         from pka.api.routers import ingestion as ing
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         monkeypatch.setattr(
             "pka.ingestion.image_sync.sync_images",

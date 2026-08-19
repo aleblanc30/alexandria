@@ -1,6 +1,6 @@
 """Tests for cooperative sync stop checks."""
-from pka.ingestion import sync_progress as sp
-from pka.ingestion.sync_helpers import should_stop
+from pka.ingestion import progress as sp
+from pka.ingestion.progress import should_stop
 
 
 def test_none_key_returns_none():

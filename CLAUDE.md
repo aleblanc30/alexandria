@@ -96,6 +96,7 @@ Before modifying an area, skim these entry points:
 | Ingestion / connectors | `pka/ingestion/core.py`, `pka/ingestion/runners/`, `pka/connectors/`, `DESIGN.md` §2–3 |
 | Search / vectors | `pka/storage/vector_store.py`, `pka/api/routers/search.py` |
 | Clustering | `pka/clustering/engine.py`, `pka/clustering/lifecycle.py`, `scripts/run_clustering.py` |
+| Sync progress / SSE | `pka/ingestion/progress/` (`state` → `tracker` → `view`/`baselines`), `sync_refactor.md` |
 | Images | `pka/ingestion/image_pipeline.py`, `pka/ingestion/image_extractor.py`, `pka/ingestion/image_gate.py` |
 | Image search (CLIP vs inferred text) | `DESIGN.md` §3.3, `search_images_by_*` in `image_pipeline.py`, `pka/api/image_hits.py` |
 | Retrieval enrichment | `DESIGN.md` §3.2, `pka/ingestion/openlibrary.py`, per-type prompts in `image_extractor.py` |

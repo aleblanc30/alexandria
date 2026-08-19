@@ -17,7 +17,7 @@ from pka.db.queries import (
 from pka.ingestion.book_extractor import extract_book_text, metadata_text
 from pka.ingestion.core import attach_summary_chunk, ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
-from pka.ingestion.runners._common import progress_tick, stop_requested
+from pka.ingestion.progress import should_stop, tick
 
 log = logging.getLogger(__name__)
 
@@ -181,14 +181,14 @@ def ingest_calibre_fulltext(
     known = document_index(Source.CALIBRE)
 
     for book in books:
-        if (stop := stop_requested(progress_key)):
+        if (stop := should_stop(progress_key)):
             stats["stopped"] = stop
             break
         failed = False
         if not book.preferred_path or not book.preferred_path.exists():
             log.debug("No file for book %s — skipping full-text", book.title)
             stats["skipped"] += 1
-            progress_tick(progress_key)
+            tick(progress_key)
             continue
 
         try:
@@ -247,6 +247,6 @@ def ingest_calibre_fulltext(
             stats["failed"] += 1
             failed = True
         finally:
-            progress_tick(progress_key, failed=failed)
+            tick(progress_key, failed=failed)
 
     return stats

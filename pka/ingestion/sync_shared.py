@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pka.ingestion import sync_progress as sp
+from pka.ingestion import progress as sp
 
 EMPTY_STATS = {"processed": 0, "skipped": 0, "failed": 0}
 

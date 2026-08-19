@@ -9,7 +9,7 @@ import logging
 
 from pka.constants import Source
 from pka.db.queries import document_index
-from pka.ingestion import sync_progress as sp
+from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.pending_metadata import archive_document_count
 from pka.ingestion.runners.youtube import ingest_youtube_embed, ingest_youtube_metadata

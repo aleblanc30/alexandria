@@ -8,6 +8,32 @@ from pka.constants import Source
 
 
 @dataclass(frozen=True)
+class PhaseSpec:
+    """How one source's ingest maps onto the standard progress phases.
+
+    The defaults describe a local library: everything is already on disk, so the
+    ingest pins the corpus up front and reports embedding as its own phase.
+    """
+
+    plans_own_phases: bool = False   # ingest sets phase totals as it discovers work
+    tracks_embedding: bool = True    # False when fetch and embed run interleaved
+
+
+# Firefox fetches each bookmark over the network and embeds it in the same pass,
+# so its work is only known once the fetch queue is built, and there is no
+# separate embedding progress to report.
+PHASE_SPECS: dict[str, PhaseSpec] = {
+    Source.FIREFOX: PhaseSpec(plans_own_phases=True, tracks_embedding=False),
+}
+
+_DEFAULT_PHASE_SPEC = PhaseSpec()
+
+
+def phase_spec(source: str) -> PhaseSpec:
+    return PHASE_SPECS.get(source, _DEFAULT_PHASE_SPEC)
+
+
+@dataclass(frozen=True)
 class SourceHandlers:
     sync_metadata: Callable[..., dict]
     sync_ingest: Callable[..., dict]

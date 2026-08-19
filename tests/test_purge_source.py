@@ -201,7 +201,7 @@ def test_purge_endpoint_unknown_source(client):
 
 
 def test_purge_endpoint_blocked_while_running(client):
-    from pka.ingestion import sync_progress as sp
+    from pka.ingestion import progress as sp
 
     _seed_document("firefox", "F1")
     sp.begin_job("firefox", "metadata", phase="loading")

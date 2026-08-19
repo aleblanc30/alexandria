@@ -5,28 +5,11 @@ import logging
 from collections.abc import Callable, Iterable
 from typing import Literal
 
+from pka.ingestion.progress import should_stop, tick
+
 log = logging.getLogger(__name__)
 
 MetadataOutcome = Literal["skipped", "processed", "dry_run"]
-
-
-def _metadata_tick(progress_key: str | None, *, failed: bool) -> None:
-    if progress_key and failed:
-        from pka.ingestion.sync_progress import advance
-        advance(progress_key, failed=True)
-
-
-def _embed_tick(progress_key: str | None, *, failed: bool) -> None:
-    if progress_key:
-        from pka.ingestion.sync_progress import advance
-        advance(progress_key, failed=failed)
-
-
-def _check_stop(progress_key: str | None) -> str | None:
-    if not progress_key:
-        return None
-    from pka.ingestion.sync_helpers import should_stop
-    return should_stop(progress_key)
 
 
 def run_metadata_loop(
@@ -38,11 +21,15 @@ def run_metadata_loop(
     progress_key: str | None = None,
     skip_when_in_known: bool = True,
 ) -> dict:
-    """Persist new metadata rows; progress is poll-driven (failure ticks only)."""
+    """Persist new metadata rows, ticking progress for each item it acts on.
+
+    Items already in ``known`` are part of the baseline the job started from, so
+    ticking for them would count them twice.
+    """
     stats = {"processed": 0, "skipped": 0, "failed": 0}
 
     for item in items:
-        if (stop := _check_stop(progress_key)):
+        if (stop := should_stop(progress_key)):
             stats["stopped"] = stop
             break
         source_id = get_source_id(item)
@@ -50,12 +37,13 @@ def run_metadata_loop(
             stats["skipped"] += 1
             continue
         failed = False
+        ticked = True
         try:
             outcome = persist(item)
             if outcome == "skipped":
+                # ``persist`` found it already stored (or excluded): baseline work.
                 stats["skipped"] += 1
-            elif outcome == "dry_run":
-                stats["processed"] += 1
+                ticked = False
             else:
                 stats["processed"] += 1
         except Exception as exc:
@@ -63,7 +51,8 @@ def run_metadata_loop(
             stats["failed"] += 1
             failed = True
         finally:
-            _metadata_tick(progress_key, failed=failed)
+            if ticked:
+                tick(progress_key, failed=failed)
 
     return stats
 
@@ -80,20 +69,20 @@ def run_embed_loop(
     stats = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
 
     for item in items:
-        if (stop := _check_stop(progress_key)):
+        if (stop := should_stop(progress_key)):
             stats["stopped"] = stop
             break
         if should_skip(item):
             stats["skipped"] += 1
             continue
         failed = False
-        tick = False
+        ticked = False
         try:
             processed, chunks = process(item)
             if processed:
                 stats["processed"] += 1
                 stats["chunks"] += chunks
-                tick = True
+                ticked = True
             else:
                 stats["skipped"] += 1
         except Exception as exc:
@@ -103,9 +92,9 @@ def run_embed_loop(
                 log.exception("Embed failed: %s", exc)
             stats["failed"] += 1
             failed = True
-            tick = True
+            ticked = True
         finally:
-            if tick:
-                _embed_tick(progress_key, failed=failed)
+            if ticked:
+                tick(progress_key, failed=failed)
 
     return stats

@@ -6,12 +6,12 @@ from functools import partial
 from pka.connectors.firefox import load_bookmarks
 from pka.constants import Source
 from pka.db.queries import firefox_ingest_queue
-from pka.ingestion import sync_progress as sp
+from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.fetcher import fetch_and_embed_pending, reset_unfetchable_for_fetch
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
+from pka.ingestion.progress import should_stop
 from pka.ingestion.runners.firefox import embed_fetched_text, ingest_firefox_bookmarks
-from pka.ingestion.sync_helpers import should_stop
 from pka.ingestion.sync_shared import run_full_sync
 
 log = logging.getLogger(__name__)
@@ -62,13 +62,11 @@ def sync_firefox_ingest(
 
     if n_work == 0:
         sp.skip_phase(key, "fetching")
-        sp.clear_embed_progress(key)
         stats["fetch"] = {"fetched": 0, "skipped": 0, "unfetchable": 0}
         stats["embed"] = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
         return stats
 
     sp.set_phase(key, "fetching", n_work)
-    sp.clear_embed_progress(key)
 
     embed_fn = None if dry_run else partial(
         embed_fetched_text,

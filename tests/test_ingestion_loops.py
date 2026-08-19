@@ -17,7 +17,7 @@ class TestRunMetadataLoop:
         assert stats["processed"] == 1
 
     def test_stops_on_cancel(self):
-        from pka.ingestion import sync_progress as sp
+        from pka.ingestion import progress as sp
 
         sp.begin("firefox")
         sp.request_cancel("firefox")

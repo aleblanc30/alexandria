@@ -11,7 +11,7 @@ from functools import partial
 from pka.connectors.reddit import RedditSaved, load_saved
 from pka.constants import Source
 from pka.db.queries import document_index, init_db, source_ingest_queue
-from pka.ingestion import sync_progress as sp
+from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.fetcher import fetch_and_embed_pending
 from pka.ingestion.pending_metadata import archive_document_count
@@ -98,7 +98,6 @@ def _fetch_link_posts(key: str, *, dry_run: bool) -> tuple[dict, str | None]:
         return dict(_EMPTY_FETCH), None
 
     sp.set_phase(key, "fetching", len(work))
-    sp.clear_embed_progress(key)
     embed_fn = None if dry_run else partial(
         embed_fetched_text, skip_existing=True, dry_run=dry_run,
     )
