@@ -72,6 +72,19 @@ export interface DocumentOut  {
   note: string | null
 }
 export interface ImageDetail { image_type: string | null; ocr_text: string | null }
+export type RedditKind = 'post' | 'comment'
+/** Reddit-only fields for a saved post or comment. Null for every other source. */
+export interface RedditDetail {
+  kind: RedditKind | null
+  /** Display name with no `r/` prefix. */
+  subreddit: string | null
+  /** The reddit thread. Differs from `url_or_path` on a link post. */
+  permalink: string | null
+  /** Off-reddit target of a link post, else null. */
+  external_url: string | null
+  /** Post/comment text verbatim — unlike `description`, which is truncated. */
+  body: string | null
+}
 export type EnrichmentKind     = 'summary' | 'external_synopsis'
 export type EnrichmentResolver = 'isbn' | 'search' | 'google_books' | 'brave' | 'local_model'
 /** One rung of the enrichment cascade that produced generated text (DESIGN.md §3.2). */
@@ -89,6 +102,7 @@ export interface DocumentDetail extends DocumentOut {
   description: string
   chunks_count: number; collections: string[]
   image: ImageDetail | null
+  reddit: RedditDetail | null
   enrichment: Enrichment[]
 }
 export interface DocumentListItem {

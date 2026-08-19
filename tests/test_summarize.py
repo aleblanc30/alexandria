@@ -268,3 +268,69 @@ class TestAttachSummaryChunk:
         with get_engine().connect() as con:
             idxs = [r[0] for r in con.execute(sa.select(chunks.c.chunk_index)).fetchall()]
         assert len(idxs) == len(set(idxs)), f"duplicate chunk_index: {idxs}"
+
+
+class TestMaterialFraming:
+    """Per-source framing (``material``) and background facts (``context``)."""
+
+    def test_default_framing_calls_the_input_a_document(self, provider):
+        sz.summarize_text(_sentences(20), max_sentences=2)
+        assert "indexing a document" in provider.prompts[0]
+
+    def test_reddit_comment_material_renames_the_noun(self, provider):
+        sz.summarize_text(_sentences(20), max_sentences=2, material="reddit_comment")
+        prompt = provider.prompts[0]
+        assert "indexing a Reddit comment" in prompt
+        assert "indexing a document" not in prompt
+
+    def test_reddit_comment_material_adds_its_own_rules(self, provider):
+        sz.summarize_text(_sentences(20), max_sentences=2, material="reddit_comment")
+        prompt = provider.prompts[0]
+        assert "ONE comment taken out of its thread" in prompt
+        # The generic rules still apply on top of the material-specific ones.
+        assert "Invent nothing that is not in the text." in prompt
+
+    def test_reddit_post_material_differs_from_comment(self, provider):
+        sz.summarize_text(_sentences(20), max_sentences=2, material="reddit_post")
+        assert "indexing a Reddit post" in provider.prompts[0]
+
+    def test_unknown_material_falls_back_to_the_generic_framing(self, provider):
+        sz.summarize_text(_sentences(20), max_sentences=2, material="mastodon_toot")
+        assert "indexing a document" in provider.prompts[0]
+
+    def test_context_is_labelled_and_outside_the_quoted_text(self, provider):
+        sz.summarize_text(
+            _sentences(20),
+            max_sentences=2,
+            material="reddit_comment",
+            context="Thread: Understanding Raft · Subreddit: r/compsci",
+        )
+        prompt = provider.prompts[0]
+        assert "Context (background, do not summarise): Thread: Understanding Raft" in prompt
+        # It must precede the quoted block, so it reads as background rather
+        # than as material the summary should cover.
+        assert prompt.index("Context (background") < prompt.index('Text:\n"""')
+
+    def test_blank_context_adds_no_line(self, provider):
+        sz.summarize_text(_sentences(20), max_sentences=2, context="   ")
+        assert "Context (background" not in provider.prompts[0]
+
+    def test_framing_survives_the_reduce_pass(self, provider):
+        """Merging partials must keep calling the item a comment, not a document."""
+        long_text = _sentences(1200)
+        assert len(long_text) > sz.CHUNK_CHAR_LIMIT * 2
+
+        sz.summarize_text(long_text, max_sentences=2, material="reddit_comment")
+
+        reduce_prompts = [p for p in provider.prompts if "Partial summaries" in p]
+        assert reduce_prompts, "expected at least one reduce pass"
+        assert all("ONE Reddit comment" in p for p in reduce_prompts)
+
+    def test_short_input_still_costs_no_call_with_material_set(self, provider):
+        """Framing must not defeat the short-circuit that skips the provider."""
+        out = sz.summarize_text(
+            "One short comment.", max_sentences=cfg.summary_max_sentences,
+            material="reddit_comment", context="Thread: whatever",
+        )
+        assert out == "One short comment."
+        assert provider.calls == 0

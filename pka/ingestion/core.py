@@ -119,6 +119,8 @@ def attach_summary_chunk(
     source: Source,
     *,
     title: str = "",
+    material: str | None = None,
+    context: str | None = None,
     dry_run: bool = False,
 ) -> int:
     """Add a generated-summary chunk for a long document (DESIGN.md §3.2).
@@ -135,6 +137,12 @@ def attach_summary_chunk(
     ``documents.generated_summary``: a purge-and-reingest replays it without
     paying for inference twice. Returns the number of chunks added, and never
     raises — enrichment must not cost a document its ordinary ingestion.
+
+    ``material`` and ``context`` are passed straight to
+    :func:`pka.ingestion.summarize.summarize_text`: the first names what kind of
+    text this is, the second supplies surrounding facts the text itself omits
+    (a comment's thread title, say). Both are optional — callers that leave them
+    unset get the generic document framing.
     """
     if dry_run or not (text or "").strip():
         return 0
@@ -152,7 +160,7 @@ def attach_summary_chunk(
         if not summary:
             from pka.ingestion.summarize import summarize_text
 
-            summary = summarize_text(text)
+            summary = summarize_text(text, material=material, context=context)
             if not summary:
                 return 0
             set_generated_summary(doc_id, summary)

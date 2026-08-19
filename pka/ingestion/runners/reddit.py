@@ -22,6 +22,7 @@ from pka.db.queries import (
     source_ids_with_chunks,
     update_card_summary,
     upsert_document,
+    upsert_reddit_item,
 )
 from pka.ingestion.core import (
     attach_summary_chunk,
@@ -55,6 +56,49 @@ def _document_kwargs(saved: RedditSaved) -> dict:
     )
 
 
+def _persist_reddit_fields(doc_id: int, saved: RedditSaved) -> None:
+    """Mirror the Reddit-only fields into ``reddit_items`` for the detail panel.
+
+    ``documents`` cannot carry these: ``card_summary`` is a 280-char card
+    excerpt, and a link post's ``url_or_path`` is the external target rather than
+    the thread the user saved.
+    """
+    upsert_reddit_item(
+        doc_id,
+        kind=saved.kind,
+        subreddit=saved.subreddit,
+        permalink=saved.permalink,
+        external_url=saved.external_url,
+        body=saved.body,
+    )
+
+
+# Framing passed to the summariser. A saved comment is one turn lifted out of a
+# thread, not a self-contained document, and summarising it as though it were
+# produces "the author argues that…" noise instead of its subject.
+_MATERIAL_BY_KIND = {
+    "post": "reddit_post",
+    "comment": "reddit_comment",
+}
+
+
+def _summary_context(saved: RedditSaved) -> str | None:
+    """Thread and subreddit line given to the summariser as context.
+
+    A comment body often names none of its own subject ("this is exactly
+    backwards, and the second point is worse"). The thread title is the only
+    thing that says what it is backwards *about*, so it is handed over
+    separately rather than concatenated into the text being summarised.
+    """
+    parts = []
+    title = (saved.title or "").strip()
+    if title:
+        parts.append(f"Thread: {title}")
+    if saved.subreddit:
+        parts.append(f"Subreddit: r/{saved.subreddit}")
+    return " · ".join(parts) or None
+
+
 def ingest_reddit_metadata(
     items: list[RedditSaved],
     dry_run: bool = False,
@@ -64,21 +108,32 @@ def ingest_reddit_metadata(
     known = document_index(Source.REDDIT)
 
     def _persist(saved: RedditSaved) -> MetadataOutcome:
+        existing_id = known.get(saved.source_id)
         if dry_run:
-            return "dry_run"
+            return "skipped" if existing_id is not None else "dry_run"
         doc_id = insert_document_if_new(**_document_kwargs(saved))
         if doc_id is None:
+            # Already archived. Refresh the Reddit fields anyway: a library
+            # ingested before ``reddit_items`` existed fills itself in on the
+            # next metadata run, and an edited body stays current.
+            if existing_id is not None:
+                _persist_reddit_fields(existing_id, saved)
             return "skipped"
         insert_source_collections(doc_id, [saved.collection], source=Source.REDDIT)
+        _persist_reddit_fields(doc_id, saved)
         known[saved.source_id] = doc_id
         return "processed"
 
+    # Every item reaches ``_persist``, including ones already archived — that is
+    # what lets the Reddit fields backfill. ``_persist`` still reports an
+    # already-known item as skipped, so the counts are unchanged.
     return run_metadata_loop(
         items,
         known=known,
         get_source_id=lambda s: s.source_id,
         persist=_persist,
         progress_key=progress_key,
+        skip_when_in_known=False,
     )
 
 
@@ -161,6 +216,8 @@ def ingest_reddit_embed(
         if doc_id is None:
             doc_id = upsert_document(**_document_kwargs(saved))
             doc_ids[saved.source_id] = doc_id
+        if not dry_run:
+            _persist_reddit_fields(doc_id, saved)
         if skip_existing and saved.source_id in embedded:
             return False, 0
         if not dry_run and saved.body:
@@ -176,8 +233,21 @@ def ingest_reddit_embed(
         )
         if result["skipped"]:
             return False, 0
+        # Generated summary as its own chunk (DESIGN.md §3.2; default off).
+        # The inline path owes this as much as the fetched one does: a long
+        # self-post or comment is exactly the case where the body chunks answer
+        # "which passage matches" and nothing answers "what is this about".
+        summary_chunks = attach_summary_chunk(
+            doc_id,
+            saved.body or "",
+            Source.REDDIT,
+            title=saved.title,
+            material=_MATERIAL_BY_KIND.get(saved.kind),
+            context=_summary_context(saved),
+            dry_run=dry_run,
+        )
         embedded.add(saved.source_id)
-        return True, result["chunks_added"]
+        return True, result["chunks_added"] + summary_chunks
 
     return run_embed_loop(
         items,

@@ -162,3 +162,162 @@ def test_reingest_is_idempotent(monkeypatch, fake_reddit_client, mock_chroma):
     # Nothing new to import or embed on the second pass.
     assert stats["metadata"]["processed"] == 0
     assert stats["embed"]["processed"] == 0
+
+
+# ── reddit_items detail row ───────────────────────────────────────────────────
+
+def _reddit_row(source_id: str):
+    from pka.db.queries import reddit_item
+
+    doc_id = document_index(Source.REDDIT)[source_id]
+    with get_engine().connect() as con:
+        return reddit_item(con, doc_id)
+
+
+def test_metadata_persists_reddit_detail_fields(
+    monkeypatch, fake_reddit_client, mock_chroma,
+):
+    _patch_load(monkeypatch, fake_reddit_client)
+    rs.sync_reddit_metadata()
+
+    comment = _reddit_row("t1_comment1")
+    assert comment["kind"] == "comment"
+    assert comment["subreddit"] == "compsci"
+    assert comment["external_url"] is None
+    # The body verbatim, not the 280-char card excerpt.
+    assert comment["body"] == (
+        "Raft's leader election is the clearest part of the protocol."
+    )
+
+
+def test_link_post_keeps_permalink_separate_from_external_url(
+    monkeypatch, fake_reddit_client, mock_chroma,
+):
+    """The saved thread survives even though url_or_path is the external target."""
+    _patch_load(monkeypatch, fake_reddit_client)
+    rs.sync_reddit_metadata()
+
+    row = _reddit_row("t3_linkpost")
+    assert row["external_url"] == "https://example.com/paxos.pdf"
+    assert row["permalink"] == (
+        "https://www.reddit.com/r/distributed/comments/linkpost/paxos/"
+    )
+
+    doc_id = document_index(Source.REDDIT)["t3_linkpost"]
+    with get_engine().connect() as con:
+        url = con.execute(
+            sa.select(documents.c.url_or_path).where(documents.c.id == doc_id)
+        ).scalar_one()
+    assert url == "https://example.com/paxos.pdf"
+
+
+def test_metadata_rerun_backfills_detail_rows(
+    monkeypatch, fake_reddit_client, mock_chroma,
+):
+    """A library archived before ``reddit_items`` existed fills in on the next run.
+
+    Simulated by deleting the rows after a first sync: the documents stay, and a
+    second metadata pass — which reports every item as skipped — must restore
+    them without needing a dedicated backfill.
+    """
+    from pka.db.schema import reddit_items
+
+    _patch_load(monkeypatch, fake_reddit_client)
+    rs.sync_reddit_metadata()
+    with get_engine().begin() as con:
+        con.execute(sa.delete(reddit_items))
+    assert _reddit_row("t1_comment1") is None
+
+    stats = rs.sync_reddit_metadata()
+
+    assert stats["metadata"]["processed"] == 0
+    assert stats["metadata"]["skipped"] == 3
+    assert _reddit_row("t1_comment1")["kind"] == "comment"
+
+
+def test_dry_run_metadata_does_not_write_detail_rows(
+    monkeypatch, fake_reddit_client, mock_chroma,
+):
+    _patch_load(monkeypatch, fake_reddit_client)
+
+    stats = rs.sync_reddit_metadata(dry_run=True)
+
+    # Nothing archived yet, so every item still counts as new work.
+    assert stats["metadata"]["processed"] == 3
+    assert document_index(Source.REDDIT) == {}
+
+
+# ── Generated summaries for inline bodies ─────────────────────────────────────
+
+def _long_body(word: str = "Consensus") -> str:
+    return " ".join(f"{word} detail number {i} matters here." for i in range(40))
+
+
+def _summary_chunks(mock_chroma) -> list[dict]:
+    store, _col = mock_chroma
+    return [i["meta"] for i in store.values() if i["meta"].get("pass") == "summary"]
+
+
+def test_inline_bodies_get_no_summary_when_the_flag_is_off(
+    monkeypatch, fake_reddit_client, mock_chroma,
+):
+    _patch_load(monkeypatch, fake_reddit_client)
+    rs.sync_reddit_metadata()
+    rs.sync_reddit_ingest()
+
+    assert _summary_chunks(mock_chroma) == []
+
+
+def test_long_inline_body_gets_a_summary_chunk(
+    monkeypatch, fake_reddit_client, mock_chroma,
+):
+    """Self-posts and comments owe a summary just as fetched link posts do."""
+    from pka.config import settings as cfg
+    from pka.ingestion import summarize as sz
+
+    monkeypatch.setattr(cfg, "bookmark_summary_enabled", True)
+    monkeypatch.setattr(
+        sz, "chat_json",
+        lambda *a, **k: ({"summary": "Consensus protocols and their trade-offs."}, None),
+    )
+
+    items = _patch_load(monkeypatch, fake_reddit_client)
+    for item in items:
+        if item.body:
+            item.body = _long_body()
+    rs.sync_reddit_metadata()
+    rs.sync_reddit_ingest()
+
+    # The self-post and the comment; the link post is the fetcher's job.
+    assert len(_summary_chunks(mock_chroma)) == 2
+
+
+def test_comment_summary_is_framed_as_a_comment_with_its_thread(
+    monkeypatch, fake_reddit_client, mock_chroma,
+):
+    """The summariser is told what the text is and which thread it came from."""
+    from pka.config import settings as cfg
+    from pka.ingestion import summarize as sz
+
+    monkeypatch.setattr(cfg, "bookmark_summary_enabled", True)
+    prompts: list[str] = []
+
+    def _record(prompt, **kwargs):
+        prompts.append(prompt)
+        return ({"summary": "Leader election in Raft."}, None)
+
+    monkeypatch.setattr(sz, "chat_json", _record)
+
+    items = _patch_load(monkeypatch, fake_reddit_client)
+    for item in items:
+        if item.kind == "comment":
+            item.body = _long_body("Raft")
+        else:
+            item.body = None
+    rs.sync_reddit_metadata()
+    rs.sync_reddit_ingest()
+
+    assert len(prompts) == 1
+    assert "indexing a Reddit comment" in prompts[0]
+    assert 'Understanding Raft' in prompts[0]
+    assert "Subreddit: r/compsci" in prompts[0]

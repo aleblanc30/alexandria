@@ -249,6 +249,18 @@ would be slow and rate-limited, `count_pending_metadata` / `source_corpus_size`
 return 0 for Reddit and the metadata sync computes its own pending count from the
 freshly loaded saved list.
 
+Phase 1 also writes a `reddit_items` row per document (same 1:1 shape as
+`images`), holding the fields `documents` cannot: the post/comment **body**
+verbatim — `card_summary` is a 280-char card excerpt and the chunks are
+overlapped and whitespace-normalised, so neither reconstructs what the user
+saved — and the **permalink**, which a link post's `url_or_path` displaces with
+its external target. The detail API (`/documents/{id}` → `reddit`) serves these,
+falling back to values recovered from `item_type`, `source_collections`, and the
+fullname when a library predates the table; the body alone has no fallback, and
+appears once the next metadata run backfills it. Because that backfill is the
+point, the Reddit metadata loop runs `persist` for already-archived items too
+(`skip_when_in_known=False`) while still reporting them as skipped.
+
 Firefox phase 2 also uses domain-specific handlers instead of raw HTML scrape
 where APIs exist: Wikipedia (MediaWiki), Amazon product pages, **arXiv**
 (`export.arxiv.org` metadata + PDF — updates `documents.title` and
@@ -340,6 +352,7 @@ Three mechanisms close these, in ascending cost:
 |---|---|---|
 | Firefox bookmark, Reddit link post | Title + `card_summary` embedded | **on** |
 | " | Local LLM summary chunk, `pass="summary"`, cached in `documents.generated_summary` | off (`bookmark_summary_enabled`) |
+| Reddit self-post, Reddit comment | Same summary chunk over the inline body. Framed per `material` (`_MATERIALS` in `summarize.py`) so a comment is not summarised as a document, with the thread title passed as `context` — a comment lifted out of its thread often names none of its own subject | off (`bookmark_summary_enabled`) |
 | Image `book_cover` | ISBN → Open Library → second catalogue; one chunk per visible book | off (`external_lookup_enabled`, `cover_search_fallback`) |
 | Image `poster` | VLM content summary | **on** |
 | Image `slide`, `notes`, `whiteboard` | VLM transcript | **on** |

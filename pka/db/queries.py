@@ -23,6 +23,7 @@ from pka.db.schema import (
     meta,
     overlay_tags,
     reading_list_items,
+    reddit_items,
     source_collections,
     source_tags,
 )
@@ -577,6 +578,69 @@ def update_card_summary(doc_id: int, summary: str | None) -> None:
             .where(documents.c.id == doc_id)
             .values(card_summary=summary)
         )
+
+
+# ── Reddit saved items ───────────────────────────────────────────────────────
+
+def upsert_reddit_item(
+    doc_id: int,
+    *,
+    kind: str,
+    subreddit: str | None = None,
+    permalink: str | None = None,
+    external_url: str | None = None,
+    body: str | None = None,
+) -> None:
+    """Store the Reddit-specific fields for *doc_id* (insert or update).
+
+    Called on every pass over a saved item, not only the first, so a library
+    ingested before this table existed gains its rows on the next metadata run
+    without a dedicated backfill.
+    """
+    with get_engine().begin() as con:
+        existing = con.execute(
+            sa.select(reddit_items.c.id)
+            .where(reddit_items.c.document_id == doc_id)
+        ).fetchone()
+        values = dict(
+            kind=kind,
+            subreddit=subreddit or None,
+            permalink=permalink or None,
+            external_url=external_url or None,
+            body=body or None,
+        )
+        if existing:
+            con.execute(
+                sa.update(reddit_items)
+                .where(reddit_items.c.document_id == doc_id)
+                .values(**values)
+            )
+        else:
+            con.execute(
+                sa.insert(reddit_items).values(document_id=doc_id, **values)
+            )
+
+
+def reddit_item(con: sa.Connection, doc_id: int) -> dict | None:
+    """Reddit fields for *doc_id*, or ``None`` when the document has no row."""
+    row = con.execute(
+        sa.select(
+            reddit_items.c.kind,
+            reddit_items.c.subreddit,
+            reddit_items.c.permalink,
+            reddit_items.c.external_url,
+            reddit_items.c.body,
+        ).where(reddit_items.c.document_id == doc_id)
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "kind": row[0],
+        "subreddit": row[1],
+        "permalink": row[2],
+        "external_url": row[3],
+        "body": row[4],
+    }
 
 
 # ── Image gate rejection cache ────────────────────────────────────────────────

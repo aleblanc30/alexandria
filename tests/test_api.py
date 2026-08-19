@@ -686,6 +686,101 @@ class TestImageDocuments:
         assert r.json()["source"] == "image"
 
 
+# ── Reddit documents ──────────────────────────────────────────────────────────
+
+def _seed_reddit(source_id: str, url: str, *, item_type: str | None = None) -> int:
+    return upsert_document(
+        "reddit", source_id, "Understanding Raft", url, int(time.time()),
+        item_type=item_type,
+    )
+
+
+class TestRedditDocuments:
+    def test_detail_exposes_stored_reddit_fields(self, client):
+        from pka.db.queries import upsert_reddit_item
+
+        doc_id = _seed_reddit("t3_linkpost", "https://example.com/paxos.pdf")
+        upsert_reddit_item(
+            doc_id,
+            kind="post",
+            subreddit="distributed",
+            permalink="https://www.reddit.com/r/distributed/comments/linkpost/x/",
+            external_url="https://example.com/paxos.pdf",
+            body="Line one.\n\nLine two.",
+        )
+
+        data = client.get(f"/documents/{doc_id}").json()
+
+        assert data["reddit"] == {
+            "kind": "post",
+            "subreddit": "distributed",
+            "permalink": "https://www.reddit.com/r/distributed/comments/linkpost/x/",
+            "external_url": "https://example.com/paxos.pdf",
+            "body": "Line one.\n\nLine two.",
+        }
+
+    def test_body_keeps_paragraph_breaks_that_the_description_loses(self, client):
+        from pka.db.queries import update_card_summary, upsert_reddit_item
+
+        body = "First paragraph.\n\nSecond paragraph."
+        doc_id = _seed_reddit("t1_c1", "https://www.reddit.com/r/compsci/comments/a/b/")
+        upsert_reddit_item(doc_id, kind="comment", subreddit="compsci", body=body)
+        update_card_summary(doc_id, "First paragraph. Second paragraph.")
+
+        data = client.get(f"/documents/{doc_id}").json()
+
+        assert data["reddit"]["body"] == body
+        assert "\n" not in data["description"]
+
+    def test_non_reddit_document_has_no_reddit_block(self, client):
+        ids = _seed_docs(1)
+        assert client.get(f"/documents/{ids[0]}").json()["reddit"] is None
+
+    def test_link_post_permalink_derived_when_no_detail_row(self, client):
+        """A library archived before ``reddit_items`` existed still reaches the thread."""
+        doc_id = _seed_reddit(
+            "t3_abc123", "https://example.com/paxos.pdf", item_type="post",
+        )
+
+        reddit = client.get(f"/documents/{doc_id}").json()["reddit"]
+
+        assert reddit["kind"] == "post"
+        assert reddit["permalink"] == "https://www.reddit.com/comments/abc123"
+        assert reddit["external_url"] == "https://example.com/paxos.pdf"
+        # Only the body is unrecoverable — that is why the column exists.
+        assert reddit["body"] is None
+
+    def test_self_post_fallback_is_not_mistaken_for_a_link_post(self, client):
+        """A self-post stores its own permalink, so it has no external target."""
+        url = "https://www.reddit.com/r/socialism/comments/1vqzgfx/book_suggestions/"
+        doc_id = _seed_reddit("t3_1vqzgfx", url, item_type="post")
+
+        reddit = client.get(f"/documents/{doc_id}").json()["reddit"]
+
+        assert reddit["permalink"] == url
+        assert reddit["external_url"] is None
+
+    def test_comment_fallback_uses_its_url_as_the_permalink(self, client):
+        url = "https://www.reddit.com/r/compsci/comments/xyz/raft/c1/"
+        doc_id = _seed_reddit("t1_comment1", url)
+
+        reddit = client.get(f"/documents/{doc_id}").json()["reddit"]
+
+        assert reddit["kind"] == "comment"
+        assert reddit["permalink"] == url
+        assert reddit["external_url"] is None
+
+    def test_fallback_recovers_subreddit_from_collections(self, client):
+        from pka.db.queries import insert_source_collections
+
+        doc_id = _seed_reddit("t3_xyz789", "https://example.com/a", item_type="post")
+        insert_source_collections(doc_id, ["r/compsci"], source="reddit")
+
+        reddit = client.get(f"/documents/{doc_id}").json()["reddit"]
+
+        assert reddit["subreddit"] == "compsci"
+
+
 # ── Tags ──────────────────────────────────────────────────────────────────────
 
 class TestTags:

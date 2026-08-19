@@ -4,15 +4,24 @@ Both the search results path (batched) and the single-document detail path build
 the same set of relations (source tags, overlay tags, cluster assignment,
 description), so they live here to avoid drift and N+1 duplication.
 """
+from urllib.parse import urlsplit
+
 import sqlalchemy as sa
 
 from pka.api.db_rows import fetchall_mappings, fetchone_mapping
-from pka.api.schemas.documents import DocumentDetail, DocumentOut, EnrichmentOut, ImageDetail
+from pka.api.schemas.documents import (
+    DocumentDetail,
+    DocumentOut,
+    EnrichmentOut,
+    ImageDetail,
+    RedditDetail,
+)
 from pka.constants import Source
 from pka.db.queries import (
     _batch_first_chunk_map,
     document_description,
     document_enrichment,
+    reddit_item,
     resolve_description,
 )
 from pka.db.schema import (
@@ -145,6 +154,55 @@ def enrichment_out(rows: list[dict]) -> list[EnrichmentOut]:
     return out
 
 
+def _is_reddit_url(url: str) -> bool:
+    """True when *url* points at reddit itself rather than an off-site target."""
+    host = urlsplit(url).hostname or ""
+    return host == "reddit.com" or host.endswith(".reddit.com")
+
+
+def _reddit_detail(con, doc_id: int, row, collections: list[str]) -> RedditDetail:
+    """Reddit fields for a document, falling back to what ``documents`` already knows.
+
+    ``reddit_items`` is filled by the metadata phase, so a library ingested
+    before that table existed has no row until the next Reddit run. Rather than
+    show nothing until then, the kind, subreddit, and permalink are recovered
+    from columns that were always populated. Only ``body`` has no fallback — the
+    card excerpt is truncated and the chunks are overlapped, which is the whole
+    reason the column exists.
+    """
+    stored = reddit_item(con, doc_id)
+    if stored:
+        return RedditDetail(**stored)
+
+    source_id = row["source_id"] or ""
+    url = row["url_or_path"] or ""
+    kind = row.get("item_type") or (
+        "comment" if source_id.startswith("t1_") else
+        "post" if source_id.startswith("t3_") else None
+    )
+    subreddit = next(
+        (c[2:] for c in collections if c.startswith("r/") and len(c) > 2), None,
+    )
+    # Where url_or_path points is what separates the two cases, and it is the
+    # only signal left once the connector's ``external_url`` is gone: a self-post
+    # or comment stores its own permalink there, a link post stores the external
+    # target and the thread has to be rebuilt from the fullname.
+    if _is_reddit_url(url):
+        permalink, external_url = url, None
+    elif source_id.startswith("t3_"):
+        permalink = f"https://www.reddit.com/comments/{source_id[3:]}"
+        external_url = url or None
+    else:
+        permalink, external_url = None, url or None
+    return RedditDetail(
+        kind=kind,
+        subreddit=subreddit,
+        permalink=permalink,
+        external_url=external_url,
+        body=None,
+    )
+
+
 def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | None:
     """Build a single :class:`DocumentDetail`, or ``None`` if the document is missing."""
     row = fetchone_mapping(con.execute(
@@ -184,6 +242,10 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
                 ocr_text=img_row["ocr_text"],
             )
 
+    reddit_detail = None
+    if row["source"] == Source.REDDIT:
+        reddit_detail = _reddit_detail(con, doc_id, row, colls)
+
     cluster_id = cluster_label = None
     if run_id:
         ca = con.execute(
@@ -214,5 +276,6 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
         note=row.get("note"),
         collections=colls, chunks_count=n_chunks,
         image=image_detail,
+        reddit=reddit_detail,
         enrichment=enrichment_out(document_enrichment([doc_id]).get(doc_id, [])),
     )

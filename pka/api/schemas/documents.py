@@ -33,6 +33,20 @@ class ImageDetail(BaseModel):
     ocr_text: str | None = None
 
 
+class RedditDetail(BaseModel):
+    """Reddit-specific fields, present only when ``source == reddit``.
+
+    ``body`` is the post or comment verbatim, not the 280-char ``description``
+    the cards use. ``permalink`` is the reddit thread; for a link post that is a
+    different URL from ``url_or_path``, which points at the external target.
+    """
+    kind: str | None = None            # post | comment
+    subreddit: str | None = None       # display name, no "r/" prefix
+    permalink: str | None = None
+    external_url: str | None = None    # link-post target, else None
+    body: str | None = None
+
+
 class EnrichmentOut(BaseModel):
     """One retrieval-enrichment chunk's provenance (DESIGN.md §3.2).
 
@@ -52,6 +66,7 @@ class DocumentDetail(DocumentOut):
     chunks_count: int
     collections: list[str]
     image: ImageDetail | None = None
+    reddit: RedditDetail | None = None
     enrichment: list[EnrichmentOut] = []
 
 

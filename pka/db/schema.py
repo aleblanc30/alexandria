@@ -74,6 +74,28 @@ fetch_log = sa.Table(
     sa.Column("error_msg",   sa.Text),
 )
 
+# Reddit-specific fields for a saved post or comment, keyed 1:1 to its document
+# row (same shape as ``images``). Two of these cannot live on ``documents``:
+#
+#  * ``body`` — ``documents.card_summary`` holds a 280-char excerpt for cards, and
+#    the chunks are overlapped and whitespace-normalised, so neither can give the
+#    detail panel the post/comment as written. This is the verbatim text.
+#  * ``permalink`` — a link post's ``documents.url_or_path`` is the *external*
+#    target, which loses the reddit thread the user actually saved. Comments keep
+#    theirs in ``url_or_path``; storing it here makes both kinds uniform.
+reddit_items = sa.Table(
+    "reddit_items", meta,
+    sa.Column("id",           sa.Integer, primary_key=True),
+    sa.Column("document_id",  sa.Integer, sa.ForeignKey("documents.id"),
+              nullable=False, unique=True),
+    sa.Column("kind",         sa.Text, nullable=False),   # post | comment
+    sa.Column("subreddit",    sa.Text),                   # display name, no "r/" prefix
+    sa.Column("permalink",    sa.Text),                   # canonical reddit thread URL
+    sa.Column("external_url", sa.Text),                   # link-post target, else NULL
+    sa.Column("body",         sa.Text),                   # selftext / comment body, verbatim
+)
+
+
 # ── Overlay ──────────────────────────────────────────────────────────────────
 
 overlay_tags = sa.Table(
