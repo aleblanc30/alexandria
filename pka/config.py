@@ -330,23 +330,17 @@ class Settings(BaseSettings):
     )
 
     # ── Reddit (saved posts) ────────────────────────────────────────────────
-    # OAuth "script" app credentials — set via ALEXANDRIA_REDDIT_* env / .env only.
-    # Never commit these. Create an app at https://www.reddit.com/prefs/apps
-    reddit_client_id: str = ""
-    reddit_client_secret: str = ""
-    reddit_username: str = ""
-    reddit_password: str = ""
-    reddit_refresh_token: str = ""   # alternative to username/password auth
     # Private token-bearing feed from https://www.reddit.com/prefs/feeds/ (RSS or
-    # JSON form; both accepted). Set, it is preferred over the OAuth API because
-    # it needs no registered app. The URL *is* the credential — anyone holding it
-    # can read the saved list — so it belongs in .secrets as
+    # JSON form accepted; always fetched as .rss). This is the only credential
+    # the connector takes — the OAuth API needs a "script" app clearance that
+    # personal accounts no longer get. The URL *is* the credential — anyone
+    # holding it can read the saved list — so it belongs in .secrets as
     # SECRET_ALEXANDRIA_REDDIT_FEED_URL, never in .env, and is redacted in logs.
     reddit_feed_url: str = ""
     # Plain and descriptive on purpose. The "<platform>:<app id>:<version>"
     # form Reddit's API rules ask for applies to OAuth API clients; the private
     # feed is not that, and announcing "python:" there advertises a script to a
-    # WAF without buying anything. The feed loader still appends "(by /u/<user>)"
+    # WAF without buying anything. The loader still appends "(by /u/<user>)"
     # from the feed URL when this carries no attribution.
     reddit_user_agent: str = "Alexandria/0.2 (local research library; saved-post indexer)"
     reddit_saved_limit: int | None = None   # None = fetch all saved items

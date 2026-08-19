@@ -86,10 +86,11 @@ System prerequisites:
   https://www.reddit.com/prefs/feeds/ — no app registration, which currently
   needs an API-access clearance personal accounts do not get. Paste either the
   RSS or the JSON form into `SECRET_ALEXANDRIA_REDDIT_FEED_URL` in `.secrets`;
-  the loader tries the JSON endpoint, and falls back to the Atom one that Reddit
-  actually serves to automated clients. That URL grants read access to your
-  saved list: treat it like a password. The OAuth API (`praw`) still works if
-  you have credentials, and is used when no feed URL is set.
+  either is normalised to the Atom (`.rss`) endpoint, the only one Reddit serves
+  to automated clients. That URL grants read access to your
+  saved list: treat it like a password. This feed URL is the only credential the
+  connector takes — the OAuth API (`praw`) route has been removed, since the
+  "script" app it needs is no longer obtainable.
 - **Image OCR** runs through the vision model by default (`ocr_provider=vlm`,
   no extra install). Set `ocr_provider=easyocr` to use the bundled **EasyOCR**
   backend instead — a pip dependency (no system binary); its recognition models

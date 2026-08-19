@@ -8,15 +8,15 @@
   clearance a personal account does not get by default — the create form simply
   re-renders — so the feed is the route that actually works. Verified against a
   live account: 25 items, then 100/page once the loader started asking.
-  - Two endpoints, tried in order. `saved.json` returns the richer listing
-    payload but answers automated clients with a 403 whose body is the web app's
-    HTML — the token is never evaluated, so rotating it changes nothing. The
-    Atom form, `saved.rss`, is served normally; `load_saved_from_private_feed`
-    falls back to it and reports both failures together if neither works.
-  - No new dependency and no new item shape: the JSON form is what PRAW wraps,
-    and Atom is parsed with `ElementTree` as `arxiv.py` already does. Bodies
-    arrive inline in both, so self-posts and comments owe no fetch — unlike the
-    CSV data export, where every row would.
+  - One endpoint, `saved.rss`. The richer `saved.json` listing answers automated
+    clients with a 403 whose body is the web app's HTML — the token is never
+    evaluated, so rotating it changes nothing — and it is no longer requested at
+    all: trying it first only opened every sync with a blocked request against
+    an account Reddit already watches. A pasted `.json` URL is normalised to
+    `.rss`; the token is the same either way.
+  - No new dependency: Atom is parsed with `ElementTree` as `arxiv.py` already
+    does. Bodies arrive inline, so self-posts and comments owe no fetch — unlike
+    the CSV data export, where every row would.
   - Atom has no `after` field, so the cursor is derived from each entry's
     `<id>`, which *is* a fullname. A page contributing no new fullnames ends the
     walk, so a server ignoring the cursor cannot spin the page budget. Reddit
@@ -34,6 +34,15 @@
   - **Throttled paging** (`reddit_feed_poll_interval_seconds`, default 1.0, plus
     up to `reddit_feed_poll_jitter_seconds` of jitter) between pages only, so an
     incremental sync that ends on page one never sleeps.
+- **The Reddit OAuth (PRAW) route is gone.** The feed above is the only loader:
+  `load_saved` *is* the Atom loader, and `reddit_feed_url` the only credential.
+  Creating the "script" app PRAW needs requires an API-access clearance personal
+  accounts do not get, so the path could not be exercised — it was five dead
+  settings (`reddit_client_id`, `_client_secret`, `_username`, `_password`,
+  `_refresh_token`), the `[reddit]` extra, and a test suite for code that never
+  ran. **Migration:** delete those keys from `.env` — `Settings` forbids unknown
+  `ALEXANDRIA_*` env keys, so a stale one now fails startup. Stale entries in
+  `.secrets` are only warned about.
 - **Reddit is no longer hidden behind the experimental-sources toggle** now that
   it ingests end to end; YouTube still is.
 - **Backfill is reachable from the UI**, not just `alexandria reddit

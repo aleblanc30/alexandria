@@ -1,8 +1,8 @@
 """Ingest Reddit saved posts (metadata + embed + fetch).
 
-Requires the optional ``praw`` dependency and ``ALEXANDRIA_REDDIT_*`` credentials::
+Requires the saved-links feed URL from https://www.reddit.com/prefs/feeds/ in
+``SECRET_ALEXANDRIA_REDDIT_FEED_URL``::
 
-    pip install -e '.[reddit]'
     alexandria reddit
     alexandria reddit --backfill        # walk the whole feed, not just what is new
     alexandria reddit --metadata-only   # persist saved list, skip embedding/fetch

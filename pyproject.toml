@@ -56,9 +56,6 @@ youtube = [
     "google-api-python-client>=2.100",
     "google-auth-oauthlib>=1.2",
 ]
-reddit = [
-    "praw>=7.7",                 # Reddit OAuth API client for saved-post ingestion
-]
 
 [project.scripts]
 alexandria = "pka.cli:main"

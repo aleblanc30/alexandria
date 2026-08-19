@@ -340,58 +340,54 @@ def youtube_service() -> FakeYouTubeService:
     )
 
 
-# ── Fake Reddit saved listing (PRAW-compatible client) ────────────────────────
+# ── Fake Reddit saved listing ─────────────────────────────────────────────────
 
 def _make_reddit_saved_items():
     """Sample saved items: a self-post, a link post, and a comment.
 
-    Attribute shapes mirror praw ``Submission`` / ``Comment`` objects closely
-    enough for the connector, without importing praw.
+    Built as ``RedditSaved`` directly. The connector's only job upstream of this
+    is turning Atom entries into these, which ``test_connector_reddit`` covers;
+    sync tests care about the shape, not how it was parsed.
     """
-    from types import SimpleNamespace
+    from pka.connectors.reddit import RedditSaved
 
-    self_post = SimpleNamespace(
-        name="t3_selfpost",
+    self_post = RedditSaved(
+        source_id="t3_selfpost",
+        kind="post",
         title="Ask HN: favourite consensus algorithm?",
-        selftext="I keep coming back to Raft for its understandability.",
-        is_self=True,
-        url="https://www.reddit.com/r/compsci/comments/selfpost/",
-        permalink="/r/compsci/comments/selfpost/ask/",
+        permalink="https://www.reddit.com/r/compsci/comments/selfpost/ask/",
+        external_url=None,
         subreddit="compsci",
-        created_utc=1700000000,
+        body="I keep coming back to Raft for its understandability.",
+        date_added=1700000000,
     )
-    link_post = SimpleNamespace(
-        name="t3_linkpost",
+    link_post = RedditSaved(
+        source_id="t3_linkpost",
+        kind="post",
         title="Paxos Made Simple (PDF)",
-        selftext="",
-        is_self=False,
-        url="https://example.com/paxos.pdf",
-        permalink="/r/distributed/comments/linkpost/paxos/",
+        permalink="https://www.reddit.com/r/distributed/comments/linkpost/paxos/",
+        external_url="https://example.com/paxos.pdf",
         subreddit="distributed",
-        created_utc=1700000100,
+        body=None,
+        date_added=1700000100,
     )
-    comment = SimpleNamespace(
-        name="t1_comment1",
-        body="Raft's leader election is the clearest part of the protocol.",
-        link_title="Understanding Raft",
-        permalink="/r/compsci/comments/xyz/understanding_raft/c1/",
+    comment = RedditSaved(
+        source_id="t1_comment1",
+        kind="comment",
+        title='Comment on "Understanding Raft"',
+        permalink="https://www.reddit.com/r/compsci/comments/xyz/understanding_raft/c1/",
+        external_url=None,
         subreddit="compsci",
-        created_utc=1700000200,
+        body="Raft's leader election is the clearest part of the protocol.",
+        date_added=1700000200,
     )
     return [self_post, link_post, comment]
 
 
 @pytest.fixture()
-def fake_reddit_client():
-    """A MagicMock PRAW client whose saved() yields the sample items."""
-    items = _make_reddit_saved_items()
-    client = MagicMock()
-    client.user.me.return_value.saved.return_value = iter(items)
-    # Re-create the iterator on each saved() call so multiple loads work.
-    client.user.me.return_value.saved.side_effect = (
-        lambda *a, **k: iter(_make_reddit_saved_items())
-    )
-    return client
+def reddit_saved_items():
+    """The sample saved list, as the connector would return it."""
+    return _make_reddit_saved_items()
 
 
 FAKE_DIM = 8   # tiny dimension for mock Chroma vectors

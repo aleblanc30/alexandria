@@ -4,7 +4,6 @@ from __future__ import annotations
 import sqlalchemy as sa
 
 import pka.ingestion.reddit_sync as rs
-from pka.connectors.reddit import load_saved as connector_load_saved
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
     document_has_chunks,
@@ -15,10 +14,9 @@ from pka.db.queries import (
 from pka.db.schema import documents, source_collections
 
 
-def _patch_load(monkeypatch, fake_reddit_client):
-    items = connector_load_saved(client=fake_reddit_client)
-    monkeypatch.setattr(rs, "load_saved", lambda *a, **k: list(items))
-    return items
+def _patch_load(monkeypatch, reddit_saved_items):
+    monkeypatch.setattr(rs, "load_saved", lambda *a, **k: list(reddit_saved_items))
+    return reddit_saved_items
 
 
 def _fetch_status(source_id: str) -> str:
@@ -31,8 +29,8 @@ def _fetch_status(source_id: str) -> str:
         ).scalar_one()
 
 
-def test_metadata_persists_all_items(monkeypatch, fake_reddit_client, mock_chroma):
-    _patch_load(monkeypatch, fake_reddit_client)
+def test_metadata_persists_all_items(monkeypatch, reddit_saved_items, mock_chroma):
+    _patch_load(monkeypatch, reddit_saved_items)
 
     stats = rs.sync_reddit_metadata()
 
@@ -46,8 +44,8 @@ def test_metadata_persists_all_items(monkeypatch, fake_reddit_client, mock_chrom
     assert _fetch_status("t3_linkpost") == FetchStatus.PENDING
 
 
-def test_subreddit_stored_as_collection(monkeypatch, fake_reddit_client, mock_chroma):
-    _patch_load(monkeypatch, fake_reddit_client)
+def test_subreddit_stored_as_collection(monkeypatch, reddit_saved_items, mock_chroma):
+    _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
 
     doc_id = document_index(Source.REDDIT)["t3_selfpost"]
@@ -60,8 +58,8 @@ def test_subreddit_stored_as_collection(monkeypatch, fake_reddit_client, mock_ch
     assert cols == ["r/compsci"]
 
 
-def test_full_sync_embeds_inline_bodies_only(monkeypatch, fake_reddit_client, mock_chroma):
-    _patch_load(monkeypatch, fake_reddit_client)
+def test_full_sync_embeds_inline_bodies_only(monkeypatch, reddit_saved_items, mock_chroma):
+    _patch_load(monkeypatch, reddit_saved_items)
 
     stats = rs.sync_reddit()
 
@@ -74,9 +72,9 @@ def test_full_sync_embeds_inline_bodies_only(monkeypatch, fake_reddit_client, mo
 
 
 def test_ingest_queue_returns_only_pending_link_posts(
-    monkeypatch, fake_reddit_client, mock_chroma,
+    monkeypatch, reddit_saved_items, mock_chroma,
 ):
-    _patch_load(monkeypatch, fake_reddit_client)
+    _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
 
     queue = source_ingest_queue(Source.REDDIT, None)
@@ -85,8 +83,8 @@ def test_ingest_queue_returns_only_pending_link_posts(
     assert queue == [(doc_id, "https://example.com/paxos.pdf")]
 
 
-def test_ingest_fetches_link_posts(monkeypatch, fake_reddit_client, mock_chroma):
-    _patch_load(monkeypatch, fake_reddit_client)
+def test_ingest_fetches_link_posts(monkeypatch, reddit_saved_items, mock_chroma):
+    _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
 
     async def _fake_fetch(*, source, limit, progress_key, embed_fn, dry_run):
@@ -119,12 +117,12 @@ def test_ingest_fetches_link_posts(monkeypatch, fake_reddit_client, mock_chroma)
     assert document_has_chunks(link_id)
 
 
-def test_link_post_embeds_title(monkeypatch, fake_reddit_client, mock_chroma):
+def test_link_post_embeds_title(monkeypatch, reddit_saved_items, mock_chroma):
     """Fetched link-post text carries the post title into the index (DESIGN §3.2)."""
     from pka.ingestion.runners.reddit import embed_fetched_text
 
     store, _ = mock_chroma
-    _patch_load(monkeypatch, fake_reddit_client)
+    _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
     doc_id = document_index(Source.REDDIT)["t3_linkpost"]
 
@@ -140,10 +138,10 @@ def test_link_post_embeds_title(monkeypatch, fake_reddit_client, mock_chroma):
     assert any("Paxos Made Simple (PDF)" in r["text"] for r in records)
 
 
-def test_thin_link_post_still_gets_one_chunk(monkeypatch, fake_reddit_client, mock_chroma):
+def test_thin_link_post_still_gets_one_chunk(monkeypatch, reddit_saved_items, mock_chroma):
     from pka.ingestion.runners.reddit import embed_fetched_text
 
-    _patch_load(monkeypatch, fake_reddit_client)
+    _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
     doc_id = document_index(Source.REDDIT)["t3_linkpost"]
 
@@ -153,8 +151,8 @@ def test_thin_link_post_still_gets_one_chunk(monkeypatch, fake_reddit_client, mo
     assert document_has_chunks(doc_id)
 
 
-def test_reingest_is_idempotent(monkeypatch, fake_reddit_client, mock_chroma):
-    _patch_load(monkeypatch, fake_reddit_client)
+def test_reingest_is_idempotent(monkeypatch, reddit_saved_items, mock_chroma):
+    _patch_load(monkeypatch, reddit_saved_items)
 
     rs.sync_reddit()
     stats = rs.sync_reddit()
@@ -175,9 +173,9 @@ def _reddit_row(source_id: str):
 
 
 def test_metadata_persists_reddit_detail_fields(
-    monkeypatch, fake_reddit_client, mock_chroma,
+    monkeypatch, reddit_saved_items, mock_chroma,
 ):
-    _patch_load(monkeypatch, fake_reddit_client)
+    _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
 
     comment = _reddit_row("t1_comment1")
@@ -191,10 +189,10 @@ def test_metadata_persists_reddit_detail_fields(
 
 
 def test_link_post_keeps_permalink_separate_from_external_url(
-    monkeypatch, fake_reddit_client, mock_chroma,
+    monkeypatch, reddit_saved_items, mock_chroma,
 ):
     """The saved thread survives even though url_or_path is the external target."""
-    _patch_load(monkeypatch, fake_reddit_client)
+    _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
 
     row = _reddit_row("t3_linkpost")
@@ -212,7 +210,7 @@ def test_link_post_keeps_permalink_separate_from_external_url(
 
 
 def test_metadata_rerun_backfills_detail_rows(
-    monkeypatch, fake_reddit_client, mock_chroma,
+    monkeypatch, reddit_saved_items, mock_chroma,
 ):
     """A library archived before ``reddit_items`` existed fills in on the next run.
 
@@ -222,7 +220,7 @@ def test_metadata_rerun_backfills_detail_rows(
     """
     from pka.db.schema import reddit_items
 
-    _patch_load(monkeypatch, fake_reddit_client)
+    _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
     with get_engine().begin() as con:
         con.execute(sa.delete(reddit_items))
@@ -236,9 +234,9 @@ def test_metadata_rerun_backfills_detail_rows(
 
 
 def test_dry_run_metadata_does_not_write_detail_rows(
-    monkeypatch, fake_reddit_client, mock_chroma,
+    monkeypatch, reddit_saved_items, mock_chroma,
 ):
-    _patch_load(monkeypatch, fake_reddit_client)
+    _patch_load(monkeypatch, reddit_saved_items)
 
     stats = rs.sync_reddit_metadata(dry_run=True)
 
@@ -259,9 +257,9 @@ def _summary_chunks(mock_chroma) -> list[dict]:
 
 
 def test_inline_bodies_get_no_summary_when_the_flag_is_off(
-    monkeypatch, fake_reddit_client, mock_chroma,
+    monkeypatch, reddit_saved_items, mock_chroma,
 ):
-    _patch_load(monkeypatch, fake_reddit_client)
+    _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
     rs.sync_reddit_ingest()
 
@@ -269,7 +267,7 @@ def test_inline_bodies_get_no_summary_when_the_flag_is_off(
 
 
 def test_long_inline_body_gets_a_summary_chunk(
-    monkeypatch, fake_reddit_client, mock_chroma,
+    monkeypatch, reddit_saved_items, mock_chroma,
 ):
     """Self-posts and comments owe a summary just as fetched link posts do."""
     from pka.config import settings as cfg
@@ -281,7 +279,7 @@ def test_long_inline_body_gets_a_summary_chunk(
         lambda *a, **k: ({"summary": "Consensus protocols and their trade-offs."}, None),
     )
 
-    items = _patch_load(monkeypatch, fake_reddit_client)
+    items = _patch_load(monkeypatch, reddit_saved_items)
     for item in items:
         if item.body:
             item.body = _long_body()
@@ -293,7 +291,7 @@ def test_long_inline_body_gets_a_summary_chunk(
 
 
 def test_comment_summary_is_framed_as_a_comment_with_its_thread(
-    monkeypatch, fake_reddit_client, mock_chroma,
+    monkeypatch, reddit_saved_items, mock_chroma,
 ):
     """The summariser is told what the text is and which thread it came from."""
     from pka.config import settings as cfg
@@ -308,7 +306,7 @@ def test_comment_summary_is_framed_as_a_comment_with_its_thread(
 
     monkeypatch.setattr(sz, "chat_json", _record)
 
-    items = _patch_load(monkeypatch, fake_reddit_client)
+    items = _patch_load(monkeypatch, reddit_saved_items)
     for item in items:
         if item.kind == "comment":
             item.body = _long_body("Raft")

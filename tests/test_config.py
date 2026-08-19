@@ -75,13 +75,13 @@ class TestParseSecretsFile:
             "# a comment\n"
             "\n"
             "SECRET_ALEXANDRIA_OPENROUTER_API_KEY=sk-or-plain\n"
-            "  SECRET_ALEXANDRIA_REDDIT_PASSWORD = 'quoted value' \n"
+            "  SECRET_ALEXANDRIA_REDDIT_FEED_URL = 'quoted value' \n"
             'export SECRET_ALEXANDRIA_OVH_API_KEY="dq"\n',
             encoding="utf-8",
         )
         assert parse_secrets_file(path) == {
             "ALEXANDRIA_OPENROUTER_API_KEY": "sk-or-plain",
-            "ALEXANDRIA_REDDIT_PASSWORD": "quoted value",
+            "ALEXANDRIA_REDDIT_FEED_URL": "quoted value",
             "ALEXANDRIA_OVH_API_KEY": "dq",
         }
 

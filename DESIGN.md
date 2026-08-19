@@ -185,29 +185,34 @@ returns HTTP 404, the fetcher can fall back to the closest Internet Archive
 snapshot (`fetch_wayback_fallback`, default on).
 
 **Reddit saved posts** are a *network* source (no filesystem path) rather than a
-local DB, with **two interchangeable loaders** behind one `RedditSaved` shape:
+local DB, with **one loader** producing `RedditSaved`:
 
 1. **Private feed** (`reddit_feed_url`) — the token-bearing feed Reddit issues
    from `/prefs/feeds/`. Preferred when set: registering a "script" app now
    requires a separate API-access clearance that personal accounts do not get by
    default (the create form simply re-renders), whereas the feed URL is handed
-   over on a preferences page. `load_saved_from_private_feed` tries **two
-   endpoints**, because only one of them is actually served:
+   over on a preferences page. `load_saved_from_rss` fetches exactly **one
+   endpoint**, `saved.rss` — the Atom form feed readers use.
 
-   * `saved.json` — Reddit's ordinary listing payload, the same fields PRAW
-     wraps, so `_to_saved` maps it unchanged. **Observed to fail**: automated
-     clients get a 403 whose body is the web app's HTML, meaning the request
-     never reached the feed's token auth. Tried first anyway — it is the richer
-     payload, and the block is a policy that may change either way.
-   * `saved.rss` — the Atom form feed readers use, and the one that works.
-     Thinner: no `is_self`, so a self-post and a link post are told apart only
-     by the anchor Reddit labels `[link]`; and no `after` field. The cursor is
-     *derived* instead — each entry's `<id>` is the fullname `after` expects, so
-     the last entry of a page pages the next. Both forms carry the body inline
-     (`<content type="html">`), so self-posts and comments owe no fetch, and
-     both accept `limit`; without it Reddit serves 25, so the loader always asks
-     for the 100-item maximum. Roughly 1000 items is where Reddit stops paging,
-     which covers a recent history but not the far end of an old saved list.
+   `saved.json`, the richer listing payload, is deliberately **not requested**.
+   Automated clients get a 403 whose body is the web app's HTML: the request
+   never reaches the feed's token auth, so it cannot be fixed by rotating the
+   token, and it never once succeeded in practice. It used to be tried first
+   with the Atom feed as fallback, which meant every sync opened with a blocked
+   request against an account Reddit is already scrutinising — the cost of
+   looking like a scraper, for a payload that never arrives. `_feed_url` now
+   normalises a pasted `.json` URL to `.rss` rather than honouring it; the token
+   is the same either way.
+
+   Atom is thinner than the listing would be: no `is_self`, so a self-post and a
+   link post are told apart only by the anchor Reddit labels `[link]`; and no
+   `after` field. The cursor is *derived* instead — each entry's `<id>` is the
+   fullname `after` expects, so the last entry of a page pages the next. The
+   body arrives inline (`<content type="html">`), so self-posts and comments owe
+   no fetch, and `limit` is honoured; without it Reddit serves 25, so the loader
+   always asks for the 100-item maximum. Roughly 1000 items is where Reddit
+   stops paging, which covers a recent history but not the far end of an old
+   saved list.
 
    Failing pages are guarded against a server that ignores `after`: a page
    contributing no new fullnames ends the walk. The URL *is* the credential, so
@@ -236,11 +241,15 @@ local DB, with **two interchangeable loaders** behind one `RedditSaved` shape:
    in one page never sleeps. Only a backfill issues requests in a row, and a
    fixed-rate burst is what bot protection is built to notice; the jitter keeps
    a repeating loop from settling into a metronome.
-2. **PRAW** (`reddit_client_id` + secret) — the OAuth API, unchanged.
+2. **PRAW** (the OAuth API) — **removed**. It was the original route, but
+   creating the "script" app it requires now needs an API-access clearance a
+   personal account does not get, so the code could not be exercised at all:
+   dead credentials (5 settings), a dead optional dependency, and a test suite
+   for a path that never runs. `git log` has it if Reddit reopens that door.
+   `load_saved` is now the feed loader itself, and `reddit_feed_url` is the
+   connector's only credential — unset, it raises rather than falling back.
 
-Note `read_only` is deliberately *not* set on the PRAW client: in PRAW that
-setter swaps in the application-only authorizer, which cannot see a user's
-saved list at all. Phase 1
+Phase 1
 persists every saved item; phase 2 embeds the inline body of self-posts and
 comments (the cheap text) and fetches external link posts through the shared
 fetcher (`fetch_and_embed_pending(source=Source.REDDIT)`, backed by the
