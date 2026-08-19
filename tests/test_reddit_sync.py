@@ -319,3 +319,26 @@ def test_comment_summary_is_framed_as_a_comment_with_its_thread(
     assert "indexing a Reddit comment" in prompts[0]
     assert 'Understanding Raft' in prompts[0]
     assert "Subreddit: r/compsci" in prompts[0]
+
+
+def test_metadata_can_be_replayed_from_the_archive(
+    monkeypatch, reddit_saved_items, mock_chroma
+):
+    """--from-archive rebuilds the rows from disk without polling the feed."""
+    from dataclasses import asdict
+
+    from pka.connectors import reddit_archive
+
+    reddit_archive.record_items([asdict(item) for item in reddit_saved_items])
+
+    def _no_polling(*a, **k):
+        raise AssertionError("the feed must not be polled with from_archive=True")
+
+    monkeypatch.setattr(rs, "load_saved", _no_polling)
+
+    stats = rs.sync_reddit_metadata(from_archive=True)
+
+    assert stats["metadata"]["processed"] == 3
+    assert set(document_index(Source.REDDIT)) == {
+        "t3_selfpost", "t3_linkpost", "t1_comment1",
+    }

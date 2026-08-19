@@ -354,6 +354,12 @@ class Settings(BaseSettings):
     # open that file in a browser tab as well — handy while diagnosing, noisy
     # during a normal run, hence off.
     reddit_feed_open_failed_page: bool = False
+    # Write every poll to data_dir/reddit/<timestamp>/ (raw Atom pages plus a
+    # manifest) and merge its items into data_dir/reddit/saved.jsonl. On by
+    # default, unlike the outbound flags: this is a local disk write, and Reddit
+    # is the one source with no local original to re-read — the feed serves only
+    # the newest slice, so an unarchived poll is gone once the token dies.
+    reddit_archive_enabled: bool = True
 
     # ── Images ──────────────────────────────────────────────────────────────
     ocr_lang: str = "eng"  # OCR language(s), e.g. "eng+fra"; mapped to EasyOCR codes
@@ -413,6 +419,7 @@ class Settings(BaseSettings):
         "ocr_enabled",
         "clip_enabled",
         "reddit_feed_open_failed_page",
+        "reddit_archive_enabled",
         "image_gate_enabled",
         "bookmark_summary_enabled",
         "book_summary_enabled",

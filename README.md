@@ -90,7 +90,12 @@ System prerequisites:
   to automated clients. That URL grants read access to your
   saved list: treat it like a password. This feed URL is the only credential the
   connector takes — the OAuth API (`praw`) route has been removed, since the
-  "script" app it needs is no longer obtainable.
+  "script" app it needs is no longer obtainable. Every poll is archived to
+  `data/reddit/<timestamp>/` (the raw feed pages, plus a manifest) and merged
+  into `data/reddit/saved.jsonl`, which holds one deduplicated line per saved
+  item; `alexandria reddit --from-archive` re-ingests from that log with no
+  network access, for when the token dies or the database has to be rebuilt.
+  Turn the archive off with `ALEXANDRIA_REDDIT_ARCHIVE_ENABLED=0`.
 - **Image OCR** runs through the vision model by default (`ocr_provider=vlm`,
   no extra install). Set `ocr_provider=easyocr` to use the bundled **EasyOCR**
   backend instead — a pip dependency (no system binary); its recognition models

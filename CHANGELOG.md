@@ -42,6 +42,25 @@
     source/phase/status combinations by full-dict equality; it is what proves the
     rewrite did not move the numbers the UI draws.
 
+- **Every Reddit poll is now archived to disk** (`pka/connectors/reddit_archive.py`,
+  `ALEXANDRIA_REDDIT_ARCHIVE_ENABLED`, default on — a local write, not an outbound
+  path). Reddit is the one source with no local original to re-read: the saved list
+  lives behind a token that can be rotated and a feed that serves only the newest
+  slice, so a poll is unrepeatable. Each walk writes its raw Atom pages verbatim to
+  `data/reddit/<timestamp>/` with a manifest, and merges its items into a
+  cumulative `data/reddit/saved.jsonl`.
+  - Incremental without duplicates: a line is appended only when an item is new or
+    its content digest changed, so re-running a backfill appends nothing while an
+    edited comment appends a new record and wins on read. Digests rather than ids
+    alone, because an id-only rule would silently drop edits.
+  - Written from a `finally`, so a walk that dies mid-feed keeps the pages it got
+    and names the failure in its manifest. Every write is best-effort: an archive
+    that took a sync down with it would defeat its own purpose. The feed URL — the
+    credential — never reaches the files.
+  - `alexandria reddit --from-archive` (and `from_archive=` on the sync functions)
+    replays `saved.jsonl` through the pipeline with no network access, for a
+    rebuilt database or a token that stopped working.
+
 - **Reddit saved posts can be loaded without an OAuth app**, via the private
   token-bearing feed from `/prefs/feeds/` (`reddit_feed_url`, preferred over
   PRAW when set). Creating a "script" app now requires a separate API-access

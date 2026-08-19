@@ -35,13 +35,14 @@ import time
 import webbrowser
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 from pka.config import settings as cfg
+from pka.connectors import reddit_archive
 
 log = logging.getLogger(__name__)
 
@@ -525,50 +526,93 @@ def load_saved(
     seen: set[str] = set()
     after: str | None = None
 
-    for page in range(_FEED_PAGE_BUDGET):
-        if page:
-            _throttle_poll()
+    # Every response is written to data/reddit/<timestamp>/ before it is parsed:
+    # the feed serves only the newest slice of a list held on someone else's
+    # server, so a poll is not repeatable. The ``finally`` covers a walk that
+    # dies halfway — those pages are the ones worth keeping.
+    archive = reddit_archive.PollArchive() if cfg.reddit_archive_enabled else None
+    failure: str | None = None
 
-        page_params = dict(params)
-        want = _FEED_PAGE_MAX if limit is None else min(limit - len(saved), _FEED_PAGE_MAX)
-        if want <= 0:
-            break
-        page_params["limit"] = str(want)
-        if after:
-            page_params["after"] = after
+    try:
+        for page in range(_FEED_PAGE_BUDGET):
+            if page:
+                _throttle_poll()
 
-        entries = _parse_atom_entries(_fetch_feed_text(base, page_params), base)
-        if not entries:
-            break
-
-        fresh = 0
-        reached_known = False
-        for entry in entries:
-            item = _atom_entry_to_saved(entry, netloc)
-            if item is None or item.source_id in seen:
-                continue
-            if stop_on_known and known_ids and item.source_id in known_ids:
-                # Save-ordered listing: this item and everything after it is
-                # already in the archive, so the walk is done mid-page.
-                reached_known = True
+            page_params = dict(params)
+            want = _FEED_PAGE_MAX if limit is None else min(limit - len(saved), _FEED_PAGE_MAX)
+            if want <= 0:
                 break
-            seen.add(item.source_id)
-            saved.append(item)
-            fresh += 1
+            page_params["limit"] = str(want)
+            if after:
+                page_params["after"] = after
 
-        if reached_known:
-            log.info(
-                "Incremental sync: reached an already-saved item on page %d; "
-                "stopping after %d new (backfill=True walks the whole feed)",
-                page + 1, len(saved),
-            )
-            break
-        # A server that ignores ``after`` would replay the same page forever.
-        if fresh == 0:
-            break
-        after = _last_entry_fullname(entries) or None
-        if after is None or len(entries) < want:
-            break
+            xml_text = _fetch_feed_text(base, page_params)
+            if archive is not None:
+                archive.add_page(xml_text)
+            entries = _parse_atom_entries(xml_text, base)
+            if not entries:
+                break
+
+            fresh = 0
+            reached_known = False
+            for entry in entries:
+                item = _atom_entry_to_saved(entry, netloc)
+                if item is None or item.source_id in seen:
+                    continue
+                if stop_on_known and known_ids and item.source_id in known_ids:
+                    # Save-ordered listing: this item and everything after it is
+                    # already in the archive, so the walk is done mid-page.
+                    reached_known = True
+                    break
+                seen.add(item.source_id)
+                saved.append(item)
+                fresh += 1
+
+            if reached_known:
+                log.info(
+                    "Incremental sync: reached an already-saved item on page %d; "
+                    "stopping after %d new (backfill=True walks the whole feed)",
+                    page + 1, len(saved),
+                )
+                break
+            # A server that ignores ``after`` would replay the same page forever.
+            if fresh == 0:
+                break
+            after = _last_entry_fullname(entries) or None
+            if after is None or len(entries) < want:
+                break
+    except Exception as exc:
+        # Named for the manifest, then re-raised untouched. Feed URLs are
+        # redacted at the point the error is built, so this carries no token.
+        failure = _describe(exc)
+        raise
+    finally:
+        if archive is not None:
+            archive.finish([asdict(s) for s in saved], error=failure)
 
     log.info("Loaded %d Reddit saved items from the Atom feed", len(saved))
     return saved[:limit] if limit is not None else saved
+
+
+def load_saved_from_archive(limit: int | None = -1) -> list[RedditSaved]:
+    """Rebuild the saved list from ``data/reddit/saved.jsonl`` — no network.
+
+    The point of archiving every poll: when the token stops working, or bot
+    protection starts refusing the request, the archive still holds everything
+    previous polls saw and a re-ingest can run off it. Ordering is first-seen,
+    which is the order the feed served them (newest saved first) within each
+    poll.
+    """
+    if limit == -1:
+        limit = cfg.reddit_saved_limit
+
+    items: list[RedditSaved] = []
+    fields = {f for f in RedditSaved.__dataclass_fields__}
+    for payload in reddit_archive.read_items():
+        try:
+            items.append(RedditSaved(**{k: v for k, v in payload.items() if k in fields}))
+        except TypeError as exc:  # a record written by an older field set
+            log.warning("Skipping unusable archived Reddit item: %s", exc)
+
+    log.info("Loaded %d Reddit saved items from the local archive", len(items))
+    return items[:limit] if limit is not None else items

@@ -8,7 +8,7 @@ import asyncio
 import logging
 from functools import partial
 
-from pka.connectors.reddit import RedditSaved, load_saved
+from pka.connectors.reddit import RedditSaved, load_saved, load_saved_from_archive
 from pka.constants import Source
 from pka.db.queries import document_index, init_db, source_ingest_queue
 from pka.ingestion import progress as sp
@@ -35,6 +35,7 @@ def sync_reddit_metadata(
     progress_key: str | None = None,
     dry_run: bool = False,
     backfill: bool = False,
+    from_archive: bool = False,
 ) -> dict:
     """Persist saved items.
 
@@ -42,12 +43,17 @@ def sync_reddit_metadata(
     at the first item already in the archive — normally one request, no throttle
     sleep. ``backfill=True`` walks the whole feed instead, for a first run or to
     fill gaps a failed run left behind.
+
+    ``from_archive=True`` replays ``data/reddit/saved.jsonl`` instead of polling,
+    which is how a rebuilt database is refilled once the feed is unreachable.
     """
     init_db()
     key = progress_key or "reddit"
     known = set(document_index(Source.REDDIT))
     saved = take(
-        load_saved(known_ids=known, stop_on_known=not backfill), Source.REDDIT,
+        load_saved_from_archive() if from_archive
+        else load_saved(known_ids=known, stop_on_known=not backfill),
+        Source.REDDIT,
     )
     baseline = archive_document_count(Source.REDDIT)
     pending = _pending_count(saved, known)
@@ -61,11 +67,14 @@ def sync_reddit_ingest(
     progress_key: str | None = None,
     dry_run: bool = False,
     skip_existing: bool = True,
+    from_archive: bool = False,
 ) -> dict:
     key = progress_key or "reddit"
     # No stop_on_known here: this phase needs bodies for every item still
     # missing chunks, and those are not necessarily the most recently saved.
-    saved = take(load_saved(), Source.REDDIT)
+    saved = take(
+        load_saved_from_archive() if from_archive else load_saved(), Source.REDDIT,
+    )
     sp.set_corpus_total(key, len(saved))
 
     stats: dict = {}
@@ -117,10 +126,16 @@ def sync_reddit(
     progress_key: str | None = None,
     dry_run: bool = False,
     backfill: bool = False,
+    from_archive: bool = False,
 ) -> dict:
     """Full pipeline (metadata then ingest). Kept for scripts/tests."""
     key = progress_key or "reddit"
-    meta = sync_reddit_metadata(progress_key=key, dry_run=dry_run, backfill=backfill)
+    meta = sync_reddit_metadata(
+        progress_key=key, dry_run=dry_run, backfill=backfill, from_archive=from_archive,
+    )
     return run_full_sync(
-        meta, lambda: sync_reddit_ingest(progress_key=key, dry_run=dry_run),
+        meta,
+        lambda: sync_reddit_ingest(
+            progress_key=key, dry_run=dry_run, from_archive=from_archive,
+        ),
     )

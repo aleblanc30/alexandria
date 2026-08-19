@@ -7,7 +7,12 @@ Requires the saved-links feed URL from https://www.reddit.com/prefs/feeds/ in
     alexandria reddit --backfill        # walk the whole feed, not just what is new
     alexandria reddit --metadata-only   # persist saved list, skip embedding/fetch
     alexandria reddit --ingest-only      # embed inline bodies + fetch link posts
+    alexandria reddit --from-archive    # replay data/reddit/saved.jsonl, no polling
     alexandria reddit --dry-run
+
+Every poll is written to ``data/reddit/<timestamp>/`` (raw Atom pages plus a
+manifest) and merged into ``data/reddit/saved.jsonl``; ``--from-archive`` reads
+that log back when the feed is no longer reachable.
 """
 from __future__ import annotations
 
@@ -33,6 +38,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="Walk the whole feed instead of stopping at the "
                              "first already-saved item (first run, or to fill "
                              "gaps a failed run left)")
+    parser.add_argument("--from-archive",  action="store_true",
+                        help="Replay data/reddit/saved.jsonl instead of polling "
+                             "the feed (recovery after a lost database or a "
+                             "token that no longer works)")
     parser.add_argument("--dry-run",       action="store_true")
     args = parser.parse_args(argv)
 
@@ -41,16 +50,20 @@ def main(argv: list[str] | None = None) -> int:
     init_db()
 
     if args.metadata_only:
-        stats = sync_reddit_metadata(dry_run=args.dry_run, backfill=args.backfill)
+        stats = sync_reddit_metadata(
+            dry_run=args.dry_run, backfill=args.backfill, from_archive=args.from_archive,
+        )
         log.info("Metadata: %s", stats)
         return 0
 
     if args.ingest_only:
-        stats = sync_reddit_ingest(dry_run=args.dry_run)
+        stats = sync_reddit_ingest(dry_run=args.dry_run, from_archive=args.from_archive)
         log.info("Ingest: %s", stats)
         return 0
 
-    stats = sync_reddit(dry_run=args.dry_run, backfill=args.backfill)
+    stats = sync_reddit(
+        dry_run=args.dry_run, backfill=args.backfill, from_archive=args.from_archive,
+    )
     log.info("Done: %s", stats)
     return 0
 

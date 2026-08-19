@@ -1,13 +1,20 @@
 """Reddit saved-posts connector — the private Atom feed and its failure modes."""
 from __future__ import annotations
 
+import json
 import logging
+import re
 from datetime import datetime
 
 import pytest
 
 from pka.config import settings as cfg
-from pka.connectors.reddit import RedditConnectorError, load_saved
+from pka.connectors import reddit_archive
+from pka.connectors.reddit import (
+    RedditConnectorError,
+    load_saved,
+    load_saved_from_archive,
+)
 
 # ── Private feed loader ──────────────────────────────────────────────────────
 #
@@ -517,3 +524,161 @@ class TestFailedResponseDump:
 
         with pytest.raises(RedditConnectorError, match="403"):
             load_saved(url=FEED_URL, limit=None)
+
+
+# ── Poll archive ─────────────────────────────────────────────────────────────
+
+
+def _poll_dirs():
+    return sorted(p for p in (cfg.data_dir / "reddit").iterdir() if p.is_dir())
+
+
+def _saved_log():
+    path = cfg.data_dir / "reddit" / "saved.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+class TestPollArchive:
+    """Every poll is written to disk: Reddit serves no second copy of the past."""
+
+    _atom = staticmethod(TestFeedThrottle._atom)
+
+    def test_raw_pages_are_kept_verbatim_under_a_timestamped_directory(self, feed_http):
+        full_page = self._atom([f"t3_{i:03d}" for i in range(100)])   # 100 → keep walking
+        feed_http.pages.append(_FakeResponse(full_page))
+        feed_http.pages.append(_FakeResponse(self._atom(["t3_last"])))
+
+        load_saved(url=FEED_URL, limit=None)
+
+        (poll,) = _poll_dirs()
+        assert re.fullmatch(r"\d{8}T\d{6}Z", poll.name)
+        pages = sorted(poll.glob("page-*.xml"))
+        assert [p.name for p in pages] == ["page-01.xml", "page-02.xml"]
+        assert pages[0].read_text(encoding="utf-8") == full_page
+
+        manifest = json.loads((poll / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["pages"] == 2
+        assert manifest["items"] == manifest["new"] == 101
+        assert manifest["source_ids"][-1] == "t3_last"
+
+    def test_items_land_in_the_cumulative_log(self, feed_http):
+        feed_http.pages.append(_FakeResponse(ATOM_LINK_POST))
+
+        load_saved(url=FEED_URL, limit=None)
+
+        (record,) = _saved_log()
+        item = record["item"]
+        assert item["source_id"] == "t3_bbb"
+        assert item["external_url"] == "https://example.com/paxos.pdf"
+        assert item["permalink"].startswith("https://www.reddit.com/r/compsci/")
+
+    def test_repolling_the_same_items_appends_nothing(self, feed_http):
+        for _ in range(2):
+            feed_http.pages.append(_FakeResponse(self._atom(["t3_a", "t3_b"])))
+            load_saved(url=FEED_URL, limit=None)
+
+        assert len(_saved_log()) == 2                    # not four
+        assert len(_poll_dirs()) == 2                    # but both polls kept
+        second = json.loads((_poll_dirs()[1] / "manifest.json").read_text(encoding="utf-8"))
+        assert (second["new"], second["unchanged"]) == (0, 2)
+
+    def test_an_edited_item_is_appended_and_wins_on_read(self, feed_http):
+        original = self._atom(["t3_a"])
+        feed_http.pages.append(_FakeResponse(original))
+        load_saved(url=FEED_URL, limit=None)
+
+        edited = original.replace(">body<", ">edited<")   # the entry was rewritten
+        assert edited != original
+        feed_http.pages.append(_FakeResponse(edited))
+        load_saved(url=FEED_URL, limit=None)
+
+        assert len(_saved_log()) == 2
+        (item,) = reddit_archive.read_items()
+        assert item["body"] == "edited"
+
+    def test_a_walk_that_dies_keeps_the_pages_it_got(self, feed_http):
+        """A partial walk is exactly when the bytes are worth having."""
+        feed_http.pages.append(_FakeResponse(self._atom([f"t3_{i:03d}" for i in range(100)])))
+        feed_http.pages.append(_FakeResponse("<body>Blocked</body>", status_code=403))
+
+        with pytest.raises(RedditConnectorError):
+            load_saved(url=FEED_URL, limit=None)
+
+        (poll,) = _poll_dirs()
+        assert [p.name for p in poll.glob("page-*.xml")] == ["page-01.xml"]
+        manifest = json.loads((poll / "manifest.json").read_text(encoding="utf-8"))
+        assert "403" in manifest["error"]
+        assert len(_saved_log()) == 100
+
+    def test_the_feed_token_never_reaches_the_archive(self, feed_http):
+        feed_http.pages.append(_FakeResponse(self._atom(["t3_a"])))
+
+        load_saved(url=FEED_URL, limit=None)
+
+        for path in (cfg.data_dir / "reddit").rglob("*"):
+            assert "abc123token" not in path.name
+            if path.is_file():
+                assert "abc123token" not in path.read_text(encoding="utf-8")
+
+    def test_nothing_is_written_when_archiving_is_off(self, feed_http, monkeypatch):
+        monkeypatch.setattr(cfg, "reddit_archive_enabled", False)
+        feed_http.pages.append(_FakeResponse(self._atom(["t3_a"])))
+
+        assert load_saved(url=FEED_URL, limit=None)
+        assert not (cfg.data_dir / "reddit").exists()
+
+    def test_an_unwritable_archive_does_not_fail_the_poll(self, feed_http, monkeypatch):
+        monkeypatch.setattr(
+            "pathlib.Path.mkdir",
+            lambda *a, **kw: (_ for _ in ()).throw(OSError("read-only")),
+        )
+        feed_http.pages.append(_FakeResponse(self._atom(["t3_a"])))
+
+        items = load_saved(url=FEED_URL, limit=None)
+
+        assert [i.source_id for i in items] == ["t3_a"]
+
+    def test_a_truncated_final_line_does_not_lose_the_rest(self, feed_http):
+        feed_http.pages.append(_FakeResponse(self._atom(["t3_a"])))
+        load_saved(url=FEED_URL, limit=None)
+        path = cfg.data_dir / "reddit" / "saved.jsonl"
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write('{"item": {"source_i')          # killed mid-append
+
+        assert [i["source_id"] for i in reddit_archive.read_items()] == ["t3_a"]
+
+
+class TestLoadFromArchive:
+    """The restore path: re-ingest from disk when the feed is unreachable."""
+
+    _atom = staticmethod(TestFeedThrottle._atom)
+
+    def test_items_come_back_without_touching_the_network(self, feed_http):
+        for page in (ATOM_LINK_POST, ATOM_COMMENT):   # two polls, one item each
+            feed_http.pages.append(_FakeResponse(page))
+            load_saved(url=FEED_URL, limit=None)
+        calls_after_poll = len(feed_http.calls)
+
+        items = load_saved_from_archive(limit=None)
+
+        assert len(feed_http.calls) == calls_after_poll
+        assert [i.source_id for i in items] == ["t3_bbb", "t1_ccc"]
+        link, comment = items
+        assert link.external_url == "https://example.com/paxos.pdf"
+        assert link.url_or_path == "https://example.com/paxos.pdf"
+        assert comment.kind == "comment"
+        assert comment.collection == "r/solarpunk"
+
+    def test_an_empty_archive_is_not_an_error(self):
+        assert load_saved_from_archive(limit=None) == []
+
+    def test_a_record_from_an_older_field_set_is_skipped(self, feed_http):
+        feed_http.pages.append(_FakeResponse(self._atom(["t3_a"])))
+        load_saved(url=FEED_URL, limit=None)
+        path = cfg.data_dir / "reddit" / "saved.jsonl"
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"item": {"source_id": "t3_z", "gone": "field"}}) + "\n")
+
+        assert [i.source_id for i in load_saved_from_archive(limit=None)] == ["t3_a"]

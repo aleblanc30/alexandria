@@ -241,6 +241,43 @@ local DB, with **one loader** producing `RedditSaved`:
    in one page never sleeps. Only a backfill issues requests in a row, and a
    fixed-rate burst is what bot protection is built to notice; the jitter keeps
    a repeating loop from settling into a metronome.
+
+   **Every poll is archived** (`pka/connectors/reddit_archive.py`,
+   `reddit_archive_enabled`, default **on** — a local disk write, not an
+   outbound path). Reddit is the only source with no local original: Firefox,
+   Zotero and Calibre keep their own databases, whereas the saved list lives on
+   a server behind a token that can be rotated, a bot filter that can start
+   refusing us, and a feed that serves only the newest slice. A poll is in
+   practice unrepeatable, so it is written down before it is parsed:
+
+   ```
+   data/reddit/
+     20260819T140322Z/     # one poll
+       page-01.xml         # the Atom document exactly as served
+       manifest.json       # when, page count, item ids, new/changed/unchanged
+     saved.jsonl           # cumulative, deduplicated item log
+   ```
+
+   Two layers because they answer different questions. The timestamped
+   directories are *evidence* — byte-identical pages, never revisited, which is
+   what you want when asking what changed since last week or why the parser
+   produced a given field. `saved.jsonl` is the *restore path*: one line per
+   item, appended only when that item is new or its content actually changed,
+   so re-running an unchanged backfill appends nothing while an edited comment
+   still appends a new record and wins on read (last record per id).
+   Deduplication is by content digest rather than by id alone — an id-only rule
+   would silently drop edits.
+
+   The archive is written from a `finally`, so a walk that dies on page 3 keeps
+   pages 1–2 and records the failure in its manifest; that is precisely when the
+   bytes are worth having. Nothing in it may break a sync: every write is
+   best-effort and reports failure through the log. The feed URL never reaches
+   it — only response bodies are written, and manifests carry no URL.
+
+   `load_saved_from_archive` reads `saved.jsonl` back as `RedditSaved` with no
+   network at all; `alexandria reddit --from-archive` (any phase) runs the
+   pipeline off it, which is how a rebuilt database is refilled once the token
+   stops working.
 2. **PRAW** (the OAuth API) — **removed**. It was the original route, but
    creating the "script" app it requires now needs an API-access clearance a
    personal account does not get, so the code could not be exercised at all:
