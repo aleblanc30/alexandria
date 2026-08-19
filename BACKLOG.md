@@ -65,3 +65,102 @@ rate-limiting, and `--cookies-from-browser` reads the browser cookie store
 
 **Not a fix:** Google Takeout — Watch Later has historically been excluded from
 Takeout's YouTube playlist CSVs; verify before relying on it.
+
+## Retrieval enrichment
+
+### Topical tags from the summarisation pass
+
+**What:** Generate a handful of topical tags per document (`overlay_tags`, machine
+origin) from the same local chat call that already produces the `pass="summary"`
+chunk, so a long article gains subject tags without a second inference pass.
+
+**Why deferred:** The summarisation call exists but is default-off and narrow —
+`_SUMMARY_FLAGS` in `pka/ingestion/core.py` gates it to Firefox/Reddit
+(`bookmark_summary_enabled`) and Calibre (`book_summary_enabled`); Zotero, YouTube
+and images never reach it. Tags therefore cannot simply ride along and call
+themselves library-wide coverage. Two design questions also want settling before
+code: whether machine tags reuse `TagOrigin.LLM` (already carrying cluster labels)
+or get their own origin, and how they interact with the learned-tag path in
+`pka/tag_training/`, which produces the same kind of artefact from user labels.
+
+**Rough shape when picked up:**
+- Extend the JSON contract in `_RULES_TAIL` (`pka/ingestion/summarize.py`) to
+  `{"summary": ..., "tags": [...]}`. Both providers grammar-constrain to a valid
+  JSON *object*, not to a schema (`format: "json"` for Ollama,
+  `response_format: {"type": "json_object"}` for OpenAI-compatible), so parse
+  tolerantly the way `_extract_summary` already handles key drift — accept a
+  comma-joined string as well as a list.
+- Change `_summarize_once` / `_summarize_recursive` to return a small result
+  dataclass instead of `str | None`. Take tags from the **final reduce call**
+  only, or union the map-pass tags and feed them into the reduce prompt for
+  merging — per-chunk tags are per-section, not per-document.
+- Persist via the existing write path: `slugify_tag()` then
+  `insert_overlay_tags(con, [doc_id], tag, origin)` from
+  `pka/clustering/cluster_tags.py`. Reusing `TagOrigin.LLM` needs no wiring; a new
+  origin value means touching the filter branches in `pka/db/queries.py`
+  (`_where_overlay_tag` callers) and the `overlay_origins` set in the tag-index
+  query. Write at generation time — `attach_summary_chunk` replays a cached
+  `documents.generated_summary` without re-inferring, so a cache hit must find
+  the tags already present rather than regenerate them.
+- **Coverage gap to decide on:** `summarize_text` short-circuits when the input is
+  already within `summary_max_sentences` and spends no call at all — most
+  bookmarks and Reddit posts land there. Piggybacking alone tags only long
+  documents; tagging the rest means a dedicated cheap call for short text, which
+  is a separate cost decision.
+- Per DESIGN §1.1, gate tag generation behind its own named default-off setting
+  rather than letting it escalate implicitly from `bookmark_summary_enabled`.
+- Tests: extend `tests/test_summarize.py` (map/reduce tag merging, malformed
+  `tags` payloads, cached-summary path) — the chat provider is already mocked in
+  `conftest.py`.
+
+### Chunking and map-reduce rework for billable chat providers
+
+**What:** Re-derive the summarisation cost model in `pka/ingestion/summarize.py`
+from the **active** chat provider, instead of the module-level constants tuned for
+a free local model. Today `CHUNK_CHAR_LIMIT = 6000`, `MAX_CHUNKS_PER_PASS = 12`
+and `MAX_REDUCE_DEPTH = 2` are fixed, so one long document costs up to ~13 chat
+round-trips and drops its tail past ~72k characters — regardless of whether
+`chat_provider` is local Ollama or a metered hosted backend
+(`ollama_cloud` / `openrouter` / `ovh`).
+
+**Why deferred:** The constants are correct for the backend they were written
+against. `CHUNK_CHAR_LIMIT` is sized under a *small local* context window, and the
+call count doesn't matter when calls are free — only wall-clock does. Both premises
+invert on a billable API: hosted models carry far larger contexts, so most
+documents that get map-reduced locally would fit in a **single** call, and the
+map-reduce is then paying per request to work around a constraint that backend
+does not have. Worse, every one of those ~13 calls re-sends the identical rules
+preamble, and a Calibre bulk ingest multiplies the whole thing by the library.
+Fixing this well means the provider layer exposing its limits, which it currently
+does not — `ChatProvider` in `pka/providers/base.py` is only `resolve_model` +
+`chat_json`, with no notion of context size, token cost, or budget.
+
+**Rough shape when picked up:**
+- Extend the `ChatProvider` protocol with the input budget it can accept (context
+  window, or simply a usable character budget) and have `summarize.py` derive
+  `CHUNK_CHAR_LIMIT` from the active provider rather than a constant. Large-context
+  backends then collapse to the existing single-call path — which already exists,
+  it just never triggers at 6000 chars.
+- **Separate the two jobs the current bound is doing.** `MAX_CHUNKS_PER_PASS *
+  CHUNK_CHAR_LIMIT` is simultaneously a context bound and a spend bound. A large
+  context removes the first but not the second: a full-text book still must not be
+  sent whole just because it fits. Keep an explicit per-document character ceiling
+  independent of the provider's window.
+- For books specifically, consider extract-then-summarise (front matter plus
+  section openings) over full map-reduce — cheaper on any backend, and closer to
+  how a topical summary is actually decided.
+- **Spend visibility, not just spend bounds:** count calls and characters sent per
+  ingestion run and log them, plus a per-run enrichment cap that stops summarising
+  rather than quietly spending. A bulk ingest is where a per-document cost becomes
+  a bill.
+- Position the rules preamble as a stable prompt prefix so providers that price
+  cached input lower can actually reuse it — it is byte-identical across every
+  call today.
+- Verify the `documents.generated_summary` cache genuinely short-circuits the
+  purge-and-reingest path before any paid rollout; paying twice for the same
+  document is the failure mode that matters most here.
+- The local path must not regress: per DESIGN §1.1 hosted routing stays an explicit
+  `*_PROVIDER` setting, and a fresh checkout keeps today's small-context behaviour.
+- Tests: parameterise `tests/test_summarize.py` over a fake provider advertising a
+  large budget and assert the single-call path, alongside the existing map-reduce
+  cases.
