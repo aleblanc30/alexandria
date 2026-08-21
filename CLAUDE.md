@@ -13,6 +13,11 @@ SQLite + ChromaDB archive. Backend is Python (`pka/`), frontend is Vue 3
 2. **`DESIGN.md`** — the living design spec (architecture, network policy §1.1,
    two-phase ingestion §3, retrieval enrichment §3.2).
 3. **`README.md`** — human-oriented setup and usage.
+4. **`docs/ingestion-flows.md`** — per-source ingestion flow graphs (mermaid),
+   colour-coded shared vs. source-specific. **Derived, not authoritative**: it
+   is a drawing of what the code does, so where it disagrees with `pka/`, the
+   code is right and the graph is stale — fix the graph, and see the sync rule
+   under *Pitfalls*.
 
 `docs/archive/initial_design.pdf` is **historical**: it records the March 2026
 intent and is superseded wherever it disagrees with the above — notably, it
@@ -76,6 +81,26 @@ Two configuration facts that otherwise read as bugs:
   is safe to re-run against an existing archive.
 - **Ports.** The API default is 8420 (`alexandria dev`, README, `vite.config.ts`
   proxy), but `.vscode/launch.json` debug configs use 8000.
+- **`docs/ingestion-flows.md` must be updated in the same commit** as any change
+  that alters what its graphs show. There is no test for this — a stale graph
+  fails silently and misleads the next reader. Update it when you:
+  - add or remove a source (the new pipeline needs its own graph, plus rows in
+    the *What is actually shared* matrix and the §1 source list in `DESIGN.md`);
+  - change a pipeline's **phase shape** — a `set_phase` / `skip_phase` call, a
+    `PHASE_SPECS` entry, or a second pass over the same phase;
+  - move logic **across the shared/source-specific line** — that boundary is the
+    whole point of the colour coding, so promoting a runner helper into
+    `ingestion/core.py` (or the reverse) changes a node's colour, not just its
+    label;
+  - add, remove, or re-gate an **outbound call** (red and purple nodes must match
+    the `DESIGN.md` §1.1 flag that actually guards them);
+  - change the **shared tail** — `ingest_text_block`, the chunker, `upsert_chunks`,
+    `insert_chunks`, or `refresh_document_embedding` — which is drawn in all
+    seven graphs and so must be corrected in all seven.
+
+  Redrawing is cheap; read the source of truth in this order: `registry.py` for
+  the handler map, `<source>_sync.py` for phases, `runners/<source>.py` for the
+  text handed to `ingest_text_block`, `connectors/<source>.py` for the read.
 - Keep diffs minimal; do not refactor unrelated code.
 
 ## Where things live
@@ -83,6 +108,7 @@ Two configuration facts that otherwise read as bugs:
 | Area | Start here |
 |------|------------|
 | Ingestion / connectors | `pka/ingestion/core.py`, `pka/ingestion/runners/`, `pka/connectors/`, `DESIGN.md` §2–3 |
+| Which pipeline does what (visual) | `docs/ingestion-flows.md` — one flow graph per source, shared spine vs. source-specific |
 | Model backends (local + hosted) | `pka/providers/`, `DESIGN.md` §1.1 |
 | Search / vectors | `pka/storage/vector_store.py`, `pka/api/routers/search.py` |
 | Clustering | `pka/clustering/engine.py`, `pka/clustering/lifecycle.py` |

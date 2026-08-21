@@ -29,6 +29,17 @@ graph TD
     K --> L[Vue Frontend]
 ```
 
+The graph above collapses all six sources into one `Source Connectors` box.
+[`docs/ingestion-flows.md`](docs/ingestion-flows.md) expands that box: one
+mermaid flow graph per source, colour-coded so shared machinery, source-specific
+code, outbound calls, persistence, and flag-gated steps are told apart at a
+glance, plus a matrix of which shared component each pipeline actually uses.
+
+Those graphs are **derived from the code**, not a second specification — this
+file and `pka/` both outrank them. They are also not automatically checked, so
+a change to the phase shape, the shared/source-specific boundary, or the set of
+gated outbound calls must redraw them in the same commit (see `CLAUDE.md`).
+
 ### Model backends (providers)
 
 Every LLM / vision / OCR / image-embedding call goes through a swappable
@@ -164,6 +175,12 @@ Otherwise the connector follows the standard §2 checklist and the Zotero-style
 two-phase flow (metadata import, then embed — no async fetch phase).
 
 ## 3. Two-phase ingestion model
+
+> Drawn per source in [`docs/ingestion-flows.md`](docs/ingestion-flows.md),
+> including where each pipeline departs from the pattern below — Firefox
+> interleaving phase 2 with its fetch, Calibre running the embedding phase
+> twice, Reddit forking on `external_url`, and Images substituting four
+> extraction passes for a fetch. Keep those graphs in step with this section.
 
 Calibre and Firefox follow a two-phase pattern:
 

@@ -80,6 +80,19 @@ client/service rather than reaching for the real one.
 
 Add the entry, plus anything source-specific in `frontend/src/constants/sources.ts`.
 
+### 10. Flow graph — `docs/ingestion-flows.md`
+
+Add a section for the new source: a mermaid graph in the same shape as the
+others, plus a column in the *What is actually shared* matrix. Reuse the five
+existing `classDef`s unchanged — the point of the document is that shared
+machinery, source-specific code, outbound calls, persistence, and flag-gated
+steps read the same colour in every graph.
+
+Nothing tests this, so it is easy to skip and leave the document quietly wrong.
+Copy the graph of whichever existing source your pipeline most resembles
+(Zotero/YouTube for a metadata-only source, Firefox for one that fetches, Images
+for one that infers its text) and change what actually differs.
+
 ## Network sources
 
 A source that reaches an external API must satisfy the `DESIGN.md` §1.1 policy.
