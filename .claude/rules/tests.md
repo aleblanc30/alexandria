@@ -31,6 +31,24 @@ Coverage **omits** `pka/cli/*`, `pka/pipeline.py`, `pka/db/init_db.py`,
 `scripts/*`, and `pka/db/alembic/*` — thin wrappers and deprecated shims where
 tests are not expected.
 
+## Failing tests — rework, never delete
+
+**Never delete a test as a quick way to get a green suite.** That drops coverage
+and makes the software more brittle: the assertion disappears while the behavior
+it protected still ships.
+
+When a test fails repeatedly and is hard to fix, reworking it is legitimate in
+two cases:
+
+- **The behavior is still tested.** You restructured, moved, or split the
+  assertion, but nothing stopped being checked.
+- **You are iterating on a new design** and the test asserts an interface that is
+  deliberately changing.
+
+Outside those two cases a stubborn failure is a signal to **ask for guidance**,
+not to decide alone. Say what is failing and what you already tried — do not
+hesitate on this; asking is cheaper than a silently weakened suite.
+
 ## What to test
 
 Only add tests that cover real behavior. Skip trivial assertions. Existing tests

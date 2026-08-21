@@ -69,6 +69,9 @@ Two configuration facts that otherwise read as bugs:
 - **Never bypass the test mocks.** `tests/conftest.py` redirects all data paths to
   `tmp_path` and mocks Ollama, ChromaDB, HTTP, and CLIP. A test that reaches a
   real database or the network is broken, not thorough.
+- **Never delete a test to get a green suite.** Rework it only if the behavior
+  stays covered, or the design is deliberately changing; otherwise ask for
+  guidance. Deleting drops coverage and hides still-shipping behavior.
 - **Schema changes** must keep `pka/db/init_db.py` idempotent — `alexandria init`
   is safe to re-run against an existing archive.
 - **Ports.** The API default is 8420 (`alexandria dev`, README, `vite.config.ts`
