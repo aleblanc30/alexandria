@@ -4,7 +4,7 @@
 
 - **Ingestion progress rebuilt as a four-layer package and moved onto SSE**
   (`pka/ingestion/progress/`: `state` → `tracker` → `view`/`baselines`). Plan and
-  measurements in `sync_refactor.md`.
+  measurements in `docs/history/sync_refactor.md`.
   - The reported "circular imports" were not cycles — an AST walk over `pka/` finds
     zero. What multiplied the function-local imports was a *layering* cycle: state
     reached down into `pending_metadata` for DB counts while `progress_baselines`

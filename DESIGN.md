@@ -1,12 +1,13 @@
 # Alexandria Design Notes
 
-The authoritative design specification for Alexandria is
-the PDF design document (kept separately by the author). This file holds
-supplementary notes accumulated during implementation and the v0.2.0 audit
-pass, organised so they can be cross-referenced from the code.
+This file is the living design specification for Alexandria: notes
+accumulated during implementation and the v0.2.0 audit pass, organised so they
+can be cross-referenced from the code.
 
-If the PDF is added to the source tree, place it at `docs/design.pdf` and
-treat its statements as overriding anything written below.
+The original design document, `docs/archive/initial_design.pdf` (March 2026),
+records the project's initial intent and is **superseded wherever it disagrees
+with this file** — most visibly on the local-only stance (see §1.1) and on the
+set of source connectors.
 
 ## 1. Data flow
 
@@ -16,6 +17,8 @@ graph TD
     B[Zotero zotero.sqlite]  --> D
     C[Calibre metadata.db]   --> D
     I[Image folders]         --> D
+    R[Reddit saved Atom feed] --> D
+    Y[YouTube saved videos]   --> D
     D --> E[Chunker]
     E --> F[Ollama Embedder]
     F --> G[ChromaDB]

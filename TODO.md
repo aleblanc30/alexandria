@@ -1,6 +1,10 @@
 # TODO
 
-Backlog of planned work for Alexandria.
+Short feature wishlist: one line per idea, no design work done yet.
+
+Items that have been thought through — with a stated reason for deferral and a
+rough implementation shape — live in `BACKLOG.md` instead. Promote an entry from
+here to there once it has that detail; do not duplicate it in both.
 
 ## Ingestion & deduplication
 
@@ -24,5 +28,5 @@ Backlog of planned work for Alexandria.
 
 ## CLI & assistant
 
-- [ ] **Build a CLI** — unified command-line entry point (e.g. `alexandria` or `python -m pka.cli`) for search, ingest, clustering, tag training, and stats, wrapping or replacing the current one-off scripts under `scripts/`.
+- [x] **Build a CLI** — shipped as `pka/cli/` and the `alexandria` console script; `scripts/*.py` remain as thin shims.
 - [ ] **Add chat/agent capability** — local-first conversational interface over the archive: retrieve relevant documents via semantic search, answer questions with Ollama, and cite source items (UI panel and/or CLI subcommand).

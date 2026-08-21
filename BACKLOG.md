@@ -2,6 +2,9 @@
 
 Deferred work items. Each entry: what, why deferred, and rough shape of the eventual implementation.
 
+Undesigned one-line ideas belong in `TODO.md`; an item moves here once it has a
+stated reason for deferral and an implementation sketch.
+
 ## YouTube connector
 
 ### Transcript-based Phase-2 content extraction

@@ -30,10 +30,10 @@ pka/                          # Python backend
 ├── ingestion/                # chunker, fetcher, extractors, image_pipeline
 ├── storage/                  # ChromaDB wrapper
 ├── clustering/               # UMAP + HDBSCAN engine + lifecycle (drift/merge)
-└── api/                      # FastAPI app, 9 routers, 5 Pydantic schema modules
+└── api/                      # FastAPI app (routers + Pydantic schema modules)
 
 scripts/                      # thin shims around pka/cli for repo-local runs
-tests/                        # ~150 pytest tests; conftest mocks Ollama, Chroma, HTTP
+tests/                        # pytest suite; conftest mocks Ollama, Chroma, HTTP
 frontend/                     # Vue 3 + Vite + Pinia
 ├── index.html
 ├── package.json, vite.config.ts, tsconfig.json
@@ -41,7 +41,7 @@ frontend/                     # Vue 3 + Vite + Pinia
     ├── main.ts, router.ts, App.vue
     ├── api/client.ts         # typed fetch wrappers (timeout + ApiError)
     ├── stores/               # search, clusters, ingestion, ui, toast
-    ├── views/                # 7 routed views
+    ├── views/                # routed views
     ├── components/           # AppSidebar, DocCard, DocDetailPanel, ScatterPlot, …
     └── styles/global.css
 ```
@@ -203,10 +203,11 @@ a `.env` file. See `.env.example` for the full list.
 
 ## Design
 
-The initial design document is committed as [`initial_design.pdf`](initial_design.pdf)
-(parts are outdated, but it remains the reference for intent). `DESIGN.md`
-contains the living supplementary notes (data flow diagram, instructions
-for adding a new source connector). The audit pass that produced v0.2.0 is
+`DESIGN.md` is the living design specification (data flow, provider layer,
+instructions for adding a new source connector). The original design document
+is archived at [`docs/archive/initial_design.pdf`](docs/archive/initial_design.pdf);
+it records the project's initial intent and is superseded wherever it disagrees
+with `DESIGN.md`. The audit pass that produced v0.2.0 is
 recorded in `CHANGELOG.md`.
 
 Note on naming: the Python package is `pka` (Personal Knowledge Archive, the

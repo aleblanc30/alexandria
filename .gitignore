@@ -42,7 +42,14 @@ frontend/dist/
 
 # dev tools
 .cursor/
-.claude/
+# Share agent config (rules, skills, dev-server + safety settings); keep
+# machine-local state out: worktrees/ holds full checkouts incl. node_modules,
+# and settings.local.json is per-machine by design.
+.claude/*
+!.claude/rules/
+!.claude/skills/
+!.claude/launch.json
+!.claude/settings.json
 .pip-cache/
 .pytest_cache/
 .ruff_cache/

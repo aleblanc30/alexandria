@@ -2,7 +2,7 @@
 
 Full-dict equality is deliberate. These pin the exact JSON the ingestion panel
 consumes — one entry per (source shape x phase x status) combination the UI can
-actually reach — so the progress refactor (``sync_refactor.md``) can rewrite the
+actually reach — so the progress refactor (``docs/history/sync_refactor.md``) can rewrite the
 internals without silently changing what the frontend sees.
 
 When a change to the payload is intentional, update the expected dict here in

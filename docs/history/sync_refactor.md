@@ -1,5 +1,12 @@
 # Ingestion progress tracking — refactor plan
 
+> **Historical document — completed plan, archived.** The refactor described
+> here shipped on 2026-08-19. The module names in **Scope** below are the
+> *pre-refactor* layout; several of them (`sync_progress.py`,
+> `progress_baselines.py`, `sync_helpers.py`, `runners/_common.py`) no longer
+> exist. For the current design, read `pka/ingestion/progress/` and
+> `DESIGN.md`. Kept for the measurements and rationale in §1–§2.
+
 **Status:** implemented 2026-08-19 against `trunk` @ d3c2a3a (uncommitted). Stages 0–6
 are done; stage 7 was left alone (optional, different subsystem). Each stage below records
 what actually shipped, including where it deviated from the plan.
