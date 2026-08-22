@@ -2,7 +2,7 @@
 
 Instructions for AI coding agents working in this repository.
 
-**Alexandria v0.2.0** — a local-first research library that ingests bookmarks,
+**Alexandria v1.0.0** — a local-first research library that ingests bookmarks,
 papers, ebooks, saved posts/videos, and images into one semantically indexed
 SQLite + ChromaDB archive. Backend is Python (`pka/`), frontend is Vue 3
 (`frontend/`). Read `README.md` for setup and usage.

@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — local-first relaxed; retrieval enrichment
+## v1.0.0
+
+### Local-first relaxed; retrieval enrichment
 
 - **Ingestion progress rebuilt as a four-layer package and moved onto SSE**
   (`pka/ingestion/progress/`: `state` → `tracker` → `view`/`baselines`). Plan and
@@ -261,7 +263,7 @@
   `search_provider` + `SECRET_ALEXANDRIA_SEARCH_API_KEY`. All default off. The
   per-type VLM prompts are on by default and purely local — no flag.
 
-## Unreleased — Ollama Cloud provider
+### Ollama Cloud provider
 
 - New **`ollama_cloud`** backend for the `chat`, `vision`, and
   `image_gate_vision` capabilities, alongside the existing `ollama`,
@@ -286,7 +288,7 @@
   `chat_model`, proxied by the local daemon — still works and needs none of
   these settings; `.env.example` and `README.md` now document both.
 
-## Unreleased — credentials move to `.secrets`
+### Credentials move to `.secrets`
 
 - **Credentials now live in a `.secrets` file**, separate from `.env`. Same
   `KEY=value` shape, but each key carries a `SECRET_` prefix on top of the usual
@@ -316,7 +318,7 @@
   programmatic reads means denylisting identifiers, which any indirection
   defeats. The real mitigation is that credentials are no longer in `.env`.
 
-## Unreleased — image admission gate
+### Image admission gate
 
 - New **two-step gate** in front of the image pipeline
   (`pka/ingestion/image_gate.py`), on by default (`image_gate_enabled`). An
@@ -376,7 +378,7 @@
   never *rejected*, so a broken backend can no longer poison the cache for a whole
   library. A genuine `unknown` verdict from a working VLM still rejects as before.
 
-## Unreleased — YouTube saved-videos connector
+### YouTube saved-videos connector
 
 - New source connector: **YouTube saved videos** (`Source.YOUTUBE`). Reads the
   authenticated user's playlists (Liked videos + all owned playlists) via the
@@ -398,7 +400,7 @@
   "path" is the OAuth client-secret JSON. Status polling never touches the API
   (network-free pending/corpus counts).
 
-## Unreleased — maintainability pass (June 2026)
+### Maintainability pass (June 2026)
 
 ### Correctness fixes
 - `accept_run` now deactivates all other runs in the same transaction, so
