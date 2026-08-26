@@ -325,7 +325,12 @@ const jobError = computed((): string | null => {
 })
 
 function phaseLabel(name: string): string {
-  if (name === 'fetching' && sourceHasFetchPhase(props.source)) return 'Fetch & embed'
+  if (name === 'fetching' && sourceHasFetchPhase(props.source)) {
+    // Reddit's "embedding" bar is a separate item set (self-posts/comments,
+    // no fetch needed), so spell out that this one is link posts only.
+    return props.source === 'reddit' ? 'Fetch & embed link posts' : 'Fetch & embed'
+  }
+  if (name === 'embedding' && props.source === 'reddit') return 'Embed posts & comments'
   return PHASE_LABELS[name] ?? name
 }
 
