@@ -177,3 +177,96 @@ class TestVectorStore:
         found, corrupt = real_chroma.fetch_embeddings_by_ids(["good", "bad-id"])
         assert "good" in found
         assert "bad-id" in corrupt
+
+
+class TestSharedClient:
+    """One Chroma client per process, created once.
+
+    Chroma caches a system per persist path but does not guard that cache with a
+    lock: two threads constructing a client for the same path at once leave the
+    second holding a ServerAPI whose Rust bindings are not started yet, and its
+    cleanup then stops the half-started system out from under the first. Every
+    later client in the process fails until it restarts. Ingestion embeds from a
+    pool of `asyncio.to_thread` workers, so simultaneous first touch is normal.
+    """
+
+    def test_concurrent_first_touch_creates_exactly_one_client(self, monkeypatch):
+        import threading
+        import time
+
+        import pka.storage.vector_store as vs
+
+        created = []
+
+        def _slow_client():
+            time.sleep(0.02)          # widen the window a lock has to cover
+            client = object()
+            created.append(client)
+            return client
+
+        vs.reset_collection()
+        monkeypatch.setattr(vs, "_new_client", _slow_client)
+
+        start = threading.Barrier(8)
+        got: list[object] = []
+
+        def _worker():
+            start.wait()
+            got.append(vs.get_client())
+
+        threads = [threading.Thread(target=_worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(created) == 1
+        assert got == [created[0]] * 8
+        vs.reset_collection()
+
+    def test_clip_collection_reuses_the_shared_client(self, monkeypatch):
+        """The CLIP collection must not build a second client for the same path."""
+        import pka.ingestion.image_pipeline as ip
+        import pka.storage.vector_store as vs
+
+        clip_collection = object()
+
+        class _FakeClient:
+            def get_or_create_collection(self, **kwargs):
+                return clip_collection
+
+        fake = _FakeClient()
+        vs.reset_collection()
+        ip.reset_clip_collection()
+        monkeypatch.setattr(vs, "_new_client", lambda: fake)
+
+        assert ip._get_clip_collection() is clip_collection
+        assert ip._clip_client is fake
+        assert vs.get_client() is fake
+        vs.reset_collection()
+        ip.reset_clip_collection()
+
+    def test_a_poisoned_system_cache_is_cleared_and_retried(self, monkeypatch):
+        """Recovery for a process already broken by the race above."""
+        import pka.storage.vector_store as vs
+
+        cleared: list[bool] = []
+        client = object()
+        attempts = []
+
+        def _flaky_client():
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise KeyError("data\\chroma")
+            return client
+
+        vs.reset_collection()
+        monkeypatch.setattr(vs, "_new_client", _flaky_client)
+        monkeypatch.setattr(
+            vs.SharedSystemClient, "clear_system_cache",
+            staticmethod(lambda: cleared.append(True)),
+        )
+
+        assert vs.get_client() is client
+        assert cleared == [True]
+        vs.reset_collection()

@@ -10,6 +10,7 @@ Orchestrates the four extraction passes and persists results to:
 """
 import json
 import logging
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -44,33 +45,40 @@ log = logging.getLogger(__name__)
 CLIP_COLLECTION = "alexandria_clip"
 
 # Cached Chroma client/collection — recreating these per call is expensive.
+# Creation is serialized, and the client itself comes from vector_store so the
+# process holds exactly one Chroma client.
 _clip_client = None
 _clip_col = None
+_clip_lock = threading.RLock()
 
 
 def _get_clip_collection():
-    global _clip_client, _clip_col
-    if _clip_col is None:
-        import chromadb
-        from chromadb.config import Settings as ChromaSettings
+    """The CLIP collection, on the *shared* Chroma client.
 
-        from pka.config import settings as cfg
-        _clip_client = chromadb.PersistentClient(
-            path=str(cfg.chroma_dir),
-            settings=ChromaSettings(anonymized_telemetry=False),
-        )
-        _clip_col = _clip_client.get_or_create_collection(
-            name=CLIP_COLLECTION,
-            metadata={"hnsw:space": "cosine"},
-        )
-    return _clip_col
+    Building a second ``PersistentClient`` for the same path used to race the
+    text one: Chroma's per-path system cache is not thread-safe, and an image
+    sync embedding while a text sync embeds is exactly two threads creating a
+    client at once. See ``vector_store`` for what that failure looks like.
+    """
+    global _clip_client, _clip_col
+    with _clip_lock:
+        if _clip_col is None:
+            from pka.storage.vector_store import get_client
+
+            _clip_client = get_client()
+            _clip_col = _clip_client.get_or_create_collection(
+                name=CLIP_COLLECTION,
+                metadata={"hnsw:space": "cosine"},
+            )
+        return _clip_col
 
 
 def reset_clip_collection() -> None:
     """Drop the cached client and collection — used by the test suite."""
     global _clip_client, _clip_col
-    _clip_client = None
-    _clip_col = None
+    with _clip_lock:
+        _clip_client = None
+        _clip_col = None
 
 
 def delete_clip_vectors(vector_ids: list[str]) -> int:

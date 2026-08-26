@@ -7,12 +7,30 @@ natural-language text at search time.
 
 A single module-level client/collection pair is cached for the lifetime of
 the process. Tests should reset it via :func:`reset_collection`.
+
+Creation is serialized under ``_client_lock``, and every Chroma client in the
+process comes from :func:`get_client` — including the CLIP one in
+``image_pipeline``. Chroma caches one *system* per persist path
+(``SharedSystemClient._identifier_to_system``) but guards only its refcounts
+with a lock, not that cache: ``_create_system_if_not_exists`` publishes the
+system into the dict *before* ``start()`` populates the Rust bindings. So two
+threads building a client for the same path at once give the second one a
+``ServerAPI`` whose ``bindings`` attribute does not exist yet
+(``AttributeError: 'RustBindingsAPI' object has no attribute 'bindings'``), and
+its failure handler then releases the refcount the first thread has not taken
+yet — stopping and popping the half-started system, which leaves the first
+thread with ``KeyError: 'data\\chroma'`` and every later client in that process
+broken until it restarts. Ingestion embeds through ``asyncio.to_thread`` from a
+pool of fetch workers, so concurrent first-touch is the normal case, not a rare
+one.
 """
 from __future__ import annotations
 
 import logging
+import threading
 
 import chromadb
+from chromadb.api.shared_system_client import SharedSystemClient
 from chromadb.config import Settings as ChromaSettings
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
@@ -23,6 +41,8 @@ log = logging.getLogger(__name__)
 _client: chromadb.ClientAPI | None = None
 _collection: chromadb.Collection | None = None
 _embedding_fn: DefaultEmbeddingFunction | None = None
+# Reentrant: get_collection() holds it across its call to get_client().
+_client_lock = threading.RLock()
 COLLECTION_NAME = "alexandria_chunks"
 _FETCH_BATCH_SIZE = 200
 
@@ -34,28 +54,44 @@ def _get_embedding_function() -> DefaultEmbeddingFunction:
     return _embedding_fn
 
 
-def _get_client() -> chromadb.ClientAPI:
+def _new_client() -> chromadb.ClientAPI:
+    cfg.chroma_dir.mkdir(parents=True, exist_ok=True)
+    return chromadb.PersistentClient(
+        path=str(cfg.chroma_dir),
+        settings=ChromaSettings(anonymized_telemetry=False),
+    )
+
+
+def get_client() -> chromadb.ClientAPI:
+    """The process-wide Chroma client. Every caller must come through here."""
     global _client
-    if _client is None:
-        cfg.chroma_dir.mkdir(parents=True, exist_ok=True)
-        _client = chromadb.PersistentClient(
-            path=str(cfg.chroma_dir),
-            settings=ChromaSettings(anonymized_telemetry=False),
-        )
-        log.debug("Chroma client initialised at %s", cfg.chroma_dir)
-    return _client
+    with _client_lock:
+        if _client is None:
+            try:
+                _client = _new_client()
+            except Exception as exc:
+                # A system left half-started or stopped in Chroma's per-path
+                # cache poisons every later client in the process. Dropping that
+                # cache is Chroma's own supported way out; retried once, because
+                # a second failure is a real problem with the store.
+                log.warning("Chroma client init failed (%s); clearing its cache", exc)
+                SharedSystemClient.clear_system_cache()
+                _client = _new_client()
+            log.debug("Chroma client initialised at %s", cfg.chroma_dir)
+        return _client
 
 
 def get_collection() -> chromadb.Collection:
     global _collection
-    if _collection is None:
-        _collection = _get_client().get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-            embedding_function=_get_embedding_function(),
-        )
-        log.debug("Chroma collection '%s' ready", COLLECTION_NAME)
-    return _collection
+    with _client_lock:
+        if _collection is None:
+            _collection = get_client().get_or_create_collection(
+                name=COLLECTION_NAME,
+                metadata={"hnsw:space": "cosine"},
+                embedding_function=_get_embedding_function(),
+            )
+            log.debug("Chroma collection '%s' ready", COLLECTION_NAME)
+        return _collection
 
 
 def vector_count() -> int:
@@ -79,7 +115,7 @@ def drop_document_collection() -> None:
     """Delete the document chunk collection and clear cached handles."""
     reset_collection()
     try:
-        _get_client().delete_collection(COLLECTION_NAME)
+        get_client().delete_collection(COLLECTION_NAME)
     except Exception as exc:
         log.warning("Could not delete Chroma collection %s: %s", COLLECTION_NAME, exc)
     reset_collection()
@@ -145,8 +181,9 @@ def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
 def reset_collection() -> None:
     """Drop the cached client and collection — used by the test suite."""
     global _client, _collection
-    _client = None
-    _collection = None
+    with _client_lock:
+        _client = None
+        _collection = None
 
 
 def upsert_chunks(
