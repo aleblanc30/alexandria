@@ -5,7 +5,7 @@ checkout, that starts automatically at logon and serves the UI at
 `http://localhost:8420`.
 
 The install is pinned to a release tag. Substitute the tag you are installing
-for `v1.0.0` throughout.
+for `v0.0.4` throughout.
 
 ## 1. Prerequisites
 
@@ -56,7 +56,7 @@ synchronise at every logon.
 mkdir "%LOCALAPPDATA%\Alexandria\data"
 git clone https://github.com/aleblanc30/alexandria "%LOCALAPPDATA%\Alexandria\app"
 cd /d "%LOCALAPPDATA%\Alexandria\app"
-git checkout v1.0.0
+git checkout v0.0.4
 ```
 
 Create the virtual environment and install the package:

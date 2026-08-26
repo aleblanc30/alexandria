@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pka"
-version = "1.0.0"
+version = "0.0.4"
 description = "Alexandria — local-first research library"
 requires-python = ">=3.11"
 readme = "README.md"

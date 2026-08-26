@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0
+## v0.0.4
 
 ### Local-first relaxed; retrieval enrichment
 
