@@ -71,6 +71,26 @@ def test_full_sync_embeds_inline_bodies_only(monkeypatch, reddit_saved_items, mo
     assert not document_has_chunks(index["t3_linkpost"])
 
 
+def test_ingest_does_not_repoll_the_live_feed(monkeypatch, reddit_saved_items, mock_chroma):
+    """The ingest phase reads bodies back from SQLite instead of a second feed walk.
+
+    Metadata already persists kind/subreddit/permalink/external_url/body for
+    every item it sees, so a second live poll right after would only cost an
+    extra request against Reddit's API for no new information.
+    """
+    _patch_load(monkeypatch, reddit_saved_items)
+    rs.sync_reddit_metadata()
+
+    def _no_polling(*a, **k):
+        raise AssertionError("ingest must not poll the live feed a second time")
+
+    monkeypatch.setattr(rs, "load_saved", _no_polling)
+
+    stats = rs.sync_reddit_ingest()
+
+    assert stats["embed"]["processed"] == 2
+
+
 def test_ingest_queue_returns_only_pending_link_posts(
     monkeypatch, reddit_saved_items, mock_chroma,
 ):

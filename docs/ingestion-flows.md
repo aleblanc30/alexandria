@@ -516,7 +516,7 @@ flowchart TD
 
     RITEM --> FULL{"run_full_sync()"}
     FULL --> ING["sync_reddit_ingest()"]
-    RELOAD["load_saved() again — no stop_on_known:<br/>bodies are needed for every item missing chunks"]
+    RELOAD["_load_saved_from_db() → all_reddit_items()<br/>documents ⋈ reddit_items — no feed poll"]
     CORPUS["sp.set_corpus_total('reddit', len(saved))"]
     FORK{"external_url set?"}
     ING --> RELOAD --> CORPUS --> FORK

@@ -252,8 +252,14 @@ local DB, with **one loader** producing `RedditSaved`:
    --backfill`) disables the early stop and walks the whole feed, for a first
    run or to fill gaps a failed run left behind.
 
-   The ingest phase keeps the full walk on purpose: it needs bodies for every
-   item still missing chunks, and those are not necessarily the newest saves.
+   The ingest phase needs a body for every item still missing chunks, not just
+   the newest saves — but it reads that back from SQLite (`all_reddit_items`)
+   rather than walking the feed again: the metadata phase already persists
+   kind/subreddit/permalink/external_url/body for every item it sees, new or
+   already known, so a second live poll bought nothing but doubled the request
+   count against Reddit's API. This also means the ingest phase sees the full
+   history the archive has ever recorded, not just what the feed's ~1000-item
+   window still serves.
 
    **Throttle.** `_throttle_poll` sleeps `reddit_feed_poll_interval_seconds`
    (default 1.0) plus up to `reddit_feed_poll_jitter_seconds` (0.5) *between*

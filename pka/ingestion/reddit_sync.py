@@ -10,7 +10,7 @@ from functools import partial
 
 from pka.connectors.reddit import RedditSaved, load_saved, load_saved_from_archive
 from pka.constants import Source
-from pka.db.queries import document_index, init_db, source_ingest_queue
+from pka.db.queries import all_reddit_items, document_index, init_db, source_ingest_queue
 from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.fetcher import fetch_and_embed_pending
@@ -29,6 +29,30 @@ _EMPTY_FETCH = {"fetched": 0, "skipped": 0, "unfetchable": 0}
 
 def _pending_count(saved: list[RedditSaved], known: set[str]) -> int:
     return sum(1 for s in saved if s.source_id not in known)
+
+
+def _load_saved_from_db() -> list[RedditSaved]:
+    """Rebuild the saved list from already-persisted documents + reddit_items.
+
+    The ingest phase needs a body for every item still missing chunks, not just
+    the newest saves, which used to mean a second full feed walk right after the
+    metadata phase's own walk. The metadata phase already writes that same body
+    (plus kind/subreddit/permalink/external_url) for every item it sees — new or
+    already known — so reading it back costs nothing against Reddit's API.
+    """
+    return [
+        RedditSaved(
+            source_id=row["source_id"],
+            kind=row["kind"],
+            title=row["title"] or "",
+            permalink=row["permalink"] or "",
+            external_url=row["external_url"],
+            subreddit=row["subreddit"] or "",
+            body=row["body"],
+            date_added=row["date_added"],
+        )
+        for row in all_reddit_items()
+    ]
 
 
 def sync_reddit_metadata(
@@ -70,10 +94,12 @@ def sync_reddit_ingest(
     from_archive: bool = False,
 ) -> dict:
     key = progress_key or "reddit"
-    # No stop_on_known here: this phase needs bodies for every item still
-    # missing chunks, and those are not necessarily the most recently saved.
+    # This phase needs bodies for every item still missing chunks, not just the
+    # most recently saved — but that data is already in SQLite from the
+    # metadata phase, so it reads it back instead of polling the live feed a
+    # second time (from_archive replays the same jsonl the metadata phase would).
     saved = take(
-        load_saved_from_archive() if from_archive else load_saved(), Source.REDDIT,
+        load_saved_from_archive() if from_archive else _load_saved_from_db(), Source.REDDIT,
     )
     sp.set_corpus_total(key, len(saved))
 

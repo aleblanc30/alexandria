@@ -653,6 +653,46 @@ def reddit_item(con: sa.Connection, doc_id: int) -> dict | None:
     }
 
 
+def all_reddit_items() -> list[dict]:
+    """Every persisted Reddit document joined with its ``reddit_items`` row.
+
+    Feeds the ingest phase, which needs a body for every item still missing
+    chunks: the metadata phase already persists (and refreshes, on every pass)
+    kind/subreddit/permalink/external_url/body for each saved item, so this is
+    the same data a second live feed poll would return, without the request.
+    """
+    with get_engine().connect() as con:
+        rows = con.execute(
+            sa.select(
+                documents.c.source_id,
+                documents.c.title,
+                documents.c.date_added,
+                reddit_items.c.kind,
+                reddit_items.c.subreddit,
+                reddit_items.c.permalink,
+                reddit_items.c.external_url,
+                reddit_items.c.body,
+            )
+            .select_from(
+                documents.join(reddit_items, reddit_items.c.document_id == documents.c.id)
+            )
+            .where(documents.c.source == str(Source.REDDIT))
+        ).fetchall()
+    return [
+        {
+            "source_id": r[0],
+            "title": r[1],
+            "date_added": r[2],
+            "kind": r[3],
+            "subreddit": r[4],
+            "permalink": r[5],
+            "external_url": r[6],
+            "body": r[7],
+        }
+        for r in rows
+    ]
+
+
 # ── Image gate rejection cache ────────────────────────────────────────────────
 
 def record_image_rejection(
