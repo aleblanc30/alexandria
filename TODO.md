@@ -1,16 +1,18 @@
 # TODO
 
-Short feature wishlist: one line per idea, no design work done yet.
+High-priority work: one brief line per item.
 
-Items that have been thought through — with a stated reason for deferral and a
-rough implementation shape — live in `BACKLOG.md` instead. Promote an entry from
-here to there once it has that detail; do not duplicate it in both.
+Nice-to-haves live in `BACKLOG.md` instead. Neither file requires a detailed plan —
+the split is priority, not how well an idea is worked out. Move an entry between the
+two when its priority changes; do not duplicate it in both.
 
 ## Ingestion & deduplication
 
 - [ ] **Deduplication of tags** — merge or collapse duplicate tag names (case, spacing, synonyms) so the tag index stays clean.
 - [ ] **Deduplication of items** — detect and merge duplicate documents/items across sources (same URL, DOI, arXiv ID, etc.) instead of storing multiple records.
 - [x] **Domain frequency report** — list all domain names from ingested items, sorted by frequency, to prioritize which domains deserve special fetch/handlers next.
+- [ ] **Exempt preprint PDFs from the page cap** — `fetch_pdf_max_pages` caps every PDF route at 3 pages, so arXiv/bioRxiv now index only title + abstract + 3 pages.
+- [ ] **Make `_DomainRateLimiter` actually rate-limit** — concurrent waiters on one domain all sleep the same interval, then fire together, so the 1 req/s cap never binds.
 
 ## Source connectors
 
@@ -30,3 +32,11 @@ here to there once it has that detail; do not duplicate it in both.
 
 - [x] **Build a CLI** — shipped as `pka/cli/` and the `alexandria` console script; `scripts/*.py` remain as thin shims.
 - [ ] **Add chat/agent capability** — local-first conversational interface over the archive: retrieve relevant documents via semantic search, answer questions with Ollama, and cite source items (UI panel and/or CLI subcommand).
+
+## MCP
+
+- [ ] **MCP server for document search** — architect and ship an MCP server that lets a client search for documents in Alexandria.
+
+## Installation
+
+- [ ] **Start menu shortcuts** — document how to set up a "Start Alexandria Server" start-menu shortcut plus an "Open Alexandria Console" shortcut that displays logs.

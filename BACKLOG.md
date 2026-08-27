@@ -1,9 +1,10 @@
 # Backlog
 
-Deferred work items. Each entry: what, why deferred, and rough shape of the eventual implementation.
+Nice-to-haves: wanted, but not competing for the next slot.
 
-Undesigned one-line ideas belong in `TODO.md`; an item moves here once it has a
-stated reason for deferral and an implementation sketch.
+High-priority work lives in `TODO.md` instead. A brief line is enough here — some
+entries below carry a fuller what/why/shape sketch, but none is required. Move an
+entry between the two when its priority changes; do not duplicate it in both.
 
 ## YouTube connector
 
