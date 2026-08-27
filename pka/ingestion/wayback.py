@@ -1,6 +1,7 @@
 """Wayback Machine fallback when a Firefox bookmark URL returns HTTP 404."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from urllib.parse import urlencode
 
@@ -94,11 +95,11 @@ async def fetch_via_wayback(
     body = resp.content
 
     if expect_pdf or _is_pdf_content_type(content_type) or _is_pdf_bytes(body):
-        result = _fetch_pdf_result(doc_id, url, body, http_status)
+        result = await asyncio.to_thread(_fetch_pdf_result, doc_id, url, body, http_status)
     elif content_type and content_type not in _HTML_TYPES:
         return None
     else:
-        text = _extract_text(resp.text, snapshot_url)
+        text = await asyncio.to_thread(_extract_text, resp.text, snapshot_url)
         if not text:
             return None
         result = FetchResult(doc_id, url, "fetched", text, http_status, None)

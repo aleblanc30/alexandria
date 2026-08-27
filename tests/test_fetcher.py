@@ -666,3 +666,92 @@ class TestPreprintFetchIntegration:
             ).fetchone()
         assert row[0] == abstract
 
+
+
+class TestEventLoopNotBlocked:
+    """Content extraction and result persistence must run off the event loop.
+
+    When they ran inline, one slow page (a big PDF, a heavy trafilatura parse)
+    froze every other worker. Because ``_fetch_one`` guards each URL with an
+    ``asyncio.wait_for`` deadline measured in wall-clock time, those frozen
+    workers burned their budget while blocked and were recorded as
+    ``unfetchable`` / "timeout" even though their server had answered fine.
+    """
+
+    @pytest.mark.asyncio
+    async def test_slow_extraction_does_not_serialize_sibling_fetches(self, monkeypatch):
+        import time
+
+        blocking_seconds = 0.4
+        parallel_urls = 4
+
+        def blocking_extract(html, url):
+            time.sleep(blocking_seconds)
+            return "extracted text long enough to keep"
+
+        monkeypatch.setattr("pka.ingestion.fetcher._extract_text", blocking_extract)
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = _html_response(200)
+
+        started = time.monotonic()
+        results = await asyncio.gather(*(
+            _fetch_one(mock_client, doc_id=i, url=f"https://loopblock-{i}.example/{i}")
+            for i in range(parallel_urls)
+        ))
+        elapsed = time.monotonic() - started
+
+        assert all(r.status == "fetched" for r in results)
+        # Serialized on the loop this would cost parallel_urls * blocking_seconds.
+        assert elapsed < blocking_seconds * parallel_urls * 0.75, (
+            f"extraction appears to be serialized on the event loop ({elapsed:.2f}s)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_one_heavy_pdf_does_not_time_out_healthy_siblings(self, monkeypatch):
+        """A slow PDF extraction must not spend other URLs' timeout budgets.
+
+        The three HTML pages here answer instantly. Serialized behind an on-loop
+        PDF extraction they never get to run before their deadline and are
+        recorded as "timeout" — a failure invented by the fetcher, not the site.
+        """
+        import time
+
+        from pka.ingestion import fetch_base
+
+        def slow_pdf_extract(data, **kwargs):
+            time.sleep(2.0)
+            return "PDF text long enough to keep."
+
+        monkeypatch.setattr(fetch_base, "_extract_text_from_pdf_bytes", slow_pdf_extract)
+
+        pdf_url = "https://loopblock-pdf.example/book.pdf"
+
+        async def respond(url, **kwargs):
+            if url == pdf_url:
+                return _pdf_response()
+            # A real await, so the sibling is genuinely suspended on I/O with its
+            # wait_for timer already running when the PDF extraction begins.
+            await asyncio.sleep(0.3)
+            return _html_response(200)
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.side_effect = respond
+
+        # Warm the lazy per-site imports inside _fetch_one so their one-off cost
+        # is not charged to the first fetch's budget below.
+        await _fetch_one(mock_client, doc_id=99, url="https://loopblock-warm.example/")
+
+        monkeypatch.setattr("pka.ingestion.fetcher._fetch_budget_seconds", lambda **kw: 1.2)
+
+        html_urls = [f"https://loopblock-{i}.example/{i}" for i in range(3)]
+        # PDF last: the siblings start, suspend on their 0.3s read, and only then
+        # does the heavy extraction begin. That is the live worker-pool ordering.
+        results = await asyncio.gather(
+            *(_fetch_one(mock_client, doc_id=i + 1, url=u) for i, u in enumerate(html_urls)),
+            _fetch_one(mock_client, doc_id=0, url=pdf_url),
+        )
+
+        siblings = results[:3]
+        assert [r.error_msg for r in siblings] == [None] * 3
+        assert all(r.status == "fetched" for r in siblings)

@@ -188,7 +188,7 @@ async def _fetch_one_impl(
     body = resp.content
 
     if expect_pdf or _is_pdf_content_type(content_type) or _is_pdf_bytes(body):
-        return _fetch_pdf_result(doc_id, url, body, http_status)
+        return await asyncio.to_thread(_fetch_pdf_result, doc_id, url, body, http_status)
 
     if content_type and content_type not in _HTML_TYPES:
         return FetchResult(doc_id, url, "skipped", None, http_status,
@@ -197,7 +197,7 @@ async def _fetch_one_impl(
     from pka.ingestion.amazon import extract_amazon_book, is_amazon_book_url
 
     if is_amazon_book_url(url):
-        book = extract_amazon_book(resp.text)
+        book = await asyncio.to_thread(extract_amazon_book, resp.text)
         if book:
             return FetchResult(
                 doc_id,
@@ -209,7 +209,7 @@ async def _fetch_one_impl(
                 title=book.title,
             )
 
-    text = _extract_text(resp.text, url)
+    text = await asyncio.to_thread(_extract_text, resp.text, url)
     if not text:
         return FetchResult(doc_id, url, "unfetchable", None, http_status,
                            "content extraction yielded no text")
@@ -355,7 +355,6 @@ async def _run_fetch_workers(
     outcome merged into ``embed_stats`` (matching ``fetch_and_embed_pending``).
     """
     workers = concurrency if concurrency is not None else cfg.fetch_concurrency
-    sem = asyncio.Semaphore(workers)
     results: list[FetchResult] = []
     stopped: str | None = None
     queue: asyncio.Queue[tuple[int, str] | None] = asyncio.Queue()
@@ -377,13 +376,12 @@ async def _run_fetch_workers(
             failed = False
             r: FetchResult | None = None
             try:
-                async with sem:
-                    r = await _fetch_one(client, doc_id, url)
-                    results.append(r)
-                    failed = r.status == "unfetchable"
-                    if on_result:
-                        on_result(doc_id, r)
-                    _persist_fetch_result(r)
+                r = await _fetch_one(client, doc_id, url)
+                results.append(r)
+                failed = r.status == "unfetchable"
+                if on_result:
+                    on_result(doc_id, r)
+                await asyncio.to_thread(_persist_fetch_result, r)
             finally:
                 if progress_key:
                     advance(progress_key, phase=advance_phase, failed=failed)

@@ -1,6 +1,7 @@
 """arXiv API + PDF fetch for Firefox bookmark URLs."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import xml.etree.ElementTree as ET
@@ -184,7 +185,9 @@ async def _fetch_arxiv_pdf_text(
     if resp.status_code >= 400:
         return None, resp.status_code, f"pdf HTTP {resp.status_code}"
 
-    result = _fetch_pdf_result(0, pdf_url, resp.content, resp.status_code)
+    result = await asyncio.to_thread(
+        _fetch_pdf_result, 0, pdf_url, resp.content, resp.status_code,
+    )
     if result.status != "fetched" or not result.text:
         return None, resp.status_code, result.error_msg or "pdf extraction failed"
     return result.text, resp.status_code, None
