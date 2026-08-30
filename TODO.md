@@ -12,7 +12,7 @@ two when its priority changes; do not duplicate it in both.
 - [ ] **Deduplication of items** — detect and merge duplicate documents/items across sources (same URL, DOI, arXiv ID, etc.) instead of storing multiple records.
 - [x] **Domain frequency report** — list all domain names from ingested items, sorted by frequency, to prioritize which domains deserve special fetch/handlers next.
 - [ ] **Exempt preprint PDFs from the page cap** — `fetch_pdf_max_pages` caps every PDF route at 3 pages, so arXiv/bioRxiv now index only title + abstract + 3 pages.
-- [ ] **Make `_DomainRateLimiter` actually rate-limit** — concurrent waiters on one domain all sleep the same interval, then fire together, so the 1 req/s cap never binds.
+- [x] **Make `_DomainRateLimiter` actually rate-limit** — `wait` now claims a slot under the lock instead of deriving a delay from a shared last-send time, so concurrent waiters on one domain are spaced rather than released together.
 
 ## Source connectors
 

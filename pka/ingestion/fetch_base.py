@@ -44,20 +44,27 @@ class _DomainRateLimiter:
 
     def __init__(self, rps: float = 1.0):
         self._rps = rps
-        self._last: dict[str, float] = {}
+        # Earliest monotonic time at which the next request to a domain may go.
+        self._next: dict[str, float] = {}
         self._lock = threading.Lock()
 
     async def wait(self, url: str) -> None:
         domain = urlparse(url).netloc
+        gap = 1.0 / self._rps
         with self._lock:
             now = time.monotonic()
-            since = now - self._last.get(domain, 0)
-            gap = 1.0 / self._rps
-            sleep_for = max(0.0, gap - since)
-        if sleep_for:
+            # Claim a slot before releasing the lock. Deriving the delay from a
+            # shared last-send time and recording the send only afterwards lets
+            # every waiter that arrives during one gap read the same value,
+            # sleep the same interval and then fire together -- with the pool in
+            # ``fetcher`` that is a burst of ``fetch_concurrency`` requests and
+            # no effective cap. A cancelled waiter leaves its slot claimed,
+            # which costs a gap of throughput rather than exceeding the limit.
+            slot = max(now, self._next.get(domain, now))
+            self._next[domain] = slot + gap
+            sleep_for = slot - now
+        if sleep_for > 0:
             await asyncio.sleep(sleep_for)
-        with self._lock:
-            self._last[domain] = time.monotonic()
 
 
 _limiter = _DomainRateLimiter(rps=1.0)   # 1 req/s per domain
