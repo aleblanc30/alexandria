@@ -19,12 +19,12 @@ def _session_out(data: dict) -> SessionOut:
 
 
 @router.get("/sessions", response_model=list[SessionOut])
-async def list_sessions():
+def list_sessions():
     return [_session_out(s) for s in lifecycle.list_sessions()]
 
 
 @router.post("/sessions", response_model=SessionOut)
-async def create_session(req: SessionCreate):
+def create_session(req: SessionCreate):
     try:
         data = lifecycle.create_session(
             req.tag,
@@ -36,7 +36,7 @@ async def create_session(req: SessionCreate):
 
 
 @router.post("/sessions/from-source-tag", response_model=SessionOut)
-async def create_from_source_tag(req: SessionFromSourceTag):
+def create_from_source_tag(req: SessionFromSourceTag):
     try:
         data = lifecycle.create_session_from_source_tag(
             req.source_tag, req.target_tag,
@@ -47,7 +47,7 @@ async def create_from_source_tag(req: SessionFromSourceTag):
 
 
 @router.get("/sessions/by-tag/{tag}", response_model=SessionOut)
-async def get_session_by_tag(tag: str):
+def get_session_by_tag(tag: str):
     data = lifecycle.find_resumable_session_for_tag(tag)
     if data is None:
         raise HTTPException(404, "No training session for this tag")
@@ -55,7 +55,7 @@ async def get_session_by_tag(tag: str):
 
 
 @router.get("/sessions/{session_id}", response_model=SessionOut)
-async def get_session(session_id: int):
+def get_session(session_id: int):
     try:
         return _session_out(lifecycle.get_session(session_id))
     except LookupError as exc:
@@ -63,7 +63,7 @@ async def get_session(session_id: int):
 
 
 @router.get("/sessions/{session_id}/queue", response_model=list[QueueDocOut])
-async def get_queue(session_id: int):
+def get_queue(session_id: int):
     try:
         lifecycle.get_session(session_id)
     except LookupError as exc:
@@ -72,7 +72,7 @@ async def get_queue(session_id: int):
 
 
 @router.post("/sessions/{session_id}/labels", response_model=SessionOut)
-async def post_labels(session_id: int, req: LabelsBatch):
+def post_labels(session_id: int, req: LabelsBatch):
     try:
         data = lifecycle.add_user_labels(
             session_id,
@@ -86,7 +86,7 @@ async def post_labels(session_id: int, req: LabelsBatch):
 
 
 @router.post("/sessions/{session_id}/pseudo-label", response_model=SessionOut)
-async def post_pseudo_label(session_id: int, req: PseudoLabelRequest):
+def post_pseudo_label(session_id: int, req: PseudoLabelRequest):
     try:
         if req.mode == "model":
             data = lifecycle.apply_pseudo_labels_model(session_id)
@@ -104,7 +104,7 @@ async def post_pseudo_label(session_id: int, req: PseudoLabelRequest):
 
 
 @router.post("/sessions/{session_id}/train", response_model=SessionOut)
-async def post_train(session_id: int):
+def post_train(session_id: int):
     try:
         data = lifecycle.train_session(session_id)
     except LookupError as exc:
@@ -113,7 +113,7 @@ async def post_train(session_id: int):
 
 
 @router.post("/sessions/{session_id}/resume", response_model=SessionOut)
-async def post_resume(session_id: int):
+def post_resume(session_id: int):
     try:
         data = lifecycle.resume_session(session_id)
     except LookupError as exc:
@@ -124,7 +124,7 @@ async def post_resume(session_id: int):
 
 
 @router.post("/sessions/{session_id}/accept", response_model=SessionOut)
-async def post_accept(session_id: int):
+def post_accept(session_id: int):
     try:
         data = lifecycle.accept_session(session_id)
     except LookupError as exc:
@@ -135,7 +135,7 @@ async def post_accept(session_id: int):
 
 
 @router.post("/sessions/{session_id}/archive", response_model=SessionOut)
-async def post_archive(session_id: int):
+def post_archive(session_id: int):
     try:
         return _session_out(lifecycle.archive_session(session_id))
     except LookupError as exc:

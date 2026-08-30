@@ -128,7 +128,7 @@ def _cluster_out(
 
 
 @router.get("", response_model=list[ClusterOut])
-async def list_clusters(engine=Depends(get_engine)):
+def list_clusters(engine=Depends(get_engine)):
     with engine.connect() as con:
         run_id = fetch_active_run_id(con)
         if not run_id:
@@ -146,7 +146,7 @@ async def list_clusters(engine=Depends(get_engine)):
 
 
 @router.post("/apply-all-tags", response_model=ApplyAllTagsResult)
-async def apply_all_tags(engine=Depends(get_engine)):
+def apply_all_tags(engine=Depends(get_engine)):
     """Apply each cluster's stored label as an overlay tag on its documents."""
     results: list[ApplyTagResult] = []
     total_applied = total_skipped = 0
@@ -178,7 +178,7 @@ async def apply_all_tags(engine=Depends(get_engine)):
 
 
 @router.get("/scatter/points", response_model=list[UmapPoint])
-async def scatter_points(engine=Depends(get_engine)):
+def scatter_points(engine=Depends(get_engine)):
     """Return persisted 2-D UMAP coordinates for the active run."""
     with engine.connect() as con:
         run_id = fetch_active_run_id(con)
@@ -231,7 +231,7 @@ async def scatter_points(engine=Depends(get_engine)):
 
 
 @router.get("/{cluster_id}", response_model=ClusterDetail)
-async def get_cluster(cluster_id: int, engine=Depends(get_engine)):
+def get_cluster(cluster_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
         run_id = fetch_active_run_id(con)
         row = fetchone_mapping(con.execute(
@@ -249,7 +249,7 @@ async def get_cluster(cluster_id: int, engine=Depends(get_engine)):
 
 
 @router.patch("/{cluster_id}", response_model=ClusterOut)
-async def patch_cluster(
+def patch_cluster(
     cluster_id: int,
     req: ClusterPatchRequest,
     engine=Depends(get_engine),
@@ -284,7 +284,7 @@ async def patch_cluster(
 
 
 @router.post("/{cluster_id}/regenerate-label", response_model=ClusterOut)
-async def regenerate_cluster_label(cluster_id: int, engine=Depends(get_engine)):
+def regenerate_cluster_label(cluster_id: int, engine=Depends(get_engine)):
     """Re-run LLM cluster labelling for one cluster."""
     with engine.connect() as con:
         run_id = fetch_active_run_id(con)
@@ -306,7 +306,7 @@ async def regenerate_cluster_label(cluster_id: int, engine=Depends(get_engine)):
 
 
 @router.post("/{cluster_id}/apply-tag", response_model=ApplyTagResult)
-async def apply_cluster_tag(
+def apply_cluster_tag(
     cluster_id: int,
     req: ApplyTagRequest | None = None,
     engine=Depends(get_engine),
@@ -336,7 +336,7 @@ async def apply_cluster_tag(
 
 
 @router.get("/{cluster_id}/documents")
-async def cluster_documents(
+def cluster_documents(
     cluster_id: int,
     limit: int = 20,
     offset: int = 0,

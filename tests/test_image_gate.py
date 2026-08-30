@@ -550,7 +550,7 @@ class TestBrowseDefersPendingImages:
 
         eng = get_engine()
         # Called directly (not via FastAPI), so pass the Query-defaulted args.
-        assert await list_images(image_type=None, limit=20, offset=0, engine=eng) == []
+        assert list_images(image_type=None, limit=20, offset=0, engine=eng) == []
 
         with eng.begin() as con:
             con.execute(
@@ -558,5 +558,5 @@ class TestBrowseDefersPendingImages:
                 .where(images.c.path == str(img.path))
                 .values(indexed_at=1)
             )
-        out = await list_images(image_type=None, limit=20, offset=0, engine=eng)
+        out = list_images(image_type=None, limit=20, offset=0, engine=eng)
         assert len(out) == 1

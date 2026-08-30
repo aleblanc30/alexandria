@@ -11,7 +11,7 @@ router = APIRouter(prefix="/tags", tags=["tags"])
 
 
 @router.get("")
-async def list_tags(
+def list_tags(
     origin: str | None = Query(
         None,
         description="source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned",

@@ -25,7 +25,7 @@ router = APIRouter(prefix="/search", tags=["search"])
 
 
 @router.post("", response_model=SearchResponse)
-async def search(req: SearchRequest, engine=Depends(get_engine)):
+def search(req: SearchRequest, engine=Depends(get_engine)):
     from pka.storage.vector_store import query as vquery
 
     results: list[tuple[int, float | None]] = []

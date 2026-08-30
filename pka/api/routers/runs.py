@@ -104,7 +104,7 @@ def _run_out(con, row, *, total_chunked: int | None = None) -> RunOut:
 
 
 @router.get("", response_model=list[RunOut])
-async def list_runs(engine=Depends(get_engine)):
+def list_runs(engine=Depends(get_engine)):
     with engine.connect() as con:
         rows = fetchall_mappings(con.execute(
             sa.select(cluster_runs).order_by(cluster_runs.c.run_id.desc())
@@ -116,7 +116,7 @@ async def list_runs(engine=Depends(get_engine)):
 
 
 @router.get("/{run_id}/diagnostics", response_model=DiagnosticsOut)
-async def run_diagnostics(run_id: int, engine=Depends(get_engine)):
+def run_diagnostics(run_id: int, engine=Depends(get_engine)):
     from pka.clustering.lifecycle import compute_drift, compute_merge_suggestions
     with engine.connect() as con:
         _require_run(con, run_id)
@@ -141,7 +141,7 @@ async def run_diagnostics(run_id: int, engine=Depends(get_engine)):
 
 
 @router.post("/{run_id}/accept", status_code=204)
-async def accept_run(run_id: int, engine=Depends(get_engine)):
+def accept_run(run_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
         status = _require_run(con, run_id)
     if status != "finished":
@@ -151,7 +151,7 @@ async def accept_run(run_id: int, engine=Depends(get_engine)):
 
 
 @router.post("/{run_id}/reject", status_code=204)
-async def reject_run(run_id: int, notes: str = "", engine=Depends(get_engine)):
+def reject_run(run_id: int, notes: str = "", engine=Depends(get_engine)):
     with engine.connect() as con:
         status = _require_run(con, run_id)
     if status != "finished":
@@ -161,7 +161,7 @@ async def reject_run(run_id: int, notes: str = "", engine=Depends(get_engine)):
 
 
 @router.post("/{run_id}/cancel", status_code=202)
-async def cancel_run(run_id: int, engine=Depends(get_engine)):
+def cancel_run(run_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
         _require_run(con, run_id, require_running=True)
     from pka.clustering.run_progress import request_cancel
@@ -170,7 +170,7 @@ async def cancel_run(run_id: int, engine=Depends(get_engine)):
 
 
 @router.post("/trigger", status_code=202)
-async def trigger_run(
+def trigger_run(
     bg: BackgroundTasks,
     engine=Depends(get_engine),
     skip_labelling: bool = False,
@@ -214,7 +214,7 @@ async def trigger_run(
 
 
 @router.post("/incremental", status_code=202)
-async def trigger_incremental(bg: BackgroundTasks, engine=Depends(get_engine)):
+def trigger_incremental(bg: BackgroundTasks, engine=Depends(get_engine)):
     """Assign new docs to active run, or full re-cluster when drift is flagged."""
     _clustering_preflight()
     if _running_run_id(engine) is not None:

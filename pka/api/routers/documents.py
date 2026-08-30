@@ -29,7 +29,7 @@ _COVER_FILENAME = "cover.jpg"
 
 
 @router.get("", response_model=DocumentListResponse)
-async def list_documents(
+def list_documents(
     sources: Annotated[list[Source] | None, Query()] = None,
     source_tags: Annotated[list[str] | None, Query()] = None,
     general_tags: Annotated[list[str] | None, Query()] = None,
@@ -61,7 +61,7 @@ async def list_documents(
 
 
 @router.get("/{doc_id}", response_model=DocumentDetail)
-async def get_document(doc_id: int, engine=Depends(get_engine)):
+def get_document(doc_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
         run_id = fetch_active_run_id(con)
         detail = document_detail(con, doc_id, run_id)
@@ -71,7 +71,7 @@ async def get_document(doc_id: int, engine=Depends(get_engine)):
 
 
 @router.get("/{doc_id}/cover")
-async def get_document_cover(doc_id: int, engine=Depends(get_engine)):
+def get_document_cover(doc_id: int, engine=Depends(get_engine)):
     """Serve a document's cover image.
 
     Calibre books have a ``cover.jpg`` next to their format files; image
@@ -102,7 +102,7 @@ async def get_document_cover(doc_id: int, engine=Depends(get_engine)):
 
 
 @router.patch("/{doc_id}/tags", response_model=dict)
-async def patch_tags(doc_id: int, req: TagPatchRequest, engine=Depends(get_engine)):
+def patch_tags(doc_id: int, req: TagPatchRequest, engine=Depends(get_engine)):
     from pka.clustering.cluster_tags import insert_overlay_tags
 
     with engine.begin() as con:

@@ -22,7 +22,7 @@ router = APIRouter(prefix="/images", tags=["images"])
 
 
 @router.get("", response_model=list[ImageOut])
-async def list_images(
+def list_images(
     image_type: str | None = Query(None),
     limit: int = 20,
     offset: int = 0,
@@ -40,7 +40,7 @@ async def list_images(
 
 
 @router.get("/search", response_model=list[ImageOut])
-async def search_images(
+def search_images(
     q: str = Query(...),
     n: int = 10,
     mode: str = Query("hybrid", pattern="^(hybrid|clip|text)$"),
@@ -71,7 +71,7 @@ async def search_images(
 
 
 @router.get("/{image_id}/file")
-async def get_image_file(image_id: int, engine=Depends(get_engine)):
+def get_image_file(image_id: int, engine=Depends(get_engine)):
     """Serve the raw image file so the frontend can render it in an ``<img>``."""
     with engine.connect() as con:
         row = fetchone_mapping(con.execute(
@@ -89,7 +89,7 @@ async def get_image_file(image_id: int, engine=Depends(get_engine)):
 
 
 @router.get("/{image_id}", response_model=ImageOut)
-async def get_image(image_id: int, engine=Depends(get_engine)):
+def get_image(image_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
         row = fetchone_mapping(con.execute(
             sa.select(images_tbl).where(images_tbl.c.id == image_id)

@@ -14,7 +14,7 @@ router = APIRouter(prefix="/trends", tags=["trends"])
 
 
 @router.get("/timeline")
-async def timeline(engine=Depends(get_engine)):
+def timeline(engine=Depends(get_engine)):
     """Return kernel-smoothed level-1 cluster timelines for the interest chart.
 
     Each bookmark contributes a finite-support Gaussian-like kernel (one quarter
@@ -47,7 +47,7 @@ async def timeline(engine=Depends(get_engine)):
 
 
 @router.get("/sources")
-async def sources_over_time(
+def sources_over_time(
     granularity: str = Query("month"),
     engine=Depends(get_engine),
 ):

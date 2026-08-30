@@ -13,7 +13,7 @@ router = APIRouter(prefix="/reading-lists", tags=["reading_lists"])
 
 
 @router.get("")
-async def list_reading_lists(engine=Depends(get_engine)):
+def list_reading_lists(engine=Depends(get_engine)):
     with engine.connect() as con:
         rows = fetchall_mappings(con.execute(sa.select(reading_lists)))
         out = []
@@ -33,7 +33,7 @@ async def list_reading_lists(engine=Depends(get_engine)):
 
 
 @router.post("", status_code=201)
-async def create_list(body: ListCreate, engine=Depends(get_engine)):
+def create_list(body: ListCreate, engine=Depends(get_engine)):
     with engine.begin() as con:
         res = con.execute(reading_lists.insert().values(
             name=body.name, description=body.description,
@@ -43,7 +43,7 @@ async def create_list(body: ListCreate, engine=Depends(get_engine)):
 
 
 @router.get("/{list_id}/items")
-async def list_items(list_id: int, engine=Depends(get_engine)):
+def list_items(list_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
         rows = con.execute(
             sa.select(
@@ -68,7 +68,7 @@ async def list_items(list_id: int, engine=Depends(get_engine)):
 
 
 @router.post("/{list_id}/items", status_code=201)
-async def add_item(list_id: int, body: ItemAdd, engine=Depends(get_engine)):
+def add_item(list_id: int, body: ItemAdd, engine=Depends(get_engine)):
     with engine.begin() as con:
         max_pos = con.execute(
             sa.select(sa.func.coalesce(sa.func.max(reading_list_items.c.position), 0))
@@ -82,7 +82,7 @@ async def add_item(list_id: int, body: ItemAdd, engine=Depends(get_engine)):
 
 
 @router.delete("/{list_id}/items/{item_id}", status_code=204)
-async def remove_item(list_id: int, item_id: int, engine=Depends(get_engine)):
+def remove_item(list_id: int, item_id: int, engine=Depends(get_engine)):
     with engine.begin() as con:
         con.execute(
             reading_list_items.delete()
@@ -92,7 +92,7 @@ async def remove_item(list_id: int, item_id: int, engine=Depends(get_engine)):
 
 
 @router.delete("/{list_id}", status_code=204)
-async def delete_list(list_id: int, engine=Depends(get_engine)):
+def delete_list(list_id: int, engine=Depends(get_engine)):
     with engine.begin() as con:
         con.execute(reading_list_items.delete()
                     .where(reading_list_items.c.list_id == list_id))
