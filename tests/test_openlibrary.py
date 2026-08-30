@@ -12,7 +12,7 @@ from pka.ingestion import openlibrary as ol
 def _isolate_lookups(monkeypatch):
     """Fresh cache per test, and never actually sleep on the rate limiter."""
     ol.reset_cache()
-    monkeypatch.setattr(ol._limiter, "wait", lambda: None)
+    monkeypatch.setattr(ol._limiter, "wait", lambda url: None)
     yield
     ol.reset_cache()
 

@@ -29,7 +29,6 @@ from __future__ import annotations
 import logging
 import re
 import threading
-import time
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,6 +37,7 @@ import httpx
 
 from pka.config import settings as cfg
 from pka.ingestion.chunker import trim_to_sentences
+from pka.ingestion.rate_limit import SyncRateLimiter
 
 log = logging.getLogger(__name__)
 
@@ -72,24 +72,10 @@ class BookSynopsis:
         return trim_to_sentences(self.description, limit)
 
 
-# ── Rate limiting (sync; mirrors fetcher._DomainRateLimiter) ──────────────────
+# ── Rate limiting ─────────────────────────────────────────────────────────────
 
-class _SyncRateLimiter:
-    def __init__(self, rps: float = _RATE_LIMIT_RPS) -> None:
-        self._rps = rps
-        self._last = 0.0
-        self._lock = threading.Lock()
+_limiter = SyncRateLimiter(rps=_RATE_LIMIT_RPS)
 
-    def wait(self) -> None:
-        with self._lock:
-            gap = 1.0 / self._rps
-            sleep_for = max(0.0, gap - (time.monotonic() - self._last))
-            if sleep_for:
-                time.sleep(sleep_for)
-            self._last = time.monotonic()
-
-
-_limiter = _SyncRateLimiter()
 
 # Keyed by ISBN or (title, authors) — a shelf photo of ten books by one author
 # should not issue the same author search ten times.
@@ -198,7 +184,7 @@ def authors_match(extracted: list[str], canonical: list[str]) -> bool:
 def _get_json(path: str, params: dict[str, str] | None = None) -> Any | None:
     """GET a JSON document from Open Library. ``None`` on any failure."""
     url = f"{cfg.openlibrary_base_url.rstrip('/')}{path}"
-    _limiter.wait()
+    _limiter.wait(url)
     try:
         resp = httpx.get(
             url,

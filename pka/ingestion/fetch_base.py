@@ -1,14 +1,11 @@
 """
-Shared fetch primitives: result type, per-domain rate limit, timeouts, extraction.
+Shared fetch primitives: result type, rate limiter instance, timeouts, extraction.
 
 Lives below ``fetcher`` so the per-site fetchers (arxiv, biorxiv, wayback,
 wikipedia) can use these without importing the dispatcher that calls them —
 ``fetcher`` dispatches down to those modules, they depend only on this one.
 """
-import asyncio
 import tempfile
-import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -17,6 +14,7 @@ import httpx
 
 from pka.config import settings as cfg
 from pka.ingestion.book_extractor import extract_pdf
+from pka.ingestion.rate_limit import AsyncRateLimiter
 
 # MIME types we will attempt to parse as HTML
 _HTML_TYPES = {"text/html", "application/xhtml+xml"}
@@ -37,37 +35,9 @@ class FetchResult:
     card_summary: str | None = None  # when set, overrides documents.card_summary on persist
 
 
-# ── Rate limiting (simple per-domain token bucket) ───────────────────────────
+# ── Rate limiting ─────────────────────────────────────────────────────────────
 
-class _DomainRateLimiter:
-    """Per-domain rate limit; uses threading.Lock so it survives asyncio.run() restarts."""
-
-    def __init__(self, rps: float = 1.0):
-        self._rps = rps
-        # Earliest monotonic time at which the next request to a domain may go.
-        self._next: dict[str, float] = {}
-        self._lock = threading.Lock()
-
-    async def wait(self, url: str) -> None:
-        domain = urlparse(url).netloc
-        gap = 1.0 / self._rps
-        with self._lock:
-            now = time.monotonic()
-            # Claim a slot before releasing the lock. Deriving the delay from a
-            # shared last-send time and recording the send only afterwards lets
-            # every waiter that arrives during one gap read the same value,
-            # sleep the same interval and then fire together -- with the pool in
-            # ``fetcher`` that is a burst of ``fetch_concurrency`` requests and
-            # no effective cap. A cancelled waiter leaves its slot claimed,
-            # which costs a gap of throughput rather than exceeding the limit.
-            slot = max(now, self._next.get(domain, now))
-            self._next[domain] = slot + gap
-            sleep_for = slot - now
-        if sleep_for > 0:
-            await asyncio.sleep(sleep_for)
-
-
-_limiter = _DomainRateLimiter(rps=1.0)   # 1 req/s per domain
+_limiter = AsyncRateLimiter(rps=1.0)   # 1 req/s per domain
 
 
 def _url_looks_like_pdf(url: str) -> bool:

@@ -11,8 +11,8 @@ from pka.ingestion import openlibrary as ol
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
-    monkeypatch.setattr(bs._limiter, "wait", lambda: None)
-    monkeypatch.setattr(ol._limiter, "wait", lambda: None)
+    monkeypatch.setattr(bs._limiter, "wait", lambda url: None)
+    monkeypatch.setattr(ol._limiter, "wait", lambda url: None)
     ol.reset_cache()
     yield
     ol.reset_cache()

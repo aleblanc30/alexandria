@@ -269,7 +269,7 @@ flowchart TD
 
     ASYNC["asyncio.run(fetch_and_embed_pending(<br/>embed_fn=embed_fetched_text))"]
     POOL["_run_fetch_workers()<br/>N workers + asyncio.Queue + Semaphore"]
-    LIM["_limiter.wait(url)<br/>per-domain token bucket"]
+    LIM["_limiter.wait(url)<br/>per-domain slot, 1 req/s"]
     ONE["_fetch_one() — asyncio.wait_for<br/>_fetch_budget_seconds(pdf, wayback, wikipedia, preprint)"]
     SETF --> ASYNC --> POOL --> LIM --> ONE
 

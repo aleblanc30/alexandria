@@ -31,10 +31,10 @@ import httpx
 from pka.config import settings as cfg
 from pka.ingestion.openlibrary import (
     BookSynopsis,
-    _SyncRateLimiter,
     authors_match,
     titles_match,
 )
+from pka.ingestion.rate_limit import SyncRateLimiter
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ GOOGLE_BOOKS_URL = "https://www.googleapis.com/books/v1/volumes"
 
 # Keyless use is quota-limited per IP, so stay polite even though the free tier
 # does not demand it.
-_limiter = _SyncRateLimiter(rps=1.0)
+_limiter = SyncRateLimiter(rps=1.0)
 
 SearchProvider = Callable[[str, list[str]], "BookSynopsis | None"]
 
@@ -56,7 +56,7 @@ def _google_books_search(title: str, authors: list[str]) -> BookSynopsis | None:
     if cfg.google_books_api_key:
         params["key"] = cfg.google_books_api_key
 
-    _limiter.wait()
+    _limiter.wait(GOOGLE_BOOKS_URL)
     try:
         resp = httpx.get(
             GOOGLE_BOOKS_URL,
@@ -150,7 +150,7 @@ def _brave_search(title: str, authors: list[str]) -> BookSynopsis | None:
         return None
 
     query = " ".join([f'"{title}"', *(f'"{a}"' for a in authors[:1]), "book"])
-    _limiter.wait()
+    _limiter.wait(BRAVE_SEARCH_URL)
     try:
         resp = httpx.get(
             BRAVE_SEARCH_URL,
