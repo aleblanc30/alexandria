@@ -39,4 +39,4 @@ two when its priority changes; do not duplicate it in both.
 
 ## Installation
 
-- [ ] **Start menu shortcuts** — document how to set up a "Start Alexandria Server" start-menu shortcut plus an "Open Alexandria Console" shortcut that displays logs.
+- [x] **Start menu shortcuts** — `INSTALL.md` §8 documents Start / Console / Stop shortcuts for the standalone install, backed by shipped `scripts/console.bat` (follows `server.log`) and `scripts/stop-server.bat`.

@@ -158,7 +158,8 @@ start takes and how much resident memory the process settles at: `torch`,
 `transformers` and `easyocr` are dependencies, and whether they are imported
 eagerly determines whether an always-running server is a negligible or a
 substantial background cost. If it proves heavy, launching on demand from a
-shortcut may suit better than the autostart described below.
+shortcut may suit better than the autostart described below; §8 covers
+both arrangements.
 
 ## 6. Hidden-window wrapper
 
@@ -229,22 +230,55 @@ returns to "Ready" immediately means the server exited; consult
 
 ## 8. Shortcuts
 
-Because the server is already running, the shortcuts open the interface rather
-than launching anything.
+What these do depends on whether you set up §7. With the scheduled task in
+place the server is already running at logon, so the shortcuts only open and
+close an interface that already exists. Without it — the on-demand
+arrangement raised in §5, if a permanently resident server proves too heavy —
+"Start Alexandria Server" is what brings the server up, and the console is the
+only place its output is visible.
 
 Place these in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Alexandria\`,
 and copy the first to the Desktop. This location is per-user and needs no
 administrator rights; it is roaming AppData, which is appropriate for shortcut
-files.
+files. Create each with right-click → New → Shortcut in that folder, pasting
+the whole target line below, quotes included, into the wizard's location field.
 
 | Shortcut | Target |
 | --- | --- |
 | Alexandria | `http://localhost:8420` (internet shortcut) |
-| Stop Alexandria | `schtasks /End /TN Alexandria` |
+| Start Alexandria Server | `C:\Windows\System32\wscript.exe "C:\Users\<you>\AppData\Local\Alexandria\app\start-hidden.vbs"` |
+| Open Alexandria Console | `C:\Users\<you>\AppData\Local\Alexandria\app\scripts\console.bat` |
+| Stop Alexandria | `C:\Users\<you>\AppData\Local\Alexandria\app\scripts\stop-server.bat` |
 | Alexandria files | `%LOCALAPPDATA%\Alexandria\app` |
 
-The third is worth having because AppData is hidden in Explorer by default and
+The last is worth having because AppData is hidden in Explorer by default and
 `.env` and `.secrets` live there.
+
+**Start Alexandria Server** runs the §6 wrapper, so write that file even if you
+skipped the scheduled task: it is what suppresses the console window the batch
+launcher would otherwise open. Nothing visible happens when the shortcut is
+used. Allow the cold start you timed in §5 before opening the Alexandria
+shortcut. Using it while the server is already up starts a second uvicorn that
+binds a taken port and exits within a second; the first server is unaffected,
+and the failure is recorded in the log rather than shown (§9).
+
+**Open Alexandria Console** runs `scripts\console.bat`, which follows
+`data\server.log` — the last 200 lines, then each new one as it is written.
+Once the server runs hidden this is the only view of its output, and so where a
+failed start, an ingestion traceback or a request error appears. It only reads:
+closing the window leaves the server running, and opening it before the server
+has ever run waits for the file to appear rather than failing.
+
+**Stop Alexandria** runs `scripts\stop-server.bat`, which ends the `Alexandria`
+task if one is registered and then stops whatever still holds port 8420. It
+covers both arrangements for that reason — ending the task is enough under §7,
+while an on-demand server has no task to end. Note that it goes by the port
+rather than by identity, so if a development checkout is serving 8420
+(`alexandria dev`, per §9), that is what it will stop.
+
+Both scripts assume the default port and the `data\` location from §2, as the
+§5 launcher does. The `LOG` line at the top of `console.bat` and the `PORT`
+line at the top of `stop-server.bat` are what to edit if you moved either.
 
 ## 9. Troubleshooting
 
