@@ -13,7 +13,8 @@ from urllib.parse import urlparse
 import httpx
 
 from pka.config import settings as cfg
-from pka.ingestion.book_extractor import extract_pdf
+from pka.constants import FetchStatus, PdfTextLayer
+from pka.ingestion.book_extractor import BookExtraction, extract_pdf_report
 from pka.ingestion.rate_limit import AsyncRateLimiter
 
 # MIME types we will attempt to parse as HTML
@@ -26,7 +27,7 @@ _PDF_MAGIC = b"%PDF"
 class FetchResult:
     document_id: int
     url: str
-    status: str         # fetched | unfetchable | skipped
+    status: str         # fetched | unfetchable | skipped | no_text_layer
     text: str | None    # extracted main text (if fetched)
     http_status: int | None
     error_msg: str | None
@@ -59,11 +60,11 @@ def _http_timeout(*, pdf: bool = False) -> httpx.Timeout:
     return httpx.Timeout(connect=connect, read=read, write=connect, pool=connect)
 
 
-def _extract_text_from_pdf_bytes(
+def _extract_pdf_from_bytes(
     data: bytes,
     *,
     max_pages: int | None = None,
-) -> str | None:
+) -> BookExtraction:
     """Write bytes to a temp file and run the Calibre PDF extractor."""
     pages = max_pages if max_pages is not None else cfg.fetch_pdf_max_pages
     # delete=False + close before reopening by name: Windows locks the file
@@ -72,11 +73,18 @@ def _extract_text_from_pdf_bytes(
     try:
         tmp.write(data)
         tmp.close()
-        sections = extract_pdf(Path(tmp.name), max_pages=pages)
+        return extract_pdf_report(Path(tmp.name), max_pages=pages)
     finally:
         Path(tmp.name).unlink(missing_ok=True)
-    if not sections:
-        return None
+
+
+def _sections_text(sections: list[dict]) -> str | None:
+    """Flatten page-group sections into one body string.
+
+    The per-section page range is dropped here: this route embeds a fetched
+    document as a single block (``fetched_embed_text``), so there is nowhere to
+    hang it. Only the Calibre route keeps it (DESIGN.md §3).
+    """
     parts = [s["text"] for s in sections if s.get("text", "").strip()]
     return "\n\n".join(parts) if parts else None
 
@@ -136,10 +144,19 @@ def _fetch_pdf_result(
             doc_id, url, "unfetchable", None, http_status,
             "response is not a PDF",
         )
-    text = _extract_text_from_pdf_bytes(body)
+    report = _extract_pdf_from_bytes(body)
+    text = _sections_text(report.sections)
     if not text:
+        if report.status == PdfTextLayer.NONE:
+            # Readable, paginated, and not one page carries text: a scan. Kept
+            # apart from "unfetchable" so re-fetching never retries it and the
+            # OCR-candidate set stays queryable (BACKLOG.md).
+            return FetchResult(
+                doc_id, url, str(FetchStatus.NO_TEXT_LAYER), None, http_status,
+                f"pdf has no text layer ({report.page_count} pages)",
+            )
         return FetchResult(
             doc_id, url, "unfetchable", None, http_status,
-            "pdf extraction yielded no text",
+            f"pdf extraction yielded no text ({report.status})",
         )
     return FetchResult(doc_id, url, "fetched", text, http_status, None)

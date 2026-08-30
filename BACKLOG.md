@@ -169,6 +169,40 @@ does not — `ChatProvider` in `pka/providers/base.py` is only `resolve_model` +
   large budget and assert the single-call path, alongside the existing map-reduce
   cases.
 
+## PDF ingestion
+
+### OCR the documents that have no text layer
+
+**What:** Give the `no_text_layer` set — scanned PDFs, recorded as such by
+`extract_pdf_report` on both the Calibre and the fetch route — a way to become
+searchable text: rasterise each page, run it through the existing OCR provider,
+and feed the result into `ingest_text_block` like any other section.
+
+**Why deferred:** The extraction half is the cheap half and it is already done;
+the OCR half is a compute budget question, not a plumbing one. A 300-page scan
+through a VLM on a 4 GB Pascal card is not a background task, so this needs a
+page cap and a deliberate switch before it is worth having. Recording the
+candidates first costs nothing and means the work queue already exists when the
+budget question gets answered.
+
+**Rough shape when picked up:**
+- No new dependency for rasterisation: **pypdfium2** already ships as a
+  pdfplumber dependency (BSD/Apache, unlike the AGPL PyMuPDF), and renders a
+  page to a PIL image in two calls.
+- No new provider either: `ocr_provider` (`vlm` | `easyocr`) and
+  `image_extractor.ocr_image` already do exactly this job for images. The
+  per-page call is the same call.
+- Gate it: a named setting, default off, per DESIGN §1.1 — `vlm` routes to a
+  possibly-hosted vision model, so the page images are document content leaving
+  the machine. `easyocr` stays local and is the safe default backend for it.
+- Cap it: a page budget per document, and select work with
+  `fetch_status = 'no_text_layer'` rather than re-probing every PDF.
+- Chunk metadata already has somewhere to put the page number (`page_start` /
+  `page_end`), and OCR is the one route that knows it exactly — one page in,
+  one section out.
+- Cross-check the numbers: VLMs invent plausible text on degraded regions, so
+  anything numeric coming out of a scan should be treated as unverified.
+
 ## Archiving
 
 ### Wayback Machine submission

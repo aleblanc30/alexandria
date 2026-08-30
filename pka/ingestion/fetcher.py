@@ -5,7 +5,8 @@ Runs as a background job — does not block the ingestion pipeline.
 Strategy:
   - httpx AsyncClient with rate limiting (token bucket, per-domain)
   - trafilatura for main-content extraction; readability-lxml as fallback
-  - Remote PDFs: download bytes, extract via book_extractor.extract_pdf, embed
+  - Remote PDFs: download bytes, extract via book_extractor.extract_pdf_report, embed
+  - Scanned PDFs (readable, paginated, no text layer) → "no_text_layer", never re-fetched
   - Other non-HTML targets (EPUB, torrents, …) flagged as "skipped"
   - Local ``file:`` URLs and bare filesystem paths → "unfetchable" (no HTTP fetch)
   - Auth failures, timeouts, 4xx/5xx → status "unfetchable", logged to fetch_log
@@ -432,7 +433,10 @@ async def fetch_and_embed_pending(
     work = source_ingest_queue(source, limit)
     if not work:
         log.info("No %s URLs to fetch and embed", source)
-        return {"fetched": 0, "skipped": 0, "unfetchable": 0, "embed": _empty_embed_stats()}
+        return {
+            "fetched": 0, "skipped": 0, "unfetchable": 0, "no_text_layer": 0,
+            "embed": _empty_embed_stats(),
+        }
 
     log.info(
         "Fetching and embedding %d URLs (concurrency=%d, timeout=%ss)",
@@ -453,6 +457,9 @@ async def fetch_and_embed_pending(
         "fetched":     sum(1 for r in results if r.status == "fetched"),
         "skipped":     sum(1 for r in results if r.status == "skipped"),
         "unfetchable": sum(1 for r in results if r.status == "unfetchable"),
+        "no_text_layer": sum(
+            1 for r in results if r.status == str(FetchStatus.NO_TEXT_LAYER)
+        ),
         "embed":       embed_stats,
     }
     if stopped:
@@ -483,7 +490,7 @@ async def fetch_pending(
     pending = _get_pending(limit)
     if not pending:
         log.info("No pending URLs to fetch")
-        return {"fetched": 0, "skipped": 0, "unfetchable": 0, "texts": {}}
+        return {"fetched": 0, "skipped": 0, "unfetchable": 0, "no_text_layer": 0, "texts": {}}
 
     log.info(
         "Fetching %d pending URLs (concurrency=%d, timeout=%ss)",
@@ -506,6 +513,9 @@ async def fetch_pending(
         "fetched":     sum(1 for r in results if r.status == "fetched"),
         "skipped":     sum(1 for r in results if r.status == "skipped"),
         "unfetchable": sum(1 for r in results if r.status == "unfetchable"),
+        "no_text_layer": sum(
+            1 for r in results if r.status == str(FetchStatus.NO_TEXT_LAYER)
+        ),
         "texts":       fetched_texts,
     }
     if stopped:

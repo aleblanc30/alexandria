@@ -105,6 +105,11 @@ def init_db() -> None:
             if chunk_cols and col not in chunk_cols:
                 con.execute(sa.text(f"ALTER TABLE chunks ADD COLUMN {col} TEXT"))
 
+        # Migration: page range a chunk was read from, for PDF-backed sources.
+        for col in ("page_start", "page_end"):
+            if chunk_cols and col not in chunk_cols:
+                con.execute(sa.text(f"ALTER TABLE chunks ADD COLUMN {col} INTEGER"))
+
         # Migration: link images to their unified documents row
         img_cols = [r[1] for r in con.execute(
             sa.text("PRAGMA table_info(images)")
@@ -360,13 +365,16 @@ def insert_source_collections(
 
 # Enrichment provenance columns, optional per row (see :func:`document_enrichment`).
 _CHUNK_PROVENANCE_KEYS = ("chunk_pass", "resolved_by", "source_ref", "ref_title")
+# Source-file location, optional per row: PDF page range behind the chunk.
+_CHUNK_LOCATION_KEYS = ("page_start", "page_end")
 
 
 def insert_chunks(rows: list[dict[str, Any]]) -> None:
     """rows: dicts with keys document_id, chunk_index, text, token_count, vector_id.
 
     Optionally also chunk_pass, resolved_by, source_ref, ref_title (enrichment
-    provenance — see :func:`document_enrichment`).
+    provenance — see :func:`document_enrichment`) and page_start, page_end (the
+    pages the chunk was read from, for PDF-backed sources).
     """
     if not rows:
         return
@@ -374,7 +382,8 @@ def insert_chunks(rows: list[dict[str, Any]]) -> None:
     # dict must carry the same keys. Without this, a batch mixing an enriched
     # row with a plain one raises "A value is required for bind parameter" —
     # which would make the "optional" above a lie for any multi-row caller.
-    rows = [{**dict.fromkeys(_CHUNK_PROVENANCE_KEYS), **row} for row in rows]
+    defaults = dict.fromkeys(_CHUNK_PROVENANCE_KEYS + _CHUNK_LOCATION_KEYS)
+    rows = [{**defaults, **row} for row in rows]
     eng = get_engine()
     with eng.begin() as con:
         con.execute(chunks.insert(), rows)
@@ -578,6 +587,16 @@ def resolve_description(card_summary: str | None, chunk_text: str | None) -> str
     if card_summary and card_summary.strip():
         return truncate_summary(card_summary)
     return truncate_summary(chunk_text)
+
+
+def set_fetch_status(doc_id: int, status: FetchStatus | str) -> None:
+    """Record the outcome of trying to get text for a document."""
+    with get_engine().begin() as con:
+        con.execute(
+            sa.update(documents)
+            .where(documents.c.id == doc_id)
+            .values(fetch_status=str(status))
+        )
 
 
 def update_card_summary(doc_id: int, summary: str | None) -> None:

@@ -204,6 +204,29 @@ chunks are re-queued automatically on the next ingest run. When a Firefox URL
 returns HTTP 404, the fetcher can fall back to the closest Internet Archive
 snapshot (`fetch_wayback_fallback`, default on).
 
+**PDF extraction reports why it found nothing.** `extract_pdf_report`
+(`book_extractor.py`) returns sections *plus* a `PdfTextLayer` verdict, because an
+empty result has four causes that deserve different handling: a scan
+(`no_text_layer`), a file neither pdfplumber nor pypdf can open (`unreadable`), a
+document with no pages (`empty`), and a page cap that stopped before any text
+appeared (`unknown` — with `fetch_pdf_max_pages` at 3, a scanned cover in front of
+a text body reads exactly like a scan, so no verdict is reached). Only the first
+is worth OCR and only the first is recorded, as `fetch_status = no_text_layer` on
+both the Calibre and the fetch route. Nothing re-queues that state: re-reading the
+same bytes cannot produce text. It exists so that "not extracted yet" and "has
+nothing to extract" stop looking identical from the database, and it is the work
+queue the OCR entry in `BACKLOG.md` would consume.
+
+**Page ranges travel with the chunk.** A PDF section is a group of ten
+*text-bearing* pages labelled with its real 1-based page numbers — a page with no
+text layer no longer shifts the numbering of the pages after it — and every chunk
+cut from that section carries its `page_start` / `page_end` into both the Chroma
+metadata and the `chunks` table, so a retrieved passage can be cited back to the
+pages it was read from. The section is the finest unit available: the chunker
+receives it as one block, so per-chunk page attribution would need
+`sentence_window_chunks` to return a sentence→page map. The fetch route drops the
+range — it embeds a fetched document as a single block and has nowhere to hang it.
+
 **Reddit saved posts** are a *network* source (no filesystem path) rather than a
 local DB, with **one loader** producing `RedditSaved`:
 
@@ -432,7 +455,7 @@ Three mechanisms close these, in ascending cost:
 | Calibre, no ISBN | Title/author lookup → second catalogue. Skipped entirely when Calibre already holds a description, since pass 1 embeds that | off (`external_lookup_enabled`) |
 | Calibre full text | Local map-reduce summary over the extracted sections | off (`book_summary_enabled`) |
 | Long fetched articles | Same path as bookmarks — they are the same runner | off (`bookmark_summary_enabled`) |
-| Zotero | *No summary* — the abstract already is one. The real gap is that attached PDFs are never ingested. | — |
+| Zotero | *No summary* — the abstract already is one. The real gap is that attached PDFs are never ingested (`TODO.md`). | — |
 | YouTube | *No summary* — nothing to summarise beyond uploader metadata. Transcripts (`BACKLOG.md`). | — |
 
 **Resolution ladder.** Covers and no-ISBN Calibre books share one cascade:

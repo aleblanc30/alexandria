@@ -281,7 +281,7 @@ flowchart TD
         EXT["non-HTML extension → skipped"]
         GET["httpx GET, follow_redirects"]
         WB["fetch_via_wayback()<br/>gate: fetch_wayback_fallback"]
-        PDF["_fetch_pdf_result()<br/>book_extractor.extract_pdf"]
+        PDF["_fetch_pdf_result()<br/>extract_pdf_report() → text,<br/>or no_text_layer for a scan"]
         AMZ["extract_amazon_book()<br/>title + editorial summary"]
         HTML["_extract_text()<br/>trafilatura → readability-lxml"]
         DISPATCH --> WIKI
@@ -420,16 +420,18 @@ flowchart TD
 
     subgraph pass2["Pass 2 — full text (books with a file)"]
         P2["ingest_calibre_fulltext()"]
-        EXTRACT["extract_book_text(path, max_pages)"]
+        EXTRACT["extract_book_report(path, max_pages)"]
         DISP{"file suffix"}
         EPUB["extract_epub() — per-chapter sections"]
-        PDFX["extract_pdf() — per-page sections"]
-        SECT["for each section:<br/>ingest_text_block(pass='fulltext',<br/>section_title, section_index, chunk_offset)"]
+        PDFX["extract_pdf_report() — page-numbered sections<br/>+ text-layer verdict"]
+        NOTEXT["no sections, verdict no_text_layer:<br/>set_fetch_status(NO_TEXT_LAYER)<br/>— OCR candidate, never re-queued"]
+        SECT["for each section:<br/>ingest_text_block(pass='fulltext',<br/>section_title, section_index,<br/>page_start/page_end, chunk_offset)"]
         SUM["attach_summary_chunk(CALIBRE, full_text)<br/>gate: book_summary_enabled"]
         LLM["summarize_text() — map-reduce over the book"]
         P2 --> EXTRACT --> DISP
         DISP -->|.epub| EPUB --> SECT
         DISP -->|.pdf| PDFX --> SECT
+        PDFX -->|scan| NOTEXT
         SECT --> SUM --> LLM
     end
 
@@ -462,7 +464,7 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,AVAIL,OK,UNAV,ENDU,TAKE,BEGIN,MLOOP,FS,INSDOC,TAGS,FULL,ING,SKIPF,SETE1,ELOOP1,SKIP1,B1,B2,STOP1,ENDE,SETE2,TAIL,NOOP1 shared
+    class START,INIT,AVAIL,OK,UNAV,ENDU,TAKE,BEGIN,MLOOP,FS,INSDOC,TAGS,FULL,ING,SKIPF,SETE1,ELOOP1,SKIP1,B1,B2,STOP1,ENDE,SETE2,TAIL,NOOP1,NOTEXT shared
     class LOADB,MRUN,SPLIT,COUNT,P1,MT,SYN,P2,EXTRACT,DISP,EPUB,PDFX,SECT,NOCLS specific
     class NETOL external
     class LOOK,LADDER,SUM,LLM gated

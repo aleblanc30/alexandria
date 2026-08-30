@@ -7,8 +7,10 @@ import pytest
 import sqlalchemy as sa
 
 from pka.connectors.calibre import CalibreBook
+from pka.constants import FetchStatus, PdfTextLayer
 from pka.db.queries import document_has_chunks, get_engine, init_db
 from pka.db.schema import chunks, documents, source_tags
+from pka.ingestion.book_extractor import BookExtraction
 
 
 @pytest.fixture(autouse=True)
@@ -79,15 +81,15 @@ def test_fulltext_pass_offsets_chunk_indices(
 
     # Mock fulltext extractor to return two sections
     monkeypatch.setattr(
-        "pka.ingestion.runners.calibre.extract_book_text",
-        lambda p, **kw: [
+        "pka.ingestion.runners.calibre.extract_book_report",
+        lambda p, **kw: BookExtraction([
             {"title": "Ch1",
              "text":  "Sentence one. Sentence two. Sentence three.",
              "index": 0},
             {"title": "Ch2",
              "text":  "Another section. With more text. And more.",
              "index": 1},
-        ],
+        ]),
     )
     ingest_calibre_fulltext([book])
 
@@ -244,3 +246,117 @@ class TestCalibreEnrichment:
         stats = ingest_calibre_books([self._book(tmp_path)])
         assert stats["failed"] == 0
         assert stats["processed"] == 1
+
+
+def _pdf_book(tmp_path, monkeypatch, report, source_id="PDF1"):
+    """Register a PDF-backed book, then stub what its extractor reports."""
+    from pka.ingestion.runners.calibre import ingest_calibre_books
+
+    pdf = tmp_path / "book.pdf"
+    pdf.write_bytes(b"%PDF")
+    book = _make_book(source_id=source_id, formats=["PDF"], preferred_path=pdf)
+    ingest_calibre_books([book])
+    monkeypatch.setattr(
+        "pka.ingestion.runners.calibre.extract_book_report", lambda p, **kw: report,
+    )
+    return book
+
+
+def test_scanned_pdf_is_recorded_not_silently_skipped(
+    mock_chroma, tmp_path, monkeypatch,
+):
+    """A scan and an un-run phase 2 both produce no chunks; only one is a scan."""
+    from pka.ingestion.runners.calibre import ingest_calibre_fulltext
+
+    book = _pdf_book(
+        tmp_path, monkeypatch,
+        BookExtraction([], PdfTextLayer.NONE, page_count=42),
+        source_id="SCAN",
+    )
+    stats = ingest_calibre_fulltext([book])
+
+    assert stats["no_text_layer"] == 1
+    assert stats["skipped"] == 1
+    with get_engine().connect() as con:
+        status = con.execute(
+            sa.select(documents.c.fetch_status).where(documents.c.source_id == "SCAN")
+        ).scalar()
+    assert status == FetchStatus.NO_TEXT_LAYER
+
+
+def test_broken_pdf_is_not_marked_as_a_scan(mock_chroma, tmp_path, monkeypatch):
+    from pka.ingestion.runners.calibre import ingest_calibre_fulltext
+
+    book = _pdf_book(
+        tmp_path, monkeypatch,
+        BookExtraction([], PdfTextLayer.UNREADABLE),
+        source_id="BROKEN",
+    )
+    stats = ingest_calibre_fulltext([book])
+
+    assert stats["no_text_layer"] == 0
+    with get_engine().connect() as con:
+        status = con.execute(
+            sa.select(documents.c.fetch_status).where(documents.c.source_id == "BROKEN")
+        ).scalar()
+    assert status != FetchStatus.NO_TEXT_LAYER
+
+
+def test_pdf_chunks_carry_the_pages_they_were_read_from(
+    mock_chroma, tmp_path, monkeypatch,
+):
+    store, _ = mock_chroma
+    from pka.ingestion.runners.calibre import ingest_calibre_fulltext
+
+    book = _pdf_book(
+        tmp_path, monkeypatch,
+        BookExtraction(
+            [{"title": "Pages 11–20", "index": 0,
+              "text": "Sentence one about the subject. Sentence two continues the discussion. Sentence three adds detail. Sentence four concludes the passage.",
+              "page_start": 11, "page_end": 20}],
+            PdfTextLayer.TEXT, page_count=20, text_pages=10,
+        ),
+    )
+    ingest_calibre_fulltext([book])
+
+    with get_engine().connect() as con:
+        ranges = con.execute(
+            sa.select(chunks.c.page_start, chunks.c.page_end)
+            .where(chunks.c.page_start.isnot(None))
+        ).fetchall()
+    assert ranges and all(tuple(r) == (11, 20) for r in ranges)
+
+    # Chroma carries it too — that is the copy semantic search reads back.
+    fulltext_meta = [
+        item["meta"] for item in store.values()
+        if item["meta"].get("pass") == "fulltext"
+    ]
+    assert fulltext_meta
+    assert all(m["page_start"] == 11 and m["page_end"] == 20 for m in fulltext_meta)
+
+
+def test_epub_chunks_have_no_page_range(mock_chroma, tmp_path, monkeypatch):
+    """Chroma rejects a None metadata value, so EPUB must omit the keys."""
+    store, _ = mock_chroma
+    from pka.ingestion.runners.calibre import ingest_calibre_fulltext
+
+    epub = tmp_path / "book.epub"
+    epub.write_bytes(b"PK")
+    book = _make_book(source_id="EPUB1", preferred_path=epub)
+    from pka.ingestion.runners.calibre import ingest_calibre_books
+    ingest_calibre_books([book])
+    monkeypatch.setattr(
+        "pka.ingestion.runners.calibre.extract_book_report",
+        lambda p, **kw: BookExtraction([
+            {"title": "Ch1", "index": 0,
+             "text": "Sentence one about the subject. Sentence two continues the discussion. Sentence three adds detail. Sentence four concludes the passage."},
+        ]),
+    )
+    ingest_calibre_fulltext([book])
+
+    assert all("page_start" not in item["meta"] for item in store.values())
+    with get_engine().connect() as con:
+        assert con.execute(
+            sa.select(sa.func.count()).select_from(chunks)
+            .where(chunks.c.page_start.isnot(None))
+        ).scalar() == 0

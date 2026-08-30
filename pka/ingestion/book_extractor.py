@@ -12,9 +12,22 @@ HTML tag stripping is handled here so chunker.py always receives clean text.
 """
 import logging
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from pka.constants import PdfTextLayer
+
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class BookExtraction:
+    """Extracted sections plus why there are (or are not) any of them."""
+
+    sections: list[dict] = field(default_factory=list)
+    status: PdfTextLayer = PdfTextLayer.TEXT
+    page_count: int = 0     # pages in the file, uncapped (PDF only)
+    text_pages: int = 0     # pages that yielded a text layer (PDF only)
 
 
 # ── HTML stripping ─────────────────────────────────────────────────────────
@@ -82,75 +95,163 @@ def extract_epub(path: Path, max_chars_per_chapter: int | None = None) -> list[d
 
 # ── PDF extraction ─────────────────────────────────────────────────────────
 
-def extract_pdf(path: Path, max_pages: int | None = None) -> list[dict]:
-    """
-    Return a list of page-group dicts: {title: str, text: str, index: int}.
-    Pages are grouped in blocks of 10 to avoid over-fragmenting.
-    """
-    pages: list[str] = []
+# Pages per section (≈ section granularity); page numbers below are the real
+# 1-based numbers from the file, so a page with no text layer does not shift
+# the labels of the pages after it.
+PAGE_GROUP = 10
 
-    # Primary: pdfplumber (handles columns and tables better)
+
+def _pages_via_pdfplumber(
+    path: Path, max_pages: int | None,
+) -> tuple[list[tuple[int, str]], int] | None:
+    """``([(page_no, text), …], page_count)``, or None when the file won't open."""
     try:
         import pdfplumber
         with pdfplumber.open(str(path)) as pdf:
+            page_count = len(pdf.pages)
+            found: list[tuple[int, str]] = []
             for i, page in enumerate(pdf.pages):
                 if max_pages and i >= max_pages:
                     break
                 text = page.extract_text(x_tolerance=2, y_tolerance=2) or ""
                 if text.strip():
-                    pages.append(text)
+                    found.append((i + 1, text))
+            return found, page_count
     except Exception as exc:
         log.debug("pdfplumber failed for %s (%s), trying pypdf", path.name, exc)
-        pages = []
+        return None
 
-    # Fallback: pypdf
-    if not pages:
-        try:
-            import pypdf
-            reader = pypdf.PdfReader(str(path))
-            for i, page in enumerate(reader.pages):
-                if max_pages and i >= max_pages:
-                    break
-                text = page.extract_text() or ""
-                if text.strip():
-                    pages.append(text)
-        except Exception as exc:
-            log.warning("pypdf also failed for %s: %s", path.name, exc)
-            return []
 
-    if not pages:
-        return []
+def _pages_via_pypdf(
+    path: Path, max_pages: int | None,
+) -> tuple[list[tuple[int, str]], int] | None:
+    """Same contract as :func:`_pages_via_pdfplumber`, using pypdf."""
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(str(path))
+        page_count = len(reader.pages)
+        found: list[tuple[int, str]] = []
+        for i, page in enumerate(reader.pages):
+            if max_pages and i >= max_pages:
+                break
+            text = page.extract_text() or ""
+            if text.strip():
+                found.append((i + 1, text))
+        return found, page_count
+    except Exception as exc:
+        log.warning("pypdf also failed for %s: %s", path.name, exc)
+        return None
 
-    # Group pages into chunks of 10 (≈ section granularity)
-    PAGE_GROUP = 10
+
+def _page_groups(pages: list[tuple[int, str]]) -> list[dict]:
     groups: list[dict] = []
     for i in range(0, len(pages), PAGE_GROUP):
-        group_text = "\n\n".join(pages[i : i + PAGE_GROUP])
+        block = pages[i : i + PAGE_GROUP]
+        first, last = block[0][0], block[-1][0]
         groups.append({
-            "title": f"Pages {i + 1}–{min(i + PAGE_GROUP, len(pages))}",
-            "text":  group_text,
-            "index": i // PAGE_GROUP,
+            "title":      f"Pages {first}–{last}",
+            "text":       "\n\n".join(text for _, text in block),
+            "index":      i // PAGE_GROUP,
+            "page_start": first,
+            "page_end":   last,
         })
-
-    log.debug("Extracted %d page-groups from %s", len(groups), path.name)
     return groups
+
+
+def extract_pdf_report(path: Path, max_pages: int | None = None) -> BookExtraction:
+    """Extract a PDF *and* say why the result looks the way it does.
+
+    An empty ``sections`` list has three very different causes — a scan, a
+    broken file, and a document with no pages — and callers need to tell them
+    apart: only the first is worth OCR, and only the first should be recorded
+    as such (``FetchStatus.NO_TEXT_LAYER``). pdfplumber yielding nothing is not
+    yet a verdict, so pypdf gets a second opinion before one is reached.
+    """
+    pages: list[tuple[int, str]] = []
+    page_count = 0
+    readable = False
+
+    for reader in (_pages_via_pdfplumber, _pages_via_pypdf):
+        result = reader(path, max_pages)
+        if result is None:
+            continue
+        readable = True
+        found, count = result
+        page_count = max(page_count, count)
+        if found:
+            pages = found
+            break
+
+    if not readable:
+        return BookExtraction([], PdfTextLayer.UNREADABLE)
+    if page_count == 0:
+        return BookExtraction([], PdfTextLayer.EMPTY)
+    if not pages:
+        # A page cap that stopped short of the whole file proves nothing: a
+        # scanned cover in front of a text body reads exactly like a scan.
+        capped = max_pages is not None and max_pages < page_count
+        status = PdfTextLayer.UNKNOWN if capped else PdfTextLayer.NONE
+        log.debug(
+            "No text layer in first %s page(s) of %s (status=%s)",
+            max_pages if capped else page_count, path.name, status,
+        )
+        return BookExtraction([], status, page_count=page_count)
+
+    groups = _page_groups(pages)
+    log.debug("Extracted %d page-groups from %s", len(groups), path.name)
+    return BookExtraction(
+        groups, PdfTextLayer.TEXT, page_count=page_count, text_pages=len(pages),
+    )
+
+
+def extract_pdf(path: Path, max_pages: int | None = None) -> list[dict]:
+    """
+    Return a list of page-group dicts:
+    {title, text, index, page_start, page_end}. Pages are grouped in blocks of
+    ``PAGE_GROUP`` to avoid over-fragmenting.
+    """
+    return extract_pdf_report(path, max_pages=max_pages).sections
 
 
 # ── Unified entry point ────────────────────────────────────────────────────
 
-def extract_book_text(path: Path, **kwargs) -> list[dict]:
+def extract_book_report(
+    path: Path,
+    max_pages: int | None = None,
+    max_chars_per_chapter: int | None = None,
+) -> BookExtraction:
+    """Dispatch to the right extractor, keeping the diagnosis (see
+    :func:`extract_pdf_report`).
+
+    The two limits are per-format and each is ignored by the other extractor —
+    a caller with a page budget can pass it without knowing which format it
+    has. EPUB never reports ``NO_TEXT_LAYER``: an EPUB with no readable spine
+    is a broken file, not a scan, and there is nothing to OCR.
+    """
+    ext = path.suffix.lower()
+    if ext == ".pdf":
+        return extract_pdf_report(path, max_pages=max_pages)
+    if ext == ".epub":
+        chapters = extract_epub(path, max_chars_per_chapter=max_chars_per_chapter)
+        return BookExtraction(
+            chapters, PdfTextLayer.TEXT if chapters else PdfTextLayer.EMPTY,
+        )
+    log.debug("Unsupported format for full-text extraction: %s", ext)
+    return BookExtraction([], PdfTextLayer.UNREADABLE)
+
+
+def extract_book_text(
+    path: Path,
+    max_pages: int | None = None,
+    max_chars_per_chapter: int | None = None,
+) -> list[dict]:
     """
     Dispatch to the right extractor based on file extension.
     Returns [] if format is unsupported or extraction fails.
     """
-    ext = path.suffix.lower()
-    if ext == ".epub":
-        return extract_epub(path, **kwargs)
-    elif ext == ".pdf":
-        return extract_pdf(path, **kwargs)
-    else:
-        log.debug("Unsupported format for full-text extraction: %s", ext)
-        return []
+    return extract_book_report(
+        path, max_pages=max_pages, max_chars_per_chapter=max_chars_per_chapter,
+    ).sections
 
 
 def metadata_text(title: str, description: str | None, authors: list[str]) -> str:

@@ -400,6 +400,33 @@
   "path" is the OAuth client-secret JSON. Status polling never touches the API
   (network-free pending/corpus counts).
 
+### PDF extraction: text-layer verdict and page numbers
+
+- **A scanned PDF is now recorded, not silently skipped.** `extract_pdf_report`
+  returns the sections *plus* a `PdfTextLayer` verdict, so the four reasons an
+  extraction can come back empty stop looking alike: a scan (`no_text_layer`), an
+  unopenable file (`unreadable`), a document with no pages (`empty`), and a page
+  cap that stopped before any text appeared (`unknown` — `fetch_pdf_max_pages`
+  defaults to 3, and three blank pages in front of a text body are not evidence of
+  a scan). pdfplumber finding nothing is not yet a verdict; pypdf still gets its
+  second opinion first.
+- Only a confirmed scan is recorded, as **`fetch_status = no_text_layer`** — on the
+  Calibre full-text pass (`stats["no_text_layer"]`) and on the remote-PDF fetch
+  route alike. Nothing re-queues that state, since re-reading the same bytes cannot
+  produce text; `"not extracted yet"` and `"has nothing to extract"` are now
+  distinguishable in one query. It is the work queue for the OCR entry in
+  `BACKLOG.md`.
+- **Chunks carry the pages they were read from.** PDF sections are labelled with
+  real 1-based page numbers — a page with no text layer no longer shifts the
+  numbering of everything after it, which the old `Pages 1–10` labels did silently
+  — and each section's `page_start` / `page_end` reaches both the Chroma chunk
+  metadata and two new `chunks` columns (additive migration; existing rows stay
+  NULL).
+- Fixed in passing: `extract_book_text(path, max_pages=…)` raised `TypeError` on
+  every EPUB, because `max_pages` was forwarded to an extractor that takes
+  `max_chars_per_chapter`. The dispatcher now takes both limits explicitly and each
+  format ignores the one that is not its own.
+
 ### Maintainability pass (June 2026)
 
 ### Correctness fixes

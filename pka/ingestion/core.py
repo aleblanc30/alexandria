@@ -86,6 +86,11 @@ def ingest_text_block(
         "resolved_by": meta.get("resolved_by"),
         "source_ref":  meta.get("isbn") or meta.get("work_key"),
         "ref_title":   meta.get("book_title"),
+        # Page range behind the chunk, for paginated sources. The block is the
+        # unit that carries it, so every chunk cut from one block shares its
+        # range — enough to cite a passage back to the pages it was read from.
+        "page_start":  meta.get("page_start"),
+        "page_end":    meta.get("page_end"),
     }
     insert_chunks([
         {

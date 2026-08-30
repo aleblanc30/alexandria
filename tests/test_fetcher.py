@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from pka.constants import FetchStatus
+from pka.constants import FetchStatus, PdfTextLayer
 from pka.db.queries import init_db, upsert_document
+from pka.ingestion.book_extractor import BookExtraction
 from pka.ingestion.fetcher import (
     FetchResult,
     _fetch_one,
@@ -18,14 +19,25 @@ from pka.ingestion.fetcher import (
 )
 
 
+def _pdf_extraction(text: str) -> BookExtraction:
+    """One page-group of extracted text, as the real extractor would return it."""
+    return BookExtraction(
+        [{"title": "Pages 1–1", "text": text, "index": 0,
+          "page_start": 1, "page_end": 1}],
+        PdfTextLayer.TEXT,
+        page_count=1,
+        text_pages=1,
+    )
+
+
 @pytest.fixture(autouse=True)
 def fresh_db():
     init_db()
 
 
-class TestExtractTextFromPdfBytes:
+class TestExtractPdfFromBytes:
     def test_extractor_reopens_temp_file_by_path(self, monkeypatch):
-        """The temp PDF must be closed before extract_pdf reopens it by name
+        """The temp PDF must be closed before the extractor reopens it by name
         (Windows locks files held open by NamedTemporaryFile)."""
         from pka.ingestion import fetch_base
 
@@ -34,11 +46,13 @@ class TestExtractTextFromPdfBytes:
         def fake_extract(path, max_pages=None):
             seen["path"] = Path(path)
             assert Path(path).read_bytes().startswith(b"%PDF")
-            return [{"title": "", "text": "extracted text"}]
+            return BookExtraction(
+                [{"title": "", "text": "extracted text"}], PdfTextLayer.TEXT,
+            )
 
-        monkeypatch.setattr(fetch_base, "extract_pdf", fake_extract)
-        out = fetch_base._extract_text_from_pdf_bytes(b"%PDF-1.4 fake body")
-        assert out == "extracted text"
+        monkeypatch.setattr(fetch_base, "extract_pdf_report", fake_extract)
+        report = fetch_base._extract_pdf_from_bytes(b"%PDF-1.4 fake body")
+        assert fetch_base._sections_text(report.sections) == "extracted text"
         assert not seen["path"].exists()
 
     def test_temp_file_removed_when_extractor_raises(self, monkeypatch):
@@ -50,9 +64,9 @@ class TestExtractTextFromPdfBytes:
             seen["path"] = Path(path)
             raise RuntimeError("boom")
 
-        monkeypatch.setattr(fetch_base, "extract_pdf", fake_extract)
+        monkeypatch.setattr(fetch_base, "extract_pdf_report", fake_extract)
         with pytest.raises(RuntimeError):
-            fetch_base._extract_text_from_pdf_bytes(b"%PDF-1.4 fake body")
+            fetch_base._extract_pdf_from_bytes(b"%PDF-1.4 fake body")
         assert not seen["path"].exists()
 
 
@@ -175,8 +189,10 @@ class TestFetchOne:
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.get.return_value = _pdf_response()
         monkeypatch.setattr(
-            "pka.ingestion.fetch_base._extract_text_from_pdf_bytes",
-            lambda data, **kw: "Extracted PDF text with enough content to embed.",
+            "pka.ingestion.fetch_base._extract_pdf_from_bytes",
+            lambda data, **kw: _pdf_extraction(
+                "Extracted PDF text with enough content to embed.",
+            ),
         )
         result = await _fetch_one(mock_client, doc_id=1, url="https://arxiv.org/paper.pdf")
         assert result.status == "fetched"
@@ -188,20 +204,35 @@ class TestFetchOne:
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.get.return_value = _pdf_response()
         monkeypatch.setattr(
-            "pka.ingestion.fetch_base._extract_text_from_pdf_bytes",
-            lambda data, **kw: None,
+            "pka.ingestion.fetch_base._extract_pdf_from_bytes",
+            lambda data, **kw: BookExtraction([], PdfTextLayer.UNREADABLE),
         )
         result = await _fetch_one(mock_client, doc_id=1, url="https://arxiv.org/paper.pdf")
         assert result.status == "unfetchable"
         assert "pdf extraction" in (result.error_msg or "").lower()
 
     @pytest.mark.asyncio
+    async def test_scanned_pdf_gets_its_own_status(self, monkeypatch):
+        """A scan is not a broken URL: re-fetching it can never produce text."""
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = _pdf_response()
+        monkeypatch.setattr(
+            "pka.ingestion.fetch_base._extract_pdf_from_bytes",
+            lambda data, **kw: BookExtraction(
+                [], PdfTextLayer.NONE, page_count=12,
+            ),
+        )
+        result = await _fetch_one(mock_client, doc_id=1, url="https://example.com/scan.pdf")
+        assert result.status == FetchStatus.NO_TEXT_LAYER
+        assert "no text layer" in (result.error_msg or "")
+
+    @pytest.mark.asyncio
     async def test_fetched_for_pdf_content_type_without_extension(self, monkeypatch):
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.get.return_value = _pdf_response()
         monkeypatch.setattr(
-            "pka.ingestion.fetch_base._extract_text_from_pdf_bytes",
-            lambda data, **kw: "PDF body from content-type route.",
+            "pka.ingestion.fetch_base._extract_pdf_from_bytes",
+            lambda data, **kw: _pdf_extraction("PDF body from content-type route."),
         )
         result = await _fetch_one(mock_client, doc_id=1, url="https://example.com/download")
         assert result.status == "fetched"
@@ -721,9 +752,9 @@ class TestEventLoopNotBlocked:
 
         def slow_pdf_extract(data, **kwargs):
             time.sleep(2.0)
-            return "PDF text long enough to keep."
+            return _pdf_extraction("PDF text long enough to keep.")
 
-        monkeypatch.setattr(fetch_base, "_extract_text_from_pdf_bytes", slow_pdf_extract)
+        monkeypatch.setattr(fetch_base, "_extract_pdf_from_bytes", slow_pdf_extract)
 
         pdf_url = "https://loopblock-pdf.example/book.pdf"
 

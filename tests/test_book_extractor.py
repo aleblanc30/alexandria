@@ -149,3 +149,121 @@ class TestExtractPdfFallback:
         assert len(groups) == 1
         assert "pypdf" in groups[0]["text"]
 
+
+class _FakePdf:
+    """Minimal pdfplumber document: one page per string in ``texts``."""
+
+    class _Page:
+        def __init__(self, text: str):
+            self._text = text
+
+        def extract_text(self, **kw):
+            return self._text
+
+    def __init__(self, texts):
+        self.pages = [self._Page(t) for t in texts]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+
+def _fake_pdf_file(tmp_path, monkeypatch, texts):
+    """A path whose pdfplumber read yields ``texts``; pypdf then fails for real."""
+    path = tmp_path / "sample.pdf"
+    path.write_bytes(b"%PDF")
+    monkeypatch.setattr("pdfplumber.open", lambda p: _FakePdf(texts))
+    return path
+
+
+class TestPdfTextLayerReport:
+    """An empty extraction has several causes; only one of them means OCR."""
+
+    def test_scan_reports_no_text_layer(self, tmp_path, monkeypatch):
+        from pka.constants import PdfTextLayer
+        from pka.ingestion.book_extractor import extract_pdf_report
+
+        path = _fake_pdf_file(tmp_path, monkeypatch, ["", "   ", ""])
+        report = extract_pdf_report(path)
+        assert report.sections == []
+        assert report.status == PdfTextLayer.NONE
+        assert report.page_count == 3
+
+    def test_page_cap_short_of_the_file_is_not_a_verdict(self, tmp_path, monkeypatch):
+        """Three blank pages in front of a text body read exactly like a scan."""
+        from pka.constants import PdfTextLayer
+        from pka.ingestion.book_extractor import extract_pdf_report
+
+        path = _fake_pdf_file(tmp_path, monkeypatch, [""] * 10)
+        assert extract_pdf_report(path, max_pages=3).status == PdfTextLayer.UNKNOWN
+
+    def test_no_pages_reports_empty(self, tmp_path, monkeypatch):
+        from pka.constants import PdfTextLayer
+        from pka.ingestion.book_extractor import extract_pdf_report
+
+        path = _fake_pdf_file(tmp_path, monkeypatch, [])
+        assert extract_pdf_report(path).status == PdfTextLayer.EMPTY
+
+    def test_unopenable_file_reports_unreadable(self, tmp_path, monkeypatch):
+        from pka.constants import PdfTextLayer
+        from pka.ingestion.book_extractor import extract_pdf_report
+
+        path = tmp_path / "broken.pdf"
+        path.write_bytes(b"not a pdf at all")
+        monkeypatch.setattr(
+            "pdfplumber.open",
+            lambda p: (_ for _ in ()).throw(RuntimeError("broken")),
+        )
+        report = extract_pdf_report(path)
+        assert report.status == PdfTextLayer.UNREADABLE
+        assert report.page_count == 0
+
+    def test_text_report_counts_pages(self, tmp_path, monkeypatch):
+        from pka.constants import PdfTextLayer
+        from pka.ingestion.book_extractor import extract_pdf_report
+
+        path = _fake_pdf_file(tmp_path, monkeypatch, ["", "Body text.", "More text."])
+        report = extract_pdf_report(path)
+        assert report.status == PdfTextLayer.TEXT
+        assert (report.page_count, report.text_pages) == (3, 2)
+
+
+class TestPdfPageNumbers:
+    def test_pages_without_text_do_not_shift_the_numbering(self, tmp_path, monkeypatch):
+        """Page 3 is page 3 even when pages 1-2 carry no text layer."""
+        from pka.ingestion.book_extractor import extract_pdf
+
+        texts = ["", ""] + [f"Page {i} content here." for i in range(3, 13)]
+        path = _fake_pdf_file(tmp_path, monkeypatch, texts)
+        groups = extract_pdf(path)
+
+        assert len(groups) == 1
+        assert groups[0]["title"] == "Pages 3–12"
+        assert (groups[0]["page_start"], groups[0]["page_end"]) == (3, 12)
+
+    def test_second_group_starts_at_the_real_page(self, tmp_path, monkeypatch):
+        from pka.ingestion.book_extractor import extract_pdf
+
+        path = _fake_pdf_file(
+            tmp_path, monkeypatch, [f"Page {i}." for i in range(1, 16)],
+        )
+        groups = extract_pdf(path)
+        assert [(g["page_start"], g["page_end"]) for g in groups] == [(1, 10), (11, 15)]
+
+
+class TestExtractBookReportDispatch:
+    def test_page_cap_is_not_passed_to_the_epub_extractor(self, tmp_path):
+        """One page budget, two formats: the EPUB side must ignore it, not raise."""
+        from pka.ingestion.book_extractor import extract_book_text
+
+        assert extract_book_text(tmp_path / "missing.epub", max_pages=5) == []
+
+    def test_unsupported_format_is_unreadable(self, tmp_path):
+        from pka.constants import PdfTextLayer
+        from pka.ingestion.book_extractor import extract_book_report
+
+        path = tmp_path / "book.mobi"
+        path.write_bytes(b"x")
+        assert extract_book_report(path).status == PdfTextLayer.UNREADABLE

@@ -452,12 +452,13 @@ class TestPipelineStop:
         sp.request_pause("calibre")
 
         import pka.ingestion.runners.calibre as calibre_runner
-        original = calibre_runner.extract_book_text
-        calibre_runner.extract_book_text = lambda p, **kw: [
-            {"title": "Ch", "text": "Section one. " * 20, "index": 0},
-        ]
+        from pka.ingestion.book_extractor import BookExtraction
+        original = calibre_runner.extract_book_report
+        calibre_runner.extract_book_report = lambda p, **kw: BookExtraction(
+            [{"title": "Ch", "text": "Section one. " * 20, "index": 0}],
+        )
         try:
             stats = ingest_calibre_fulltext([book], progress_key="calibre")
         finally:
-            calibre_runner.extract_book_text = original
+            calibre_runner.extract_book_report = original
         assert stats.get("stopped") == "pause"

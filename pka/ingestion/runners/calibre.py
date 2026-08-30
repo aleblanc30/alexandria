@@ -4,23 +4,37 @@ from __future__ import annotations
 import logging
 
 from pka.connectors.calibre import CalibreBook, split_calibre_tags
-from pka.constants import FetchStatus, Source
+from pka.constants import FetchStatus, PdfTextLayer, Source
 from pka.db.queries import (
     document_index,
     existing_chunk_count,
     insert_document_if_new,
     insert_source_collections,
     insert_source_tags,
+    set_fetch_status,
     source_ids_with_chunks,
     upsert_document,
 )
-from pka.ingestion.book_extractor import extract_book_text, metadata_text
+from pka.ingestion.book_extractor import extract_book_report, metadata_text
 from pka.ingestion.core import attach_summary_chunk, ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 from pka.ingestion.progress import should_stop, tick
 
 log = logging.getLogger(__name__)
 
+
+
+def _page_range(section: dict) -> dict:
+    """Page numbers for a PDF section; ``{}`` for EPUB chapters, which have none.
+
+    Omitted rather than passed as ``None`` — Chroma metadata values must be
+    scalars, so a ``None`` here fails the whole upsert.
+    """
+    return {
+        key: section[key]
+        for key in ("page_start", "page_end")
+        if section.get(key) is not None
+    }
 
 
 def _attach_book_synopsis(book: CalibreBook, doc_id: int, *, dry_run: bool) -> int:
@@ -177,7 +191,7 @@ def ingest_calibre_fulltext(
     progress_key: str | None = None,
 ) -> dict:
     """Phase 2: extract and embed full book text."""
-    stats = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
+    stats = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0, "no_text_layer": 0}
     known = document_index(Source.CALIBRE)
 
     for book in books:
@@ -198,10 +212,23 @@ def ingest_calibre_fulltext(
                 stats["skipped"] += 1
                 continue
 
-            sections = extract_book_text(book.preferred_path, max_pages=max_pages)
-            if not sections:
+            report = extract_book_report(book.preferred_path, max_pages=max_pages)
+            if not report.sections:
+                if report.status == PdfTextLayer.NONE:
+                    # A scan: the file is readable, it just has no text to read.
+                    # Recorded rather than silently counted as "skipped", which
+                    # is also what an un-run phase 2 looks like — this is the
+                    # OCR-candidate set (BACKLOG.md).
+                    log.info(
+                        "No text layer in %s (%d pages) — marking %s",
+                        book.title, report.page_count, FetchStatus.NO_TEXT_LAYER,
+                    )
+                    if not dry_run:
+                        set_fetch_status(doc_id, FetchStatus.NO_TEXT_LAYER)
+                    stats["no_text_layer"] += 1
                 stats["skipped"] += 1
                 continue
+            sections = report.sections
 
             chunk_offset = existing_chunk_count(doc_id)
             total_added = 0
@@ -216,6 +243,7 @@ def ingest_calibre_fulltext(
                         "pass":  "fulltext",
                         "section_title": section.get("title", ""),
                         "section_index": section.get("index", 0),
+                        **_page_range(section),
                     },
                     chunk_offset=chunk_offset + total_added,
                     dry_run=dry_run,

@@ -65,6 +65,11 @@ chunks = sa.Table(
     sa.Column("resolved_by",   sa.Text),                   # isbn|search|google_books|brave
     sa.Column("source_ref",    sa.Text),                   # ISBN or Open Library work key
     sa.Column("ref_title",     sa.Text),                   # resolved book title (shelf photos carry several)
+    # Where in the source file the chunk came from, when the extractor can say:
+    # real 1-based PDF page numbers, so a retrieved chunk can be cited back to
+    # the pages it was read from. NULL for every non-paginated source.
+    sa.Column("page_start",    sa.Integer),
+    sa.Column("page_end",      sa.Integer),
     # Without this, "how many documents are embedded?" full-scans chunks.
     sa.Index("ix_chunks_document_id", "document_id"),
 )

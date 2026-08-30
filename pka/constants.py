@@ -23,6 +23,22 @@ class FetchStatus(StrEnum):
     SKIPPED = "skipped"
     AVAILABLE = "available"   # Zotero/Calibre asset already on disk
     MISSING = "missing"       # Calibre book with no file
+    # The file is present and readable, but no page carries an embedded text
+    # layer — a scan. Distinct from UNFETCHABLE (broken/oversized/not a PDF)
+    # and from AVAILABLE (never attempted), so the OCR-candidate set is one
+    # query rather than a guess. Nothing re-queues it: re-reading the same
+    # bytes cannot produce text.
+    NO_TEXT_LAYER = "no_text_layer"
+
+
+class PdfTextLayer(StrEnum):
+    """Why a PDF extraction produced the text it did (or produced none)."""
+
+    TEXT = "text"                   # at least one page yielded embedded text
+    NONE = "no_text_layer"          # pages exist, none carry text — OCR candidate
+    UNKNOWN = "unknown"             # a page cap stopped before any text was found
+    EMPTY = "empty"                 # opened, but the document has no pages
+    UNREADABLE = "unreadable"       # neither pdfplumber nor pypdf could open it
 
 
 class TagOrigin(StrEnum):
