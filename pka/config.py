@@ -271,7 +271,7 @@ class Settings(BaseSettings):
 
     # ── Ollama (local chat / vision) ────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
-    chat_model: str = ""  # auto-detect first non-embedding model when empty
+    chat_model: str = ""  # auto-detect first non-embedding, non-vision model when empty
     vision_model: str = "llava"  # swap via ALEXANDRIA_VISION_MODEL (e.g. "llava-phi3")
     # Model used by the "vlm" OCR provider to transcribe image text. Empty ⇒ reuse
     # ``vision_model`` so classification, description, and OCR share one model.

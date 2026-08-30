@@ -23,6 +23,14 @@ class TestIsChatModel:
         assert not prov._is_chat_model("mxbai-embed-large")
         assert prov._is_chat_model("llama3")
 
+    def test_rejects_vision_models(self):
+        assert not prov._is_chat_model("llava")
+        assert not prov._is_chat_model("llava-phi3:latest")
+        assert not prov._is_chat_model("bakllava")
+        assert not prov._is_chat_model("moondream")
+        assert not prov._is_chat_model("qwen2-vl:7b")
+        assert prov._is_chat_model("llama3")
+
 
 class TestResolveChatModel:
     def test_explicit_model(self):

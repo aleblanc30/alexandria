@@ -25,12 +25,17 @@ from pka.config import settings as cfg
 log = logging.getLogger(__name__)
 
 _EMBED_MARKERS = ("embed", "nomic-embed", "mxbai-embed", "snowflake-arctic-embed")
+# Vision models are excluded from chat auto-detect too: asked for plain JSON
+# text, they tend to ignore the "format": "json" grammar constraint and answer
+# with single-quoted, Python-dict-style text instead — every chat_json call
+# then fails to parse, not just some.
+_VISION_MARKERS = ("llava", "bakllava", "moondream", "vision", "-vl", "vl-")
 _cached_chat_model: str | None = None
 
 
 def _is_chat_model(name: str) -> bool:
     lower = name.lower()
-    return not any(marker in lower for marker in _EMBED_MARKERS)
+    return not any(marker in lower for marker in _EMBED_MARKERS + _VISION_MARKERS)
 
 
 class _OllamaEndpoint:
