@@ -1,4 +1,4 @@
-# Alexandria — v0.0.4
+# Alexandria — v0.0.5
 
 This project is entirely coded by LLM agents. It is an experiment to learn how to use those.
 
