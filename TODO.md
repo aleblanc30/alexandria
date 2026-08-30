@@ -41,3 +41,8 @@ two when its priority changes; do not duplicate it in both.
 ## Installation
 
 - [x] **Start menu shortcuts** — `INSTALL.md` §8 documents Start / Console / Stop shortcuts for the standalone install, backed by shipped `scripts/console.bat` (follows `server.log`) and `scripts/stop-server.bat`.
+
+## Ingestion
+
+- [ ] Summarization calls fail silently.
+- [ ] Add buttons to purge specific subsets of the data and to retrigger various points of the ingestion pipeline.
