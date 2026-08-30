@@ -19,10 +19,6 @@ two when its priority changes; do not duplicate it in both.
 - [x] **arXiv ingester** — Firefox fetch handler for arxiv.org (`pka/ingestion/arxiv.py`): export.arxiv.org API metadata + PDF; title and abstract on browse cards.
 - [x] **bioRxiv ingester** — Firefox fetch handler for biorxiv.org (`pka/ingestion/biorxiv.py`): api.biorxiv.org DOI lookup + PDF; title and abstract on browse cards.
 
-## Archiving
-
-- [ ] **Wayback submission subsystem** — submit live bookmark URLs to Save Page Now so each keeps a durable public second address; requirements in [`WAYBACK.md`](WAYBACK.md), gated by `wayback_submit_enabled` (default off).
-
 ## Active learning
 
 - [ ] **Show performance stats for active learning labels** — surface `train_stats` in the tag-training UI (accuracy, precision/recall on a hold-out slice of user labels, positive/negative counts, skipped embeddings) so the user can judge model quality before accepting.

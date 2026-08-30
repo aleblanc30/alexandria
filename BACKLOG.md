@@ -168,3 +168,31 @@ does not — `ChatProvider` in `pka/providers/base.py` is only `resolve_model` +
 - Tests: parameterise `tests/test_summarize.py` over a fake provider advertising a
   large budget and assert the single-call path, alongside the existing map-reduce
   cases.
+
+## Archiving
+
+### Wayback Machine submission
+
+**What:** Submit live bookmark URLs to the Internet Archive's Save Page Now, so each
+keeps a durable public second address alongside the local extracted text. Full
+requirements — scope, gates, state model, rate and quota handling, acceptance
+criteria — are in [`WAYBACK.md`](WAYBACK.md); nothing needs restating here.
+
+**Why deferred:** The subsystem only pays for itself if Alexandria's entries are
+expected to be cited by people other than their owner (`WAYBACK.md` §1.1). For any
+document already in the corpus the text is on disk, so a capture protects nobody's
+local access; what it buys is a publicly resolvable address someone else can follow
+after the origin is gone. Until that premise is settled the work cannot be sized —
+it is the difference between sweeping the whole collection and capturing a handful
+of fragile non-scholarly pages.
+
+It is also the first outbound path in the project that **publishes**: it discloses
+collection membership to a third party permanently and irrevocably, and triggers
+third-party crawls that show up in the origin sites' access logs. `DESIGN.md` §1.1
+gains a fourth category row before any of this ships.
+
+**Open choices when picked up** (`WAYBACK.md` §13, both changing the state model and
+the acceptance criteria): whether 401/403 URLs are submitted — archiving a paywall
+page still records that the URL existed and what it claimed to be — and whether
+coverage is judged against the bookmark date alone or additionally against a maximum
+snapshot age.
