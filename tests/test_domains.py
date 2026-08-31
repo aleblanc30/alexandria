@@ -44,6 +44,17 @@ class TestDomainHasFetchHandler:
     def test_wikipedia_has_handler(self):
         assert domain_has_fetch_handler("en.wikipedia.org") is True
 
+    def test_pubmed_has_handler(self):
+        assert domain_has_fetch_handler("pubmed.ncbi.nlm.nih.gov") is True
+
+    def test_youtube_has_handler(self):
+        assert domain_has_fetch_handler("www.youtube.com") is True
+        assert domain_has_fetch_handler("youtu.be") is True
+
+    def test_reddit_has_handler(self):
+        assert domain_has_fetch_handler("www.reddit.com") is True
+        assert domain_has_fetch_handler("redd.it") is True
+
 
 class TestBuildDomainFrequencyReport:
     def test_sorts_by_count_and_aggregates_status(self):

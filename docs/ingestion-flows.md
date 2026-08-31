@@ -276,8 +276,11 @@ flowchart TD
     subgraph handlers["_fetch_one_impl dispatch — shared fetcher"]
         DISPATCH{"URL shape?"}
         WIKI["fetch_wikipedia_with_retries()<br/>MediaWiki Action API"]
+        YT["fetch_youtube_video()<br/>oEmbed — title + channel, no key"]
+        RDT["fetch_reddit_thread()<br/>.json listing; url-derived fallback if blocked"]
         ARX["fetch_arxiv_paper()<br/>export.arxiv.org + PDF"]
         BIO["fetch_biorxiv_paper()<br/>api.biorxiv.org + PDF"]
+        PMD["fetch_pubmed_article()<br/>NCBI efetch — metadata + abstract, no PDF"]
         EXT["non-HTML extension → skipped"]
         GET["httpx GET, follow_redirects"]
         WB["fetch_via_wayback()<br/>gate: fetch_wayback_fallback"]
@@ -285,8 +288,11 @@ flowchart TD
         AMZ["extract_amazon_book()<br/>title + editorial summary"]
         HTML["_extract_text()<br/>trafilatura → readability-lxml"]
         DISPATCH --> WIKI
+        DISPATCH --> YT
+        DISPATCH --> RDT
         DISPATCH --> ARX
         DISPATCH --> BIO
+        DISPATCH --> PMD
         DISPATCH --> EXT
         DISPATCH --> GET
         GET -->|HTTP 404| WB
@@ -299,8 +305,11 @@ flowchart TD
 
     NET(["Internet — target sites"])
     WIKI --> NET
+    YT --> NET
+    RDT --> NET
     ARX --> NET
     BIO --> NET
+    PMD --> NET
     GET --> NET
     WB --> NET
 
@@ -529,7 +538,7 @@ flowchart TD
         SKIPF["sp.skip_phase('reddit','fetching')"]
         SETF["sp.set_phase('reddit','fetching', n)"]
         FAE["fetch_and_embed_pending(source=REDDIT,<br/>embed_fn=embed_fetched_text)"]
-        POOL["_run_fetch_workers → _fetch_one_impl<br/>wikipedia / arxiv / biorxiv / PDF / amazon /<br/>wayback / trafilatura — identical to Firefox"]
+        POOL["_run_fetch_workers → _fetch_one_impl<br/>wikipedia / youtube / reddit / arxiv / biorxiv / pubmed /<br/>PDF / amazon / wayback / trafilatura — identical to Firefox"]
         PERSIST["_persist_fetch_result() + fetch_log"]
         EMBEDF["embed_fetched_text()<br/>runners/reddit.py"]
         COMPOSE["body_excerpt() →<br/>fetched_embed_text(title, card, text)"]

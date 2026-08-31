@@ -84,6 +84,11 @@ class TestAmazonHost:
     def test_amazon_ca(self):
         assert is_amazon_host("https://amazon.ca/dp/B012345678")
 
+    def test_amazon_other_tlds(self):
+        assert is_amazon_host("https://www.amazon.fr/dp/B012345678")
+        assert is_amazon_host("https://www.amazon.de/dp/B012345678")
+        assert is_amazon_host("https://www.amazon.in/dp/B012345678")
+
     def test_non_amazon(self):
         assert not is_amazon_host("https://example.com/dp/B012345678")
 

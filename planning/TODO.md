@@ -26,10 +26,10 @@ two when its priority changes; do not duplicate it in both.
 
 - [x] **arXiv ingester** — Firefox fetch handler for arxiv.org (`pka/ingestion/arxiv.py`): export.arxiv.org API metadata + PDF; title and abstract on browse cards.
 - [x] **bioRxiv ingester** — Firefox fetch handler for biorxiv.org (`pka/ingestion/biorxiv.py`): api.biorxiv.org DOI lookup + PDF; title and abstract on browse cards.
-- [ ] **Youtube ingester** — Firefox fetch handler for youtube pages saved as bookmarks
-- [ ] **reddit ingester** — Firefox fetch handler for reddit pages saved as bookmarks
-- [ ] **amazon ingester** — extend current amazon ingester to other domains (.fr, .com, .in ...)
-- [ ] **pubmed ingester** — Firefox fetch handler for pubmed pages saved as bookmarks.
+- [x] **Youtube ingester** — Firefox fetch handler for youtube pages saved as bookmarks (`pka/ingestion/youtube_bookmark.py`); plan in `FIREFOX_INGESTERS_PLAN.md`.
+- [x] **reddit ingester** — Firefox fetch handler for reddit pages saved as bookmarks (`pka/ingestion/reddit_bookmark.py`), with a URL-derived title/subreddit fallback when the `.json` listing is blocked; plan in `FIREFOX_INGESTERS_PLAN.md`.
+- [x] **amazon ingester** — `is_amazon_host` already matched any TLD (`.fr`, `.co.uk`, `.in`, ...); locked in with a regression test, see `FIREFOX_INGESTERS_PLAN.md` §0.
+- [x] **pubmed ingester** — Firefox fetch handler for pubmed pages saved as bookmarks (`pka/ingestion/pubmed.py`); plan in `FIREFOX_INGESTERS_PLAN.md`.
 - [x] **top domains and top rejected domains** — `GET /ingestion/domains` and a two-table panel on `/ingestion` rank domains by document count and by unfetchable count; plan in `DOMAIN_TOP_LISTS_PLAN.md`.
 
 

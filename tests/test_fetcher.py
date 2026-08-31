@@ -670,6 +670,103 @@ class TestPreprintFetchIntegration:
         assert result.error_msg == "fetched via arxiv api"
 
     @pytest.mark.asyncio
+    async def test_fetch_one_uses_pubmed_handler(self):
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        pubmed_xml = """<?xml version="1.0"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID Version="1">12345678</PMID>
+      <Article>
+        <ArticleTitle>Dopamine signaling in reward learning</ArticleTitle>
+        <Abstract>
+          <AbstractText>A single unlabeled abstract paragraph.</AbstractText>
+        </Abstract>
+        <AuthorList>
+          <Author><LastName>Smith</LastName><Initials>A</Initials></Author>
+        </AuthorList>
+        <Journal>
+          <JournalIssue><PubDate><Year>2023</Year></PubDate></JournalIssue>
+        </Journal>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="doi">10.1000/xyz123</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>
+"""
+        mock_client.get.return_value = httpx.Response(
+            200, text=pubmed_xml, request=httpx.Request("GET", "http://x")
+        )
+
+        result = await _fetch_one(
+            mock_client,
+            doc_id=1,
+            url="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        )
+
+        assert result.status == "fetched"
+        assert result.title == "Dopamine signaling in reward learning"
+        assert result.doi == "10.1000/xyz123"
+        assert result.error_msg == "fetched via pubmed efetch"
+
+    @pytest.mark.asyncio
+    async def test_fetch_one_uses_youtube_handler(self):
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = httpx.Response(
+            200,
+            json={"title": "Never Gonna Give You Up", "author_name": "Rick Astley"},
+            request=httpx.Request("GET", "http://x"),
+        )
+
+        result = await _fetch_one(
+            mock_client,
+            doc_id=1,
+            url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        )
+
+        assert result.status == "fetched"
+        assert result.title == "Never Gonna Give You Up"
+        assert result.error_msg == "fetched via youtube oembed"
+
+    @pytest.mark.asyncio
+    async def test_fetch_one_uses_reddit_handler(self):
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        reddit_json = [
+            {
+                "data": {
+                    "children": [
+                        {
+                            "data": {
+                                "title": "A deep dive into transformers",
+                                "subreddit": "MachineLearning",
+                                "is_self": True,
+                                "selftext": "Attention mechanisms explained.",
+                            }
+                        }
+                    ]
+                }
+            },
+            {"data": {"children": []}},
+        ]
+        mock_client.get.return_value = httpx.Response(
+            200, json=reddit_json, request=httpx.Request("GET", "http://x")
+        )
+
+        result = await _fetch_one(
+            mock_client,
+            doc_id=1,
+            url="https://www.reddit.com/r/MachineLearning/comments/abc123/a_deep_dive/",
+        )
+
+        assert result.status == "fetched"
+        assert result.title == "A deep dive into transformers"
+        assert result.error_msg == "fetched via reddit json"
+
+    @pytest.mark.asyncio
     async def test_persist_updates_title_and_card_summary(self):
         import sqlalchemy as sa
 

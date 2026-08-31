@@ -42,7 +42,10 @@ def domain_has_fetch_handler(domain: str) -> bool:
     from pka.ingestion.amazon import is_amazon_host
     from pka.ingestion.arxiv import is_arxiv_url
     from pka.ingestion.biorxiv import is_biorxiv_url
+    from pka.ingestion.pubmed import is_pubmed_url
+    from pka.ingestion.reddit_bookmark import is_reddit_host
     from pka.ingestion.wikipedia import is_wikipedia_url
+    from pka.ingestion.youtube_bookmark import is_youtube_url
 
     probe = f"https://{domain}/"
     return (
@@ -50,6 +53,9 @@ def domain_has_fetch_handler(domain: str) -> bool:
         or is_amazon_host(probe)
         or is_arxiv_url(probe)
         or is_biorxiv_url(probe)
+        or is_pubmed_url(probe)
+        or is_youtube_url(probe)
+        or is_reddit_host(probe)
     )
 
 

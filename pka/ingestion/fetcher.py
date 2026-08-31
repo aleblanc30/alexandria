@@ -13,8 +13,12 @@ Strategy:
   - HTTP 404 with ``fetch_wayback_fallback`` enabled → query archive.org for a snapshot
   - ``*.wikipedia.org`` URLs → MediaWiki Action API (with retries) instead of HTML scrape
   - Amazon book product pages → title + editorial summary extracted for browse cards
+  - YouTube video URLs → oEmbed API (title + channel, no API key); title on cards
+  - Reddit thread URLs → public ``.json`` listing (title + selftext, or top comments
+    for a link post); URL-derived title/subreddit fallback when blocked
   - ``arxiv.org`` URLs → export.arxiv.org API (metadata + PDF); title and abstract on cards
   - ``biorxiv.org`` URLs → api.biorxiv.org DOI lookup (metadata + PDF); title and abstract on cards
+  - ``pubmed.ncbi.nlm.nih.gov`` URLs → NCBI efetch (metadata + abstract, no PDF); title and abstract on cards
 
 Previously skipped PDF bookmarks stay ``fetch_status=skipped`` until reset manually, e.g.::
 
@@ -142,6 +146,20 @@ async def _fetch_one_impl(
     if parse_wikipedia_url(url) is not None:
         return await fetch_wikipedia_with_retries(client, doc_id, url)
 
+    from pka.ingestion.youtube_bookmark import fetch_youtube_video, parse_youtube_url
+
+    if parse_youtube_url(url):
+        result = await fetch_youtube_video(client, doc_id, url)
+        if result is not None:
+            return result
+
+    from pka.ingestion.reddit_bookmark import fetch_reddit_thread, parse_reddit_permalink
+
+    if parse_reddit_permalink(url):
+        result = await fetch_reddit_thread(client, doc_id, url)
+        if result is not None:
+            return result
+
     from pka.ingestion.arxiv import fetch_arxiv_paper, parse_arxiv_url
 
     if parse_arxiv_url(url):
@@ -153,6 +171,13 @@ async def _fetch_one_impl(
 
     if parse_biorxiv_url(url):
         result = await fetch_biorxiv_paper(client, doc_id, url)
+        if result is not None:
+            return result
+
+    from pka.ingestion.pubmed import fetch_pubmed_article, parse_pubmed_url
+
+    if parse_pubmed_url(url):
+        result = await fetch_pubmed_article(client, doc_id, url)
         if result is not None:
             return result
 
