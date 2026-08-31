@@ -9,9 +9,9 @@ Four extraction passes for each image:
   4. clip_embed()   — image-embed provider (CLIP) → float vector
 
 All passes are independent and can be skipped selectively. Every pass delegates
-to the backend selected in ``pka/providers/`` (Ollama/OpenRouter/OVH for vision,
-VLM or EasyOCR for OCR, CLIP for embeddings); this module owns only the prompts,
-image encoding, and JSON-salvage logic.
+to the backend selected in ``pka/providers/`` (Ollama/OpenRouter/OVH/Scaleway for
+vision, VLM or EasyOCR for OCR, CLIP for embeddings); this module owns only the
+prompts, image encoding, and JSON-salvage logic.
 
 Pass 2 is prompt-per-category (``DESIGN.md`` §3.2): a *generic* "describe what
 you see" prompt encodes a whiteboard as "a whiteboard with diagrams", which has

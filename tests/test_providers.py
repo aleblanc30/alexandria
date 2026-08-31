@@ -61,6 +61,19 @@ class TestRegistryDispatch:
         assert p.base_url == "https://ovh.example/v1"
         assert p.model == "vision-x"
 
+    def test_scaleway_chat_uses_configured_endpoint(self, monkeypatch):
+        monkeypatch.setattr(providers.cfg, "chat_provider", "scaleway")
+        monkeypatch.setattr(providers.cfg, "scaleway_base_url", "https://api.scaleway.ai/v1")
+        monkeypatch.setattr(providers.cfg, "scaleway_api_key", "scw-test")
+        monkeypatch.setattr(providers.cfg, "scaleway_chat_model", "llama-3.3-70b-instruct")
+        providers.reset_providers()
+
+        p = providers.get_chat_provider()
+        assert isinstance(p, OpenAICompatChatProvider)
+        assert p.base_url == "https://api.scaleway.ai/v1"
+        assert p.model == "llama-3.3-70b-instruct"
+        assert p.label == "scaleway"
+
     def test_ollama_cloud_chat_uses_hosted_endpoint(self, monkeypatch):
         monkeypatch.setattr(providers.cfg, "chat_provider", "ollama_cloud")
         monkeypatch.setattr(providers.cfg, "ollama_cloud_base_url", "https://ollama.com")

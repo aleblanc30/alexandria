@@ -51,6 +51,13 @@ def _openai_compat_config(name: str) -> dict[str, str]:
             "chat_model": cfg.ovh_chat_model,
             "vision_model": cfg.ovh_vision_model,
         }
+    if name == "scaleway":
+        return {
+            "base_url": cfg.scaleway_base_url,
+            "api_key": cfg.scaleway_api_key,
+            "chat_model": cfg.scaleway_chat_model,
+            "vision_model": cfg.scaleway_vision_model,
+        }
     raise ValueError(f"Unknown OpenAI-compatible provider: {name!r}")
 
 
@@ -77,7 +84,7 @@ def _build_chat(name: str) -> ChatProvider:
         from pka.providers.ollama import OllamaChatProvider
 
         return OllamaChatProvider(**_ollama_cloud_kwargs(cfg.ollama_cloud_chat_model))
-    if name in ("openrouter", "ovh"):
+    if name in ("openrouter", "ovh", "scaleway"):
         from pka.providers.openai_compat import OpenAICompatChatProvider
 
         conf = _openai_compat_config(name)
@@ -88,7 +95,7 @@ def _build_chat(name: str) -> ChatProvider:
             label=name,
         )
     raise ValueError(
-        f"Unknown chat provider: {name!r} (expected ollama|ollama_cloud|openrouter|ovh)"
+        f"Unknown chat provider: {name!r} (expected ollama|ollama_cloud|openrouter|ovh|scaleway)"
     )
 
 
@@ -101,7 +108,7 @@ def _build_vision(name: str) -> VisionProvider:
         from pka.providers.ollama import OllamaVisionProvider
 
         return OllamaVisionProvider(**_ollama_cloud_kwargs(cfg.ollama_cloud_vision_model))
-    if name in ("openrouter", "ovh"):
+    if name in ("openrouter", "ovh", "scaleway"):
         from pka.providers.openai_compat import OpenAICompatVisionProvider
 
         conf = _openai_compat_config(name)
@@ -112,7 +119,7 @@ def _build_vision(name: str) -> VisionProvider:
             label=name,
         )
     raise ValueError(
-        f"Unknown vision provider: {name!r} (expected ollama|ollama_cloud|openrouter|ovh)"
+        f"Unknown vision provider: {name!r} (expected ollama|ollama_cloud|openrouter|ovh|scaleway)"
     )
 
 
@@ -132,7 +139,7 @@ def _build_gate_vision(name: str) -> VisionProvider:
         from pka.providers.ollama import OllamaVisionProvider
 
         return OllamaVisionProvider(**_ollama_cloud_kwargs(cfg.image_gate_vision_model))
-    if name in ("openrouter", "ovh"):
+    if name in ("openrouter", "ovh", "scaleway"):
         from pka.providers.openai_compat import OpenAICompatVisionProvider
 
         conf = _openai_compat_config(name)
@@ -143,7 +150,8 @@ def _build_gate_vision(name: str) -> VisionProvider:
             label=f"{name}-gate",
         )
     raise ValueError(
-        f"Unknown gate vision provider: {name!r} (expected ollama|ollama_cloud|openrouter|ovh)"
+        f"Unknown gate vision provider: {name!r} "
+        "(expected ollama|ollama_cloud|openrouter|ovh|scaleway)"
     )
 
 

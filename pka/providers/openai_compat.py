@@ -1,8 +1,8 @@
-"""OpenAI-compatible chat/vision providers (OpenRouter, OVH AI Endpoints).
+"""OpenAI-compatible chat/vision providers (OpenRouter, OVH AI Endpoints, Scaleway).
 
-Both services expose the standard ``POST {base_url}/chat/completions`` API with
-a ``Bearer`` key, so a single implementation covers them; only the base URL,
-key, and model names differ (injected at construction from config).
+All three services expose the standard ``POST {base_url}/chat/completions`` API
+with a ``Bearer`` key, so a single implementation covers them; only the base
+URL, key, and model names differ (injected at construction from config).
 """
 
 from __future__ import annotations

@@ -220,8 +220,8 @@ class Settings(BaseSettings):
     # ── Providers (per-capability backend selection) ────────────────────────
     # Each capability picks its own backend, so e.g. OpenRouter chat can run
     # alongside local EasyOCR + CLIP. See pka/providers/.
-    chat_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh
-    vision_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh
+    chat_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh | scaleway
+    vision_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh | scaleway
     ocr_provider: str = "vlm"  # vlm (vision model transcribes) | easyocr
 
     # EasyOCR device. Off by default because the pinned torch is a CPU build
@@ -266,7 +266,7 @@ class Settings(BaseSettings):
     # ``vision_model`` never re-classifies when the gate is on.
     image_gate_enabled: bool = True
     image_gate_text_coverage_min: float = 0.05  # fraction of pixels covered by text
-    image_gate_vision_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh
+    image_gate_vision_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh | scaleway
     image_gate_vision_model: str = "moondream"  # small local classifier by default
 
     # ── Ollama (local chat / vision) ────────────────────────────────────────
@@ -298,6 +298,12 @@ class Settings(BaseSettings):
     ovh_base_url: str = ""  # region endpoint, e.g. https://…/v1
     ovh_chat_model: str = ""
     ovh_vision_model: str = ""
+
+    # ── Scaleway Generative APIs (OpenAI-compatible remote chat / vision) ───
+    scaleway_api_key: str = ""
+    scaleway_base_url: str = "https://api.scaleway.ai/v1"
+    scaleway_chat_model: str = ""
+    scaleway_vision_model: str = ""
 
     # ── Ingestion progress ──────────────────────────────────────────────────
     # The ``/ingestion/status`` and ``/ingestion/sync/progress`` endpoints are
