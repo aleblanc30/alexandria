@@ -336,7 +336,8 @@ schtasks /End /TN Alexandria
 robocopy "%LOCALAPPDATA%\Alexandria\data" "%LOCALAPPDATA%\Alexandria\data-backup" /E
 cd /d "%LOCALAPPDATA%\Alexandria\app"
 git fetch --tags
-git checkout v1.1.0
+git tag --list
+git checkout <tag>
 .venv\Scripts\activate
 pip install .
 cd frontend && npm ci && npm run build && cd ..
@@ -344,12 +345,52 @@ alexandria init
 schtasks /Run /TN Alexandria
 ```
 
-Take the backup before anything else. `alexandria init` is idempotent and does
-migrate a populated database in place rather than only creating absent tables:
+`git tag --list` prints the releases available; substitute the newest one for
+`<tag>`. Take the backup before anything else. `alexandria init` is idempotent
+and does migrate a populated database in place rather than only creating absent
+tables:
 `init_db` in `pka/db/queries.py` runs `create_all`, then a sequence of guarded
 `ALTER TABLE` steps for the columns added since the archive was built. What the
 backup covers is the case it cannot — a schema change for which no migration
 step was written.
+
+The same `init_db()` runs from the API's startup hook, so an upgrade that skips
+the explicit `alexandria init` still migrates once the task restarts. Running it
+by hand is worth keeping because it reports the failure in a console you are
+watching rather than into `server.log`. The `npm run build` line is not
+cosmetic either: `frontend\dist` is not in the repository, so until it is
+rebuilt the server keeps mounting the previous release's interface against the
+new API.
+
+### What the upgrade does not do
+
+A migration adds columns; it does not populate them. Take the columns added
+after `v0.0.5` as the worked example — seven bibliographic fields on
+`documents` (`doi`, `arxiv_id`, `isbn`, `year`, `authors_json`, `zotero_url`,
+`zotero_path`) and three indexes, with no existing row rewritten. The API
+serves them as `null` and the interface omits the fields, so an archive that is
+never re-synced is correct, merely less informative than a fresh one.
+
+Zotero backfills itself. Its metadata sync loads every item rather than only
+pending ones and ends with a pass over all of them, so a single
+`alexandria zotero` fills those columns on rows already archived, without
+re-embedding anything. That pass also recomputes `url_or_path` for every Zotero
+row it sees, which is deliberate: an item whose only locator was a bare DOI
+string now keeps the DOI in its own column and is served as a
+`https://doi.org/...` link instead.
+
+No other source does. Calibre's metadata phase inserts only what is absent and
+its embed phase writes documents missing from the index, so books archived
+before the upgrade keep empty `isbn`, `year` and `authors_json`. Bookmarked
+preprints take their identifiers from the fetcher, so only newly fetched ones
+carry them.
+
+Do not reach for `--force-reindex` to close that gap. It does fill the columns,
+but it re-embeds as well, and the embedding path generates fresh chunk vector
+ids on every pass while nothing deletes the previous chunks. Each run therefore
+appends a second complete set of chunk rows and Chroma vectors for every item it
+touches — for a full-text book that is thousands of duplicated chunks. An empty
+column costs nothing; duplicated chunks have to be purged.
 
 Read `CHANGELOG.md` for the release being installed. Configuration keys are
 occasionally removed, and because unknown `ALEXANDRIA_*` keys are rejected

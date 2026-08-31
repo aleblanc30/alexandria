@@ -1,5 +1,117 @@
 # Changelog
 
+## Unreleased
+
+### Structured document metadata
+
+- **Seven nullable columns on `documents`** — `doi`, `arxiv_id`, `isbn`, `year`,
+  `authors_json`, `zotero_url`, `zotero_path`, with an index on each of the three
+  identifiers. Every runner already parsed these fields and flattened them into
+  the embed blob, so chunk text was the only copy and the planned item-dedup pass
+  had nothing to join on. Zotero drops the DOI rung from its `url_or_path` ladder
+  (the DOI now has a column, and the API serves it as a `https://doi.org/…` link)
+  and derives an arXiv-minted DOI when the source supplies none; Calibre persists
+  the ISBN — checksum-validated — plus year and authors it used to discard; the
+  arXiv/bioRxiv fetch path writes identifiers and authors back onto the document
+  row. `DocumentOut` gained `doi`, `doi_url`, `arxiv_id`, `isbn`, `year` and
+  `authors`, and the detail panel shows authors, year and the DOI link. Plan in
+  `planning/DOCUMENT_METADATA_PLAN.md`.
+- **`DocumentWrite` replaces the sixteen-parameter write path.**
+  `insert_document_if_new` and `upsert_document` now take one dataclass over a
+  single Core `sqlite_insert(...).on_conflict_do_update(...)` writer, with a
+  default-COALESCE update policy — `title`, `url_or_path` and `fetch_status`
+  overwrite, every other column keeps the stored value rather than letting a
+  source that does not know a field erase it. A new column is one dataclass field
+  instead of four hand-parallel column lists. Both functions recover the row id
+  with a trailing `SELECT` by `(source, source_id)`: SQLAlchemy's
+  `inserted_primary_key` reports the wrong row on a real SQLite conflict, which
+  was verified rather than assumed. Plan in
+  `planning/DOCUMENT_WRITE_PATH_PLAN.md`.
+
+### Fetch handlers and reporting
+
+- **YouTube, reddit and PubMed bookmark handlers**, mirroring the existing
+  arXiv/bioRxiv/Amazon ones so those hosts are enriched instead of falling
+  through to generic HTML scraping: the public oEmbed API for a video's title and
+  channel (no key, independent of the Data-API connector's credentials); the
+  public `.json` listing for a reddit post's title and selftext, or the top
+  comments for a link post, falling back to a title and subreddit derived from the
+  permalink slug when that listing is blocked rather than going straight to
+  unfetchable; and NCBI efetch for a PubMed record's title, abstract, authors,
+  year and DOI. The Amazon handler's host regex already matched every TLD — that
+  TODO item needed a regression test, not code. Plan in
+  `planning/FIREFOX_INGESTERS_PLAN.md`.
+- **Top domains and top rejected domains** — `GET /ingestion/domains` and a
+  two-table panel on `/ingestion` rank domains by document count and by
+  unfetchable count, so which host most deserves the next dedicated handler is
+  visible rather than guessed. `alexandria domain-report --rejected` for CLI
+  parity. Plan in `planning/DOMAIN_TOP_LISTS_PLAN.md`.
+
+### Providers
+
+- **Scaleway AI Endpoints** joins the `chat` and `vision` capabilities. Its
+  Generative APIs speak the same OpenAI-compatible protocol as OpenRouter and
+  OVH, so it is a `scaleway_*` config block and two registry entries over the
+  existing `openai_compat.py`.
+- **Staan** (Qwant-backed web search) joins Brave as a third-rung book-synopsis
+  provider in the `book_search.py` registry — same loose title/snippet
+  verification, same skip-without-a-key behaviour.
+- **Chat auto-detect no longer lands on a vision model.** It took the first
+  non-embedding model from `/api/tags`, which could be `llava-phi3`; vision models
+  do not reliably honour the `"format": "json"` grammar constraint on a plain-text
+  prompt, so every `chat_json` call — document summarisation among them — died on
+  a `JSONDecodeError`.
+
+### Correctness
+
+- **Chroma reads are paged under SQLite's 32766-variable ceiling.** A clustering
+  run opened with an unfiltered `col.get(include=["metadatas"])` over the whole
+  chunk collection. Chroma hydrates metadatas/embeddings/documents with a second
+  query binding one variable per matched record, so past 32766 records every run
+  died on its first read with `Error executing plan: … too many SQL variables`.
+  `fetch_records`, `fetch_records_by_ids` and `fetch_records_by_document_ids` page
+  and batch on 5000 records; the clustering engine's opening scan, the
+  per-document chunk fetch and the centroid/drift/assignment fetch go through
+  them, and `load_cached_embeddings` batches its `IN` list because python's
+  `sqlite3` has the same ceiling. The purge path has the same defect and is a
+  `planning/TODO.md` entry.
+- **Blocking DB handlers moved off the event loop.** Every route in ten routers
+  ran synchronous SQLAlchemy calls inside `async def`, so a slow query during
+  ingestion froze the whole server — frontend network errors and empty pages on
+  reload. None of them await anything, so declaring them plain `def` hands them to
+  FastAPI's threadpool.
+
+### Tooling and docs
+
+- `ruff` pinned to an exact version in `pyproject.toml` and `ruff format` run
+  repo-wide; style rules had drifted since whatever version last touched these
+  files. No behaviour change.
+- Planning documents moved out of the repo root into `planning/`, with every
+  cross-reference updated.
+- New proposals, none implemented: `MCP_PLAN.md` (read-only MCP server, an HTTP
+  client of the local API rather than a second process opening the archive),
+  `PURGE_AND_PROVENANCE_PLAN.md` (provenance stamping is a prerequisite for
+  selective purge, not an alternative), and a TODO entry for benchmarking a
+  replacement text-embedding model.
+- `INSTALL.md` §11 documents what an upgrade does *not* do — see below.
+
+### Upgrading from v0.0.5
+
+- `alexandria init` adds the seven columns and three indexes in place. No table is
+  created or dropped and no existing row is rewritten; the API's startup hook runs
+  the same migration, so an upgrade that forgets the explicit command still
+  migrates when the server restarts.
+- **The columns arrive empty.** `alexandria zotero` backfills its own rows — the
+  metadata sync loads every item and ends with a pass over all of them — without
+  re-embedding. No other source does: Calibre and the preprint fetch path fill
+  only rows they newly touch. `--force-reindex` would fill them, but it re-embeds,
+  and since chunk vector ids are regenerated per pass while nothing deletes the
+  previous chunks, each run appends a duplicate set. `INSTALL.md` §11 has the
+  detail.
+- No configuration keys were removed, so a `v0.0.5` `.env` still starts. The new
+  keys — `scaleway_*`, `staan_api_key`, `reddit_saved_limit` — are optional and
+  default off.
+
 ## v0.0.5
 
 ### Local-first relaxed; retrieval enrichment
