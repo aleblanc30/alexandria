@@ -462,7 +462,7 @@ class TestComputeMergeSuggestions:
 
 class TestAssignNewDocs:
     def _mock_get(self, store, col):
-        def _get(where=None, include=None):
+        def _get(where=None, include=None, limit=None, offset=0, **kwargs):
             doc_ids = None
             if where and "document_id" in where:
                 doc_ids = set(where["document_id"]["$in"])
@@ -471,6 +471,7 @@ class TestAssignNewDocs:
                 for k, v in store.items()
                 if doc_ids is None or v["meta"]["document_id"] in doc_ids
             ]
+            items = items[offset : offset + limit] if limit is not None else items[offset:]
             return {
                 "ids": [k for k, _ in items],
                 "embeddings": [v["embedding"] for _, v in items],

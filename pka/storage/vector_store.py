@@ -47,6 +47,13 @@ _client_lock = threading.RLock()
 COLLECTION_NAME = "alexandria_chunks"
 _FETCH_BATCH_SIZE = 200
 
+# Chroma hydrates metadatas/embeddings/documents with a second SQL query that
+# binds one variable per matched record, and SQLITE_MAX_VARIABLE_NUMBER is
+# 32766 — so a ``get`` matching more than that (or filtering on a longer id or
+# ``$in`` list) fails with "Error executing plan: … too many SQL variables".
+# Every read goes through the paging helpers below, well under the ceiling.
+_GET_PAGE_SIZE = 5_000
+
 
 def _get_embedding_function() -> DefaultEmbeddingFunction:
     global _embedding_fn
@@ -195,6 +202,73 @@ def upsert_chunks(
         metadatas=metadatas,
     )
     log.debug("Upserted %d chunks to Chroma", len(ids))
+
+
+def _empty_page(include: list[str]) -> dict[str, list]:
+    return {"ids": [], **{key: [] for key in include}}
+
+
+def _extend_page(out: dict[str, list], page: dict, include: list[str]) -> list[str]:
+    ids = list(page.get("ids") or [])
+    out["ids"].extend(ids)
+    for key in include:
+        values = page.get(key)
+        if values is None:
+            continue
+        out[key].extend(values)
+    return ids
+
+
+def fetch_records(
+    where: dict | None = None,
+    include: list[str] | None = None,
+) -> dict[str, list]:
+    """``collection.get`` paged under the SQL variable ceiling (see _GET_PAGE_SIZE)."""
+    include = list(include) if include is not None else ["metadatas"]
+    col = get_collection()
+    out = _empty_page(include)
+    offset = 0
+    while True:
+        kwargs: dict = {"include": include, "limit": _GET_PAGE_SIZE, "offset": offset}
+        if where:
+            kwargs["where"] = where
+        ids = _extend_page(out, col.get(**kwargs), include)
+        if len(ids) < _GET_PAGE_SIZE:
+            break
+        offset += len(ids)
+    return out
+
+
+def fetch_records_by_ids(
+    ids: list[str],
+    include: list[str] | None = None,
+) -> dict[str, list]:
+    """``collection.get(ids=…)`` in batches, for id lists of any length."""
+    include = list(include) if include is not None else ["metadatas"]
+    out = _empty_page(include)
+    if not ids:
+        return out
+    col = get_collection()
+    for i in range(0, len(ids), _GET_PAGE_SIZE):
+        page = col.get(ids=ids[i : i + _GET_PAGE_SIZE], include=include)
+        _extend_page(out, page, include)
+    return out
+
+
+def fetch_records_by_document_ids(
+    doc_ids: list[int],
+    include: list[str] | None = None,
+) -> dict[str, list]:
+    """Every chunk record of the given documents, batching the ``$in`` filter."""
+    include = list(include) if include is not None else ["metadatas"]
+    out = _empty_page(include)
+    if not doc_ids:
+        return out
+    for i in range(0, len(doc_ids), _GET_PAGE_SIZE):
+        batch = doc_ids[i : i + _GET_PAGE_SIZE]
+        page = fetch_records(where={"document_id": {"$in": batch}}, include=include)
+        _extend_page(out, page, include)
+    return out
 
 
 def _fetch_embedding_batch(col, ids: list[str], out: dict[str, list[float]]) -> None:

@@ -13,6 +13,7 @@ from pka.db.schema import chunks, documents
 log = logging.getLogger(__name__)
 
 EMBEDDING_DIM = 384
+_ID_BATCH_SIZE = 5_000
 
 
 def embedding_to_blob(vec: np.ndarray) -> bytes:
@@ -25,7 +26,7 @@ def blob_to_embedding(blob: bytes) -> np.ndarray:
 
 def refresh_document_embedding(doc_id: int) -> bool:
     """Recompute mean-pooled chunk embedding for one document and persist."""
-    from pka.storage.vector_store import fetch_embeddings_by_ids, get_collection
+    from pka.storage.vector_store import fetch_embeddings_by_ids, fetch_records_by_ids
 
     eng = get_engine()
     with eng.connect() as con:
@@ -40,8 +41,7 @@ def refresh_document_embedding(doc_id: int) -> bool:
             )
         return False
 
-    col = get_collection()
-    meta_page = col.get(ids=vector_ids, include=["metadatas"])
+    meta_page = fetch_records_by_ids(vector_ids, include=["metadatas"])
     metadatas = meta_page.get("metadatas") or []
     ids = meta_page.get("ids") or []
     if not ids:
@@ -79,13 +79,19 @@ def load_cached_embeddings(
     if not doc_ids:
         return {}, []
     eng = get_engine()
+    row_map: dict[int, bytes | None] = {}
     with eng.connect() as con:
-        rows = con.execute(
-            sa.select(documents.c.id, documents.c.doc_embedding).where(documents.c.id.in_(doc_ids))
-        ).fetchall()
+        # Batched: SQLite binds one variable per id and caps them at 32766.
+        for i in range(0, len(doc_ids), _ID_BATCH_SIZE):
+            batch = doc_ids[i : i + _ID_BATCH_SIZE]
+            rows = con.execute(
+                sa.select(documents.c.id, documents.c.doc_embedding).where(
+                    documents.c.id.in_(batch)
+                )
+            ).fetchall()
+            row_map.update({r[0]: r[1] for r in rows})
     found: dict[int, np.ndarray] = {}
     missing: list[int] = []
-    row_map = {r[0]: r[1] for r in rows}
     for did in doc_ids:
         blob = row_map.get(did)
         if blob:

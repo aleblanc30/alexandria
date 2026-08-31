@@ -59,3 +59,4 @@ two when its priority changes; do not duplicate it in both.
 
 - [ ] Summarization calls fail silently.
 - [ ] **Selective purge & pipeline re-triggers** — buttons to purge specific subsets (summaries, vectors, image text, machine tags, fetched text) and retrigger the matching pipeline step, so swapping an embedding/summarisation backend does not require nuking a whole source; includes provenance stamping so a purge can target "made by the old model". Plan in `PURGE_AND_PROVENANCE_PLAN.md`.
+- [ ] **Batch the purge path's IN lists** — `_purge_documents` / `_purge_images` (`pka/cli/purge_source.py`) and `purge_vectors` (`pka/storage/vector_store.py`) bind every document, image, or vector id of a source into one statement, so a source over SQLite's 32766-variable cap fails with `too many SQL variables` — including the raw Chroma `delete(ids=...)`, the likeliest to trip it. Batch them the way the clustering read path now does (`_GET_PAGE_SIZE`, `_ID_BATCH_SIZE`).

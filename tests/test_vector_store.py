@@ -286,3 +286,85 @@ class TestSharedClient:
         assert vs.get_client() is client
         assert cleared == [True]
         vs.reset_collection()
+
+
+class _CappedCollection:
+    """
+    Chroma stand-in that fails the way the Rust core does past SQLite's
+    ``SQLITE_MAX_VARIABLE_NUMBER``: the filter values and the hydration of
+    matched records are separate statements, each binding one variable per
+    entry, and either going over the cap raises ``too many SQL variables``.
+    """
+
+    def __init__(self, records: list[tuple[str, dict]], cap: int):
+        self.records = records
+        self.cap = cap
+        self.max_bound = 0
+
+    def get(self, ids=None, where=None, include=None, limit=None, offset=0):
+        include = include or []
+        matched = self.records
+        bound = 0
+        if ids is not None:
+            bound = max(bound, len(ids))
+            wanted = set(ids)
+            matched = [r for r in matched if r[0] in wanted]
+        if where:
+            values = where["document_id"]["$in"]
+            bound = max(bound, len(values))
+            wanted_docs = set(values)
+            matched = [r for r in matched if r[1]["document_id"] in wanted_docs]
+        matched = matched[offset : offset + limit] if limit is not None else matched[offset:]
+        if include:
+            bound = max(bound, len(matched))
+        self.max_bound = max(self.max_bound, bound)
+        if bound > self.cap:
+            raise RuntimeError(
+                "Error executing plan: Internal error: error returned from "
+                "database: (code: 1) too many SQL variables"
+            )
+        out: dict = {"ids": [r[0] for r in matched]}
+        if "metadatas" in include:
+            out["metadatas"] = [r[1] for r in matched]
+        return out
+
+
+@pytest.fixture()
+def capped_collection(monkeypatch):
+    """A 10-record collection that only tolerates 4 bound variables per query."""
+    import pka.storage.vector_store as vs
+
+    records = [(f"vec-{i}", {"document_id": i // 2}) for i in range(10)]
+    col = _CappedCollection(records, cap=4)
+    monkeypatch.setattr(vs, "_GET_PAGE_SIZE", 3)
+    monkeypatch.setattr(vs, "get_collection", lambda: col)
+    return vs, col
+
+
+class TestPagedReads:
+    """Regression: reads must stay under the SQL variable cap (chroma #4444)."""
+
+    def test_fetch_records_pages_through_the_whole_collection(self, capped_collection):
+        vs, col = capped_collection
+        page = vs.fetch_records(include=["metadatas"])
+        assert page["ids"] == [f"vec-{i}" for i in range(10)]
+        assert len(page["metadatas"]) == 10
+        assert col.max_bound <= col.cap
+
+    def test_fetch_records_by_ids_batches_the_id_list(self, capped_collection):
+        vs, col = capped_collection
+        ids = [f"vec-{i}" for i in range(10)]
+        page = vs.fetch_records_by_ids(ids, include=["metadatas"])
+        assert page["ids"] == ids
+        assert col.max_bound <= col.cap
+
+    def test_fetch_records_by_document_ids_batches_the_in_filter(self, capped_collection):
+        vs, col = capped_collection
+        page = vs.fetch_records_by_document_ids(list(range(5)), include=["metadatas"])
+        assert sorted(page["ids"]) == sorted(f"vec-{i}" for i in range(10))
+        assert col.max_bound <= col.cap
+
+    def test_empty_inputs_do_not_touch_chroma(self, capped_collection):
+        vs, col = capped_collection
+        assert vs.fetch_records_by_ids([], include=["metadatas"]) == {"ids": [], "metadatas": []}
+        assert vs.fetch_records_by_document_ids([]) == {"ids": [], "metadatas": []}

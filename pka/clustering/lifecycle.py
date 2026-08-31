@@ -84,17 +84,13 @@ def _embeddings_available(result: dict) -> bool:
 
 
 def _doc_mean_embeddings(doc_ids: list[int]) -> dict[int, np.ndarray]:
-    """Mean-pool chunk embeddings per document in a single Chroma fetch."""
-    from pka.storage.vector_store import get_collection
+    """Mean-pool chunk embeddings per document, batched under Chroma's variable cap."""
+    from pka.storage.vector_store import fetch_records_by_document_ids
 
     if not doc_ids:
         return {}
 
-    col = get_collection()
-    result = col.get(
-        where={"document_id": {"$in": doc_ids}},
-        include=["embeddings", "metadatas"],
-    )
+    result = fetch_records_by_document_ids(doc_ids, include=["embeddings", "metadatas"])
     if not _embeddings_available(result):
         return {}
 

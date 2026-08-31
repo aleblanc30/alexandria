@@ -120,11 +120,10 @@ def _load_document_embeddings(
     from pka.clustering.doc_embeddings import load_cached_embeddings, refresh_document_embedding
     from pka.storage.vector_store import (
         fetch_embeddings_by_ids,
-        get_collection,
+        fetch_records,
     )
 
-    col = get_collection()
-    meta_page = col.get(include=["metadatas"])
+    meta_page = fetch_records(include=["metadatas"])
     vector_ids = meta_page["ids"]
     metadatas = meta_page["metadatas"]
     if not vector_ids:
