@@ -58,4 +58,4 @@ two when its priority changes; do not duplicate it in both.
 ## Ingestion
 
 - [ ] Summarization calls fail silently.
-- [ ] Add buttons to purge specific subsets of the data and to retrigger various points of the ingestion pipeline.
+- [ ] **Selective purge & pipeline re-triggers** — buttons to purge specific subsets (summaries, vectors, image text, machine tags, fetched text) and retrigger the matching pipeline step, so swapping an embedding/summarisation backend does not require nuking a whole source; includes provenance stamping so a purge can target "made by the old model". Plan in `PURGE_AND_PROVENANCE_PLAN.md`.
