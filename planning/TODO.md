@@ -16,6 +16,10 @@ two when its priority changes; do not duplicate it in both.
 - [x] **Make `_DomainRateLimiter` actually rate-limit** — `wait` now claims a slot under the lock instead of deriving a delay from a shared last-send time, so concurrent waiters on one domain are spaced rather than released together.
 - [ ] **Domain-aware fetch dispatch** — the fetch pool picks a URL off a flat queue and only then waits on the per-domain limiter, so a run of same-host URLs parks every worker on that host while other domains sit ready; plan in `FETCH_DISPATCH_PLAN.md`.
 
+## Search / vectors
+
+- [ ] **Evaluate a different text embedding model** — Chroma's `DefaultEmbeddingFunction` (`all-MiniLM-L6-v2`) is used as-is in `pka/storage/vector_store.py`; benchmark retrieval quality against something like `bge-small-en-v1.5` or `gte-small` before committing, since swapping models forces a full reindex via `rebuild_from_chunks` (Chroma collections are dimension-locked).
+
 ## Source connectors
 
 - [x] **arXiv ingester** — Firefox fetch handler for arxiv.org (`pka/ingestion/arxiv.py`): export.arxiv.org API metadata + PDF; title and abstract on browse cards.
