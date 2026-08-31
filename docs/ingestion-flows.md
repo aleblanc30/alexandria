@@ -169,7 +169,7 @@ flowchart TD
     TAGS["insert_source_tags()<br/>insert_source_collections()"]
     CLS["classify_document(ZOTERO, item_type, url_or_path)<br/>sync_classification_tags()"]
     CARD["update_card_summary(zotero_card_summary(item))<br/>highlight, else abstract"]
-    ATTK["refresh_zotero_attachment_keys()"]
+    ATTK["refresh_zotero_metadata()"]
 
     START --> INIT --> BASE --> BEGIN --> COPY --> ZDB --> LOAD --> TAKE --> MRUN
     MRUN --> MLOOP --> KW --> INSDOC --> TAGS --> CLS --> CARD --> ATTK

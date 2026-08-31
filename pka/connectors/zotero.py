@@ -38,19 +38,30 @@ class ZoteroItem:
     pdf_attachment_key: str | None = None  # 8-char key of the PDF attachment item
 
 
-def zotero_document_url_or_path(item: ZoteroItem) -> str | None:
-    """Value stored on documents.url_or_path — prefer a browser-openable URL when present."""
-    raw_url = (item.url or "").strip()
-    if raw_url.lower().startswith(("http://", "https://")):
-        return raw_url
-    if item.pdf_path:
-        return str(item.pdf_path)
-    doi = (item.doi or "").strip()
-    if doi:
-        return doi
-    if raw_url:
-        return raw_url
-    return None
+def zotero_url(item: ZoteroItem) -> str | None:
+    """The Zotero item's ``url`` field, verbatim — even when it is not http(s)."""
+    raw = (item.url or "").strip()
+    return raw or None
+
+
+def zotero_path(item: ZoteroItem) -> str | None:
+    """The resolved local PDF attachment path, if any."""
+    return str(item.pdf_path) if item.pdf_path else None
+
+
+def zotero_document_url_or_path(url: str | None, path: str | None) -> str | None:
+    """Value stored on documents.url_or_path — prefer a browser-openable URL,
+    else the attachment path, else a non-http url field verbatim.
+
+    Columns hold facts (``zotero_url``/``zotero_path``), this ladder holds
+    policy. No DOI rung: ``documents.doi`` is the join key now, and the API
+    serves ``https://doi.org/<doi>`` from that column instead.
+    """
+    if url and url.lower().startswith(("http://", "https://")):
+        return url
+    if path:
+        return path
+    return url
 
 
 def zotero_embed_text(item: ZoteroItem) -> str:

@@ -304,6 +304,14 @@ def _persist_fetch_result(r: FetchResult) -> None:
             update_values["title"] = r.title
         if r.card_summary:
             update_values["card_summary"] = r.card_summary
+        if r.doi:
+            update_values["doi"] = r.doi
+        if r.arxiv_id:
+            update_values["arxiv_id"] = r.arxiv_id
+        if r.year:
+            update_values["year"] = r.year
+        if r.authors_json:
+            update_values["authors_json"] = r.authors_json
         con.execute(
             documents.update()
             .where(documents.c.id == r.document_id)

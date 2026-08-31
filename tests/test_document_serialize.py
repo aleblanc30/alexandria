@@ -102,6 +102,36 @@ class TestDocumentsOutBatch:
             out = documents_out_batch(ordered, con, None)
         assert [d.id for d in out] == [ids[2], ids[0], ids[1]]
 
+    def test_structured_metadata_fields_surfaced(self):
+        import json
+
+        init_db()
+        doc_id = upsert_document(
+            "zotero", "META1", "A Paper", "https://example.com/paper",
+            int(time.time()),
+            doi="10.1/raft", arxiv_id="2301.12345", isbn="9780132350884",
+            year=2023, authors_json=json.dumps(["Ada Lovelace", "Alan Turing"]),
+        )
+        with get_engine().connect() as con:
+            out = documents_out_batch([(doc_id, None)], con, None)
+        doc = out[0]
+        assert doc.doi == "10.1/raft"
+        assert doc.doi_url == "https://doi.org/10.1/raft"
+        assert doc.arxiv_id == "2301.12345"
+        assert doc.isbn == "9780132350884"
+        assert doc.year == 2023
+        assert doc.authors == ["Ada Lovelace", "Alan Turing"]
+
+    def test_missing_structured_metadata_defaults(self):
+        init_db()
+        doc_id = _seed_doc()
+        with get_engine().connect() as con:
+            out = documents_out_batch([(doc_id, None)], con, None)
+        doc = out[0]
+        assert doc.doi is None
+        assert doc.doi_url is None
+        assert doc.authors == []
+
 
 class TestDocumentDetail:
     def test_missing_doc_returns_none(self):
@@ -158,6 +188,22 @@ class TestDocumentDetail:
         assert detail.image.image_type == "slide"
         assert detail.image.ocr_text == "Extracted text."
         assert detail.description == "A prose description of the picture."
+
+    def test_detail_surfaces_structured_metadata(self):
+        import json
+
+        init_db()
+        doc_id = upsert_document(
+            "calibre", "BOOK1", "A Book", None, int(time.time()),
+            isbn="9780132350884", year=2008, authors_json=json.dumps(["Robert C. Martin"]),
+        )
+        with get_engine().connect() as con:
+            detail = document_detail(con, doc_id, None)
+        assert detail.isbn == "9780132350884"
+        assert detail.year == 2008
+        assert detail.authors == ["Robert C. Martin"]
+        assert detail.doi is None
+        assert detail.doi_url is None
 
 
 # ── Enrichment provenance (DESIGN.md §3.2) ────────────────────────────────────

@@ -4,6 +4,7 @@ Both the search results path (batched) and the single-document detail path build
 the same set of relations (source tags, overlay tags, cluster assignment,
 description), so they live here to avoid drift and N+1 duplication.
 """
+import json
 from urllib.parse import urlsplit
 
 import sqlalchemy as sa
@@ -34,6 +35,15 @@ from pka.db.schema import (
     source_collections,
     source_tags,
 )
+
+
+def _authors(row) -> list[str]:
+    raw = row.get("authors_json")
+    return json.loads(raw) if raw else []
+
+
+def _doi_url(doi: str | None) -> str | None:
+    return f"https://doi.org/{doi}" if doi else None
 
 
 def documents_out_batch(
@@ -117,6 +127,12 @@ def documents_out_batch(
             similarity=sim,
             description=description,
             note=row.get("note"),
+            doi=row.get("doi"),
+            doi_url=_doi_url(row.get("doi")),
+            arxiv_id=row.get("arxiv_id"),
+            isbn=row.get("isbn"),
+            year=row.get("year"),
+            authors=_authors(row),
         ))
     return out
 
@@ -274,6 +290,12 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
         cluster_id=cluster_id, cluster_label=cluster_label,
         description=description,
         note=row.get("note"),
+        doi=row.get("doi"),
+        doi_url=_doi_url(row.get("doi")),
+        arxiv_id=row.get("arxiv_id"),
+        isbn=row.get("isbn"),
+        year=row.get("year"),
+        authors=_authors(row),
         collections=colls, chunks_count=n_chunks,
         image=image_detail,
         reddit=reddit_detail,

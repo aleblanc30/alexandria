@@ -1,6 +1,7 @@
 """Zotero document ingestion."""
 from __future__ import annotations
 
+import json
 import logging
 
 from pka.classification import classify_document, sync_classification_tags
@@ -9,6 +10,8 @@ from pka.connectors.zotero import (
     zotero_card_summary,
     zotero_document_url_or_path,
     zotero_embed_text,
+    zotero_path,
+    zotero_url,
 )
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
@@ -21,7 +24,9 @@ from pka.db.queries import (
     update_card_summary,
     upsert_document,
 )
+from pka.ingestion.arxiv import parse_arxiv_url
 from pka.ingestion.core import ingest_text_block
+from pka.ingestion.identifiers import resolve_doi
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 from pka.ingestion.progress import should_stop, tick
 
@@ -32,7 +37,7 @@ def _sync_zotero_classification(doc_id: int, item: ZoteroItem) -> None:
     tags = classify_document(
         Source.ZOTERO,
         item_type=item.item_type,
-        url_or_path=zotero_document_url_or_path(item),
+        url_or_path=zotero_document_url_or_path(zotero_url(item), zotero_path(item)),
     )
     sync_classification_tags(doc_id, tags)
 
@@ -45,15 +50,24 @@ def _sync_zotero_card_summary(doc_id: int, item: ZoteroItem, *, dry_run: bool) -
 
 def _zotero_document_kwargs(item: ZoteroItem) -> dict:
     """Shared column values for inserting/upserting a Zotero document row."""
+    url = zotero_url(item)
+    path = zotero_path(item)
+    arxiv_id = parse_arxiv_url(item.url) if item.url else None
     return dict(
         source=Source.ZOTERO,
         source_id=item.source_id,
         title=item.title,
-        url_or_path=zotero_document_url_or_path(item),
+        url_or_path=zotero_document_url_or_path(url, path),
         date_added=item.date_added,
         fetch_status=FetchStatus.AVAILABLE if item.pdf_path else FetchStatus.PENDING,
         zotero_attachment_key=item.pdf_attachment_key,
         item_type=item.item_type,
+        doi=resolve_doi(item.doi, arxiv_id),
+        arxiv_id=arxiv_id,
+        year=item.year,
+        authors_json=json.dumps(item.authors) if item.authors else None,
+        zotero_url=url,
+        zotero_path=path,
     )
 
 

@@ -458,6 +458,18 @@ Three mechanisms close these, in ascending cost:
 | Zotero | *No summary* — the abstract already is one. The real gap is that attached PDFs are never ingested (`planning/TODO.md`). | — |
 | YouTube | *No summary* — nothing to summarise beyond uploader metadata. Transcripts (`planning/BACKLOG.md`). | — |
 
+**Structured bibliographic fields.** `documents` also carries `doi`, `arxiv_id`,
+`isbn`, `year`, `authors_json`, `zotero_url`, `zotero_path` — nullable columns,
+populated by whichever source has the data (Zotero: doi/arxiv_id/year/authors;
+Calibre: isbn/year/authors; arXiv/bioRxiv fetch: doi/arxiv_id/authors). No
+per-source sidecar table: these fields are cross-source (DOI spans Zotero and
+bioRxiv, authors span all four), so a sidecar like `reddit_items` would solve
+one source and leave the others stranded, and a cross-source dedup pass would
+have to union across sidecars that do not all exist. `doi`/`arxiv_id`/`isbn` are
+indexed as join keys for `planning/TODO.md`'s *Deduplication of items*; an arXiv
+document with no source DOI derives one (`10.48550/arXiv.<id>`) so preprints are
+not a hole in that join. See `planning/DOCUMENT_METADATA_PLAN.md`.
+
 **Resolution ladder.** Covers and no-ISBN Calibre books share one cascade:
 checksum-validated ISBN → Open Library by title+author with the canonical result
 round-tripped against what was extracted → **a second catalogue** for books Open

@@ -78,6 +78,12 @@
           <span class="mkey">Added</span><span>{{ doc.date_added ? new Date(doc.date_added*1000).toLocaleDateString() : '—' }}</span>
           <span class="mkey">Fetch</span><span>{{ doc.fetch_status }}</span>
           <span class="mkey">Chunks</span><span>{{ doc.chunks_count }}</span>
+          <template v-if="doc.authors.length">
+            <span class="mkey">Authors</span><span>{{ doc.authors.join(', ') }}</span>
+          </template>
+          <template v-if="doc.year">
+            <span class="mkey">Year</span><span>{{ doc.year }}</span>
+          </template>
         </div>
         <!-- A link post's url_or_path is the external target, so the thread it
              was saved from needs its own row. Self-posts and comments already
@@ -108,6 +114,12 @@
             :attachment-key="doc.zotero_attachment_key"
             size="panel"
           />
+        </div>
+        <div v-if="doc.doi_url" class="link-row link-row--end">
+          <span class="link-url" :title="doc.doi_url">{{ doc.doi }}</span>
+          <button class="btn-xs" type="button" @click.stop="openInNewTab(doc.doi_url)">
+            Open DOI
+          </button>
         </div>
       </section>
 

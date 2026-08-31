@@ -662,6 +662,75 @@ class TestPreprintFetchIntegration:
         assert row[1] == "We revisit transformer architectures for language modeling."
 
     @pytest.mark.asyncio
+    async def test_persist_writes_structured_metadata_when_present(self):
+        import json
+
+        import sqlalchemy as sa
+
+        from pka.constants import Source
+        from pka.db.queries import get_engine
+        from pka.db.schema import documents
+
+        doc_id = upsert_document(
+            source=Source.FIREFOX,
+            source_id="F-ARX-META",
+            title="Old bookmark title",
+            url_or_path="https://arxiv.org/abs/2301.00001",
+            date_added=None,
+            fetch_status=FetchStatus.PENDING,
+        )
+        _persist_fetch_result(FetchResult(
+            doc_id,
+            "https://arxiv.org/abs/2301.00001",
+            "fetched",
+            "Paper text for embedding.",
+            200,
+            "fetched via arxiv api",
+            title="Attention Is All You Need Again",
+            card_summary="We revisit transformer architectures for language modeling.",
+            doi="10.48550/arxiv.2301.00001",
+            arxiv_id="2301.00001",
+            authors_json=json.dumps(["Alice Smith", "Bob Jones"]),
+        ))
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(
+                    documents.c.doi, documents.c.arxiv_id, documents.c.authors_json,
+                ).where(documents.c.id == doc_id)
+            ).fetchone()
+        assert row[0] == "10.48550/arxiv.2301.00001"
+        assert row[1] == "2301.00001"
+        assert json.loads(row[2]) == ["Alice Smith", "Bob Jones"]
+
+    @pytest.mark.asyncio
+    async def test_persist_leaves_metadata_untouched_when_absent(self):
+        """A refetch with no structured metadata must not blank a stored value."""
+        import sqlalchemy as sa
+
+        from pka.constants import Source
+        from pka.db.queries import get_engine
+        from pka.db.schema import documents
+
+        doc_id = upsert_document(
+            source=Source.FIREFOX,
+            source_id="F-ARX-KEEP",
+            title="Title",
+            url_or_path="https://arxiv.org/abs/2301.00001",
+            date_added=None,
+            fetch_status=FetchStatus.PENDING,
+            doi="10.48550/arxiv.2301.00001",
+        )
+        _persist_fetch_result(FetchResult(
+            doc_id, "https://arxiv.org/abs/2301.00001", "fetched",
+            "Paper text.", 200, "fetched via arxiv api",
+        ))
+        with get_engine().connect() as con:
+            doi = con.execute(
+                sa.select(documents.c.doi).where(documents.c.id == doc_id)
+            ).scalar()
+        assert doi == "10.48550/arxiv.2301.00001"
+
+    @pytest.mark.asyncio
     async def test_embed_preserves_api_card_summary(self, mock_chroma):
         import sqlalchemy as sa
 

@@ -28,9 +28,23 @@ documents = sa.Table(
     sa.Column("note",         sa.Text),                    # free-text notes (e.g. long Calibre tags)
     sa.Column("doc_embedding", sa.LargeBinary),            # mean-pooled float32 vector (384-d)
     sa.Column("generated_summary", sa.Text),               # cached LLM summary (DESIGN.md §3.2)
+    # Structured bibliographic fields, cross-source (see DESIGN.md §3.2 and
+    # planning/DOCUMENT_METADATA_PLAN.md). Nullable, populated by whoever has
+    # the data — no per-source sidecar table.
+    sa.Column("doi",           sa.Text),                   # bare DOI, lowercased, no doi.org/ prefix
+    sa.Column("arxiv_id",      sa.Text),                   # normalize_arxiv_id form, no version suffix
+    sa.Column("isbn",          sa.Text),                   # normalize_isbn form, digits/X, no hyphens
+    sa.Column("year",          sa.Integer),                # publication year, not date_added
+    sa.Column("authors_json",  sa.Text),                   # JSON array of strings, order preserved
+    sa.Column("zotero_url",    sa.Text),                   # Zotero item `url` field, verbatim
+    sa.Column("zotero_path",   sa.Text),                   # resolved local attachment path
     sa.UniqueConstraint("source", "source_id", name="uq_source_item"),
     # Progress/status counts filter documents by source on every poll.
     sa.Index("ix_documents_source", "source"),
+    # Join keys for cross-source dedup (planning/TODO.md).
+    sa.Index("ix_documents_doi", "doi"),
+    sa.Index("ix_documents_arxiv_id", "arxiv_id"),
+    sa.Index("ix_documents_isbn", "isbn"),
 )
 
 source_tags = sa.Table(

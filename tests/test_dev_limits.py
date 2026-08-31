@@ -48,7 +48,10 @@ class TestDevLimits:
         monkeypatch.setattr(dev_limits.settings, "dev_ingestion_limit_zotero", 100)
 
         items = [
-            SimpleNamespace(source_id=f"k{i}", pdf_attachment_key=None)
+            SimpleNamespace(
+                source_id=f"k{i}", pdf_attachment_key=None, pdf_path=None,
+                url=None, doi=None, year=None, authors=[],
+            )
             for i in range(150)
         ]
         seen: list = []

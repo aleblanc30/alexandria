@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from pka.ingestion.fetch_base import (
     _http_timeout,
     _limiter,
 )
+from pka.ingestion.identifiers import normalize_doi
 from pka.ingestion.preprint_text import build_preprint_text
 
 log = logging.getLogger(__name__)
@@ -176,6 +178,11 @@ async def fetch_biorxiv_paper(
     pdf_text, pdf_status, pdf_err = await _fetch_biorxiv_pdf_text(client, meta.doi, version)
     card_summary = preprint_card_summary(meta.abstract)
     title = meta.title
+    doc_doi = normalize_doi(meta.doi)
+    authors_json = (
+        json.dumps([a.strip() for a in meta.authors.split("; ") if a.strip()])
+        if meta.authors else None
+    )
 
     if pdf_text:
         text = build_preprint_text(
@@ -213,4 +220,6 @@ async def fetch_biorxiv_paper(
         msg,
         title=title,
         card_summary=card_summary,
+        doi=doc_doi,
+        authors_json=authors_json,
     )

@@ -1,6 +1,6 @@
 # Structured document metadata in SQLite
 
-**Status:** proposed, not implemented.
+**Status:** implemented.
 **Unblocks:** `planning/TODO.md` → *Deduplication of items* (needs a DOI it can join on).
 **Touches:** `pka/db/schema.py`, `pka/db/queries.py`, `pka/db/init_db.py` (via
 `queries.init_db`), `pka/connectors/zotero.py`, `pka/ingestion/runners/zotero.py`,

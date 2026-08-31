@@ -1,6 +1,7 @@
 """Calibre book ingestion."""
 from __future__ import annotations
 
+import json
 import logging
 
 from pka.connectors.calibre import CalibreBook, split_calibre_tags
@@ -18,10 +19,21 @@ from pka.db.queries import (
 from pka.ingestion.book_extractor import extract_book_report, metadata_text
 from pka.ingestion.core import attach_summary_chunk, ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
+from pka.ingestion.openlibrary import isbn_checksum_valid, normalize_isbn
 from pka.ingestion.progress import should_stop, tick
 
 log = logging.getLogger(__name__)
 
+
+def _calibre_isbn(book: CalibreBook) -> str | None:
+    """Canonical ISBN, or ``None`` on a failed checksum — reject rather than
+    store a typo as a join key."""
+    isbn = normalize_isbn(book.isbn) if book.isbn else None
+    return isbn if isbn and isbn_checksum_valid(isbn) else None
+
+
+def _calibre_authors_json(book: CalibreBook) -> str | None:
+    return json.dumps(book.authors) if book.authors else None
 
 
 def _page_range(section: dict) -> dict:
@@ -108,6 +120,9 @@ def ingest_calibre_metadata(
                 FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING
             ),
             note         = note,
+            isbn         = _calibre_isbn(book),
+            year         = book.year,
+            authors_json = _calibre_authors_json(book),
         )
         if doc_id is None:
             return "skipped"
@@ -153,6 +168,9 @@ def ingest_calibre_books(
                     FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING
                 ),
                 note         = note,
+                isbn         = _calibre_isbn(book),
+                year         = book.year,
+                authors_json = _calibre_authors_json(book),
             )
             doc_ids[book.source_id] = doc_id
             insert_source_tags(doc_id, tags, source=Source.CALIBRE)

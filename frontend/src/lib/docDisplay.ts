@@ -22,7 +22,9 @@ export function clusterLabel(doc: DocumentOut | DocumentListItem): string | null
   return null
 }
 
-export function docYear(doc: DocumentOut | DocumentListItem): string {
+/** Year the item was saved (from date_added) — distinct from the true
+ * publication year on DocumentOut.year, which this does not read. */
+export function docAddedYear(doc: DocumentOut | DocumentListItem): string {
   if ('date_added' in doc && doc.date_added) {
     return String(new Date(doc.date_added * 1000).getFullYear())
   }

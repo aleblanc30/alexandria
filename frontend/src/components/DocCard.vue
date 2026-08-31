@@ -30,7 +30,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { DocumentListItem, DocumentOut } from '@/api/client'
-import { clusterLabel, docCoverUrl, docDescription, docSimilarity, docYear } from '@/lib/docDisplay'
+import { clusterLabel, docAddedYear, docCoverUrl, docDescription, docSimilarity } from '@/lib/docDisplay'
 import SourceBadge from './SourceBadge.vue'
 
 const props = defineProps<{
@@ -42,7 +42,7 @@ const props = defineProps<{
 defineEmits<{ click: []; 'toggle-check': [] }>()
 
 const cluster = computed(() => clusterLabel(props.doc))
-const year = computed(() => docYear(props.doc))
+const year = computed(() => docAddedYear(props.doc))
 const similarity = computed(() => docSimilarity(props.doc))
 const description = computed(() => docDescription(props.doc))
 const coverUrl = computed(() => docCoverUrl(props.doc))

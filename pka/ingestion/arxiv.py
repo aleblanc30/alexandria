@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import xml.etree.ElementTree as ET
@@ -17,6 +18,7 @@ from pka.ingestion.fetch_base import (
     _http_timeout,
     _limiter,
 )
+from pka.ingestion.identifiers import derive_arxiv_doi
 from pka.ingestion.preprint_text import build_preprint_text
 
 log = logging.getLogger(__name__)
@@ -210,6 +212,8 @@ async def fetch_arxiv_paper(
     pdf_text, pdf_status, pdf_err = await _fetch_arxiv_pdf_text(client, meta.arxiv_id)
     card_summary = preprint_card_summary(meta.abstract)
     title = meta.title
+    doi = derive_arxiv_doi(meta.arxiv_id)
+    authors_json = json.dumps(meta.authors) if meta.authors else None
 
     if pdf_text:
         text = build_preprint_text(
@@ -247,4 +251,7 @@ async def fetch_arxiv_paper(
         msg,
         title=title,
         card_summary=card_summary,
+        doi=doi,
+        arxiv_id=meta.arxiv_id,
+        authors_json=authors_json,
     )

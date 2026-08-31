@@ -152,6 +152,71 @@ def test_metadata_skips_known_books(mock_chroma):
     assert stats["skipped"] == 1
 
 
+class TestCalibreStructuredMetadata:
+    """isbn/year/authors_json, parsed by the connector and previously discarded."""
+
+    def test_metadata_pass_persists_isbn_year_authors(self, mock_chroma):
+        import json
+
+        from pka.ingestion.runners.calibre import ingest_calibre_metadata
+
+        book = _make_book(
+            source_id="META1", isbn="978-0-13-235088-4", year=2008,
+            authors=["Robert C. Martin"],
+        )
+        ingest_calibre_metadata([book])
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.isbn, documents.c.year, documents.c.authors_json)
+                .where(documents.c.source_id == "META1")
+            ).one()
+        assert row[0] == "9780132350884"
+        assert row[1] == 2008
+        assert json.loads(row[2]) == ["Robert C. Martin"]
+
+    def test_embed_pass_persists_isbn_year_authors(self, mock_chroma):
+        import json
+
+        from pka.ingestion.runners.calibre import ingest_calibre_books
+
+        book = _make_book(
+            source_id="EMB1", isbn="978-0-13-235088-4", year=2008,
+            authors=["Robert C. Martin"],
+        )
+        ingest_calibre_books([book])
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(documents.c.isbn, documents.c.year, documents.c.authors_json)
+                .where(documents.c.source_id == "EMB1")
+            ).one()
+        assert row[0] == "9780132350884"
+        assert row[1] == 2008
+        assert json.loads(row[2]) == ["Robert C. Martin"]
+
+    def test_failed_isbn_checksum_stored_as_null(self, mock_chroma):
+        """A bad checksum must not become a join key that collides with real ISBNs."""
+        from pka.ingestion.runners.calibre import ingest_calibre_metadata
+
+        book = _make_book(source_id="BADISBN", isbn="9780132350885")  # wrong check digit
+        ingest_calibre_metadata([book])
+        with get_engine().connect() as con:
+            isbn = con.execute(
+                sa.select(documents.c.isbn).where(documents.c.source_id == "BADISBN")
+            ).scalar()
+        assert isbn is None
+
+    def test_book_without_authors_stores_null_not_empty_array(self, mock_chroma):
+        from pka.ingestion.runners.calibre import ingest_calibre_metadata
+
+        book = _make_book(source_id="NOAUTH", authors=[])
+        ingest_calibre_metadata([book])
+        with get_engine().connect() as con:
+            authors_json = con.execute(
+                sa.select(documents.c.authors_json).where(documents.c.source_id == "NOAUTH")
+            ).scalar()
+        assert authors_json is None
+
+
 def test_embed_stops_on_cancel(mock_chroma):
     from pka.ingestion import progress as sp
     from pka.ingestion.runners.calibre import ingest_calibre_books

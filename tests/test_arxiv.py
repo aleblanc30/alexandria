@@ -96,6 +96,10 @@ class TestFetchArxivPaper:
         assert result.card_summary == "We revisit transformer architectures for language modeling."
         assert "Full paper body" in (result.text or "")
         assert result.error_msg == "fetched via arxiv api"
+        assert result.arxiv_id == "2301.00001"
+        assert result.doi == "10.48550/arxiv.2301.00001"
+        import json
+        assert json.loads(result.authors_json) == ["Alice Smith", "Bob Jones"]
 
     @pytest.mark.asyncio
     async def test_abstract_only_when_pdf_fails(self, monkeypatch):

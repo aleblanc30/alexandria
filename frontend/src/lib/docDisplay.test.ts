@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   clusterLabel,
+  docAddedYear,
   docDescription,
   docSimilarity,
-  docYear,
   toGridItem,
 } from './docDisplay'
 import type { DocumentOut } from '@/api/client'
@@ -25,6 +25,12 @@ const baseDoc: DocumentOut = {
   similarity: 0.92,
   description: 'A short abstract.',
   note: null,
+  doi: null,
+  doi_url: null,
+  arxiv_id: null,
+  isbn: null,
+  year: null,
+  authors: [],
 }
 
 describe('docDisplay', () => {
@@ -38,8 +44,8 @@ describe('docDisplay', () => {
     expect(clusterLabel(baseDoc)).toBe('Machine Learning')
   })
 
-  it('docYear formats from date_added', () => {
-    expect(docYear(baseDoc)).toBe('2023')
+  it('docAddedYear formats from date_added', () => {
+    expect(docAddedYear(baseDoc)).toBe('2023')
   })
 
   it('docSimilarity reads similarity when present', () => {

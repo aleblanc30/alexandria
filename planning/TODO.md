@@ -9,9 +9,9 @@ two when its priority changes; do not duplicate it in both.
 ## Ingestion & deduplication
 
 - [ ] **Deduplication of tags** — merge or collapse duplicate tag names (case, spacing, synonyms) so the tag index stays clean.
-- [ ] **Deduplication of items** — detect and merge duplicate documents/items across sources (same URL, DOI, arXiv ID, etc.) instead of storing multiple records. Blocked on a joinable DOI: see `DOCUMENT_METADATA_PLAN.md`.
-- [ ] **Persist structured document metadata** — every runner flattens authors/DOI/year into the embed blob, so the chunk text is the only copy; add `doi` / `arxiv_id` / `isbn` (all indexed), `year` and `authors_json` to `documents`, derive the DOI of a preprint from its arXiv ID, and split Zotero's `url_or_path` into `zotero_url` / `zotero_path`; plan in `DOCUMENT_METADATA_PLAN.md`.
-- [ ] **Collapse the `documents` write-path signature** — `insert_document_if_new` and `upsert_document` (`pka/db/queries.py`) are raw SQL with hand-maintained column lists in three places each (INSERT, VALUES, `ON CONFLICT DO UPDATE`), already 9 parameters and 16 after `DOCUMENT_METADATA_PLAN.md`. Take a dataclass or `**fields` mapping, or move to a Core `insert()`, so a new column is one edit rather than six. Do it *after* the metadata columns land — a signature refactor mixed into a migration hides both.
+- [ ] **Deduplication of items** — detect and merge duplicate documents/items across sources (same URL, DOI, arXiv ID, etc.) instead of storing multiple records. `documents.doi` / `arxiv_id` / `isbn` are now joinable (indexed, canonical form) — see `DOCUMENT_METADATA_PLAN.md`.
+- [x] **Persist structured document metadata** — every runner flattens authors/DOI/year into the embed blob, so the chunk text is the only copy; add `doi` / `arxiv_id` / `isbn` (all indexed), `year` and `authors_json` to `documents`, derive the DOI of a preprint from its arXiv ID, and split Zotero's `url_or_path` into `zotero_url` / `zotero_path`; plan in `DOCUMENT_METADATA_PLAN.md`.
+- [ ] **Collapse the `documents` write-path signature** — `insert_document_if_new` and `upsert_document` (`pka/db/queries.py`) are raw SQL with hand-maintained column lists in three places each (INSERT, VALUES, `ON CONFLICT DO UPDATE`), now 16 parameters after `DOCUMENT_METADATA_PLAN.md`. Take a dataclass or `**fields` mapping, or move to a Core `insert()`, so a new column is one edit rather than six.
 - [x] **Domain frequency report** — list all domain names from ingested items, sorted by frequency, to prioritize which domains deserve special fetch/handlers next.
 - [ ] **Ingest Zotero PDF attachments** — `item.pdf_path` is recorded and never read, so Zotero indexes title + abstract only (DESIGN.md §3.2); needs a phase-2 pass mirroring `ingest_calibre_fulltext` over `extract_book_report`, offset by `existing_chunk_count()` — no new extraction machinery.
 - [ ] **Exempt preprint PDFs from the page cap** — `fetch_pdf_max_pages` caps every PDF route at 3 pages, so arXiv/bioRxiv now index only title + abstract + 3 pages.
@@ -26,6 +26,10 @@ two when its priority changes; do not duplicate it in both.
 
 - [x] **arXiv ingester** — Firefox fetch handler for arxiv.org (`pka/ingestion/arxiv.py`): export.arxiv.org API metadata + PDF; title and abstract on browse cards.
 - [x] **bioRxiv ingester** — Firefox fetch handler for biorxiv.org (`pka/ingestion/biorxiv.py`): api.biorxiv.org DOI lookup + PDF; title and abstract on browse cards.
+- [ ] **Youtube ingester** — Firefox fetch handler for youtube pages saved as bookmarks
+- [ ] **reddit ingester** — Firefox fetch handler for reddit pages saved as bookmarks
+- [ ] **amazon ingester** — extend current amazon ingester to other domains (.fr, .com, .in ...)
+
 
 ## Active learning
 

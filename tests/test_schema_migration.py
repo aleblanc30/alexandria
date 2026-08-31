@@ -169,6 +169,13 @@ _MIGRATED_COLUMNS = [
     ("documents", "card_summary"),
     ("documents", "note"),
     ("documents", "doc_embedding"),
+    ("documents", "doi"),
+    ("documents", "arxiv_id"),
+    ("documents", "isbn"),
+    ("documents", "year"),
+    ("documents", "authors_json"),
+    ("documents", "zotero_url"),
+    ("documents", "zotero_path"),
     ("chunks", "chunk_pass"),
     ("chunks", "resolved_by"),
     ("chunks", "source_ref"),
@@ -185,6 +192,9 @@ _MIGRATED_COLUMNS = [
 _MIGRATED_INDEXES = [
     ("chunks", "ix_chunks_document_id"),
     ("documents", "ix_documents_source"),
+    ("documents", "ix_documents_doi"),
+    ("documents", "ix_documents_arxiv_id"),
+    ("documents", "ix_documents_isbn"),
     ("overlay_tags", "uq_overlay_doc_tag_origin"),
 ]
 

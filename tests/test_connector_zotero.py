@@ -7,6 +7,8 @@ from pka.connectors.zotero import (
     zotero_card_summary,
     zotero_document_url_or_path,
     zotero_embed_text,
+    zotero_path,
+    zotero_url,
 )
 
 
@@ -107,7 +109,10 @@ class TestLoadItems:
             item_type="journalArticle", collections=[], tags=[],
             pdf_path=pdf, date_added=None,
         )
-        assert zotero_document_url_or_path(item) == "https://journal.example/article"
+        assert (
+            zotero_document_url_or_path(zotero_url(item), zotero_path(item))
+            == "https://journal.example/article"
+        )
 
     def test_zotero_document_url_or_path_pdf_without_url(self, tmp_path):
         pdf = tmp_path / "paper.pdf"
@@ -117,7 +122,41 @@ class TestLoadItems:
             doi=None, url=None, item_type="journalArticle", collections=[], tags=[],
             pdf_path=pdf, date_added=None,
         )
-        assert zotero_document_url_or_path(item) == str(pdf)
+        assert (
+            zotero_document_url_or_path(zotero_url(item), zotero_path(item)) == str(pdf)
+        )
+
+    def test_zotero_document_url_or_path_drops_doi_rung(self, tmp_path):
+        """No URL, no PDF, only a DOI: url_or_path is NULL — DOI lives in documents.doi."""
+        item = ZoteroItem(
+            source_id="X", title="T", authors=[], abstract=None, year=None,
+            doi="10.1/xyz", url=None, item_type="journalArticle",
+            collections=[], tags=[], pdf_path=None, date_added=None,
+        )
+        assert zotero_document_url_or_path(zotero_url(item), zotero_path(item)) is None
+
+    def test_zotero_url_and_path_populate_independently(self, tmp_path):
+        pdf = tmp_path / "paper.pdf"
+        pdf.write_bytes(b"%PDF")
+        item = ZoteroItem(
+            source_id="X", title="T", authors=[], abstract=None, year=None,
+            doi=None, url="https://journal.example/article",
+            item_type="journalArticle", collections=[], tags=[],
+            pdf_path=pdf, date_added=None,
+        )
+        assert zotero_url(item) == "https://journal.example/article"
+        assert zotero_path(item) == str(pdf)
+
+    def test_zotero_url_reaches_non_http_values(self):
+        item = ZoteroItem(
+            source_id="X", title="T", authors=[], abstract=None, year=None,
+            doi=None, url="urn:isbn:0000000000", item_type="book",
+            collections=[], tags=[], pdf_path=None, date_added=None,
+        )
+        assert zotero_url(item) == "urn:isbn:0000000000"
+        assert zotero_document_url_or_path(zotero_url(item), zotero_path(item)) == (
+            "urn:isbn:0000000000"
+        )
 
     def test_zotero_embed_text_includes_authors(self):
         item = ZoteroItem(

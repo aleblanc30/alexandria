@@ -37,7 +37,7 @@ def get_engine() -> sa.Engine:
         cfg.data_dir.mkdir(parents=True, exist_ok=True)
         _engine = sa.create_engine(
             f"sqlite:///{cfg.archive_db}",
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 30},
         )
         with _engine.connect() as con:
             con.execute(sa.text("PRAGMA journal_mode=WAL"))
@@ -94,6 +94,21 @@ def init_db() -> None:
             con.execute(sa.text(
                 "ALTER TABLE documents ADD COLUMN doc_embedding BLOB"
             ))
+        # Migration: structured bibliographic fields (DOCUMENT_METADATA_PLAN.md)
+        if "doi" not in cols:
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN doi TEXT"))
+        if "arxiv_id" not in cols:
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN arxiv_id TEXT"))
+        if "isbn" not in cols:
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN isbn TEXT"))
+        if "year" not in cols:
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN year INTEGER"))
+        if "authors_json" not in cols:
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN authors_json TEXT"))
+        if "zotero_url" not in cols:
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN zotero_url TEXT"))
+        if "zotero_path" not in cols:
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN zotero_path TEXT"))
 
         # Migration: persist enrichment provenance alongside each chunk so the
         # API can report which rung of the ladder produced it (DESIGN.md §3.2).
@@ -183,6 +198,15 @@ def init_db() -> None:
         con.execute(sa.text(
             "CREATE INDEX IF NOT EXISTS ix_documents_source ON documents(source)"
         ))
+        con.execute(sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_documents_doi ON documents(doi)"
+        ))
+        con.execute(sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_documents_arxiv_id ON documents(arxiv_id)"
+        ))
+        con.execute(sa.text(
+            "CREATE INDEX IF NOT EXISTS ix_documents_isbn ON documents(isbn)"
+        ))
 
 
 # ── Documents ────────────────────────────────────────────────────────────────
@@ -197,6 +221,14 @@ def insert_document_if_new(
     zotero_attachment_key: str | None = None,
     item_type: str | None = None,
     note: str | None = None,
+    *,
+    doi: str | None = None,
+    arxiv_id: str | None = None,
+    isbn: str | None = None,
+    year: int | None = None,
+    authors_json: str | None = None,
+    zotero_url: str | None = None,
+    zotero_path: str | None = None,
 ) -> int | None:
     """Insert a document when ``(source, source_id)`` is not already archived."""
     eng = get_engine()
@@ -215,9 +247,11 @@ def insert_document_if_new(
                 INSERT INTO documents
                     (source, source_id, title, url_or_path,
                      zotero_attachment_key, date_added, ingested_at, fetch_status,
-                     item_type, note)
+                     item_type, note, doi, arxiv_id, isbn, year, authors_json,
+                     zotero_url, zotero_path)
                 VALUES
-                    (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type, :note)
+                    (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type, :note,
+                     :doi, :arxiv_id, :isbn, :year, :authors_json, :zurl, :zpath)
             """),
             {
                 "source": str(source), "sid": source_id,
@@ -225,6 +259,8 @@ def insert_document_if_new(
                 "zak": zotero_attachment_key,
                 "da": date_added, "now": now, "fs": str(fetch_status),
                 "item_type": item_type, "note": note,
+                "doi": doi, "arxiv_id": arxiv_id, "isbn": isbn, "year": year,
+                "authors_json": authors_json, "zurl": zotero_url, "zpath": zotero_path,
             },
         )
         row = con.execute(
@@ -246,6 +282,14 @@ def upsert_document(
     zotero_attachment_key: str | None = None,
     item_type: str | None = None,
     note: str | None = None,
+    *,
+    doi: str | None = None,
+    arxiv_id: str | None = None,
+    isbn: str | None = None,
+    year: int | None = None,
+    authors_json: str | None = None,
+    zotero_url: str | None = None,
+    zotero_path: str | None = None,
 ) -> int:
     """Insert a document or update its mutable fields. Returns the document id.
 
@@ -259,9 +303,11 @@ def upsert_document(
             INSERT INTO documents
                 (source, source_id, title, url_or_path,
                  zotero_attachment_key, date_added, ingested_at, fetch_status,
-                 item_type, note)
+                 item_type, note, doi, arxiv_id, isbn, year, authors_json,
+                 zotero_url, zotero_path)
             VALUES
-                (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type, :note)
+                (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type, :note,
+                 :doi, :arxiv_id, :isbn, :year, :authors_json, :zurl, :zpath)
             ON CONFLICT(source, source_id) DO UPDATE SET
                 title        = excluded.title,
                 url_or_path  = excluded.url_or_path,
@@ -271,7 +317,14 @@ def upsert_document(
                     excluded.zotero_attachment_key, documents.zotero_attachment_key
                 ),
                 note         = COALESCE(excluded.note, documents.note),
-                ingested_at  = COALESCE(documents.ingested_at, excluded.ingested_at)
+                ingested_at  = COALESCE(documents.ingested_at, excluded.ingested_at),
+                doi          = COALESCE(excluded.doi, documents.doi),
+                arxiv_id     = COALESCE(excluded.arxiv_id, documents.arxiv_id),
+                isbn         = COALESCE(excluded.isbn, documents.isbn),
+                year         = COALESCE(excluded.year, documents.year),
+                authors_json = COALESCE(excluded.authors_json, documents.authors_json),
+                zotero_url   = COALESCE(excluded.zotero_url, documents.zotero_url),
+                zotero_path  = COALESCE(excluded.zotero_path, documents.zotero_path)
         """)
         con.execute(stmt, {
             "source": str(source), "sid": source_id,
@@ -279,6 +332,8 @@ def upsert_document(
             "zak": zotero_attachment_key,
             "da": date_added, "now": now, "fs": str(fetch_status),
             "item_type": item_type, "note": note,
+            "doi": doi, "arxiv_id": arxiv_id, "isbn": isbn, "year": year,
+            "authors_json": authors_json, "zurl": zotero_url, "zpath": zotero_path,
         })
         row = con.execute(
             sa.select(documents.c.id).where(
@@ -289,21 +344,41 @@ def upsert_document(
     return row[0]
 
 
-def refresh_zotero_attachment_keys(keys_by_source_id: dict[str, str]) -> int:
-    """Backfill ``zotero_attachment_key`` for archived Zotero rows after connector load."""
-    if not keys_by_source_id:
+_ZOTERO_REFRESH_COALESCE_KEYS = (
+    "zotero_attachment_key", "doi", "arxiv_id", "year", "authors_json",
+    "zotero_url", "zotero_path",
+)
+
+
+def refresh_zotero_metadata(by_source_id: dict[str, dict]) -> int:
+    """Backfill Zotero-derived columns for already-archived rows after connector load.
+
+    Each value in ``by_source_id`` carries ``zotero_attachment_key``, ``doi``,
+    ``arxiv_id``, ``year``, ``authors_json``, ``zotero_url``, ``zotero_path``
+    (``COALESCE``d — a missing value here leaves the stored one alone) and
+    ``url_or_path`` (written unconditionally, already recomputed by the
+    caller). The unconditional ``url_or_path`` write is what reconciles a row
+    written by the old DOI-in-url_or_path ladder with one written by the new
+    one — see ``planning/DOCUMENT_METADATA_PLAN.md``'s "split-brain" analysis.
+    """
+    if not by_source_id:
         return 0
     eng = get_engine()
     updated = 0
     with eng.begin() as con:
-        for source_id, attachment_key in keys_by_source_id.items():
+        for source_id, fields in by_source_id.items():
+            values = {
+                key: sa.func.coalesce(sa.literal(fields.get(key)), documents.c[key])
+                for key in _ZOTERO_REFRESH_COALESCE_KEYS
+            }
+            values["url_or_path"] = fields.get("url_or_path")
             result = con.execute(
                 sa.update(documents)
                 .where(
                     (documents.c.source == Source.ZOTERO)
                     & (documents.c.source_id == source_id)
                 )
-                .values(zotero_attachment_key=attachment_key)
+                .values(**values)
             )
             updated += result.rowcount or 0
     return updated

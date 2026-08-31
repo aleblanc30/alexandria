@@ -70,6 +70,15 @@ export interface DocumentOut  {
   similarity: number | null
   description: string
   note: string | null
+  // Structured bibliographic fields (DESIGN.md §3.2).
+  doi: string | null
+  /** https://doi.org/<doi>, computed by the backend. */
+  doi_url: string | null
+  arxiv_id: string | null
+  isbn: string | null
+  /** Publication year — distinct from date_added ("when saved"). */
+  year: number | null
+  authors: string[]
 }
 export interface ImageDetail { image_type: string | null; ocr_text: string | null }
 export type RedditKind = 'post' | 'comment'

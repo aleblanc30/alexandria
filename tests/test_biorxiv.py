@@ -90,6 +90,9 @@ class TestFetchBiorxivPaper:
         assert result.title == "A neural circuit for reward"
         assert result.card_summary == "We map dopamine neurons in the ventral tegmental area."
         assert "BioRxiv PDF body" in (result.text or "")
+        assert result.doi == "10.1101/2024.01.16.575895"
+        import json
+        assert json.loads(result.authors_json) == ["Smith, A.", "Jones, B."]
 
     @pytest.mark.asyncio
     async def test_non_biorxiv_returns_none(self):
