@@ -398,6 +398,7 @@ class Settings(BaseSettings):
     # Optional even when the Google Books rung is on: keyless use only costs a
     # lower per-IP quota, which is what keeps it the switch-on-and-try default.
     google_books_api_key: str = ""  # credential — SECRET_ALEXANDRIA_GOOGLE_BOOKS_API_KEY
+    staan_api_key: str = ""  # credential — SECRET_ALEXANDRIA_STAAN_API_KEY
     openlibrary_base_url: str = "https://openlibrary.org"
     summary_max_sentences: int = 4  # MiniLM truncates in the low hundreds of word-pieces
 

@@ -200,9 +200,75 @@ def _brave_search(title: str, authors: list[str]) -> BookSynopsis | None:
     return None
 
 
+STAAN_SEARCH_URL = "https://api.staan.ai/v2/search/web"
+
+
+def _staan_search(title: str, authors: list[str]) -> BookSynopsis | None:
+    """Staan web search, verified the same loose way as the Brave rung.
+
+    Needs ``SECRET_ALEXANDRIA_STAAN_API_KEY``; without one this rung skips
+    rather than erroring, so listing it in the chain is harmless until a key
+    exists. Marked ``resolved_by="staan"`` for the same auditing reason as Brave.
+    """
+    if not cfg.staan_api_key:
+        log.debug("Staan rung skipped: no staan_api_key configured")
+        return None
+
+    query = " ".join([f'"{title}"', *(f'"{a}"' for a in authors[:1]), "book"])
+    _limiter.wait(STAAN_SEARCH_URL)
+    try:
+        resp = httpx.get(
+            STAAN_SEARCH_URL,
+            params={"q": query, "count": 5},
+            follow_redirects=True,
+            timeout=cfg.fetch_timeout_seconds,
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {cfg.staan_api_key}",
+                "User-Agent": cfg.fetch_user_agent,
+            },
+        )
+    except httpx.HTTPError as exc:
+        log.debug("Staan request failed: %s", exc)
+        return None
+    if resp.status_code >= 400:
+        log.debug("Staan returned HTTP %d", resp.status_code)
+        return None
+    try:
+        payload = resp.json()
+    except ValueError:
+        log.debug("Staan returned non-JSON")
+        return None
+
+    web = payload.get("web") if isinstance(payload, dict) else None
+    results = web.get("results") if isinstance(web, dict) else None
+    if not isinstance(results, list):
+        return None
+
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        result_title = str(item.get("title") or "").strip()
+        snippet = str(item.get("snippet") or "").strip()
+        if not snippet:
+            continue
+        if not _verify_web_result(title, authors, result_title, snippet):
+            continue
+        return BookSynopsis(
+            title=title,
+            description=snippet,
+            authors=authors,
+            resolved_by="staan",
+        )
+
+    log.debug("No verified Staan match for %r", title)
+    return None
+
+
 _PROVIDERS: dict[str, SearchProvider] = {
     "google_books": _google_books_search,
     "brave": _brave_search,
+    "staan": _staan_search,
 }
 
 

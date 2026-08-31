@@ -471,12 +471,13 @@ author fields the same round-trip check can verify. `pka/ingestion/book_search.p
 keeps the rung behind a provider registry, and `search_provider` is a
 comma-separated **chain** rather than a single choice, so a weaker backend runs
 *after* a stronger one instead of replacing it: `google_books,brave` consults the
-catalogue first and falls to web snippets only when it misses. A Brave web-search
-provider ships alongside Google Books; it needs a key, returns a search snippet
-rather than a curated synopsis, and can only verify one-directionally (the
-extracted title must appear in the page title, since a search engine has no
-canonical title field), which is why it belongs last in a chain. Listing a
-backend whose key is absent is harmless — that rung skips rather than erroring. The query is always a pure function of `(title, authors)`,
+catalogue first and falls to web snippets only when it misses. Brave and Staan
+ship as web-search providers alongside Google Books; both need a key, return a
+search snippet rather than a curated synopsis, and can only verify
+one-directionally (the extracted title must appear in the page title, since a
+search engine has no canonical title field), which is why they belong last in a
+chain. Listing a backend whose key is absent is harmless — that rung skips
+rather than erroring. The query is always a pure function of `(title, authors)`,
 never a model-authored string, so results are cacheable by that key and the
 whole ladder is replayable without re-running the VLM. An empty title is a clean
 stop condition: no identifier, no query, record the reason.

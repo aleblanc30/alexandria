@@ -313,3 +313,57 @@ class TestBrave:
     def test_http_error_returns_none(self, monkeypatch, brave_on):
         _respond(monkeypatch, {}, status=401)
         assert bs.search_synopsis("Dune") is None
+
+
+class TestStaan:
+    @pytest.fixture
+    def staan_on(self, monkeypatch, search_on):
+        monkeypatch.setattr(cfg, "search_provider", "staan")
+        monkeypatch.setattr(cfg, "staan_api_key", "staan-key")
+
+    def _web(self, title="Dune by Frank Herbert | Goodreads", snippet="A desert planet epic."):
+        return {"web": {"results": [{"title": title, "url": "http://x", "snippet": snippet}]}}
+
+    def test_skips_without_a_key(self, monkeypatch, search_on):
+        monkeypatch.setattr(cfg, "search_provider", "staan")
+        monkeypatch.setattr(cfg, "staan_api_key", "")
+        called = []
+        monkeypatch.setattr(bs.httpx, "get", lambda *a, **k: called.append(1))
+        assert bs.search_synopsis("Dune") is None
+        assert called == [], "listing staan without a key must be harmless, not an error"
+
+    def test_verified_hit(self, monkeypatch, staan_on):
+        _respond(monkeypatch, self._web())
+        out = bs.search_synopsis("Dune", ["Frank Herbert"])
+        assert out is not None
+        assert out.resolved_by == "staan"
+        assert out.description == "A desert planet epic."
+
+    def test_sends_the_bearer_token(self, monkeypatch, staan_on):
+        captured = {}
+
+        def fake_get(url, params=None, headers=None, **kwargs):
+            captured["headers"] = headers
+            captured["params"] = params
+            return httpx.Response(200, json=self._web(), request=httpx.Request("GET", url))
+
+        monkeypatch.setattr(bs.httpx, "get", fake_get)
+        bs.search_synopsis("Dune", ["Frank Herbert"])
+        assert captured["headers"]["Authorization"] == "Bearer staan-key"
+        assert '"Dune"' in captured["params"]["q"]
+
+    def test_unrelated_page_rejected(self, monkeypatch, staan_on):
+        _respond(monkeypatch, self._web(title="Neuromancer | Wikipedia", snippet="Cyberpunk."))
+        assert bs.search_synopsis("Dune", ["Frank Herbert"]) is None
+
+    def test_right_title_wrong_author_rejected(self, monkeypatch, staan_on):
+        _respond(monkeypatch, self._web(title="Dune | SomePublisher", snippet="A book."))
+        assert bs.search_synopsis("Dune", ["Frank Herbert"]) is None
+
+    def test_empty_snippet_skipped(self, monkeypatch, staan_on):
+        _respond(monkeypatch, self._web(snippet=""))
+        assert bs.search_synopsis("Dune", ["Frank Herbert"]) is None
+
+    def test_http_error_returns_none(self, monkeypatch, staan_on):
+        _respond(monkeypatch, {}, status=401)
+        assert bs.search_synopsis("Dune") is None
