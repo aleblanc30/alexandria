@@ -25,6 +25,8 @@
       </RouterLink>
     </div>
 
+    <DomainTopLists :data="ingest.domains" />
+
     <label class="experimental-toggle">
       <input
         type="checkbox"
@@ -41,6 +43,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import DomainTopLists from '@/components/DomainTopLists.vue'
 import { EXPERIMENTAL_SOURCES, SOURCE_COLORS, SOURCE_LABELS } from '@/constants/sources'
 import { useIngestionStore } from '@/stores/ingestion'
 import { useUiStore } from '@/stores/ui'

@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import sqlalchemy as sa
 
+from pka.constants import FetchStatus
 from pka.db.queries import get_engine
 from pka.db.schema import documents
 
@@ -32,7 +33,12 @@ def extract_domain(url_or_path: str | None) -> str | None:
 
 
 def domain_has_fetch_handler(domain: str) -> bool:
-    """True when Firefox fetch has a domain-specific handler for this host."""
+    """True when Firefox fetch has a domain-specific handler for this host.
+
+    Mirrors the dispatch chain in ``pka.ingestion.fetcher._fetch_one_impl`` at
+    the domain level — a new handler there needs a matching predicate here or
+    this report silently under-counts.
+    """
     from pka.ingestion.amazon import is_amazon_host
     from pka.ingestion.arxiv import is_arxiv_url
     from pka.ingestion.biorxiv import is_biorxiv_url
@@ -77,9 +83,30 @@ def build_domain_frequency_report(
             "count": count,
             "has_handler": domain_has_fetch_handler(domain),
             "by_fetch_status": dict(status_by_domain[domain]),
+            "unfetchable": status_by_domain[domain].get(str(FetchStatus.UNFETCHABLE), 0),
         }
         for domain, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     ]
     if limit is not None:
         report = report[:limit]
     return report
+
+
+def build_domain_top_lists(
+    *,
+    source: str | None = None,
+    limit: int = 10,
+) -> dict[str, list[dict[str, Any]]]:
+    """Top domains by document count and by unfetchable count, from one scan.
+
+    ``skipped`` documents are excluded from the rejected ranking — that status
+    marks a deliberate policy outcome (non-HTML extension, Wikipedia special
+    page), not a fetch failure, so it must not inflate a domain's apparent
+    need for a handler.
+    """
+    rows = build_domain_frequency_report(source=source)
+    rejected = sorted(
+        (r for r in rows if r["unfetchable"] > 0),
+        key=lambda r: (-r["unfetchable"], r["domain"]),
+    )
+    return {"top_domains": rows[:limit], "top_unfetchable": rejected[:limit]}

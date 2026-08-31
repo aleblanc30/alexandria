@@ -1441,6 +1441,31 @@ class TestIngestion:
         assert r.status_code == 200
         assert isinstance(r.json(), list)
 
+    def test_domains_returns_both_lists(self, client):
+        from pka.constants import FetchStatus, Source
+        from tests.conftest import make_document
+
+        make_document(
+            Source.FIREFOX, "f1", "A", "https://a.com/1", 1, fetch_status=FetchStatus.FETCHED
+        )
+        make_document(
+            Source.FIREFOX, "f2", "B", "https://b.com/1", 1, fetch_status=FetchStatus.UNFETCHABLE
+        )
+
+        r = client.get("/ingestion/domains")
+        assert r.status_code == 200
+        data = r.json()
+        assert {"top_domains", "top_unfetchable"} == set(data.keys())
+        assert any(row["domain"] == "b.com" for row in data["top_unfetchable"])
+
+    def test_domains_rejects_bad_limit(self, client):
+        assert client.get("/ingestion/domains?limit=0").status_code == 400
+        assert client.get("/ingestion/domains?limit=101").status_code == 400
+
+    def test_domains_rejects_unknown_source(self, client):
+        r = client.get("/ingestion/domains?source=nope")
+        assert r.status_code == 400
+
     def test_sync_valid_source_queued(self, client, monkeypatch):
         from pka.ingestion import progress as sp
 

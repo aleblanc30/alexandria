@@ -4,6 +4,7 @@ Usage::
 
     alexandria domain-report
     alexandria domain-report --source firefox --limit 50
+    alexandria domain-report --rejected
     alexandria domain-report --json
 """
 
@@ -52,6 +53,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Show only the top N domains",
     )
     parser.add_argument(
+        "--rejected",
+        action="store_true",
+        help="Sort by unfetchable count instead of document count",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit JSON instead of a human-readable table",
@@ -59,7 +65,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     init_db()
-    rows = build_domain_frequency_report(source=args.source, limit=args.limit)
+    if args.rejected:
+        rows = build_domain_frequency_report(source=args.source)
+        rows = sorted(
+            (r for r in rows if r["unfetchable"] > 0),
+            key=lambda r: (-r["unfetchable"], r["domain"]),
+        )
+        rows = rows[: args.limit]
+    else:
+        rows = build_domain_frequency_report(source=args.source, limit=args.limit)
 
     if args.json:
         print(json.dumps(rows, indent=2))

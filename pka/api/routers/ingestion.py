@@ -13,9 +13,10 @@ from fastapi.responses import StreamingResponse
 
 from pka.api import source_paths as spaths
 from pka.api.dependencies import get_engine
-from pka.api.schemas.ingestion import SourcePathUpdate
+from pka.api.schemas.ingestion import DomainTopLists, SourcePathUpdate
 from pka.constants import ALL_SOURCES, FetchStatus, Source
 from pka.db.schema import documents, fetch_log
+from pka.domains import build_domain_top_lists
 from pka.ingestion import progress as sp
 from pka.ingestion.progress.baselines import (
     build_ingestion_status,
@@ -203,6 +204,16 @@ def purge_source_endpoint(source: str):
     sp.reset(source)
     _seed_baselines(source)
     return {"status": "purged", "source": source, "counts": counts}
+
+
+@router.get("/domains", response_model=DomainTopLists)
+def domain_top_lists(source: str | None = None, limit: int = 10):
+    """Top domains by document count and by unfetchable count."""
+    if source:
+        require_source(source)
+    if not 1 <= limit <= 100:
+        raise HTTPException(400, "limit must be between 1 and 100")
+    return build_domain_top_lists(source=source, limit=limit)
 
 
 @router.get("/unfetchable")

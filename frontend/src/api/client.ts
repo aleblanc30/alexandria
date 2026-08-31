@@ -205,6 +205,8 @@ export interface SyncEvent {
   counts: SourceCounts
 }
 export interface UnfetchableRow  { id: number; title: string; url: string; http_status: number | null; error: string | null; timestamp: number }
+export interface DomainRow { domain: string; count: number; unfetchable: number; has_handler: boolean; by_fetch_status: Record<string, number> }
+export interface DomainTopLists { top_domains: DomainRow[]; top_unfetchable: DomainRow[] }
 export interface ReadingList   { list_id: number; name: string; description: string; created_at: number; item_count: number }
 export interface ReadingListItem { id: number; position: number; note: string; doc_id: number; title: string; source: string; url_or_path: string | null }
 
@@ -348,6 +350,12 @@ export function syncEvents(
 export const unfetchableUrls    = (limit = 50, offset = 0) =>
   req<UnfetchableRow[]>(
     `/ingestion/unfetchable?limit=${limit}&offset=${offset}`,
+    {},
+    INGESTION_TIMEOUT_MS,
+  )
+export const domainTopLists     = (limit = 10, source?: string) =>
+  req<DomainTopLists>(
+    `/ingestion/domains?limit=${limit}${source ? `&source=${encodeURIComponent(source)}` : ''}`,
     {},
     INGESTION_TIMEOUT_MS,
   )

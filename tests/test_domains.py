@@ -4,6 +4,7 @@ from pka.constants import FetchStatus, Source
 from pka.db.queries import init_db
 from pka.domains import (
     build_domain_frequency_report,
+    build_domain_top_lists,
     domain_has_fetch_handler,
     extract_domain,
 )
@@ -84,6 +85,7 @@ class TestBuildDomainFrequencyReport:
         assert rows[0]["count"] == 2
         assert rows[0]["by_fetch_status"] == {"fetched": 1, "pending": 1}
         assert rows[0]["has_handler"] is False
+        assert rows[0]["unfetchable"] == 0
         assert rows[1]["count"] == 1
         assert rows[1]["has_handler"] is True
 
@@ -98,3 +100,76 @@ class TestBuildDomainFrequencyReport:
     def test_empty_archive(self):
         init_db()
         assert build_domain_frequency_report() == []
+
+
+class TestBuildDomainTopLists:
+    def test_ranks_by_count_and_by_unfetchable(self):
+        init_db()
+        # a.com: 3 docs, 1 unfetchable
+        make_document(
+            Source.FIREFOX, "f1", "A1", "https://a.com/1", 1, fetch_status=FetchStatus.FETCHED
+        )
+        make_document(
+            Source.FIREFOX, "f2", "A2", "https://a.com/2", 1, fetch_status=FetchStatus.FETCHED
+        )
+        make_document(
+            Source.FIREFOX, "f3", "A3", "https://a.com/3", 1, fetch_status=FetchStatus.UNFETCHABLE
+        )
+        # b.com: 2 docs, 2 unfetchable
+        make_document(
+            Source.FIREFOX, "f4", "B1", "https://b.com/1", 1, fetch_status=FetchStatus.UNFETCHABLE
+        )
+        make_document(
+            Source.FIREFOX, "f5", "B2", "https://b.com/2", 1, fetch_status=FetchStatus.UNFETCHABLE
+        )
+        # c.com: 1 doc, never unfetchable
+        make_document(
+            Source.FIREFOX, "f6", "C1", "https://c.com/1", 1, fetch_status=FetchStatus.FETCHED
+        )
+
+        result = build_domain_top_lists()
+        assert [r["domain"] for r in result["top_domains"]] == ["a.com", "b.com", "c.com"]
+        assert [r["domain"] for r in result["top_unfetchable"]] == ["b.com", "a.com"]
+        assert result["top_unfetchable"][0]["unfetchable"] == 2
+        assert result["top_unfetchable"][1]["unfetchable"] == 1
+
+    def test_zero_unfetchable_domain_excluded_from_rejected(self):
+        init_db()
+        make_document(
+            Source.FIREFOX, "f1", "A", "https://a.com", 1, fetch_status=FetchStatus.FETCHED
+        )
+
+        result = build_domain_top_lists()
+        assert result["top_unfetchable"] == []
+
+    def test_ties_break_on_domain_name(self):
+        init_db()
+        make_document(
+            Source.FIREFOX, "f1", "B", "https://b.com", 1, fetch_status=FetchStatus.UNFETCHABLE
+        )
+        make_document(
+            Source.FIREFOX, "f2", "A", "https://a.com", 1, fetch_status=FetchStatus.UNFETCHABLE
+        )
+
+        result = build_domain_top_lists()
+        assert [r["domain"] for r in result["top_unfetchable"]] == ["a.com", "b.com"]
+
+    def test_limit_truncates_both_lists_independently(self):
+        init_db()
+        for i in range(3):
+            make_document(
+                Source.FIREFOX,
+                f"f{i}",
+                f"D{i}",
+                f"https://d{i}.com",
+                1,
+                fetch_status=FetchStatus.UNFETCHABLE,
+            )
+
+        result = build_domain_top_lists(limit=2)
+        assert len(result["top_domains"]) == 2
+        assert len(result["top_unfetchable"]) == 2
+
+    def test_empty_archive(self):
+        init_db()
+        assert build_domain_top_lists() == {"top_domains": [], "top_unfetchable": []}

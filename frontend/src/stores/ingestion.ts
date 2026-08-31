@@ -15,6 +15,7 @@ type Source = typeof SOURCES[number]
 export const useIngestionStore = defineStore('ingestion', () => {
   const status          = ref<api.IngestionStatus | null>(null)
   const unfetchable     = shallowRef<api.UnfetchableRow[]>([])
+  const domains         = shallowRef<api.DomainTopLists | null>(null)
   const progress        = ref<Record<string, api.SyncProgress>>({})
   /** Queued locally until the backend reports status=running (avoids poll stopping early). */
   const pendingJob      = ref<Record<string, JobKind>>({})
@@ -178,6 +179,10 @@ export const useIngestionStore = defineStore('ingestion', () => {
     try {
       unfetchable.value = await api.unfetchableUrls()
     } catch { /* unfetchable list is non-critical */ }
+
+    try {
+      domains.value = await api.domainTopLists()
+    } catch { /* domain top lists are non-critical */ }
   }
 
   async function pollProgress() {
@@ -291,7 +296,7 @@ export const useIngestionStore = defineStore('ingestion', () => {
   }
 
   return {
-    status, unfetchable, progress, pendingJob,
+    status, unfetchable, domains, progress, pendingJob,
     load, syncMetadata, backfillMetadata, ingest, cancel, purge, stopStreams,
     isMetadataRunning, isIngestRunning, isAnyJobRunning,
     applyJobFlags,

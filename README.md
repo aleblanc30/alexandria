@@ -131,6 +131,7 @@ Common flags across the subcommands: `--dry-run`, `--force-reindex`. See
 ```bash
 alexandria domain-report            # domains by frequency (prioritize fetch handlers)
 alexandria domain-report --source firefox --limit 50
+alexandria domain-report --rejected # sorted by unfetchable count instead
 ```
 
 ### Cluster and review

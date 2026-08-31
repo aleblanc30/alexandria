@@ -30,7 +30,7 @@ two when its priority changes; do not duplicate it in both.
 - [ ] **reddit ingester** — Firefox fetch handler for reddit pages saved as bookmarks
 - [ ] **amazon ingester** — extend current amazon ingester to other domains (.fr, .com, .in ...)
 - [ ] **pubmed ingester** — Firefox fetch handler for pubmed pages saved as bookmarks.
-- [ ] **top domains and top rejected domains** display top 10 domains in the database and top 10 unfetchable domains to see where specific handlers are needed.
+- [x] **top domains and top rejected domains** — `GET /ingestion/domains` and a two-table panel on `/ingestion` rank domains by document count and by unfetchable count; plan in `DOMAIN_TOP_LISTS_PLAN.md`.
 
 
 ## Active learning
