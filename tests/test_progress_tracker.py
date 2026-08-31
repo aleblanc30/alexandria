@@ -286,18 +286,20 @@ def test_hydrate_is_ignored_while_a_job_runs():
 
 
 def test_embed_finish_preserves_job_corpus_over_doc_count(tmp_path, monkeypatch):
-    from pka.db.queries import get_engine, init_db, insert_document_if_new
+    from pka.db.queries import DocumentWrite, get_engine, init_db, insert_document_if_new
     from pka.ingestion.progress.baselines import seed_progress_from_db
 
     monkeypatch.setenv("ALEXANDRIA_DATA_DIR", str(tmp_path))
     init_db()
     for i in range(10):
         insert_document_if_new(
-            "zotero",
-            f"z{i}",
-            f"Title {i}",
-            f"http://{i}",
-            None,
+            DocumentWrite(
+                "zotero",
+                f"z{i}",
+                f"Title {i}",
+                f"http://{i}",
+                None,
+            )
         )
     monkeypatch.setattr(
         "pka.ingestion.progress.baselines.source_corpus_size",
@@ -315,17 +317,19 @@ def test_embed_finish_preserves_job_corpus_over_doc_count(tmp_path, monkeypatch)
 
 
 def test_metadata_finish_hydrate_does_not_double_totals():
-    from pka.db.queries import get_engine, init_db, insert_document_if_new
+    from pka.db.queries import DocumentWrite, get_engine, init_db, insert_document_if_new
     from pka.ingestion.progress.baselines import seed_progress_from_db
 
     init_db()
     for i in range(5):
         insert_document_if_new(
-            "zotero",
-            f"z{i}",
-            f"Title {i}",
-            f"http://{i}",
-            None,
+            DocumentWrite(
+                "zotero",
+                f"z{i}",
+                f"Title {i}",
+                f"http://{i}",
+                None,
+            )
         )
     sp.begin_metadata_sync("zotero", pending=5, baseline=0)
     for _ in range(5):

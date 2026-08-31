@@ -8,6 +8,7 @@ import pytest
 from pka.api.document_serialize import document_detail, documents_out_batch
 from pka.constants import TagOrigin
 from pka.db.queries import (
+    DocumentWrite,
     get_engine,
     init_db,
     insert_chunks,
@@ -16,6 +17,7 @@ from pka.db.queries import (
     upsert_document,
 )
 from pka.db.schema import cluster_assignments, cluster_runs, clusters
+from tests.conftest import make_document
 
 
 @contextmanager
@@ -26,7 +28,7 @@ def file_engine_detail(doc_id: int):
 
 
 def _seed_doc(i: int = 0) -> int:
-    return upsert_document(
+    return make_document(
         "zotero",
         f"DS{i:03d}",
         f"Serialized {i}",
@@ -141,16 +143,18 @@ class TestDocumentsOutBatch:
 
         init_db()
         doc_id = upsert_document(
-            "zotero",
-            "META1",
-            "A Paper",
-            "https://example.com/paper",
-            int(time.time()),
-            doi="10.1/raft",
-            arxiv_id="2301.12345",
-            isbn="9780132350884",
-            year=2023,
-            authors_json=json.dumps(["Ada Lovelace", "Alan Turing"]),
+            DocumentWrite(
+                "zotero",
+                "META1",
+                "A Paper",
+                "https://example.com/paper",
+                int(time.time()),
+                doi="10.1/raft",
+                arxiv_id="2301.12345",
+                isbn="9780132350884",
+                year=2023,
+                authors_json=json.dumps(["Ada Lovelace", "Alan Turing"]),
+            )
         )
         with get_engine().connect() as con:
             out = documents_out_batch([(doc_id, None)], con, None)
@@ -219,7 +223,7 @@ class TestDocumentDetail:
         import sqlalchemy as sa
 
         init_db()
-        doc_id = upsert_document(
+        doc_id = make_document(
             "image",
             "/tmp/pic.png",
             "pic.png",
@@ -248,14 +252,16 @@ class TestDocumentDetail:
 
         init_db()
         doc_id = upsert_document(
-            "calibre",
-            "BOOK1",
-            "A Book",
-            None,
-            int(time.time()),
-            isbn="9780132350884",
-            year=2008,
-            authors_json=json.dumps(["Robert C. Martin"]),
+            DocumentWrite(
+                "calibre",
+                "BOOK1",
+                "A Book",
+                None,
+                int(time.time()),
+                isbn="9780132350884",
+                year=2008,
+                authors_json=json.dumps(["Robert C. Martin"]),
+            )
         )
         with get_engine().connect() as con:
             detail = document_detail(con, doc_id, None)

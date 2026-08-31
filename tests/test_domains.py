@@ -1,12 +1,13 @@
 """Tests for domain extraction and frequency reporting."""
 
 from pka.constants import FetchStatus, Source
-from pka.db.queries import init_db, upsert_document
+from pka.db.queries import init_db
 from pka.domains import (
     build_domain_frequency_report,
     domain_has_fetch_handler,
     extract_domain,
 )
+from tests.conftest import make_document
 
 
 class TestExtractDomain:
@@ -46,7 +47,7 @@ class TestDomainHasFetchHandler:
 class TestBuildDomainFrequencyReport:
     def test_sorts_by_count_and_aggregates_status(self):
         init_db()
-        upsert_document(
+        make_document(
             Source.FIREFOX,
             "f1",
             "A",
@@ -54,7 +55,7 @@ class TestBuildDomainFrequencyReport:
             1,
             fetch_status=FetchStatus.FETCHED,
         )
-        upsert_document(
+        make_document(
             Source.FIREFOX,
             "f2",
             "B",
@@ -62,7 +63,7 @@ class TestBuildDomainFrequencyReport:
             1,
             fetch_status=FetchStatus.PENDING,
         )
-        upsert_document(
+        make_document(
             Source.FIREFOX,
             "f3",
             "C",
@@ -70,7 +71,7 @@ class TestBuildDomainFrequencyReport:
             1,
             fetch_status=FetchStatus.FETCHED,
         )
-        upsert_document(
+        make_document(
             Source.ZOTERO,
             "z1",
             "D",
@@ -88,8 +89,8 @@ class TestBuildDomainFrequencyReport:
 
     def test_limit(self):
         init_db()
-        upsert_document(Source.FIREFOX, "f1", "A", "https://a.com", 1)
-        upsert_document(Source.FIREFOX, "f2", "B", "https://b.com", 1)
+        make_document(Source.FIREFOX, "f1", "A", "https://a.com", 1)
+        make_document(Source.FIREFOX, "f2", "B", "https://b.com", 1)
 
         rows = build_domain_frequency_report(limit=1)
         assert len(rows) == 1

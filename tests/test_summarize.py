@@ -6,6 +6,7 @@ import pytest
 
 from pka.config import settings as cfg
 from pka.ingestion import summarize as sz
+from tests.conftest import make_document
 
 
 @pytest.fixture
@@ -185,9 +186,8 @@ class TestAttachSummaryChunk:
     @pytest.fixture
     def doc_id(self):
         from pka.constants import FetchStatus, Source
-        from pka.db.queries import upsert_document
 
-        return upsert_document(
+        return make_document(
             source=Source.FIREFOX,
             source_id="s1",
             title="A Page",

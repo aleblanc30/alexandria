@@ -6,7 +6,7 @@ import pytest
 import sqlalchemy as sa
 
 from pka.constants import FetchStatus, Source
-from pka.db.queries import get_engine, init_db, insert_document_if_new
+from pka.db.queries import DocumentWrite, get_engine, init_db, insert_document_if_new
 from pka.db.schema import chunks, images
 from pka.ingestion.progress.baselines import (
     build_ingestion_status,
@@ -24,12 +24,14 @@ def _fresh_db(tmp_path, monkeypatch):
 
 def _insert_doc(source: str, source_id: str, fetch_status: str = FetchStatus.PENDING) -> int:
     doc_id = insert_document_if_new(
-        source,
-        source_id,
-        f"Title {source_id}",
-        f"http://{source_id}",
-        None,
-        fetch_status=fetch_status,
+        DocumentWrite(
+            source,
+            source_id,
+            f"Title {source_id}",
+            f"http://{source_id}",
+            None,
+            fetch_status=fetch_status,
+        )
     )
     assert doc_id is not None
     return doc_id
@@ -170,7 +172,7 @@ class TestDisplaySnapshot:
 
     def test_idle_source_reads_counts_from_the_archive(self):
         for i in range(3):
-            insert_document_if_new(Source.ZOTERO, f"z{i}", f"T{i}", None, None)
+            insert_document_if_new(DocumentWrite(Source.ZOTERO, f"z{i}", f"T{i}", None, None))
         snap = display_snapshot(get_engine(), Source.ZOTERO)
         assert snap["status"] == "idle"
         assert snap["phase_details"][0]["processed"] == 3
@@ -179,7 +181,7 @@ class TestDisplaySnapshot:
         from pka.ingestion import progress as sp
 
         for i in range(4):
-            insert_document_if_new(Source.ZOTERO, f"z{i}", f"T{i}", None, None)
+            insert_document_if_new(DocumentWrite(Source.ZOTERO, f"z{i}", f"T{i}", None, None))
         assert display_snapshot(get_engine(), Source.ZOTERO)["phase_details"][0]["total"] == 4
         with get_engine().begin() as con:
             con.execute(sa.text("DELETE FROM documents WHERE source_id IN ('z2', 'z3')"))
@@ -191,7 +193,7 @@ class TestDisplaySnapshot:
         from pka.ingestion import progress as sp
 
         for i in range(3):
-            insert_document_if_new(Source.ZOTERO, f"z{i}", f"T{i}", None, None)
+            insert_document_if_new(DocumentWrite(Source.ZOTERO, f"z{i}", f"T{i}", None, None))
         sp.begin_job(Source.ZOTERO, "ingest")
         sp.set_corpus_total(Source.ZOTERO, 50)
         sp.set_phase(Source.ZOTERO, "embedding", 50)
@@ -203,7 +205,7 @@ class TestDisplaySnapshot:
         sp.reset(Source.ZOTERO)
 
     def test_source_counts_carries_the_status_slice_the_panel_needs(self):
-        insert_document_if_new(Source.ZOTERO, "z0", "T", None, None)
+        insert_document_if_new(DocumentWrite(Source.ZOTERO, "z0", "T", None, None))
         counts = source_counts(get_engine(), Source.ZOTERO)
         assert set(counts) == {"pending_metadata", "fetch", "unavailable"}
         assert counts["fetch"]["embedded"] == 0

@@ -119,6 +119,47 @@ def isolated_settings(tmp_path, monkeypatch):
         sp.reset(src)
 
 
+# ── Document factory ──────────────────────────────────────────────────────────
+
+
+def make_document(
+    source,
+    source_id,
+    title=None,
+    url_or_path=None,
+    date_added=None,
+    fetch_status="pending",
+    zotero_attachment_key=None,
+    item_type=None,
+    note=None,
+    **fields,
+) -> int:
+    """Insert or update a throwaway document and return its id.
+
+    Mirrors the pre-refactor positional shape of ``upsert_document`` so a call
+    site converts by renaming the call, not rewriting arguments. Metadata
+    columns (doi, isbn, year, ...) go through ``**fields``. For tests that
+    exercise the write-path signature itself, construct ``DocumentWrite``
+    directly instead (see ``test_db.py``).
+    """
+    from pka.db.queries import DocumentWrite, upsert_document
+
+    return upsert_document(
+        DocumentWrite(
+            source,
+            source_id,
+            title,
+            url_or_path,
+            date_added,
+            fetch_status,
+            zotero_attachment_key,
+            item_type,
+            note,
+            **fields,
+        )
+    )
+
+
 # ── Fake Zotero SQLite ────────────────────────────────────────────────────────
 
 

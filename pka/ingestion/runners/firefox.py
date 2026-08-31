@@ -9,6 +9,7 @@ from pka.classification import classify_document, sync_classification_tags
 from pka.connectors.firefox import FirefoxBookmark
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
+    DocumentWrite,
     document_ids_with_chunks,
     document_index,
     document_titles,
@@ -51,12 +52,14 @@ def ingest_firefox_bookmarks(
             else FetchStatus.PENDING
         )
         doc_id = insert_document_if_new(
-            source=Source.FIREFOX,
-            source_id=bm.source_id,
-            title=bm.title,
-            url_or_path=bm.url,
-            date_added=bm.date_added,
-            fetch_status=fetch_status,
+            DocumentWrite(
+                source=Source.FIREFOX,
+                source_id=bm.source_id,
+                title=bm.title,
+                url_or_path=bm.url,
+                date_added=bm.date_added,
+                fetch_status=fetch_status,
+            )
         )
         if doc_id is None:
             return "skipped"

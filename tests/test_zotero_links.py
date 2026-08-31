@@ -9,11 +9,18 @@ from pka.connectors.zotero import (
     zotero_url,
 )
 from pka.constants import FetchStatus, Source
-from pka.db.queries import get_engine, init_db, refresh_zotero_metadata, upsert_document
+from pka.db.queries import (
+    DocumentWrite,
+    get_engine,
+    init_db,
+    refresh_zotero_metadata,
+    upsert_document,
+)
 from pka.db.schema import documents
 from pka.ingestion.arxiv import parse_arxiv_url
 from pka.ingestion.identifiers import derive_arxiv_doi, normalize_doi, resolve_doi
 from pka.ingestion.runners.zotero import ingest_zotero_items
+from tests.conftest import make_document
 
 
 def _item(**overrides) -> ZoteroItem:
@@ -39,13 +46,15 @@ def test_upsert_stores_zotero_attachment_key():
     init_db()
     item = _item()
     upsert_document(
-        Source.ZOTERO,
-        "RAFT0001",
-        "Raft",
-        zotero_document_url_or_path(zotero_url(item), zotero_path(item)),
-        1700000000,
-        FetchStatus.AVAILABLE,
-        zotero_attachment_key="RAFT0002",
+        DocumentWrite(
+            Source.ZOTERO,
+            "RAFT0001",
+            "Raft",
+            zotero_document_url_or_path(zotero_url(item), zotero_path(item)),
+            1700000000,
+            FetchStatus.AVAILABLE,
+            zotero_attachment_key="RAFT0002",
+        )
     )
     with get_engine().connect() as con:
         row = con.execute(
@@ -56,7 +65,7 @@ def test_upsert_stores_zotero_attachment_key():
 
 def test_refresh_zotero_metadata_updates_existing_row():
     init_db()
-    upsert_document(Source.ZOTERO, "RAFT0001", "Raft", None, 1700000000)
+    make_document(Source.ZOTERO, "RAFT0001", "Raft", None, 1700000000)
     n = refresh_zotero_metadata(
         {
             "RAFT0001": {
@@ -84,7 +93,9 @@ def test_refresh_zotero_metadata_updates_existing_row():
 def test_refresh_zotero_metadata_does_not_null_out_stored_doi():
     """A missing value in the incoming dict must not blank an already-stored one."""
     init_db()
-    upsert_document(Source.ZOTERO, "RAFT0001", "Raft", None, 1700000000, doi="10.1/original")
+    upsert_document(
+        DocumentWrite(Source.ZOTERO, "RAFT0001", "Raft", None, 1700000000, doi="10.1/original")
+    )
     refresh_zotero_metadata(
         {
             "RAFT0001": {
@@ -110,7 +121,7 @@ def test_refresh_zotero_metadata_migrates_bare_doi_url_or_path():
     """Regression: an archive written by the old DOI-in-url_or_path ladder must
     converge with a freshly inserted DOI-only item after the backfill runs."""
     init_db()
-    upsert_document(
+    make_document(
         Source.ZOTERO,
         "OLD0001",
         "Old item",
@@ -132,7 +143,9 @@ def test_refresh_zotero_metadata_migrates_bare_doi_url_or_path():
         }
     )
     assert n == 1
-    upsert_document(Source.ZOTERO, "NEW0001", "New item", None, 1700000000, doi="10.1145/xyz")
+    upsert_document(
+        DocumentWrite(Source.ZOTERO, "NEW0001", "New item", None, 1700000000, doi="10.1145/xyz")
+    )
     with get_engine().connect() as con:
         rows = con.execute(
             sa.select(documents.c.source_id, documents.c.url_or_path, documents.c.doi).where(
@@ -184,13 +197,15 @@ def test_zotero_item_arxiv_id_and_doi_join_with_fetched_arxiv_document(mock_chro
 
     arxiv_id = parse_arxiv_url(arxiv_url)
     upsert_document(
-        Source.FIREFOX,
-        "FF0001",
-        "Some Paper",
-        arxiv_url,
-        1700000000,
-        doi=resolve_doi(None, arxiv_id),
-        arxiv_id=arxiv_id,
+        DocumentWrite(
+            Source.FIREFOX,
+            "FF0001",
+            "Some Paper",
+            arxiv_url,
+            1700000000,
+            doi=resolve_doi(None, arxiv_id),
+            arxiv_id=arxiv_id,
+        )
     )
 
     with get_engine().connect() as con:

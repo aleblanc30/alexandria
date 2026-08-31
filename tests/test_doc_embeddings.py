@@ -10,7 +10,8 @@ from pka.clustering.doc_embeddings import (
     load_cached_embeddings,
     refresh_document_embedding,
 )
-from pka.db.queries import init_db, insert_chunks, upsert_document
+from pka.db.queries import init_db, insert_chunks
+from tests.conftest import make_document
 
 
 @pytest.fixture(autouse=True)
@@ -27,14 +28,14 @@ class TestBlobRoundTrip:
 
 class TestRefreshDocumentEmbedding:
     def test_clears_embedding_when_no_chunks(self, mock_chroma):
-        doc_id = upsert_document("zotero", "NC1", "No chunks", None, None)
+        doc_id = make_document("zotero", "NC1", "No chunks", None, None)
         assert refresh_document_embedding(doc_id) is False
         cached, missing = load_cached_embeddings([doc_id])
         assert doc_id in missing
         assert doc_id not in cached
 
     def test_writes_mean_pooled_embedding(self, mock_chroma):
-        doc_id = upsert_document("zotero", "EM1", "Has chunks", None, None)
+        doc_id = make_document("zotero", "EM1", "Has chunks", None, None)
         insert_chunks(
             [
                 {
@@ -75,7 +76,7 @@ class TestLoadCachedEmbeddings:
         assert missing == []
 
     def test_mixed_cached_and_missing(self, mock_chroma):
-        doc_id = upsert_document("zotero", "MX1", "Mixed", None, None)
+        doc_id = make_document("zotero", "MX1", "Mixed", None, None)
         vec = np.ones(EMBEDDING_DIM, dtype=np.float32)
         import sqlalchemy as sa
 

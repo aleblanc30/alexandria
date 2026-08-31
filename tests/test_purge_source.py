@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 from pka.cli.purge_source import purge_source
-from pka.db.queries import get_engine, init_db, insert_chunks, upsert_document
+from pka.db.queries import get_engine, init_db, insert_chunks
 from pka.db.schema import (
     chunks,
     documents,
@@ -15,10 +15,11 @@ from pka.db.schema import (
     overlay_tags,
     source_tags,
 )
+from tests.conftest import make_document
 
 
 def _seed_document(source: str, source_id: str, *, with_chunk: bool = True) -> int:
-    doc_id = upsert_document(
+    doc_id = make_document(
         source,
         source_id,
         f"{source} doc",
@@ -100,7 +101,7 @@ def test_purge_unknown_source_raises(empty_vector_store):
 
 def test_purge_images_clears_sidecar_and_documents(empty_vector_store, monkeypatch):
     init_db()
-    doc_id = upsert_document(
+    doc_id = make_document(
         "image",
         "/tmp/a.jpg",
         "a.jpg",

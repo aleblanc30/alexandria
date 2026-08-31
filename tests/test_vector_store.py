@@ -3,6 +3,8 @@
 import pytest
 import sqlalchemy as sa
 
+from tests.conftest import make_document
+
 
 @pytest.fixture()
 def real_chroma(isolated_settings):
@@ -101,10 +103,10 @@ class TestVectorStore:
         assert real_chroma.vector_count() >= 1
 
     def test_vector_count_falls_back_to_sqlite(self, real_chroma, monkeypatch):
-        from pka.db.queries import init_db, insert_chunks, upsert_document
+        from pka.db.queries import init_db, insert_chunks
 
         init_db()
-        doc_id = upsert_document("zotero", "VC1", "Title", None, None)
+        doc_id = make_document("zotero", "VC1", "Title", None, None)
         insert_chunks(
             [
                 {
@@ -137,11 +139,11 @@ class TestVectorStore:
     def test_rebuild_from_chunks(self, real_chroma):
         import sqlalchemy as sa
 
-        from pka.db.queries import init_db, insert_chunks, upsert_document
+        from pka.db.queries import init_db, insert_chunks
         from pka.db.schema import chunks
 
         init_db()
-        doc_id = upsert_document("zotero", "RB1", "Rebuild doc", None, None)
+        doc_id = make_document("zotero", "RB1", "Rebuild doc", None, None)
         insert_chunks(
             [
                 {

@@ -9,7 +9,7 @@ import pytest
 import sqlalchemy as sa
 
 from pka.constants import FetchStatus, Source
-from pka.db.queries import get_engine, init_db, upsert_document
+from pka.db.queries import get_engine, init_db
 from pka.db.schema import documents
 from pka.ingestion.amazon import (
     AmazonBook,
@@ -18,6 +18,7 @@ from pka.ingestion.amazon import (
     is_amazon_host,
 )
 from pka.ingestion.fetcher import FetchResult, _fetch_one, _persist_fetch_result
+from tests.conftest import make_document
 
 
 @pytest.fixture(autouse=True)
@@ -179,7 +180,7 @@ class TestAmazonFetchIntegration:
 
     @pytest.mark.asyncio
     async def test_persist_updates_title(self):
-        doc_id = upsert_document(
+        doc_id = make_document(
             source=Source.FIREFOX,
             source_id="F-AMZ",
             title="Amazon.com: Old bookmark title",

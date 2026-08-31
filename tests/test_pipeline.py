@@ -13,6 +13,7 @@ from pka.ingestion.runners import (
     ingest_zotero_embed,
     ingest_zotero_items,
 )
+from tests.conftest import make_document
 
 
 @pytest.fixture(autouse=True)
@@ -265,9 +266,7 @@ class TestIngestFirefoxBookmarks:
 
 class TestIngestFetchedTexts:
     def test_chunks_created_for_fetched_text(self, mock_chroma):
-        doc_id = __import__("pka.db.queries", fromlist=["upsert_document"]).upsert_document(
-            "firefox", "F002", "Page", "https://x.com", None
-        )
+        doc_id = make_document("firefox", "F002", "Page", "https://x.com", None)
         ingest_fetched_texts(
             {
                 doc_id: (
@@ -279,9 +278,7 @@ class TestIngestFetchedTexts:
         assert document_has_chunks(doc_id)
 
     def test_dry_run_produces_no_chunks(self, mock_chroma):
-        from pka.db.queries import upsert_document as ud
-
-        doc_id = ud("firefox", "F003", "P", "https://y.com", None)
+        doc_id = make_document("firefox", "F003", "P", "https://y.com", None)
         ingest_fetched_texts(
             {doc_id: "Enough text to chunk. More sentences follow. And another one."},
             dry_run=True,
@@ -293,9 +290,7 @@ class TestIngestFetchedTexts:
         assert stats["processed"] == 0
 
     def test_card_summary_stores_body_excerpt(self, mock_chroma):
-        from pka.db.queries import upsert_document as ud
-
-        doc_id = ud("firefox", "F010", "Page", "https://x.com", None)
+        doc_id = make_document("firefox", "F010", "Page", "https://x.com", None)
         body = (
             "Intro line one with enough words.\n"
             "Intro line two continues the article.\n"
@@ -322,9 +317,7 @@ class TestFetchedTextEnrichment:
 
     @staticmethod
     def _new_doc(source_id: str, title: str) -> int:
-        from pka.db.queries import upsert_document
-
-        return upsert_document(
+        return make_document(
             "firefox",
             source_id,
             title,

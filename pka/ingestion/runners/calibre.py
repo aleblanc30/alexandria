@@ -8,6 +8,7 @@ import logging
 from pka.connectors.calibre import CalibreBook, split_calibre_tags
 from pka.constants import FetchStatus, PdfTextLayer, Source
 from pka.db.queries import (
+    DocumentWrite,
     document_index,
     existing_chunk_count,
     insert_document_if_new,
@@ -110,16 +111,20 @@ def ingest_calibre_metadata(
             return "dry_run"
         tags, note = split_calibre_tags(book.tags)
         doc_id = insert_document_if_new(
-            source=Source.CALIBRE,
-            source_id=book.source_id,
-            title=book.title,
-            url_or_path=str(book.preferred_path) if book.preferred_path else None,
-            date_added=book.date_added,
-            fetch_status=(FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING),
-            note=note,
-            isbn=_calibre_isbn(book),
-            year=book.year,
-            authors_json=_calibre_authors_json(book),
+            DocumentWrite(
+                source=Source.CALIBRE,
+                source_id=book.source_id,
+                title=book.title,
+                url_or_path=str(book.preferred_path) if book.preferred_path else None,
+                date_added=book.date_added,
+                fetch_status=(
+                    FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING
+                ),
+                note=note,
+                isbn=_calibre_isbn(book),
+                year=book.year,
+                authors_json=_calibre_authors_json(book),
+            )
         )
         if doc_id is None:
             return "skipped"
@@ -156,18 +161,20 @@ def ingest_calibre_books(
         if doc_id is None:
             tags, note = split_calibre_tags(book.tags)
             doc_id = upsert_document(
-                source=Source.CALIBRE,
-                source_id=book.source_id,
-                title=book.title,
-                url_or_path=str(book.preferred_path) if book.preferred_path else None,
-                date_added=book.date_added,
-                fetch_status=(
-                    FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING
-                ),
-                note=note,
-                isbn=_calibre_isbn(book),
-                year=book.year,
-                authors_json=_calibre_authors_json(book),
+                DocumentWrite(
+                    source=Source.CALIBRE,
+                    source_id=book.source_id,
+                    title=book.title,
+                    url_or_path=str(book.preferred_path) if book.preferred_path else None,
+                    date_added=book.date_added,
+                    fetch_status=(
+                        FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING
+                    ),
+                    note=note,
+                    isbn=_calibre_isbn(book),
+                    year=book.year,
+                    authors_json=_calibre_authors_json(book),
+                )
             )
             doc_ids[book.source_id] = doc_id
             insert_source_tags(doc_id, tags, source=Source.CALIBRE)

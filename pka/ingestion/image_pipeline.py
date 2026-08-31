@@ -23,6 +23,7 @@ from pka.config import settings as cfg
 from pka.connectors.images import ImageFile
 from pka.constants import FetchStatus, Source, TagOrigin
 from pka.db.queries import (
+    DocumentWrite,
     delete_image_document,
     existing_chunk_count,
     get_engine,
@@ -105,12 +106,14 @@ def _ensure_image_document(img: ImageFile) -> int:
     ``source_id`` and ``url_or_path`` so the cover route can stream the bytes.
     """
     return upsert_document(
-        source=Source.IMAGE,
-        source_id=str(img.path),
-        title=img.filename,
-        url_or_path=str(img.path),
-        date_added=img.date_taken,
-        fetch_status=FetchStatus.AVAILABLE,
+        DocumentWrite(
+            source=Source.IMAGE,
+            source_id=str(img.path),
+            title=img.filename,
+            url_or_path=str(img.path),
+            date_added=img.date_taken,
+            fetch_status=FetchStatus.AVAILABLE,
+        )
     )
 
 

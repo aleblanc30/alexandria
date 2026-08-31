@@ -7,9 +7,10 @@ from fastapi.testclient import TestClient
 
 from pka.clustering.doc_embeddings import EMBEDDING_DIM, embedding_to_blob
 from pka.constants import TagOrigin
-from pka.db.queries import get_engine, init_db, upsert_document
+from pka.db.queries import get_engine, init_db
 from pka.db.schema import overlay_tags, source_tags, tag_training_labels
 from pka.tag_training import lifecycle
+from tests.conftest import make_document
 
 
 def _pos_vec(seed: float = 1.0) -> np.ndarray:
@@ -47,7 +48,7 @@ def client(empty_vector_store):
 def _seed_labeled_corpus() -> tuple[list[int], list[int], list[int]]:
     pos_ids, neg_ids, extra_ids = [], [], []
     for i in range(4):
-        doc_id = upsert_document(
+        doc_id = make_document(
             "zotero",
             f"P{i}",
             f"Positive {i}",
@@ -57,7 +58,7 @@ def _seed_labeled_corpus() -> tuple[list[int], list[int], list[int]]:
         _set_embedding(doc_id, _pos_vec(1.0 + i * 0.01))
         pos_ids.append(doc_id)
     for i in range(4):
-        doc_id = upsert_document(
+        doc_id = make_document(
             "firefox",
             f"N{i}",
             f"Negative {i}",
@@ -67,7 +68,7 @@ def _seed_labeled_corpus() -> tuple[list[int], list[int], list[int]]:
         _set_embedding(doc_id, _neg_vec(-1.0 - i * 0.01))
         neg_ids.append(doc_id)
     for i in range(3):
-        doc_id = upsert_document(
+        doc_id = make_document(
             "calibre",
             f"U{i}",
             f"Unlabeled {i}",
@@ -139,7 +140,7 @@ class TestTagTrainingLifecycle:
 
     def test_from_source_tag(self):
         init_db()
-        doc_id = upsert_document(
+        doc_id = make_document(
             "zotero",
             "ST1",
             "Tagged",
@@ -147,7 +148,7 @@ class TestTagTrainingLifecycle:
             1700000000,
         )
         for i, vec in enumerate([_neg_vec(), _neg_vec(), _neg_vec()]):
-            nid = upsert_document(
+            nid = make_document(
                 "firefox",
                 f"STN{i}",
                 f"Other{i}",
@@ -200,7 +201,7 @@ class TestTagTrainingLifecycle:
     def test_pseudo_label_model_threshold(self, monkeypatch):
         init_db()
         pos_ids, neg_ids, _ = _seed_labeled_corpus()
-        sure_pos = upsert_document(
+        sure_pos = make_document(
             "zotero",
             "SP",
             "Sure positive",
@@ -353,7 +354,7 @@ class TestTagTrainingLifecycle:
     def test_untrainable_session_queue_empty(self):
         """Single-class labels without embeddings must not recurse — queue is just empty."""
         init_db()
-        doc_id = upsert_document(
+        doc_id = make_document(
             "zotero",
             "NOEMB",
             "No embedding",
@@ -370,7 +371,7 @@ class TestTagTrainingLifecycle:
 
     def test_untrainable_session_pseudo_label_raises(self):
         init_db()
-        doc_id = upsert_document(
+        doc_id = make_document(
             "zotero",
             "NOEMB2",
             "No embedding",
@@ -457,7 +458,7 @@ class TestTagTrainingApi:
         assert data["has_model"] is True
 
     def test_from_source_tag_endpoint(self, client):
-        doc_id = upsert_document(
+        doc_id = make_document(
             "zotero",
             "ST2",
             "Tagged",
@@ -528,7 +529,7 @@ class TestTagTrainingApi:
             + [{"doc_id": did, "label": 0} for did in neg_ids],
         )
         lifecycle.accept_session(session["session_id"])
-        new_id = upsert_document(
+        new_id = make_document(
             "zotero",
             "NEW1",
             "New paper",
@@ -582,7 +583,7 @@ class TestTagTrainingApi:
         assert r.json()["status"] == "labeling"
 
     def test_pseudo_label_untrainable_400(self, client):
-        doc_id = upsert_document(
+        doc_id = make_document(
             "zotero",
             "NOEMB3",
             "No embedding",

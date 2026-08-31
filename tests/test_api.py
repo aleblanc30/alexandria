@@ -11,8 +11,15 @@ import pytest
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
-from pka.db.queries import init_db, insert_chunks, update_card_summary, upsert_document
+from pka.db.queries import (
+    DocumentWrite,
+    init_db,
+    insert_chunks,
+    update_card_summary,
+    upsert_document,
+)
 from pka.db.schema import cluster_assignments, cluster_runs, clusters
+from tests.conftest import make_document
 
 # ── App fixture ───────────────────────────────────────────────────────────────
 
@@ -31,7 +38,7 @@ def _seed_docs(n: int = 3) -> list[int]:
     for i in range(n):
         src = ["zotero", "firefox", "calibre"][i % 3]
         ids.append(
-            upsert_document(
+            make_document(
                 src,
                 f"K{i:03d}",
                 f"Document {i}",
@@ -119,7 +126,7 @@ def _seed_image(client=None) -> int:
     from pka.db.schema import images as images_tbl
 
     now = int(time.time())
-    doc_id = upsert_document(
+    doc_id = make_document(
         "image",
         "/tmp/slide.png",
         "slide.png",
@@ -751,7 +758,7 @@ class TestDocumentCover:
         (book_dir / "book.epub").write_bytes(b"epub")
         (book_dir / "cover.jpg").write_bytes(b"\xff\xd8\xff\xe0fakejpeg")
 
-        doc_id = upsert_document(
+        doc_id = make_document(
             "calibre",
             "1",
             "Title",
@@ -768,7 +775,7 @@ class TestDocumentCover:
         book_dir.mkdir(parents=True)
         (book_dir / "book.epub").write_bytes(b"epub")
 
-        doc_id = upsert_document(
+        doc_id = make_document(
             "calibre",
             "1",
             "Title",
@@ -795,7 +802,7 @@ class TestDocumentCover:
 
         p = tmp_path / "photo.png"
         PILImage.new("RGB", (8, 8), color="blue").save(p)
-        doc_id = upsert_document(
+        doc_id = make_document(
             "image",
             str(p),
             "photo.png",
@@ -830,12 +837,14 @@ class TestImageDocuments:
 
 def _seed_reddit(source_id: str, url: str, *, item_type: str | None = None) -> int:
     return upsert_document(
-        "reddit",
-        source_id,
-        "Understanding Raft",
-        url,
-        int(time.time()),
-        item_type=item_type,
+        DocumentWrite(
+            "reddit",
+            source_id,
+            "Understanding Raft",
+            url,
+            int(time.time()),
+            item_type=item_type,
+        )
     )
 
 

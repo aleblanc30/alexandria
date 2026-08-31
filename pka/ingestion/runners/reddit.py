@@ -15,6 +15,7 @@ from pka.card_summary import body_excerpt
 from pka.connectors.reddit import RedditSaved
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
+    DocumentWrite,
     document_ids_with_chunks,
     document_index,
     document_titles,
@@ -45,8 +46,8 @@ def _fetch_status(saved: RedditSaved) -> FetchStatus:
     return FetchStatus.PENDING
 
 
-def _document_kwargs(saved: RedditSaved) -> dict:
-    return dict(
+def _document_write(saved: RedditSaved) -> DocumentWrite:
+    return DocumentWrite(
         source=Source.REDDIT,
         source_id=saved.source_id,
         title=saved.title,
@@ -112,7 +113,7 @@ def ingest_reddit_metadata(
         existing_id = known.get(saved.source_id)
         if dry_run:
             return "skipped" if existing_id is not None else "dry_run"
-        doc_id = insert_document_if_new(**_document_kwargs(saved))
+        doc_id = insert_document_if_new(_document_write(saved))
         if doc_id is None:
             # Already archived. Refresh the Reddit fields anyway: a library
             # ingested before ``reddit_items`` existed fills itself in on the
@@ -219,7 +220,7 @@ def ingest_reddit_embed(
     def _process(saved: RedditSaved) -> tuple[bool, int]:
         doc_id = doc_ids.get(saved.source_id)
         if doc_id is None:
-            doc_id = upsert_document(**_document_kwargs(saved))
+            doc_id = upsert_document(_document_write(saved))
             doc_ids[saved.source_id] = doc_id
         if not dry_run:
             _persist_reddit_fields(doc_id, saved)

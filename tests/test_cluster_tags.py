@@ -11,8 +11,9 @@ from pka.clustering.cluster_tags import (
     slugify_tag,
 )
 from pka.constants import TagOrigin
-from pka.db.queries import get_engine, init_db, upsert_document
+from pka.db.queries import get_engine, init_db
 from pka.db.schema import cluster_assignments, cluster_runs, clusters
+from tests.conftest import make_document
 
 
 @pytest.fixture(autouse=True)
@@ -23,7 +24,7 @@ def fresh_db():
 def _seed_cluster_with_docs(n_docs: int = 2) -> tuple[int, int, list[int]]:
     doc_ids = []
     for i in range(n_docs):
-        doc_ids.append(upsert_document("zotero", f"T{i:03d}", f"Doc {i}", None, int(time.time())))
+        doc_ids.append(make_document("zotero", f"T{i:03d}", f"Doc {i}", None, int(time.time())))
     now = int(time.time())
     with get_engine().begin() as con:
         run_res = con.execute(

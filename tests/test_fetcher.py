@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from pka.constants import FetchStatus, PdfTextLayer
-from pka.db.queries import init_db, upsert_document
+from pka.db.queries import DocumentWrite, init_db, upsert_document
 from pka.ingestion.book_extractor import BookExtraction
 from pka.ingestion.fetcher import (
     FetchResult,
@@ -17,6 +17,7 @@ from pka.ingestion.fetcher import (
     fetch_pending,
     reset_unfetchable_for_fetch,
 )
+from tests.conftest import make_document
 
 
 def _pdf_extraction(text: str) -> BookExtraction:
@@ -299,7 +300,7 @@ class TestFetchPending:
         assert stats["fetched"] == 0
 
     def test_two_asyncio_run_calls_do_not_break_limiter(self, monkeypatch):
-        upsert_document("firefox", "F5", "T5", "https://ok.com/x", None)
+        make_document("firefox", "F5", "T5", "https://ok.com/x", None)
 
         async def fake_fetch(client, doc_id, url):
             return FetchResult(doc_id, url, "skipped", None, None, "non-html extension")
@@ -312,8 +313,8 @@ class TestFetchPending:
 
     @pytest.mark.asyncio
     async def test_pending_docs_are_fetched(self, monkeypatch):
-        upsert_document("firefox", "F1", "T1", "https://ok.com/page", None)
-        upsert_document("firefox", "F2", "T2", "https://ok.com/page2", None)
+        make_document("firefox", "F1", "T1", "https://ok.com/page", None)
+        make_document("firefox", "F2", "T2", "https://ok.com/page2", None)
 
         async def fake_fetch(client, doc_id, url):
             return FetchResult(doc_id, url, "fetched", "Some text content here", 200, None)
@@ -330,7 +331,7 @@ class TestFetchPending:
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
 
-        upsert_document("firefox", "F4", "T4", "https://fail.com", None)
+        make_document("firefox", "F4", "T4", "https://fail.com", None)
 
         async def fake_fetch(client, doc_id, url):
             return FetchResult(doc_id, url, "unfetchable", None, 404, "not found")
@@ -352,8 +353,8 @@ class TestFetchPending:
         from pka.db.schema import documents as docs_table
         from pka.ingestion import progress as sp
 
-        d1 = upsert_document("firefox", "F20", "T20", "https://a.com", None)
-        upsert_document("firefox", "F21", "T21", "https://b.com", None)
+        d1 = make_document("firefox", "F20", "T20", "https://a.com", None)
+        make_document("firefox", "F21", "T21", "https://b.com", None)
 
         call = {"n": 0}
 
@@ -378,9 +379,9 @@ class TestFetchPending:
     async def test_stops_when_cancel_requested(self, monkeypatch):
         from pka.ingestion import progress as sp
 
-        upsert_document("firefox", "F10", "T10", "https://a.com", None)
-        upsert_document("firefox", "F11", "T11", "https://b.com", None)
-        upsert_document("firefox", "F12", "T12", "https://c.com", None)
+        make_document("firefox", "F10", "T10", "https://a.com", None)
+        make_document("firefox", "F11", "T11", "https://b.com", None)
+        make_document("firefox", "F12", "T12", "https://c.com", None)
 
         async def fake_fetch(client, doc_id, url):
             if doc_id == 2:
@@ -398,7 +399,7 @@ class TestFetchPending:
 class TestFetchAndEmbedPending:
     @pytest.mark.asyncio
     async def test_calls_embed_fn_after_each_successful_fetch(self, monkeypatch):
-        d1 = upsert_document("firefox", "F30", "T", "https://embed.example", None)
+        d1 = make_document("firefox", "F30", "T", "https://embed.example", None)
         embed_calls: list[tuple[int, str]] = []
 
         def embed_fn(doc_id: int, text: str, card_summary=None) -> dict:
@@ -430,7 +431,7 @@ class TestFetchAndEmbedPending:
 
     @pytest.mark.asyncio
     async def test_includes_orphans_in_work_queue(self, monkeypatch):
-        orphan = upsert_document(
+        orphan = make_document(
             "firefox",
             "F31",
             "T",
@@ -528,14 +529,14 @@ class TestExtractText:
 class TestResetUnfetchableForFetch:
     def test_does_not_reset_when_not_dev(self, monkeypatch):
         monkeypatch.setattr("pka.config.settings.dev", False)
-        wiki_id = upsert_document(
+        wiki_id = make_document(
             "firefox",
             "F-WIKI",
             "Wiki",
             "https://en.wikipedia.org/wiki/Python",
             None,
         )
-        other_id = upsert_document(
+        other_id = make_document(
             "firefox",
             "F-403",
             "Blocked",
@@ -571,21 +572,21 @@ class TestResetUnfetchableForFetch:
 
     def test_resets_all_unfetchable_in_dev(self, monkeypatch):
         monkeypatch.setattr("pka.config.settings.dev", True)
-        wiki_id = upsert_document(
+        wiki_id = make_document(
             "firefox",
             "F-WIKI2",
             "Wiki",
             "https://en.wikipedia.org/wiki/Go",
             None,
         )
-        other_id = upsert_document(
+        other_id = make_document(
             "firefox",
             "F-403B",
             "Blocked",
             "https://example.com/gone",
             None,
         )
-        local_id = upsert_document(
+        local_id = make_document(
             "firefox",
             "F-LOCAL",
             "Local",
@@ -676,7 +677,7 @@ class TestPreprintFetchIntegration:
         from pka.db.queries import get_engine
         from pka.db.schema import documents
 
-        doc_id = upsert_document(
+        doc_id = make_document(
             source=Source.FIREFOX,
             source_id="F-ARX",
             title="Old bookmark title",
@@ -715,7 +716,7 @@ class TestPreprintFetchIntegration:
         from pka.db.queries import get_engine
         from pka.db.schema import documents
 
-        doc_id = upsert_document(
+        doc_id = make_document(
             source=Source.FIREFOX,
             source_id="F-ARX-META",
             title="Old bookmark title",
@@ -760,13 +761,15 @@ class TestPreprintFetchIntegration:
         from pka.db.schema import documents
 
         doc_id = upsert_document(
-            source=Source.FIREFOX,
-            source_id="F-ARX-KEEP",
-            title="Title",
-            url_or_path="https://arxiv.org/abs/2301.00001",
-            date_added=None,
-            fetch_status=FetchStatus.PENDING,
-            doi="10.48550/arxiv.2301.00001",
+            DocumentWrite(
+                source=Source.FIREFOX,
+                source_id="F-ARX-KEEP",
+                title="Title",
+                url_or_path="https://arxiv.org/abs/2301.00001",
+                date_added=None,
+                fetch_status=FetchStatus.PENDING,
+                doi="10.48550/arxiv.2301.00001",
+            )
         )
         _persist_fetch_result(
             FetchResult(
@@ -791,7 +794,7 @@ class TestPreprintFetchIntegration:
         from pka.db.schema import documents
         from pka.ingestion.runners.firefox import embed_fetched_text
 
-        doc_id = upsert_document(
+        doc_id = make_document(
             source=Source.FIREFOX,
             source_id="F-ARX2",
             title="Paper title",

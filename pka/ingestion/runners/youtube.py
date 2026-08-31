@@ -18,6 +18,7 @@ from pka.connectors.youtube import (
 )
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
+    DocumentWrite,
     document_index,
     insert_document_if_new,
     insert_source_collections,
@@ -36,8 +37,8 @@ def _sync_youtube_classification(doc_id: int) -> None:
     sync_classification_tags(doc_id, classify_document(Source.YOUTUBE))
 
 
-def _document_kwargs(video: YouTubeVideo) -> dict:
-    return dict(
+def _document_write(video: YouTubeVideo) -> DocumentWrite:
+    return DocumentWrite(
         source=Source.YOUTUBE,
         source_id=video.source_id,
         title=video.title,
@@ -66,7 +67,7 @@ def ingest_youtube_metadata(
     def _persist(video: YouTubeVideo) -> MetadataOutcome:
         if dry_run:
             return "dry_run"
-        doc_id = insert_document_if_new(**_document_kwargs(video))
+        doc_id = insert_document_if_new(_document_write(video))
         if doc_id is None:
             return "skipped"
         _persist_side_data(doc_id, video, dry_run=dry_run)
@@ -98,7 +99,7 @@ def ingest_youtube_embed(
     def _process(video: YouTubeVideo) -> tuple[bool, int]:
         doc_id = doc_ids.get(video.source_id)
         if doc_id is None:
-            doc_id = upsert_document(**_document_kwargs(video))
+            doc_id = upsert_document(_document_write(video))
             doc_ids[video.source_id] = doc_id
         _persist_side_data(doc_id, video, dry_run=dry_run)
         if skip_existing and video.source_id in embedded:

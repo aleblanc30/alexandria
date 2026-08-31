@@ -6,6 +6,7 @@ import pytest
 
 from pka.ingestion.fetcher import _fetch_one
 from pka.ingestion.wayback import fetch_via_wayback, lookup_snapshot_url
+from tests.conftest import make_document
 
 
 def _html_response(
@@ -204,14 +205,14 @@ class TestArchiveUrlPersistence:
     def test_persist_fetch_result_stores_archive_url(self):
         import sqlalchemy as sa
 
-        from pka.db.queries import get_engine, init_db, upsert_document
+        from pka.db.queries import get_engine, init_db
         from pka.db.schema import documents as docs_table
         from pka.ingestion.fetcher import FetchResult, _persist_fetch_result
 
         init_db()
         original = "https://example.com/gone"
         snapshot = "https://web.archive.org/web/20190603190145/https://example.com/gone"
-        doc_id = upsert_document("firefox", "F-WB", "Wayback doc", original, None)
+        doc_id = make_document("firefox", "F-WB", "Wayback doc", original, None)
 
         _persist_fetch_result(
             FetchResult(

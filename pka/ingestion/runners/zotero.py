@@ -16,6 +16,7 @@ from pka.connectors.zotero import (
 )
 from pka.constants import FetchStatus, Source
 from pka.db.queries import (
+    DocumentWrite,
     document_has_chunks,
     document_index,
     insert_document_if_new,
@@ -49,12 +50,12 @@ def _sync_zotero_card_summary(doc_id: int, item: ZoteroItem, *, dry_run: bool) -
     update_card_summary(doc_id, zotero_card_summary(item))
 
 
-def _zotero_document_kwargs(item: ZoteroItem) -> dict:
+def _zotero_document_write(item: ZoteroItem) -> DocumentWrite:
     """Shared column values for inserting/upserting a Zotero document row."""
     url = zotero_url(item)
     path = zotero_path(item)
     arxiv_id = parse_arxiv_url(item.url) if item.url else None
-    return dict(
+    return DocumentWrite(
         source=Source.ZOTERO,
         source_id=item.source_id,
         title=item.title,
@@ -86,7 +87,7 @@ def ingest_zotero_items(
             break
         failed = False
         try:
-            doc_id = upsert_document(**_zotero_document_kwargs(item))
+            doc_id = upsert_document(_zotero_document_write(item))
             insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
             insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
             _sync_zotero_classification(doc_id, item)
@@ -131,7 +132,7 @@ def ingest_zotero_metadata(
     def _persist(item: ZoteroItem) -> MetadataOutcome:
         if dry_run:
             return "dry_run"
-        doc_id = insert_document_if_new(**_zotero_document_kwargs(item))
+        doc_id = insert_document_if_new(_zotero_document_write(item))
         if doc_id is None:
             return "skipped"
         insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
@@ -166,7 +167,7 @@ def ingest_zotero_embed(
     def _process(item: ZoteroItem) -> tuple[bool, int]:
         doc_id = doc_ids.get(item.source_id)
         if doc_id is None:
-            doc_id = upsert_document(**_zotero_document_kwargs(item))
+            doc_id = upsert_document(_zotero_document_write(item))
             doc_ids[item.source_id] = doc_id
             _sync_zotero_classification(doc_id, item)
         _sync_zotero_card_summary(doc_id, item, dry_run=dry_run)

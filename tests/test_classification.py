@@ -8,7 +8,7 @@ from pka.classification import (
     sync_classification_tags,
 )
 from pka.constants import Source, TagOrigin
-from pka.db.queries import get_engine, init_db, upsert_document
+from pka.db.queries import DocumentWrite, get_engine, init_db, upsert_document
 from pka.db.schema import overlay_tags
 
 
@@ -77,12 +77,14 @@ class TestSyncClassificationTags:
     def test_writes_inferred_tags(self):
         init_db()
         doc_id = upsert_document(
-            Source.ZOTERO,
-            "Z001",
-            "Paper",
-            "https://example.com",
-            1700000000,
-            item_type="journalArticle",
+            DocumentWrite(
+                Source.ZOTERO,
+                "Z001",
+                "Paper",
+                "https://example.com",
+                1700000000,
+                item_type="journalArticle",
+            )
         )
         sync_classification_tags(doc_id, ["academic", "paper"])
         with get_engine().connect() as con:
@@ -98,12 +100,14 @@ class TestSyncClassificationTags:
     def test_removes_stale_tags(self):
         init_db()
         doc_id = upsert_document(
-            Source.ZOTERO,
-            "Z002",
-            "Preprint",
-            "https://example.com",
-            1700000000,
-            item_type="preprint",
+            DocumentWrite(
+                Source.ZOTERO,
+                "Z002",
+                "Preprint",
+                "https://example.com",
+                1700000000,
+                item_type="preprint",
+            )
         )
         sync_classification_tags(doc_id, ["academic", "preprint"])
         sync_classification_tags(doc_id, ["academic", "paper"])
@@ -116,12 +120,14 @@ class TestSyncClassificationTags:
     def test_clears_tags_when_unclassified(self):
         init_db()
         doc_id = upsert_document(
-            Source.ZOTERO,
-            "Z003",
-            "Book",
-            "https://example.com",
-            1700000000,
-            item_type="book",
+            DocumentWrite(
+                Source.ZOTERO,
+                "Z003",
+                "Book",
+                "https://example.com",
+                1700000000,
+                item_type="book",
+            )
         )
         sync_classification_tags(doc_id, ["academic", "paper"])
         sync_classification_tags(doc_id, [])

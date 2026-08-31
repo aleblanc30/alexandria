@@ -6,9 +6,11 @@ Higher-level orchestration lives in :mod:`pka.ingestion.runners` and :mod:`pka.i
 """
 
 import time
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from pka.card_summary import truncate_summary
 from pka.config import settings as cfg
@@ -181,159 +183,113 @@ def init_db() -> None:
 # ── Documents ────────────────────────────────────────────────────────────────
 
 
-def insert_document_if_new(
-    source: Source | str,
-    source_id: str,
-    title: str,
-    url_or_path: str | None,
-    date_added: int | None,
-    fetch_status: FetchStatus | str = FetchStatus.PENDING,
-    zotero_attachment_key: str | None = None,
-    item_type: str | None = None,
-    note: str | None = None,
-    *,
-    doi: str | None = None,
-    arxiv_id: str | None = None,
-    isbn: str | None = None,
-    year: int | None = None,
-    authors_json: str | None = None,
-    zotero_url: str | None = None,
-    zotero_path: str | None = None,
-) -> int | None:
-    """Insert a document when ``(source, source_id)`` is not already archived."""
-    eng = get_engine()
-    now = int(time.time())
-    with eng.begin() as con:
-        existing = con.execute(
-            sa.select(documents.c.id).where(
-                (documents.c.source == str(source)) & (documents.c.source_id == source_id)
-            )
-        ).fetchone()
-        if existing:
-            return None
-        con.execute(
-            sa.text("""
-                INSERT INTO documents
-                    (source, source_id, title, url_or_path,
-                     zotero_attachment_key, date_added, ingested_at, fetch_status,
-                     item_type, note, doi, arxiv_id, isbn, year, authors_json,
-                     zotero_url, zotero_path)
-                VALUES
-                    (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type, :note,
-                     :doi, :arxiv_id, :isbn, :year, :authors_json, :zurl, :zpath)
-            """),
-            {
-                "source": str(source),
-                "sid": source_id,
-                "title": title,
-                "url": url_or_path,
-                "zak": zotero_attachment_key,
-                "da": date_added,
-                "now": now,
-                "fs": str(fetch_status),
-                "item_type": item_type,
-                "note": note,
-                "doi": doi,
-                "arxiv_id": arxiv_id,
-                "isbn": isbn,
-                "year": year,
-                "authors_json": authors_json,
-                "zurl": zotero_url,
-                "zpath": zotero_path,
-            },
-        )
-        row = con.execute(
-            sa.select(documents.c.id).where(
-                (documents.c.source == str(source)) & (documents.c.source_id == source_id)
-            )
-        ).fetchone()
-    return row[0]
+@dataclass(frozen=True, slots=True)
+class DocumentWrite:
+    """The columns of ``documents`` that ingestion writes.
 
+    Not every column: ``archive_url``, ``card_summary``, ``generated_summary``
+    and ``doc_embedding`` are owned by their own helpers (``update_card_summary``,
+    ``set_generated_summary``, the Wayback and doc-embedding paths) and are never
+    written by an ingestion upsert. ``id`` and ``ingested_at`` are set by the
+    writer, not the caller.
 
-def upsert_document(
-    source: Source | str,
-    source_id: str,
-    title: str,
-    url_or_path: str | None,
-    date_added: int | None,
-    fetch_status: FetchStatus | str = FetchStatus.PENDING,
-    zotero_attachment_key: str | None = None,
-    item_type: str | None = None,
-    note: str | None = None,
-    *,
-    doi: str | None = None,
-    arxiv_id: str | None = None,
-    isbn: str | None = None,
-    year: int | None = None,
-    authors_json: str | None = None,
-    zotero_url: str | None = None,
-    zotero_path: str | None = None,
-) -> int:
-    """Insert a document or update its mutable fields. Returns the document id.
-
-    ``ingested_at`` is set on first insert only — ``COALESCE`` preserves the
-    original value on subsequent upserts.
+    Field order matches the pre-refactor positional parameter order of
+    ``insert_document_if_new`` / ``upsert_document``.
     """
+
+    source: Source | str
+    source_id: str
+    title: str | None = None
+    url_or_path: str | None = None
+    date_added: int | None = None
+    fetch_status: FetchStatus | str = FetchStatus.PENDING
+    zotero_attachment_key: str | None = None
+    item_type: str | None = None
+    note: str | None = None
+    doi: str | None = None
+    arxiv_id: str | None = None
+    isbn: str | None = None
+    year: int | None = None
+    authors_json: str | None = None
+    zotero_url: str | None = None
+    zotero_path: str | None = None
+
+    def values(self) -> dict[str, Any]:
+        """Column -> value, with the two string enums stringified."""
+        v = asdict(self)
+        v["source"] = str(self.source)
+        v["fetch_status"] = str(self.fetch_status)
+        return v
+
+
+# Columns an upsert overwrites outright; every other writable column COALESCEs
+# the incoming value over the stored one instead. COALESCE is the right default
+# for a bibliographic field: a source that does not know an item's DOI must not
+# erase the DOI another source supplied. Overwrite is reserved for the columns
+# whose current value is by definition whatever the source last said.
+_OVERWRITE_ON_UPSERT = frozenset({"title", "url_or_path", "fetch_status"})
+
+
+def _write_document(doc: DocumentWrite, *, on_conflict: str) -> int | None:
+    """Shared Core writer behind ``insert_document_if_new`` / ``upsert_document``.
+
+    ``inserted_primary_key`` is not used to recover the id: on a
+    ``DO UPDATE``/``DO NOTHING`` conflict SQLite's ``lastrowid`` (what
+    SQLAlchemy's pysqlite dialect falls back to) reports the table's most
+    recently inserted row, not the conflicted one — verified empirically, not
+    from docs. A trailing ``SELECT`` by the natural key is the only reliable
+    way to get it back.
+    """
+    values = doc.values()
+    values["ingested_at"] = int(time.time())
     eng = get_engine()
-    now = int(time.time())
     with eng.begin() as con:
-        stmt = sa.text("""
-            INSERT INTO documents
-                (source, source_id, title, url_or_path,
-                 zotero_attachment_key, date_added, ingested_at, fetch_status,
-                 item_type, note, doi, arxiv_id, isbn, year, authors_json,
-                 zotero_url, zotero_path)
-            VALUES
-                (:source, :sid, :title, :url, :zak, :da, :now, :fs, :item_type, :note,
-                 :doi, :arxiv_id, :isbn, :year, :authors_json, :zurl, :zpath)
-            ON CONFLICT(source, source_id) DO UPDATE SET
-                title        = excluded.title,
-                url_or_path  = excluded.url_or_path,
-                fetch_status = excluded.fetch_status,
-                item_type    = COALESCE(excluded.item_type, documents.item_type),
-                zotero_attachment_key = COALESCE(
-                    excluded.zotero_attachment_key, documents.zotero_attachment_key
-                ),
-                note         = COALESCE(excluded.note, documents.note),
-                ingested_at  = COALESCE(documents.ingested_at, excluded.ingested_at),
-                doi          = COALESCE(excluded.doi, documents.doi),
-                arxiv_id     = COALESCE(excluded.arxiv_id, documents.arxiv_id),
-                isbn         = COALESCE(excluded.isbn, documents.isbn),
-                year         = COALESCE(excluded.year, documents.year),
-                authors_json = COALESCE(excluded.authors_json, documents.authors_json),
-                zotero_url   = COALESCE(excluded.zotero_url, documents.zotero_url),
-                zotero_path  = COALESCE(excluded.zotero_path, documents.zotero_path)
-        """)
-        con.execute(
-            stmt,
-            {
-                "source": str(source),
-                "sid": source_id,
-                "title": title,
-                "url": url_or_path,
-                "zak": zotero_attachment_key,
-                "da": date_added,
-                "now": now,
-                "fs": str(fetch_status),
-                "item_type": item_type,
-                "note": note,
-                "doi": doi,
-                "arxiv_id": arxiv_id,
-                "isbn": isbn,
-                "year": year,
-                "authors_json": authors_json,
-                "zurl": zotero_url,
-                "zpath": zotero_path,
-            },
-        )
+        stmt = sqlite_insert(documents).values(**values)
+        if on_conflict == "update":
+            set_ = {
+                col: (
+                    stmt.excluded[col]
+                    if col in _OVERWRITE_ON_UPSERT
+                    else sa.func.coalesce(stmt.excluded[col], documents.c[col])
+                )
+                for col in values
+                if col not in ("source", "source_id", "ingested_at")
+            }
+            # ``ingested_at`` is set on first insert only — COALESCE preserves
+            # the original value (opposite direction from every other column,
+            # which prefers the incoming value).
+            set_["ingested_at"] = sa.func.coalesce(
+                documents.c.ingested_at, stmt.excluded.ingested_at
+            )
+            stmt = stmt.on_conflict_do_update(index_elements=["source", "source_id"], set_=set_)
+            con.execute(stmt)
+        else:
+            stmt = stmt.on_conflict_do_nothing(index_elements=["source", "source_id"])
+            if con.execute(stmt).rowcount == 0:
+                return None
         row = con.execute(
             sa.select(documents.c.id).where(
-                (documents.c.source == str(source)) & (documents.c.source_id == source_id)
+                (documents.c.source == values["source"])
+                & (documents.c.source_id == values["source_id"])
             )
         ).fetchone()
     return row[0]
 
 
+def insert_document_if_new(doc: DocumentWrite) -> int | None:
+    """Insert a document when ``(source, source_id)`` is not already archived."""
+    return _write_document(doc, on_conflict="nothing")
+
+
+def upsert_document(doc: DocumentWrite) -> int:
+    """Insert a document or update its mutable fields. Returns the document id."""
+    return _write_document(doc, on_conflict="update")
+
+
+# Deliberately separate from ``DocumentWrite``/``_write_document`` above: this
+# updates a *subset* of columns (never title/item_type/note/isbn/fetch_status,
+# since a post-hoc refresh must not reset those) and writes url_or_path
+# unconditionally. A new column belongs here too if Zotero can backfill it.
 _ZOTERO_REFRESH_COALESCE_KEYS = (
     "zotero_attachment_key",
     "doi",

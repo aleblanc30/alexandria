@@ -13,8 +13,9 @@ import numpy as np
 import pytest
 import sqlalchemy as sa
 
-from pka.db.queries import get_engine, init_db, upsert_document
+from pka.db.queries import get_engine, init_db
 from pka.db.schema import cluster_assignments, cluster_runs, clusters
+from tests.conftest import make_document
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -27,9 +28,7 @@ def _seed_documents(n: int = N_DOCS) -> list[int]:
     ids = []
     for i in range(n):
         src = ["zotero", "firefox", "calibre"][i % 3]
-        did = upsert_document(
-            src, f"SRC{i:03d}", f"Document {i}", None, int(time.time()) - i * 3600
-        )
+        did = make_document(src, f"SRC{i:03d}", f"Document {i}", None, int(time.time()) - i * 3600)
         ids.append(did)
     return ids
 
@@ -484,12 +483,12 @@ class TestAssignNewDocs:
     def test_assigns_unassigned_docs(self, populated, monkeypatch):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, assign_new_docs
-        from pka.db.queries import insert_chunks, upsert_document
+        from pka.db.queries import insert_chunks
 
         result = run_clustering(min_cluster_size=2)
         accept_run(result.run_id)
 
-        new_id = upsert_document("zotero", "NEW001", "New doc", None, int(time.time()))
+        new_id = make_document("zotero", "NEW001", "New doc", None, int(time.time()))
         insert_chunks(
             [
                 {
@@ -648,7 +647,7 @@ class TestClusterLabellingSamples:
     def test_sample_cluster_documents_uses_card_summary(self):
         from pka.db.queries import get_engine, sample_cluster_documents, update_card_summary
 
-        doc_id = upsert_document("zotero", "Z001", "Paper Title", None, int(time.time()))
+        doc_id = make_document("zotero", "Z001", "Paper Title", None, int(time.time()))
         update_card_summary(doc_id, "Abstract about neural networks.")
         with get_engine().connect() as con:
             samples = sample_cluster_documents(con, [doc_id])
