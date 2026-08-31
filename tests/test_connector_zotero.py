@@ -1,4 +1,3 @@
-
 import pytest
 
 from pka.connectors.zotero import (
@@ -104,10 +103,18 @@ class TestLoadItems:
         pdf = tmp_path / "paper.pdf"
         pdf.write_bytes(b"%PDF")
         item = ZoteroItem(
-            source_id="X", title="T", authors=[], abstract=None, year=None,
-            doi="10.1/xyz", url="https://journal.example/article",
-            item_type="journalArticle", collections=[], tags=[],
-            pdf_path=pdf, date_added=None,
+            source_id="X",
+            title="T",
+            authors=[],
+            abstract=None,
+            year=None,
+            doi="10.1/xyz",
+            url="https://journal.example/article",
+            item_type="journalArticle",
+            collections=[],
+            tags=[],
+            pdf_path=pdf,
+            date_added=None,
         )
         assert (
             zotero_document_url_or_path(zotero_url(item), zotero_path(item))
@@ -118,20 +125,36 @@ class TestLoadItems:
         pdf = tmp_path / "paper.pdf"
         pdf.write_bytes(b"%PDF")
         item = ZoteroItem(
-            source_id="X", title="T", authors=[], abstract=None, year=None,
-            doi=None, url=None, item_type="journalArticle", collections=[], tags=[],
-            pdf_path=pdf, date_added=None,
+            source_id="X",
+            title="T",
+            authors=[],
+            abstract=None,
+            year=None,
+            doi=None,
+            url=None,
+            item_type="journalArticle",
+            collections=[],
+            tags=[],
+            pdf_path=pdf,
+            date_added=None,
         )
-        assert (
-            zotero_document_url_or_path(zotero_url(item), zotero_path(item)) == str(pdf)
-        )
+        assert zotero_document_url_or_path(zotero_url(item), zotero_path(item)) == str(pdf)
 
     def test_zotero_document_url_or_path_drops_doi_rung(self, tmp_path):
         """No URL, no PDF, only a DOI: url_or_path is NULL — DOI lives in documents.doi."""
         item = ZoteroItem(
-            source_id="X", title="T", authors=[], abstract=None, year=None,
-            doi="10.1/xyz", url=None, item_type="journalArticle",
-            collections=[], tags=[], pdf_path=None, date_added=None,
+            source_id="X",
+            title="T",
+            authors=[],
+            abstract=None,
+            year=None,
+            doi="10.1/xyz",
+            url=None,
+            item_type="journalArticle",
+            collections=[],
+            tags=[],
+            pdf_path=None,
+            date_added=None,
         )
         assert zotero_document_url_or_path(zotero_url(item), zotero_path(item)) is None
 
@@ -139,19 +162,36 @@ class TestLoadItems:
         pdf = tmp_path / "paper.pdf"
         pdf.write_bytes(b"%PDF")
         item = ZoteroItem(
-            source_id="X", title="T", authors=[], abstract=None, year=None,
-            doi=None, url="https://journal.example/article",
-            item_type="journalArticle", collections=[], tags=[],
-            pdf_path=pdf, date_added=None,
+            source_id="X",
+            title="T",
+            authors=[],
+            abstract=None,
+            year=None,
+            doi=None,
+            url="https://journal.example/article",
+            item_type="journalArticle",
+            collections=[],
+            tags=[],
+            pdf_path=pdf,
+            date_added=None,
         )
         assert zotero_url(item) == "https://journal.example/article"
         assert zotero_path(item) == str(pdf)
 
     def test_zotero_url_reaches_non_http_values(self):
         item = ZoteroItem(
-            source_id="X", title="T", authors=[], abstract=None, year=None,
-            doi=None, url="urn:isbn:0000000000", item_type="book",
-            collections=[], tags=[], pdf_path=None, date_added=None,
+            source_id="X",
+            title="T",
+            authors=[],
+            abstract=None,
+            year=None,
+            doi=None,
+            url="urn:isbn:0000000000",
+            item_type="book",
+            collections=[],
+            tags=[],
+            pdf_path=None,
+            date_added=None,
         )
         assert zotero_url(item) == "urn:isbn:0000000000"
         assert zotero_document_url_or_path(zotero_url(item), zotero_path(item)) == (
@@ -160,9 +200,18 @@ class TestLoadItems:
 
     def test_zotero_embed_text_includes_authors(self):
         item = ZoteroItem(
-            source_id="X", title="Short title", authors=["Ada Lovelace"],
-            abstract=None, year=None, doi=None, url=None, item_type="journalArticle",
-            collections=[], tags=[], pdf_path=None, date_added=None,
+            source_id="X",
+            title="Short title",
+            authors=["Ada Lovelace"],
+            abstract=None,
+            year=None,
+            doi=None,
+            url=None,
+            item_type="journalArticle",
+            collections=[],
+            tags=[],
+            pdf_path=None,
+            date_added=None,
         )
         text = zotero_embed_text(item)
         assert "Short title" in text
@@ -170,9 +219,18 @@ class TestLoadItems:
 
     def test_zotero_embed_text_uses_highlight_for_annotations(self):
         item = ZoteroItem(
-            source_id="A", title="", authors=[], abstract=None, year=None,
-            doi=None, url=None, item_type="annotation", collections=[], tags=[],
-            pdf_path=None, date_added=None,
+            source_id="A",
+            title="",
+            authors=[],
+            abstract=None,
+            year=None,
+            doi=None,
+            url=None,
+            item_type="annotation",
+            collections=[],
+            tags=[],
+            pdf_path=None,
+            date_added=None,
             highlight_text="Important PDF highlight text here.",
         )
         assert zotero_embed_text(item) == "Important PDF highlight text here."
@@ -202,25 +260,52 @@ class TestDevZoteroCopy:
 class TestZoteroCardSummary:
     def test_abstract(self):
         item = ZoteroItem(
-            source_id="1", title="T", authors=[], abstract="Paper abstract.",
-            year=None, doi=None, url=None, item_type="journalArticle",
-            collections=[], tags=[], pdf_path=None, date_added=None,
+            source_id="1",
+            title="T",
+            authors=[],
+            abstract="Paper abstract.",
+            year=None,
+            doi=None,
+            url=None,
+            item_type="journalArticle",
+            collections=[],
+            tags=[],
+            pdf_path=None,
+            date_added=None,
         )
         assert zotero_card_summary(item) == "Paper abstract."
 
     def test_annotation_uses_highlight(self):
         item = ZoteroItem(
-            source_id="1", title="", authors=[], abstract=None,
-            year=None, doi=None, url=None, item_type="annotation",
-            collections=[], tags=[], pdf_path=None, date_added=None,
+            source_id="1",
+            title="",
+            authors=[],
+            abstract=None,
+            year=None,
+            doi=None,
+            url=None,
+            item_type="annotation",
+            collections=[],
+            tags=[],
+            pdf_path=None,
+            date_added=None,
             highlight_text="Highlighted passage.",
         )
         assert zotero_card_summary(item) == "Highlighted passage."
 
     def test_missing_text_returns_none(self):
         item = ZoteroItem(
-            source_id="1", title="T", authors=[], abstract=None,
-            year=None, doi=None, url=None, item_type="journalArticle",
-            collections=[], tags=[], pdf_path=None, date_added=None,
+            source_id="1",
+            title="T",
+            authors=[],
+            abstract=None,
+            year=None,
+            doi=None,
+            url=None,
+            item_type="journalArticle",
+            collections=[],
+            tags=[],
+            pdf_path=None,
+            date_added=None,
         )
         assert zotero_card_summary(item) is None

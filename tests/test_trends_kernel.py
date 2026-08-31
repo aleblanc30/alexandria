@@ -1,4 +1,5 @@
 """Tests for trend kernel reconstruction."""
+
 import datetime
 
 from pka.trends.kernel import (

@@ -1,4 +1,5 @@
 """Tests for source purge (CLI helper + ingestion API endpoint)."""
+
 import time
 
 import pytest
@@ -18,23 +19,42 @@ from pka.db.schema import (
 
 def _seed_document(source: str, source_id: str, *, with_chunk: bool = True) -> int:
     doc_id = upsert_document(
-        source, source_id, f"{source} doc", f"https://example.com/{source_id}",
+        source,
+        source_id,
+        f"{source} doc",
+        f"https://example.com/{source_id}",
         int(time.time()),
     )
     eng = get_engine()
     with eng.begin() as con:
-        con.execute(source_tags.insert().values(
-            document_id=doc_id, tag_string="tag", source=source,
-        ))
-        con.execute(overlay_tags.insert().values(
-            document_id=doc_id, tag="inferred", origin="inferred",
-            confidence=1.0, created_at=int(time.time()),
-        ))
+        con.execute(
+            source_tags.insert().values(
+                document_id=doc_id,
+                tag_string="tag",
+                source=source,
+            )
+        )
+        con.execute(
+            overlay_tags.insert().values(
+                document_id=doc_id,
+                tag="inferred",
+                origin="inferred",
+                confidence=1.0,
+                created_at=int(time.time()),
+            )
+        )
     if with_chunk:
-        insert_chunks([{
-            "document_id": doc_id, "chunk_index": 0, "text": "body",
-            "token_count": 1, "vector_id": f"vec-{source_id}",
-        }])
+        insert_chunks(
+            [
+                {
+                    "document_id": doc_id,
+                    "chunk_index": 0,
+                    "text": "body",
+                    "token_count": 1,
+                    "vector_id": f"vec-{source_id}",
+                }
+            ]
+        )
     return doc_id
 
 
@@ -47,6 +67,7 @@ def _remaining_sources() -> list[str]:
 def client(empty_vector_store):
     init_db()
     from pka.api.main import app
+
     return TestClient(app, raise_server_exceptions=True)
 
 
@@ -65,12 +86,10 @@ def test_purge_source_removes_only_that_source(empty_vector_store):
     eng = get_engine()
     with eng.connect() as con:
         assert con.execute(sa.select(sa.func.count()).select_from(chunks)).scalar() == 0
-        assert con.execute(
-            sa.select(sa.func.count()).select_from(source_tags)
-        ).scalar() == 1  # zotero tag survives
-        assert con.execute(
-            sa.select(sa.func.count()).select_from(overlay_tags)
-        ).scalar() == 1
+        assert (
+            con.execute(sa.select(sa.func.count()).select_from(source_tags)).scalar() == 1
+        )  # zotero tag survives
+        assert con.execute(sa.select(sa.func.count()).select_from(overlay_tags)).scalar() == 1
 
 
 def test_purge_unknown_source_raises(empty_vector_store):
@@ -82,14 +101,24 @@ def test_purge_unknown_source_raises(empty_vector_store):
 def test_purge_images_clears_sidecar_and_documents(empty_vector_store, monkeypatch):
     init_db()
     doc_id = upsert_document(
-        "image", "/tmp/a.jpg", "a.jpg", "/tmp/a.jpg", int(time.time()),
+        "image",
+        "/tmp/a.jpg",
+        "a.jpg",
+        "/tmp/a.jpg",
+        int(time.time()),
     )
     eng = get_engine()
     with eng.begin() as con:
-        con.execute(images.insert().values(
-            document_id=doc_id, path="/tmp/a.jpg", filename="a.jpg",
-            image_type="photo", clip_vector_id="clip-1", indexed_at=int(time.time()),
-        ))
+        con.execute(
+            images.insert().values(
+                document_id=doc_id,
+                path="/tmp/a.jpg",
+                filename="a.jpg",
+                image_type="photo",
+                clip_vector_id="clip-1",
+                indexed_at=int(time.time()),
+            )
+        )
 
     called: list[list[str]] = []
     monkeypatch.setattr(
@@ -104,9 +133,7 @@ def test_purge_images_clears_sidecar_and_documents(empty_vector_store, monkeypat
     assert called == [["clip-1"]]
     with eng.connect() as con:
         assert con.execute(sa.select(sa.func.count()).select_from(images)).scalar() == 0
-        assert con.execute(
-            sa.select(sa.func.count()).select_from(documents)
-        ).scalar() == 0
+        assert con.execute(sa.select(sa.func.count()).select_from(documents)).scalar() == 0
 
 
 def test_purge_images_clears_rejection_cache(empty_vector_store, monkeypatch):
@@ -116,9 +143,7 @@ def test_purge_images_clears_rejection_cache(empty_vector_store, monkeypatch):
     from pka.db.queries import get_rejected_paths, record_image_rejection
 
     record_image_rejection("/tmp/bad.jpg", "low_text_coverage")
-    monkeypatch.setattr(
-        "pka.ingestion.image_pipeline.delete_clip_vectors", lambda vids: len(vids)
-    )
+    monkeypatch.setattr("pka.ingestion.image_pipeline.delete_clip_vectors", lambda vids: len(vids))
 
     counts = purge_source("image")
 
@@ -143,6 +168,7 @@ def test_purge_then_reregisters_previously_rejected(empty_vector_store, monkeypa
     """End-to-end: after a purge, a metadata rerun re-registers a path that had
     been cached as rejected."""
     from pka.config import settings
+
     monkeypatch.setattr(settings, "image_gate_enabled", True)  # cache is consulted
     init_db()
     from pka.connectors.images import ImageFile
@@ -161,10 +187,12 @@ def test_purge_then_reregisters_previously_rejected(empty_vector_store, monkeypa
     stats = register_images([img])
     assert stats["processed"] == 1
     with get_engine().connect() as con:
-        assert con.execute(
-            sa.select(sa.func.count()).select_from(images)
-            .where(images.c.path == str(img.path))
-        ).scalar() == 1
+        assert (
+            con.execute(
+                sa.select(sa.func.count()).select_from(images).where(images.c.path == str(img.path))
+            ).scalar()
+            == 1
+        )
 
 
 def test_reset_rejections_flag_clears_cache(empty_vector_store, monkeypatch):

@@ -1,4 +1,5 @@
 """Tests for cooperative sync stop checks."""
+
 from pka.ingestion import progress as sp
 from pka.ingestion.progress import should_stop
 

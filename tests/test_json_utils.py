@@ -1,4 +1,5 @@
 """Tests for LLM JSON response parsing."""
+
 import json
 
 import pytest

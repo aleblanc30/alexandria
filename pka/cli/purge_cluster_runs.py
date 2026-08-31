@@ -6,6 +6,7 @@ Usage::
     alexandria purge-cluster-runs 42
     alexandria purge-cluster-runs --all --dry-run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,9 +42,7 @@ def purge_cluster_run(run_id: int, *, dry_run: bool = False, force: bool = False
     if row["status"] == "running":
         raise ValueError(f"Run #{run_id} is still running")
     if row["accepted"] and not force:
-        raise ValueError(
-            f"Run #{run_id} is accepted; pass --force to delete the active run"
-        )
+        raise ValueError(f"Run #{run_id} is accepted; pass --force to delete the active run")
 
     counts = _count_run_rows(eng, run_id)
     if dry_run:
@@ -55,20 +54,14 @@ def purge_cluster_run(run_id: int, *, dry_run: bool = False, force: bool = False
         )
         counts["cluster_assignments"] = result.rowcount
         result = con.execute(
-            clusters.delete().where(
-                (clusters.c.run_id == run_id) & (clusters.c.level == 2)
-            )
+            clusters.delete().where((clusters.c.run_id == run_id) & (clusters.c.level == 2))
         )
         counts["clusters_l2"] = result.rowcount
         result = con.execute(
-            clusters.delete().where(
-                (clusters.c.run_id == run_id) & (clusters.c.level == 1)
-            )
+            clusters.delete().where((clusters.c.run_id == run_id) & (clusters.c.level == 1))
         )
         counts["clusters_l1"] = result.rowcount
-        result = con.execute(
-            cluster_runs.delete().where(cluster_runs.c.run_id == run_id)
-        )
+        result = con.execute(cluster_runs.delete().where(cluster_runs.c.run_id == run_id))
         counts["cluster_runs"] = result.rowcount
 
     return counts
@@ -107,21 +100,30 @@ def purge_all_cluster_runs(*, dry_run: bool = False, force: bool = False) -> dic
 
 def _count_run_rows(engine, run_id: int) -> dict[str, int]:
     with engine.connect() as con:
-        n_assign = con.execute(
-            sa.select(sa.func.count())
-            .select_from(cluster_assignments)
-            .where(cluster_assignments.c.run_id == run_id)
-        ).scalar() or 0
-        n_l2 = con.execute(
-            sa.select(sa.func.count())
-            .select_from(clusters)
-            .where((clusters.c.run_id == run_id) & (clusters.c.level == 2))
-        ).scalar() or 0
-        n_l1 = con.execute(
-            sa.select(sa.func.count())
-            .select_from(clusters)
-            .where((clusters.c.run_id == run_id) & (clusters.c.level == 1))
-        ).scalar() or 0
+        n_assign = (
+            con.execute(
+                sa.select(sa.func.count())
+                .select_from(cluster_assignments)
+                .where(cluster_assignments.c.run_id == run_id)
+            ).scalar()
+            or 0
+        )
+        n_l2 = (
+            con.execute(
+                sa.select(sa.func.count())
+                .select_from(clusters)
+                .where((clusters.c.run_id == run_id) & (clusters.c.level == 2))
+            ).scalar()
+            or 0
+        )
+        n_l1 = (
+            con.execute(
+                sa.select(sa.func.count())
+                .select_from(clusters)
+                .where((clusters.c.run_id == run_id) & (clusters.c.level == 1))
+            ).scalar()
+            or 0
+        )
     return {
         "cluster_assignments": n_assign,
         "clusters_l2": n_l2,

@@ -60,7 +60,7 @@ class TestSentenceWindowChunks:
             assert len(c) < len(self.SAMPLE)
 
     def test_overlap_produces_more_chunks_than_no_overlap(self):
-        with_overlap    = sentence_window_chunks(self.SAMPLE, window=3, overlap=1, min_chars=1)
+        with_overlap = sentence_window_chunks(self.SAMPLE, window=3, overlap=1, min_chars=1)
         without_overlap = sentence_window_chunks(self.SAMPLE, window=3, overlap=0, min_chars=1)
         assert len(with_overlap) >= len(without_overlap)
 

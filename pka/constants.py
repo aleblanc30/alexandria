@@ -4,6 +4,7 @@ Project-wide constants and string-based enums.
 These enums are string-valued so existing DB rows (stored as text) remain
 compatible. Callers can use either the enum member or the underlying string.
 """
+
 from enum import StrEnum
 
 
@@ -21,8 +22,8 @@ class FetchStatus(StrEnum):
     FETCHED = "fetched"
     UNFETCHABLE = "unfetchable"
     SKIPPED = "skipped"
-    AVAILABLE = "available"   # Zotero/Calibre asset already on disk
-    MISSING = "missing"       # Calibre book with no file
+    AVAILABLE = "available"  # Zotero/Calibre asset already on disk
+    MISSING = "missing"  # Calibre book with no file
     # The file is present and readable, but no page carries an embedded text
     # layer — a scan. Distinct from UNFETCHABLE (broken/oversized/not a PDF)
     # and from AVAILABLE (never attempted), so the OCR-candidate set is one
@@ -34,11 +35,11 @@ class FetchStatus(StrEnum):
 class PdfTextLayer(StrEnum):
     """Why a PDF extraction produced the text it did (or produced none)."""
 
-    TEXT = "text"                   # at least one page yielded embedded text
-    NONE = "no_text_layer"          # pages exist, none carry text — OCR candidate
-    UNKNOWN = "unknown"             # a page cap stopped before any text was found
-    EMPTY = "empty"                 # opened, but the document has no pages
-    UNREADABLE = "unreadable"       # neither pdfplumber nor pypdf could open it
+    TEXT = "text"  # at least one page yielded embedded text
+    NONE = "no_text_layer"  # pages exist, none carry text — OCR candidate
+    UNKNOWN = "unknown"  # a page cap stopped before any text was found
+    EMPTY = "empty"  # opened, but the document has no pages
+    UNREADABLE = "unreadable"  # neither pdfplumber nor pypdf could open it
 
 
 class TagOrigin(StrEnum):

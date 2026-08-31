@@ -169,9 +169,7 @@ class TestEasyOcr:
         monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
         # ocr() decodes the file (EXIF-orienting it) before OCR; stub that out so
         # the test exercises only the line-joining, not image loading.
-        monkeypatch.setattr(
-            "pka.providers.easy_ocr._oriented_rgb_array", lambda path: object()
-        )
+        monkeypatch.setattr("pka.providers.easy_ocr._oriented_rgb_array", lambda path: object())
         assert EasyOcrProvider().ocr(Path("slide.png")) == "Line one\nLine two"
 
     def test_ocr_returns_empty_on_failure(self, monkeypatch):
@@ -212,6 +210,7 @@ class TestEasyOcr:
 
         def _unavailable(self, langs):
             from pka.providers.easy_ocr import EasyOcrUnavailable as _U
+
             raise _U("no easyocr")
 
         monkeypatch.setattr(EasyOcrProvider, "_reader", _unavailable)
@@ -359,8 +358,7 @@ class TestOpenAICompatVision:
 
 def _cloud_chat(**kw):
     return OllamaChatProvider(
-        base_url="https://ollama.com", api_key="oll-key", label="ollama_cloud",
-        remote=True, **kw
+        base_url="https://ollama.com", api_key="oll-key", label="ollama_cloud", remote=True, **kw
     )
 
 
@@ -411,8 +409,11 @@ class TestOllamaCloudChat:
 
         monkeypatch.setattr("pka.providers.ollama.httpx.post", _boom)
         p = OllamaChatProvider(
-            base_url="https://ollama.com", api_key="", model="gpt-oss:120b",
-            label="ollama_cloud", remote=True,
+            base_url="https://ollama.com",
+            api_key="",
+            model="gpt-oss:120b",
+            label="ollama_cloud",
+            remote=True,
         )
         data, err = p.chat_json("prompt")
         assert data == {}
@@ -436,8 +437,11 @@ class TestOllamaCloudVision:
 
         monkeypatch.setattr("pka.providers.ollama.httpx.post", _post)
         p = OllamaVisionProvider(
-            base_url="https://ollama.com", api_key="oll-key", model="qwen3.5:397b",
-            label="ollama_cloud", remote=True,
+            base_url="https://ollama.com",
+            api_key="oll-key",
+            model="qwen3.5:397b",
+            label="ollama_cloud",
+            remote=True,
         )
         content = p.complete("describe", "QUJD", model="moondream")
 

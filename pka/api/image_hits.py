@@ -4,6 +4,7 @@ Two hit shapes reach here (DESIGN.md §3.3): CLIP hits, keyed by
 ``clip_vector_id``, and inferred-text hits, keyed by ``document_id``.
 :func:`merge_image_hits` folds both into one ranked list.
 """
+
 import sqlalchemy as sa
 
 from pka.api.schemas.images import ImageOut
@@ -18,17 +19,25 @@ def image_row_to_out(
     matched_by: str | None = None,
 ) -> ImageOut:
     return ImageOut(
-        id=row["id"], path=row["path"], filename=row["filename"],
-        image_type=row["image_type"], width=row["width"], height=row["height"],
-        description=row["description"], ocr_text=row["ocr_text"],
-        date_taken=row["date_taken"], tags=tags, similarity=similarity,
+        id=row["id"],
+        path=row["path"],
+        filename=row["filename"],
+        image_type=row["image_type"],
+        width=row["width"],
+        height=row["height"],
+        description=row["description"],
+        ocr_text=row["ocr_text"],
+        date_taken=row["date_taken"],
+        tags=tags,
+        similarity=similarity,
         matched_by=matched_by,
     )
 
 
 def image_tags_for(con, image_id: int) -> list[str]:
     return [
-        t[0] for t in con.execute(
+        t[0]
+        for t in con.execute(
             sa.select(image_tags.c.tag).where(image_tags.c.image_id == image_id)
         ).fetchall()
     ]
@@ -68,9 +77,14 @@ def clip_hits_to_image_out(con, hits, *, round_similarity: bool = False) -> list
         sim = 1.0 - h["distance"]
         if round_similarity:
             sim = round(sim, 3)
-        out.append(image_row_to_out(
-            row, tags_map.get(row["id"], []), similarity=sim, matched_by="clip",
-        ))
+        out.append(
+            image_row_to_out(
+                row,
+                tags_map.get(row["id"], []),
+                similarity=sim,
+                matched_by="clip",
+            )
+        )
     return out
 
 
@@ -91,8 +105,7 @@ def inferred_hits_to_image_out(con, hits, *, round_similarity: bool = False) -> 
         row["document_id"]: row
         for row in con.execute(
             sa.select(images_tbl).where(
-                images_tbl.c.document_id.in_(doc_ids)
-                & images_tbl.c.indexed_at.isnot(None)
+                images_tbl.c.document_id.in_(doc_ids) & images_tbl.c.indexed_at.isnot(None)
             )
         ).mappings()
     }
@@ -106,9 +119,14 @@ def inferred_hits_to_image_out(con, hits, *, round_similarity: bool = False) -> 
         sim = 1.0 - h["distance"]
         if round_similarity:
             sim = round(sim, 3)
-        out.append(image_row_to_out(
-            row, tags_map.get(row["id"], []), similarity=sim, matched_by="text",
-        ))
+        out.append(
+            image_row_to_out(
+                row,
+                tags_map.get(row["id"], []),
+                similarity=sim,
+                matched_by="text",
+            )
+        )
     return out
 
 

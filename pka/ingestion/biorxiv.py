@@ -1,4 +1,5 @@
 """bioRxiv API + PDF fetch for Firefox bookmark URLs."""
+
 from __future__ import annotations
 
 import asyncio
@@ -152,7 +153,11 @@ async def _fetch_biorxiv_pdf_text(
         return None, resp.status_code, f"pdf HTTP {resp.status_code}"
 
     result = await asyncio.to_thread(
-        _fetch_pdf_result, 0, pdf_url, resp.content, resp.status_code,
+        _fetch_pdf_result,
+        0,
+        pdf_url,
+        resp.content,
+        resp.status_code,
     )
     if result.status != "fetched" or not result.text:
         return None, resp.status_code, result.error_msg or "pdf extraction failed"
@@ -181,7 +186,8 @@ async def fetch_biorxiv_paper(
     doc_doi = normalize_doi(meta.doi)
     authors_json = (
         json.dumps([a.strip() for a in meta.authors.split("; ") if a.strip()])
-        if meta.authors else None
+        if meta.authors
+        else None
     )
 
     if pdf_text:

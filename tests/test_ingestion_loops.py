@@ -1,4 +1,5 @@
 """Tests for ingestion loop helpers and source registry."""
+
 from pka.constants import Source
 from pka.ingestion.loops import run_embed_loop, run_metadata_loop
 from pka.ingestion.registry import get_source_handlers, require_handlers

@@ -6,6 +6,7 @@ and an arXiv document with no source DOI derives one from its arXiv ID
 reached from more than one runner (Zotero, and the arXiv fetch path), so it
 lives here rather than being written out per source.
 """
+
 import re
 
 _DOI_PREFIX_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", re.IGNORECASE)

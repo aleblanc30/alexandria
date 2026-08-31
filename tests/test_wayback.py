@@ -213,15 +213,17 @@ class TestArchiveUrlPersistence:
         snapshot = "https://web.archive.org/web/20190603190145/https://example.com/gone"
         doc_id = upsert_document("firefox", "F-WB", "Wayback doc", original, None)
 
-        _persist_fetch_result(FetchResult(
-            doc_id,
-            original,
-            "fetched",
-            "Archived page text with enough content.",
-            200,
-            "fetched via wayback snapshot 20190603190145 (original HTTP 404)",
-            archive_url=snapshot,
-        ))
+        _persist_fetch_result(
+            FetchResult(
+                doc_id,
+                original,
+                "fetched",
+                "Archived page text with enough content.",
+                200,
+                "fetched via wayback snapshot 20190603190145 (original HTTP 404)",
+                archive_url=snapshot,
+            )
+        )
 
         with get_engine().connect() as con:
             row = con.execute(

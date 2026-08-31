@@ -5,6 +5,7 @@ tags``. There is no separate fetch phase — the Data API returns the content
 alongside the metadata — so ``fetch_status`` is set to ``FETCHED`` on insert.
 Transcript-based Phase-2 enrichment is deferred (see ``planning/BACKLOG.md``).
 """
+
 from __future__ import annotations
 
 import logging
@@ -122,6 +123,8 @@ def ingest_youtube_embed(
         process=_process,
         progress_key=progress_key,
         on_error_log=lambda video, exc: log.exception(
-            "YouTube embed %s failed: %s", video.source_id, exc,
+            "YouTube embed %s failed: %s",
+            video.source_id,
+            exc,
         ),
     )

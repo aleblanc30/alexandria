@@ -1,4 +1,5 @@
 """Consistent SQLite snapshots for read-only connectors."""
+
 from __future__ import annotations
 
 import logging

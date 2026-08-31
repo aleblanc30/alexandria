@@ -4,6 +4,7 @@
 Thin shim — the implementation lives in pka.cli.calibre (run via
 `alexandria calibre` once installed, or `python scripts/run_calibre.py` from the repo).
 """
+
 import sys
 from pathlib import Path
 

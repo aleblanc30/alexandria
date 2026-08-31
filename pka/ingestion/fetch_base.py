@@ -5,6 +5,7 @@ Lives below ``fetcher`` so the per-site fetchers (arxiv, biorxiv, wayback,
 wikipedia) can use these without importing the dispatcher that calls them —
 ``fetcher`` dispatches down to those modules, they depend only on this one.
 """
+
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,12 +28,12 @@ _PDF_MAGIC = b"%PDF"
 class FetchResult:
     document_id: int
     url: str
-    status: str         # fetched | unfetchable | skipped | no_text_layer
-    text: str | None    # extracted main text (if fetched)
+    status: str  # fetched | unfetchable | skipped | no_text_layer
+    text: str | None  # extracted main text (if fetched)
     http_status: int | None
     error_msg: str | None
     archive_url: str | None = None  # Wayback snapshot URL when content came from archive.org
-    title: str | None = None       # when set, overrides documents.title on persist
+    title: str | None = None  # when set, overrides documents.title on persist
     card_summary: str | None = None  # when set, overrides documents.card_summary on persist
     # Structured bibliographic fields, set only by the arXiv/bioRxiv fetchers
     # (DOCUMENT_METADATA_PLAN.md). Written when present, never blanked.
@@ -44,7 +45,7 @@ class FetchResult:
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 
-_limiter = AsyncRateLimiter(rps=1.0)   # 1 req/s per domain
+_limiter = AsyncRateLimiter(rps=1.0)  # 1 req/s per domain
 
 
 def _url_looks_like_pdf(url: str) -> bool:
@@ -97,12 +98,13 @@ def _sections_text(sections: list[dict]) -> str | None:
 
 # ── Content extraction ────────────────────────────────────────────────────────
 
+
 def _extract_text(html: str, url: str) -> str | None:
     # Primary: trafilatura (respects main-content heuristics)
     try:
         import trafilatura
-        text = trafilatura.extract(html, url=url, include_comments=False,
-                                   include_tables=False)
+
+        text = trafilatura.extract(html, url=url, include_comments=False, include_tables=False)
         if text and len(text.strip()) > 0:
             return text.strip()
     except Exception:
@@ -111,8 +113,10 @@ def _extract_text(html: str, url: str) -> str | None:
     # Fallback: readability-lxml
     try:
         from readability import Document
+
         doc = Document(html)
         import re
+
         raw = doc.summary()
         text = re.sub(r"<[^>]+>", " ", raw)
         text = re.sub(r"\s+", " ", text).strip()
@@ -124,6 +128,7 @@ def _extract_text(html: str, url: str) -> str | None:
     # Last resort: strip tags from the raw HTML
     try:
         import re
+
         text = re.sub(r"<[^>]+>", " ", html)
         text = re.sub(r"\s+", " ", text).strip()
         if text:
@@ -142,12 +147,20 @@ def _fetch_pdf_result(
 ) -> FetchResult:
     if len(body) > cfg.fetch_pdf_max_bytes:
         return FetchResult(
-            doc_id, url, "unfetchable", None, http_status,
+            doc_id,
+            url,
+            "unfetchable",
+            None,
+            http_status,
             f"pdf exceeds {cfg.fetch_pdf_max_bytes} bytes",
         )
     if not _is_pdf_bytes(body):
         return FetchResult(
-            doc_id, url, "unfetchable", None, http_status,
+            doc_id,
+            url,
+            "unfetchable",
+            None,
+            http_status,
             "response is not a PDF",
         )
     report = _extract_pdf_from_bytes(body)
@@ -158,11 +171,19 @@ def _fetch_pdf_result(
             # apart from "unfetchable" so re-fetching never retries it and the
             # OCR-candidate set stays queryable (planning/BACKLOG.md).
             return FetchResult(
-                doc_id, url, str(FetchStatus.NO_TEXT_LAYER), None, http_status,
+                doc_id,
+                url,
+                str(FetchStatus.NO_TEXT_LAYER),
+                None,
+                http_status,
                 f"pdf has no text layer ({report.page_count} pages)",
             )
         return FetchResult(
-            doc_id, url, "unfetchable", None, http_status,
+            doc_id,
+            url,
+            "unfetchable",
+            None,
+            http_status,
             f"pdf extraction yielded no text ({report.status})",
         )
     return FetchResult(doc_id, url, "fetched", text, http_status, None)

@@ -1,4 +1,5 @@
 """Tests for DB-derived ingestion progress baselines and status aggregates."""
+
 from __future__ import annotations
 
 import pytest
@@ -23,7 +24,11 @@ def _fresh_db(tmp_path, monkeypatch):
 
 def _insert_doc(source: str, source_id: str, fetch_status: str = FetchStatus.PENDING) -> int:
     doc_id = insert_document_if_new(
-        source, source_id, f"Title {source_id}", f"http://{source_id}", None,
+        source,
+        source_id,
+        f"Title {source_id}",
+        f"http://{source_id}",
+        None,
         fetch_status=fetch_status,
     )
     assert doc_id is not None
@@ -92,7 +97,9 @@ def test_get_phase_baselines_image_counts_without_clip_vectors():
     with eng.begin() as con:
         con.execute(
             images.insert().values(
-                path="/img/a.jpg", filename="a.jpg", indexed_at=123,
+                path="/img/a.jpg",
+                filename="a.jpg",
+                indexed_at=123,
             )
         )
     _, processed, _ = get_phase_baselines(eng, Source.IMAGE)
@@ -113,9 +120,7 @@ def test_build_ingestion_status_zotero_fetch_stats():
 def test_build_ingestion_status_image_uses_images_table():
     eng = get_engine()
     with eng.begin() as con:
-        con.execute(
-            images.insert().values(path="/img/a.jpg", filename="a.jpg")
-        )
+        con.execute(images.insert().values(path="/img/a.jpg", filename="a.jpg"))
     status = build_ingestion_status(eng)
     assert status["by_source"][Source.IMAGE] == 1
     assert status["fetch_by_source"][Source.IMAGE] == {
@@ -132,7 +137,9 @@ def test_build_ingestion_status_image_embedded_without_clip():
     with eng.begin() as con:
         con.execute(
             images.insert().values(
-                path="/img/a.jpg", filename="a.jpg", indexed_at=123,
+                path="/img/a.jpg",
+                filename="a.jpg",
+                indexed_at=123,
             )
         )
     status = build_ingestion_status(eng)

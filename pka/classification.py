@@ -1,4 +1,5 @@
 """Ingest-time document classification for general browse filters."""
+
 from __future__ import annotations
 
 import time
@@ -15,19 +16,23 @@ CLASSIFICATION_TAGS = frozenset({"academic", "paper", "preprint", "video"})
 ZOTERO_PAPER_TYPES = frozenset({"journalArticle", "conferencePaper", "thesis"})
 ZOTERO_PREPRINT_TYPES = frozenset({"preprint"})
 
-PREPRINT_HOSTS = frozenset({
-    "arxiv.org",
-    "biorxiv.org",
-    "medrxiv.org",
-    "ssrn.com",
-    "researchsquare.com",
-})
+PREPRINT_HOSTS = frozenset(
+    {
+        "arxiv.org",
+        "biorxiv.org",
+        "medrxiv.org",
+        "ssrn.com",
+        "researchsquare.com",
+    }
+)
 
-PAPER_HOSTS = frozenset({
-    "doi.org",
-    "pubmed.ncbi.nlm.nih.gov",
-    "ncbi.nlm.nih.gov",
-})
+PAPER_HOSTS = frozenset(
+    {
+        "doi.org",
+        "pubmed.ncbi.nlm.nih.gov",
+        "ncbi.nlm.nih.gov",
+    }
+)
 
 
 def _classify_zotero(item_type: str | None) -> list[str]:

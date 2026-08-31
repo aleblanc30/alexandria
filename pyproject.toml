@@ -44,7 +44,9 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5",
-    "ruff",
+    "ruff==0.15.17",              # pinned: the formatter's style rules change between
+                                   # versions, and an unpinned ruff silently re-drifts
+                                   # the whole tree the next time someone installs fresh
     "mypy",
 ]
 spacy = [

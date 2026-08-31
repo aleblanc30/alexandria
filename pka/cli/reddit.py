@@ -14,6 +14,7 @@ Every poll is written to ``data/reddit/<timestamp>/`` (raw Atom pages plus a
 manifest) and merged into ``data/reddit/saved.jsonl``; ``--from-archive`` reads
 that log back when the feed is no longer reachable.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,16 +34,22 @@ log = logging.getLogger("run_reddit")
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="alexandria reddit")
     parser.add_argument("--metadata-only", action="store_true")
-    parser.add_argument("--ingest-only",   action="store_true")
-    parser.add_argument("--backfill",      action="store_true",
-                        help="Walk the whole feed instead of stopping at the "
-                             "first already-saved item (first run, or to fill "
-                             "gaps a failed run left)")
-    parser.add_argument("--from-archive",  action="store_true",
-                        help="Replay data/reddit/saved.jsonl instead of polling "
-                             "the feed (recovery after a lost database or a "
-                             "token that no longer works)")
-    parser.add_argument("--dry-run",       action="store_true")
+    parser.add_argument("--ingest-only", action="store_true")
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Walk the whole feed instead of stopping at the "
+        "first already-saved item (first run, or to fill "
+        "gaps a failed run left)",
+    )
+    parser.add_argument(
+        "--from-archive",
+        action="store_true",
+        help="Replay data/reddit/saved.jsonl instead of polling "
+        "the feed (recovery after a lost database or a "
+        "token that no longer works)",
+    )
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
     setup_logging()
@@ -51,7 +58,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.metadata_only:
         stats = sync_reddit_metadata(
-            dry_run=args.dry_run, backfill=args.backfill, from_archive=args.from_archive,
+            dry_run=args.dry_run,
+            backfill=args.backfill,
+            from_archive=args.from_archive,
         )
         log.info("Metadata: %s", stats)
         return 0
@@ -62,7 +71,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     stats = sync_reddit(
-        dry_run=args.dry_run, backfill=args.backfill, from_archive=args.from_archive,
+        dry_run=args.dry_run,
+        backfill=args.backfill,
+        from_archive=args.from_archive,
     )
     log.info("Done: %s", stats)
     return 0

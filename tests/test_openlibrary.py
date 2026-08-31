@@ -1,4 +1,5 @@
 """Open Library lookup ladder (DESIGN.md §3.2)."""
+
 from __future__ import annotations
 
 import httpx
@@ -31,10 +32,10 @@ class TestNormalizeIsbn:
             ("  978 0 306 40615 7 ", "9780306406157"),
             ("0306406152", "0306406152"),
             ("0-306-40615-2", "0306406152"),
-            ("043942089x", "043942089X"),      # trailing check char folds to upper
-            ("97803064061", None),             # 11 chars — neither form
-            ("97803064061579", None),          # 14 chars
-            ("978030640615X", None),           # X is only legal in ISBN-10
+            ("043942089x", "043942089X"),  # trailing check char folds to upper
+            ("97803064061", None),  # 11 chars — neither form
+            ("97803064061579", None),  # 14 chars
+            ("978030640615X", None),  # X is only legal in ISBN-10
             ("", None),
             (None, None),
         ],
@@ -54,9 +55,9 @@ class TestIsbnChecksum:
     @pytest.mark.parametrize(
         "isbn",
         [
-            "9780306406175",   # last two digits transposed
-            "9780306406158",   # wrong check digit
-            "0306406153",      # wrong ISBN-10 check digit
+            "9780306406175",  # last two digits transposed
+            "9780306406158",  # wrong check digit
+            "0306406153",  # wrong ISBN-10 check digit
             "not-an-isbn",
             "",
         ],
@@ -76,8 +77,8 @@ class TestTitleMatching:
         [
             ("Dune", "Dune"),
             ("dune", "DUNE"),
-            ("Dune", "Dune: Book One"),            # canonical carries a subtitle
-            ("Dune: Book One", "Dune"),            # and the reverse
+            ("Dune", "Dune: Book One"),  # canonical carries a subtitle
+            ("Dune: Book One", "Dune"),  # and the reverse
             ("The Dispossessed", "Dispossessed"),  # leading article dropped
             ("Gödel, Escher, Bach", "Godel Escher Bach"),
         ],
@@ -91,7 +92,7 @@ class TestTitleMatching:
             ("Dune", "Neuromancer"),
             ("", "Dune"),
             ("Dune", ""),
-            ("A", "Anything At All"),   # too thin to match on containment
+            ("A", "Anything At All"),  # too thin to match on containment
             ("ab", "abstract algebra"),
         ],
     )
@@ -141,7 +142,8 @@ class TestGating:
 class TestLookupByIsbn:
     def test_description_on_the_edition(self, monkeypatch):
         monkeypatch.setattr(
-            ol, "_get_json",
+            ol,
+            "_get_json",
             lambda path, params=None: {"title": "Dune", "description": "A desert planet."},
         )
         out = ol.lookup_by_isbn("9780306406157")
@@ -206,10 +208,12 @@ class TestLookupByTitleAuthor:
         assert ol.lookup_by_title_author("Dune", ["Frank Herbert"]) is None
 
     def test_skips_unverified_hit_and_takes_the_verified_one(self, monkeypatch):
-        pages = self._pages([
-            {"key": "/works/OL9W", "title": "Neuromancer", "author_name": ["William Gibson"]},
-            {"key": "/works/OL1W", "title": "Dune", "author_name": ["Frank Herbert"]},
-        ])
+        pages = self._pages(
+            [
+                {"key": "/works/OL9W", "title": "Neuromancer", "author_name": ["William Gibson"]},
+                {"key": "/works/OL1W", "title": "Dune", "author_name": ["Frank Herbert"]},
+            ]
+        )
         monkeypatch.setattr(ol, "_get_json", lambda path, params=None: pages.get(path))
         out = ol.lookup_by_title_author("Dune", ["Frank Herbert"])
         assert out is not None
@@ -285,7 +289,8 @@ class TestLadderAndCache:
     def test_embed_text_respects_sentence_cap(self, monkeypatch, lookup_on):
         long_desc = " ".join(f"Sentence number {i} is here." for i in range(10))
         monkeypatch.setattr(
-            ol, "_get_json",
+            ol,
+            "_get_json",
             lambda path, params=None: {"title": "Dune", "description": long_desc},
         )
         monkeypatch.setattr(cfg, "summary_max_sentences", 3)
@@ -304,14 +309,16 @@ class TestGetJsonErrorHandling:
 
     def test_status_error_returns_none(self, monkeypatch):
         monkeypatch.setattr(
-            ol.httpx, "get",
+            ol.httpx,
+            "get",
             lambda *a, **k: httpx.Response(404, request=httpx.Request("GET", "http://x")),
         )
         assert ol._get_json("/isbn/9780306406157.json") is None
 
     def test_non_json_returns_none(self, monkeypatch):
         monkeypatch.setattr(
-            ol.httpx, "get",
+            ol.httpx,
+            "get",
             lambda *a, **k: httpx.Response(
                 200, text="<html>nope</html>", request=httpx.Request("GET", "http://x")
             ),

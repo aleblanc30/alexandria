@@ -27,6 +27,7 @@ All chat traffic goes through :func:`pka.ollama_chat.chat_json`, hence through t
 configured chat provider — this module never talks to a backend directly and
 makes no network calls of its own.
 """
+
 from __future__ import annotations
 
 import logging
@@ -110,8 +111,8 @@ _RULES_TAIL = (
     "  topics, methods, tools, people, or technologies it covers.\n"
     "- Use the wording a searcher looking for this would type. Prefer concrete\n"
     "  nouns over abstractions.\n"
-    "- No preamble and no framing: do not open with \"This document\", \"The text\",\n"
-    "  or \"The author\". Do not comment on structure, length, or style.\n"
+    '- No preamble and no framing: do not open with "This document", "The text",\n'
+    '  or "The author". Do not comment on structure, length, or style.\n'
     "- Invent nothing that is not in the text.\n"
     'Respond with ONLY valid JSON: {"summary": "<the summary>"}\n'
     "No markdown, no explanation.\n\n"
@@ -146,7 +147,7 @@ def _build_prompt(
         f"{extra_rules}"
         f"{_RULES_TAIL}"
         f"{context_line}"
-        f"{label}:\n\"\"\"\n{text}\n\"\"\"\n"
+        f'{label}:\n"""\n{text}\n"""\n'
     )
 
 
@@ -242,8 +243,12 @@ def _summarize_recursive(
     """
     if len(text) <= CHUNK_CHAR_LIMIT or depth >= MAX_REDUCE_DEPTH:
         return _summarize_once(
-            text, max_sentences, model,
-            reduce=depth > 0, material=material, context=context,
+            text,
+            max_sentences,
+            model,
+            reduce=depth > 0,
+            material=material,
+            context=context,
         )
 
     chunks = _chunk_for_summary(text)
@@ -251,15 +256,22 @@ def _summarize_recursive(
         # Splitting bought nothing (one oversized chunk): summarise it directly
         # rather than recursing on the same text.
         return _summarize_once(
-            chunks[0] if chunks else text, max_sentences, model,
-            material=material, context=context,
+            chunks[0] if chunks else text,
+            max_sentences,
+            model,
+            material=material,
+            context=context,
         )
 
     partials: list[str] = []
     for index, chunk in enumerate(chunks, start=1):
         partial = _summarize_once(
-            chunk, max_sentences, model,
-            reduce=depth > 0, material=material, context=context,
+            chunk,
+            max_sentences,
+            model,
+            reduce=depth > 0,
+            material=material,
+            context=context,
         )
         if partial:
             partials.append(partial)
@@ -274,8 +286,12 @@ def _summarize_recursive(
 
     joined = "\n".join(f"{i}. {p}" for i, p in enumerate(partials, start=1))
     return _summarize_recursive(
-        joined, max_sentences, model, depth + 1,
-        material=material, context=context,
+        joined,
+        max_sentences,
+        model,
+        depth + 1,
+        material=material,
+        context=context,
     )
 
 
@@ -319,7 +335,12 @@ def summarize_text(
 
     try:
         summary = _summarize_recursive(
-            cleaned, limit, model, depth=0, material=material, context=context,
+            cleaned,
+            limit,
+            model,
+            depth=0,
+            material=material,
+            context=context,
         )
     except Exception as exc:  # provider, parsing, anything — enrichment is optional
         log.warning("Summarisation failed: %s", exc)

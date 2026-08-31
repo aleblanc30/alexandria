@@ -1,4 +1,5 @@
 """Firefox bookmark ingestion."""
+
 from __future__ import annotations
 
 import logging
@@ -50,12 +51,12 @@ def ingest_firefox_bookmarks(
             else FetchStatus.PENDING
         )
         doc_id = insert_document_if_new(
-            source       = Source.FIREFOX,
-            source_id    = bm.source_id,
-            title        = bm.title,
-            url_or_path  = bm.url,
-            date_added   = bm.date_added,
-            fetch_status = fetch_status,
+            source=Source.FIREFOX,
+            source_id=bm.source_id,
+            title=bm.title,
+            url_or_path=bm.url,
+            date_added=bm.date_added,
+            fetch_status=fetch_status,
         )
         if doc_id is None:
             return "skipped"
@@ -116,7 +117,11 @@ def embed_fetched_text(
         # Summarise the *body*, not the composed blob — the title and card
         # summary are already their own signal.
         summary_chunks = attach_summary_chunk(
-            doc_id, text, Source.FIREFOX, title=title or "", dry_run=dry_run,
+            doc_id,
+            text,
+            Source.FIREFOX,
+            title=title or "",
+            dry_run=dry_run,
         )
         if not dry_run and card_summary is None:
             update_card_summary(doc_id, summary)
@@ -170,6 +175,8 @@ def ingest_fetched_texts(
         process=_process,
         progress_key=progress_key,
         on_error_log=lambda pair, exc: log.exception(
-            "Failed embedding doc_id=%d: %s", pair[0], exc,
+            "Failed embedding doc_id=%d: %s",
+            pair[0],
+            exc,
         ),
     )

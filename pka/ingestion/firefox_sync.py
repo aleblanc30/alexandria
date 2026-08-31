@@ -1,4 +1,5 @@
 """Firefox sync — metadata and ingest (fetch + embed) as separate jobs."""
+
 import asyncio
 import logging
 from functools import partial
@@ -38,7 +39,9 @@ def sync_firefox_metadata(
     pending = count_pending_metadata(Source.FIREFOX)
     sp.begin_metadata_sync(key, pending, baseline)
     stats = ingest_firefox_bookmarks(
-        bookmarks, dry_run=dry_run, progress_key=key,
+        bookmarks,
+        dry_run=dry_run,
+        progress_key=key,
     )
     log.info("Firefox metadata: %s", stats)
     return {"metadata": stats, "stopped": stats.get("stopped")}
@@ -68,24 +71,31 @@ def sync_firefox_ingest(
 
     sp.set_phase(key, "fetching", n_work)
 
-    embed_fn = None if dry_run else partial(
-        embed_fetched_text,
-        skip_existing=True,
-        dry_run=dry_run,
+    embed_fn = (
+        None
+        if dry_run
+        else partial(
+            embed_fetched_text,
+            skip_existing=True,
+            dry_run=dry_run,
+        )
     )
-    result = asyncio.run(fetch_and_embed_pending(
-        limit=fetch_limit,
-        concurrency=fetch_concurrency,
-        progress_key=key,
-        embed_fn=embed_fn,
-        dry_run=dry_run,
-    ))
+    result = asyncio.run(
+        fetch_and_embed_pending(
+            limit=fetch_limit,
+            concurrency=fetch_concurrency,
+            progress_key=key,
+            embed_fn=embed_fn,
+            dry_run=dry_run,
+        )
+    )
 
-    stats["fetch"] = {
-        k: v for k, v in result.items() if k not in ("embed", "stopped")
-    }
+    stats["fetch"] = {k: v for k, v in result.items() if k not in ("embed", "stopped")}
     stats["embed"] = result.get("embed") or {
-        "processed": 0, "skipped": 0, "failed": 0, "chunks": 0,
+        "processed": 0,
+        "skipped": 0,
+        "failed": 0,
+        "chunks": 0,
     }
     log.info("Firefox fetch: %s", stats["fetch"])
     log.info("Firefox embed: %s", stats["embed"])
@@ -109,9 +119,12 @@ def sync_firefox(
     """Full pipeline (metadata then ingest). Kept for scripts/tests."""
     key = progress_key or "firefox"
     meta = sync_firefox_metadata(progress_key=key, dry_run=dry_run)
-    return run_full_sync(meta, lambda: sync_firefox_ingest(
-        progress_key=key,
-        fetch_limit=fetch_limit,
-        fetch_concurrency=fetch_concurrency,
-        dry_run=dry_run,
-    ))
+    return run_full_sync(
+        meta,
+        lambda: sync_firefox_ingest(
+            progress_key=key,
+            fetch_limit=fetch_limit,
+            fetch_concurrency=fetch_concurrency,
+            dry_run=dry_run,
+        ),
+    )

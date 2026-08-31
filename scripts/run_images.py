@@ -4,6 +4,7 @@
 Thin shim — the implementation lives in pka.cli.images (run via
 `alexandria images` once installed, or `python scripts/run_images.py` from the repo).
 """
+
 import sys
 from pathlib import Path
 

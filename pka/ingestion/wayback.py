@@ -1,4 +1,5 @@
 """Wayback Machine fallback when a Firefox bookmark URL returns HTTP 404."""
+
 from __future__ import annotations
 
 import asyncio

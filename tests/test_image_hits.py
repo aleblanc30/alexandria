@@ -1,4 +1,5 @@
 """Tests for CLIP hit → ImageOut resolution (batched lookups)."""
+
 import time
 
 import sqlalchemy as sa
@@ -14,21 +15,29 @@ def _seed_images(n: int = 3) -> list[int]:
     ids = []
     with get_engine().begin() as con:
         for i in range(n):
-            res = con.execute(images.insert().values(
-                path=f"/tmp/img{i}.png",
-                filename=f"img{i}.png",
-                image_type="slide",
-                width=800, height=600, file_size=1000,
-                date_taken=now,
-                description=f"description {i}",
-                ocr_text=None,
-                clip_vector_id=f"clip-{i}",
-            ))
+            res = con.execute(
+                images.insert().values(
+                    path=f"/tmp/img{i}.png",
+                    filename=f"img{i}.png",
+                    image_type="slide",
+                    width=800,
+                    height=600,
+                    file_size=1000,
+                    date_taken=now,
+                    description=f"description {i}",
+                    ocr_text=None,
+                    clip_vector_id=f"clip-{i}",
+                )
+            )
             image_id = res.inserted_primary_key[0]
             ids.append(image_id)
-            con.execute(image_tags.insert().values(
-                image_id=image_id, tag=f"tag-{i}", origin="inferred",
-            ))
+            con.execute(
+                image_tags.insert().values(
+                    image_id=image_id,
+                    tag=f"tag-{i}",
+                    origin="inferred",
+                )
+            )
     return ids
 
 

@@ -21,6 +21,7 @@ Previously skipped PDF bookmarks stay ``fetch_status=skipped`` until reset manua
     UPDATE documents SET fetch_status = 'pending'
     WHERE source = 'firefox' AND fetch_status = 'skipped' AND url_or_path LIKE '%.pdf';
 """
+
 import asyncio
 import logging
 import re
@@ -121,6 +122,7 @@ def _fetch_budget_seconds(
 
 # ── Per-URL fetch ─────────────────────────────────────────────────────────────
 
+
 async def _fetch_one_impl(
     client: httpx.AsyncClient,
     doc_id: int,
@@ -192,8 +194,9 @@ async def _fetch_one_impl(
         return await asyncio.to_thread(_fetch_pdf_result, doc_id, url, body, http_status)
 
     if content_type and content_type not in _HTML_TYPES:
-        return FetchResult(doc_id, url, "skipped", None, http_status,
-                           f"non-html content-type: {content_type}")
+        return FetchResult(
+            doc_id, url, "skipped", None, http_status, f"non-html content-type: {content_type}"
+        )
 
     from pka.ingestion.amazon import extract_amazon_book, is_amazon_book_url
 
@@ -212,8 +215,9 @@ async def _fetch_one_impl(
 
     text = await asyncio.to_thread(_extract_text, resp.text, url)
     if not text:
-        return FetchResult(doc_id, url, "unfetchable", None, http_status,
-                           "content extraction yielded no text")
+        return FetchResult(
+            doc_id, url, "unfetchable", None, http_status, "content extraction yielded no text"
+        )
 
     return FetchResult(doc_id, url, "fetched", text, http_status, None)
 
@@ -247,14 +251,15 @@ async def _fetch_one(
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
+
 def _get_pending(
-    limit: int | None = None, source: Source | str = Source.FIREFOX,
+    limit: int | None = None,
+    source: Source | str = Source.FIREFOX,
 ) -> list[tuple[int, str]]:
     """Return (document_id, url) rows with fetch_status='pending' for ``source``."""
     eng = get_engine()
     q = sa.select(documents.c.id, documents.c.url_or_path).where(
-        (documents.c.source == str(source)) &
-        (documents.c.fetch_status == str(FetchStatus.PENDING))
+        (documents.c.source == str(source)) & (documents.c.fetch_status == str(FetchStatus.PENDING))
     )
     if limit:
         q = q.limit(limit)
@@ -276,8 +281,7 @@ def reset_unfetchable_for_fetch(source: Source | str = Source.FIREFOX) -> int:
             )
         ).fetchall()
         requeue_ids = [
-            row[0] for row in rows
-            if row[1] and bookmark_url_unfetchable_reason(row[1]) is None
+            row[0] for row in rows if row[1] and bookmark_url_unfetchable_reason(row[1]) is None
         ]
         if not requeue_ids:
             return 0
@@ -313,16 +317,16 @@ def _persist_fetch_result(r: FetchResult) -> None:
         if r.authors_json:
             update_values["authors_json"] = r.authors_json
         con.execute(
-            documents.update()
-            .where(documents.c.id == r.document_id)
-            .values(**update_values)
+            documents.update().where(documents.c.id == r.document_id).values(**update_values)
         )
-        con.execute(fetch_log.insert().values(
-            document_id = r.document_id,
-            timestamp   = now,
-            http_status = r.http_status,
-            error_msg   = r.error_msg,
-        ))
+        con.execute(
+            fetch_log.insert().values(
+                document_id=r.document_id,
+                timestamp=now,
+                http_status=r.http_status,
+                error_msg=r.error_msg,
+            )
+        )
 
 
 def _empty_embed_stats() -> dict:
@@ -344,6 +348,7 @@ def _accumulate_embed(embed_stats: dict, outcome: dict) -> bool:
 
 
 # ── Shared worker pool ────────────────────────────────────────────────────────
+
 
 async def _run_fetch_workers(
     work: list[tuple[int, str]],
@@ -402,7 +407,10 @@ async def _run_fetch_workers(
                 if embed_fn and r and r.text and not dry_run:
                     try:
                         outcome = await asyncio.to_thread(
-                            embed_fn, doc_id, r.text, r.card_summary,
+                            embed_fn,
+                            doc_id,
+                            r.text,
+                            r.card_summary,
                         )
                         _accumulate_embed(embed_stats, outcome)
                     except Exception as exc:
@@ -419,6 +427,7 @@ async def _run_fetch_workers(
 
 
 # ── Public entry points ───────────────────────────────────────────────────────
+
 
 async def fetch_and_embed_pending(
     limit: int | None = 500,
@@ -442,13 +451,18 @@ async def fetch_and_embed_pending(
     if not work:
         log.info("No %s URLs to fetch and embed", source)
         return {
-            "fetched": 0, "skipped": 0, "unfetchable": 0, "no_text_layer": 0,
+            "fetched": 0,
+            "skipped": 0,
+            "unfetchable": 0,
+            "no_text_layer": 0,
             "embed": _empty_embed_stats(),
         }
 
     log.info(
         "Fetching and embedding %d URLs (concurrency=%d, timeout=%ss)",
-        len(work), workers, cfg.fetch_timeout_seconds,
+        len(work),
+        workers,
+        cfg.fetch_timeout_seconds,
     )
     embed_stats = _empty_embed_stats()
     results, stopped = await _run_fetch_workers(
@@ -462,13 +476,11 @@ async def fetch_and_embed_pending(
     )
 
     stats = {
-        "fetched":     sum(1 for r in results if r.status == "fetched"),
-        "skipped":     sum(1 for r in results if r.status == "skipped"),
+        "fetched": sum(1 for r in results if r.status == "fetched"),
+        "skipped": sum(1 for r in results if r.status == "skipped"),
         "unfetchable": sum(1 for r in results if r.status == "unfetchable"),
-        "no_text_layer": sum(
-            1 for r in results if r.status == str(FetchStatus.NO_TEXT_LAYER)
-        ),
-        "embed":       embed_stats,
+        "no_text_layer": sum(1 for r in results if r.status == str(FetchStatus.NO_TEXT_LAYER)),
+        "embed": embed_stats,
     }
     if stopped:
         stats["stopped"] = stopped
@@ -502,7 +514,9 @@ async def fetch_pending(
 
     log.info(
         "Fetching %d pending URLs (concurrency=%d, timeout=%ss)",
-        len(pending), workers, cfg.fetch_timeout_seconds,
+        len(pending),
+        workers,
+        cfg.fetch_timeout_seconds,
     )
     fetched_texts: dict[int, str] = {}
 
@@ -518,13 +532,11 @@ async def fetch_pending(
     )
 
     stats = {
-        "fetched":     sum(1 for r in results if r.status == "fetched"),
-        "skipped":     sum(1 for r in results if r.status == "skipped"),
+        "fetched": sum(1 for r in results if r.status == "fetched"),
+        "skipped": sum(1 for r in results if r.status == "skipped"),
         "unfetchable": sum(1 for r in results if r.status == "unfetchable"),
-        "no_text_layer": sum(
-            1 for r in results if r.status == str(FetchStatus.NO_TEXT_LAYER)
-        ),
-        "texts":       fetched_texts,
+        "no_text_layer": sum(1 for r in results if r.status == str(FetchStatus.NO_TEXT_LAYER)),
+        "texts": fetched_texts,
     }
     if stopped:
         stats["stopped"] = stopped

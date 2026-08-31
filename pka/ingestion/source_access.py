@@ -1,4 +1,5 @@
 """Graceful access to optional source paths (Calibre library, image folder)."""
+
 from __future__ import annotations
 
 import logging

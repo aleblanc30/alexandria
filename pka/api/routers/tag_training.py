@@ -1,4 +1,5 @@
 """``/tag-training`` — active learning tag classifier sessions."""
+
 from fastapi import APIRouter, HTTPException
 
 from pka.api.schemas.tag_training import (
@@ -39,7 +40,8 @@ def create_session(req: SessionCreate):
 def create_from_source_tag(req: SessionFromSourceTag):
     try:
         data = lifecycle.create_session_from_source_tag(
-            req.source_tag, req.target_tag,
+            req.source_tag,
+            req.target_tag,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -92,7 +94,8 @@ def post_pseudo_label(session_id: int, req: PseudoLabelRequest):
             data = lifecycle.apply_pseudo_labels_model(session_id)
         elif req.mode == "llm":
             data = lifecycle.apply_pseudo_labels_llm(
-                session_id, batch_size=req.batch_size,
+                session_id,
+                batch_size=req.batch_size,
             )
         else:
             raise HTTPException(400, "mode must be 'model' or 'llm'")

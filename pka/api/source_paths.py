@@ -2,6 +2,7 @@
 ingestion connector reads from, persist it to ``.env``, and open a native OS
 folder/file picker so the user doesn't have to type an absolute path by hand.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,9 +32,9 @@ IMAGE_PICKER_LABEL = "Select image folder"
 
 @dataclass(frozen=True)
 class SourcePathSpec:
-    field: str   # attribute name on pka.config.Settings
+    field: str  # attribute name on pka.config.Settings
     kind: PathKind
-    label: str   # native picker dialog title
+    label: str  # native picker dialog title
 
 
 SOURCE_PATH_SPECS: dict[str, SourcePathSpec] = {
@@ -66,10 +67,7 @@ def get_source_path(source: str) -> dict:
 
 def _persist_env_var(key: str, value: str) -> None:
     """Rewrite (or append) ``KEY='value'`` in ``.env``, preserving every other line."""
-    lines = (
-        ENV_FILE_PATH.read_text(encoding="utf-8").splitlines()
-        if ENV_FILE_PATH.exists() else []
-    )
+    lines = ENV_FILE_PATH.read_text(encoding="utf-8").splitlines() if ENV_FILE_PATH.exists() else []
     new_line = f"{key}='{value}'"
     for i, line in enumerate(lines):
         if line.strip().startswith(f"{key}="):
@@ -89,6 +87,7 @@ def set_source_path(source: str, new_path: str) -> dict:
 
 
 # ── Image folders (list-valued source) ──────────────────────────────────────
+
 
 def _image_dir_info(path: Path) -> dict:
     return {"path": str(path), "exists": path.is_dir()}
@@ -169,7 +168,9 @@ def _run_native_picker(kind: PathKind, label: str, initial_dir: str, log_tag: st
     try:
         result = subprocess.run(
             [sys.executable, "-c", _PICKER_SCRIPT, kind, label, initial_dir],
-            capture_output=True, text=True, timeout=PICKER_TIMEOUT_SECONDS,
+            capture_output=True,
+            text=True,
+            timeout=PICKER_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
         log.warning("Native picker for %s timed out after %.1fs", log_tag, time.monotonic() - t0)
@@ -177,10 +178,17 @@ def _run_native_picker(kind: PathKind, label: str, initial_dir: str, log_tag: st
     except OSError as exc:
         raise RuntimeError(f"Native file picker unavailable: {exc}") from exc
 
-    log.info("Native picker for %s returned after %.1fs (rc=%s)", log_tag, time.monotonic() - t0, result.returncode)
+    log.info(
+        "Native picker for %s returned after %.1fs (rc=%s)",
+        log_tag,
+        time.monotonic() - t0,
+        result.returncode,
+    )
 
     if result.returncode != 0:
-        reason = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "unknown error"
+        reason = (
+            result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "unknown error"
+        )
         raise RuntimeError(f"Native file picker unavailable ({reason})")
 
     chosen = result.stdout.strip()

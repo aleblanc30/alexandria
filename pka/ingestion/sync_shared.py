@@ -1,4 +1,5 @@
 """Shared helpers for per-source full-sync orchestration."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

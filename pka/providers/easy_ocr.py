@@ -53,13 +53,23 @@ def _import_easyocr():
         raise EasyOcrUnavailable(_UNAVAILABLE_MSG) from exc
     return easyocr
 
+
 # The config default is the Tesseract-style ``"eng"``; map the common 3-letter
 # codes to the ISO codes EasyOCR expects. Unmapped codes pass through unchanged
 # so an EasyOCR-native code (``"en"``, ``"ch_sim"``) also works.
 _LANG_MAP = {
-    "eng": "en", "fra": "fr", "deu": "de", "spa": "es", "ita": "it",
-    "por": "pt", "rus": "ru", "jpn": "ja", "kor": "ko", "nld": "nl",
-    "chi_sim": "ch_sim", "chi_tra": "ch_tra",
+    "eng": "en",
+    "fra": "fr",
+    "deu": "de",
+    "spa": "es",
+    "ita": "it",
+    "por": "pt",
+    "rus": "ru",
+    "jpn": "ja",
+    "kor": "ko",
+    "nld": "nl",
+    "chi_sim": "ch_sim",
+    "chi_tra": "ch_tra",
 }
 
 

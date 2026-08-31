@@ -6,6 +6,7 @@ Usage::
     alexandria backfill-classification --zotero-only
     alexandria backfill-classification --firefox-only
 """
+
 from __future__ import annotations
 
 import argparse

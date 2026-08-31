@@ -5,6 +5,7 @@ Every test runs in an isolated ``tmp_path``; no real browser, Zotero, or
 Calibre databases are touched. Ollama chat/vision and outbound HTTP calls are
 never made — Chroma is replaced by ``mock_chroma``.
 """
+
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -13,16 +14,18 @@ import pytest
 
 # ── Settings override ─────────────────────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 def isolated_settings(tmp_path, monkeypatch):
     """Redirect all data paths to a per-test temp directory and reset caches."""
     from pka import config
+
     s = config.settings
-    monkeypatch.setattr(s, "data_dir",     tmp_path / "data")
-    monkeypatch.setattr(s, "zotero_db",    tmp_path / "zotero.sqlite")
-    monkeypatch.setattr(s, "firefox_db",   tmp_path / "firefox")
+    monkeypatch.setattr(s, "data_dir", tmp_path / "data")
+    monkeypatch.setattr(s, "zotero_db", tmp_path / "zotero.sqlite")
+    monkeypatch.setattr(s, "firefox_db", tmp_path / "firefox")
     monkeypatch.setattr(s, "book_archive", tmp_path / "books")
-    monkeypatch.setattr(s, "image_dirs",   [tmp_path / "images"])
+    monkeypatch.setattr(s, "image_dirs", [tmp_path / "images"])
 
     # Disable the .secrets file for the whole suite so a developer's real
     # credentials can never reach a ``Settings()`` built inside a test. Tests
@@ -33,9 +36,9 @@ def isolated_settings(tmp_path, monkeypatch):
     # ``.env`` (e.g. ALEXANDRIA_VISION_PROVIDER=openrouter) can't leak into the
     # suite and swap the backend a test mocks. Individual tests still override
     # these via monkeypatch where they exercise a specific provider.
-    monkeypatch.setattr(s, "chat_provider",        "ollama")
-    monkeypatch.setattr(s, "vision_provider",      "ollama")
-    monkeypatch.setattr(s, "ocr_provider",         "vlm")
+    monkeypatch.setattr(s, "chat_provider", "ollama")
+    monkeypatch.setattr(s, "vision_provider", "ollama")
+    monkeypatch.setattr(s, "ocr_provider", "vlm")
     monkeypatch.setattr(s, "image_embed_provider", "clip")
 
     # CLIP is off by default in production; pin that here too so a developer's
@@ -49,58 +52,65 @@ def isolated_settings(tmp_path, monkeypatch):
 
     # The image admission gate is opt-in for tests: pipeline tests feed synthetic
     # images that would be rejected, so it stays off unless a test enables it.
-    monkeypatch.setattr(s, "image_gate_enabled",         False)
+    monkeypatch.setattr(s, "image_gate_enabled", False)
     monkeypatch.setattr(s, "image_gate_vision_provider", "ollama")
-    monkeypatch.setattr(s, "image_gate_vision_model",    "moondream")
+    monkeypatch.setattr(s, "image_gate_vision_model", "moondream")
 
     # Retrieval enrichment (DESIGN.md §3.2) pinned off, regardless of the
     # developer's .env. These flags gate the only outbound paths in ingestion,
     # so leaving them to config would let a real ALEXANDRIA_EXTERNAL_LOOKUP_ENABLED=1
     # send the suite to openlibrary.org.
     monkeypatch.setattr(s, "bookmark_summary_enabled", False)
-    monkeypatch.setattr(s, "external_lookup_enabled",  False)
-    monkeypatch.setattr(s, "cover_search_fallback",    False)
+    monkeypatch.setattr(s, "external_lookup_enabled", False)
+    monkeypatch.setattr(s, "cover_search_fallback", False)
 
     # Credentials for the search rung pinned empty for the same reason: the
     # "no key configured" branch has to actually run unconfigured, and a
     # developer's real ALEXANDRIA_SEARCH_API_KEY would otherwise be asserted
     # against (and, worse, sent on any request a test forgets to stub).
     # Tests that exercise the configured branch set the key themselves.
-    monkeypatch.setattr(s, "search_api_key",        "")
-    monkeypatch.setattr(s, "google_books_api_key",  "")
-    monkeypatch.setattr(s, "search_provider",       "google_books")
+    monkeypatch.setattr(s, "search_api_key", "")
+    monkeypatch.setattr(s, "google_books_api_key", "")
+    monkeypatch.setattr(s, "search_provider", "google_books")
 
     # Reset cached SQLAlchemy engine so each test gets a fresh DB
     import pka.db.queries as q
+
     monkeypatch.setattr(q, "_engine", None)
 
     # Reset cached Chroma client/collection
     import pka.storage.vector_store as vs
+
     monkeypatch.setattr(vs, "_client", None)
     monkeypatch.setattr(vs, "_collection", None)
 
     # Reset cached CLIP collection (patch #9)
     import pka.ingestion.image_pipeline as ip
+
     monkeypatch.setattr(ip, "_clip_client", None)
     monkeypatch.setattr(ip, "_clip_col", None)
 
     # Reset cached provider instances so per-test config changes take effect
     import pka.providers as providers
+
     providers.reset_providers()
 
     # Reset the image gate's cached EasyOCR instance
     import pka.ingestion.image_gate as image_gate
+
     image_gate.reset_gate()
 
     # Reset in-memory sync progress so job state never leaks between tests
     from pka.constants import ALL_SOURCES
     from pka.ingestion import progress as sp
+
     for src in ALL_SOURCES:
         sp.reset(src)
 
     # Drop cached source-probe counts so a value computed against one test's DB
     # never leaks into the next test's fresh DB within the TTL window.
     from pka.ingestion.pending_metadata import invalidate_source_probes
+
     invalidate_source_probes()
 
     yield
@@ -110,6 +120,7 @@ def isolated_settings(tmp_path, monkeypatch):
 
 
 # ── Fake Zotero SQLite ────────────────────────────────────────────────────────
+
 
 def _make_zotero_db(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -181,6 +192,7 @@ def zotero_db(tmp_path) -> Path:
 
 # ── Fake Firefox places.sqlite ────────────────────────────────────────────────
 
+
 def _make_firefox_db(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path)
@@ -221,6 +233,7 @@ def firefox_places_db(tmp_path) -> Path:
 
 # ── Fake YouTube Data API service ─────────────────────────────────────────────
 
+
 class _FakeRequest:
     """Stands in for a googleapiclient request object (only ``execute`` used)."""
 
@@ -249,8 +262,8 @@ class FakeYouTubeService:
     def __init__(self, *, channels=None, playlists=None, playlist_items=None, videos=None):
         self._channels = channels or {"items": []}
         self._playlists = playlists or {"items": []}
-        self._playlist_items = playlist_items or {}   # playlist_id -> response
-        self._videos = videos or {}                   # video_id -> snippet dict
+        self._playlist_items = playlist_items or {}  # playlist_id -> response
+        self._videos = videos or {}  # video_id -> snippet dict
 
     def channels(self):
         return _FakeEndpoint(lambda kw: self._channels)
@@ -268,9 +281,7 @@ class FakeYouTubeService:
             ids = [vid for vid in (kw.get("id") or "").split(",") if vid]
             return {
                 "items": [
-                    {"id": vid, "snippet": self._videos[vid]}
-                    for vid in ids
-                    if vid in self._videos
+                    {"id": vid, "snippet": self._videos[vid]} for vid in ids if vid in self._videos
                 ]
             }
 
@@ -281,11 +292,7 @@ class FakeYouTubeService:
 def youtube_service() -> FakeYouTubeService:
     """A fake service with two playlists sharing one video (dedupe coverage)."""
     return FakeYouTubeService(
-        channels={
-            "items": [
-                {"contentDetails": {"relatedPlaylists": {"likes": "LL_LIKED"}}}
-            ]
-        },
+        channels={"items": [{"contentDetails": {"relatedPlaylists": {"likes": "LL_LIKED"}}}]},
         playlists={
             "items": [
                 {"id": "PL_TALKS", "snippet": {"title": "Conference Talks"}},
@@ -342,6 +349,7 @@ def youtube_service() -> FakeYouTubeService:
 
 # ── Fake Reddit saved listing ─────────────────────────────────────────────────
 
+
 def _make_reddit_saved_items():
     """Sample saved items: a self-post, a link post, and a comment.
 
@@ -390,7 +398,7 @@ def reddit_saved_items():
     return _make_reddit_saved_items()
 
 
-FAKE_DIM = 8   # tiny dimension for mock Chroma vectors
+FAKE_DIM = 8  # tiny dimension for mock Chroma vectors
 
 
 def fake_embedding(text: str) -> list[float]:
@@ -401,18 +409,26 @@ def fake_embedding(text: str) -> list[float]:
 
 # ── Mock Chroma ───────────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 def empty_vector_store(monkeypatch):
     """Mocked Chroma collection returning no results — default for API tests."""
     col = MagicMock()
     col.count.return_value = 0
     col.query.return_value = {
-        "ids": [[]], "documents": [[]], "distances": [[]], "metadatas": [[]],
+        "ids": [[]],
+        "documents": [[]],
+        "distances": [[]],
+        "metadatas": [[]],
     }
     col.get.return_value = {
-        "ids": [], "embeddings": [], "metadatas": [], "documents": [],
+        "ids": [],
+        "embeddings": [],
+        "metadatas": [],
+        "documents": [],
     }
     import pka.storage.vector_store as vs
+
     monkeypatch.setattr(vs, "_collection", col)
     monkeypatch.setattr(vs, "get_collection", lambda: col)
     return col
@@ -427,15 +443,11 @@ def mock_chroma(monkeypatch):
 
     def _upsert(ids, documents, metadatas, embeddings=None, **kwargs):
         for i, vid in enumerate(ids):
-            emb = (
-                embeddings[i]
-                if embeddings is not None
-                else fake_embedding(documents[i])
-            )
+            emb = embeddings[i] if embeddings is not None else fake_embedding(documents[i])
             store[vid] = {
                 "text": documents[i],
                 "meta": metadatas[i],
-                "emb":  emb,
+                "emb": emb,
             }
 
     def _query(query_texts=None, query_embeddings=None, n_results=10, **kw):
@@ -459,7 +471,7 @@ def mock_chroma(monkeypatch):
             key=lambda t: t[2],
         )[:n_results]
         return {
-            "ids":       [[vid for vid, _, _ in ranked]],
+            "ids": [[vid for vid, _, _ in ranked]],
             "documents": [[item["text"] for _, item, _ in ranked]],
             "distances": [[d for _, _, d in ranked]],
             "metadatas": [[item["meta"] for _, item, _ in ranked]],
@@ -478,10 +490,11 @@ def mock_chroma(monkeypatch):
         return out
 
     col.upsert.side_effect = _upsert
-    col.query.side_effect  = _query
-    col.get.side_effect    = _get
+    col.query.side_effect = _query
+    col.get.side_effect = _get
     col.count.return_value = 0
 
     import pka.storage.vector_store as vs
+
     monkeypatch.setattr(vs, "get_collection", lambda: col)
     return store, col

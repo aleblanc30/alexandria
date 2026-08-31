@@ -1,4 +1,5 @@
 """Tests for the two-step image admission gate (text coverage + VLM category)."""
+
 import time
 import types
 from pathlib import Path
@@ -31,9 +32,11 @@ def _image_file(path: Path, size=(800, 600)) -> ImageFile:
 
 # ── EasyOCR text-coverage measurement ─────────────────────────────────────────
 
+
 class TestTextCoverage:
     def test_sums_box_area_fraction(self, sample_png, monkeypatch):
         from pka.providers.easy_ocr import EasyOcrProvider
+
         reader = MagicMock()
         # 200x200 + 100x100 = 40_000 + 10_000 = 50_000 / 480_000 ≈ 0.104
         reader.readtext.return_value = [
@@ -46,6 +49,7 @@ class TestTextCoverage:
 
     def test_no_text_is_zero(self, sample_png, monkeypatch):
         from pka.providers.easy_ocr import EasyOcrProvider
+
         reader = MagicMock()
         reader.readtext.return_value = []
         monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
@@ -53,6 +57,7 @@ class TestTextCoverage:
 
     def test_clamped_to_one(self, sample_png, monkeypatch):
         from pka.providers.easy_ocr import EasyOcrProvider
+
         reader = MagicMock()
         # Box larger than the image (overlaps inflate) — must clamp to 1.0.
         reader.readtext.return_value = [(_box(0, 0, 2000, 2000), "X", 0.9)]
@@ -102,6 +107,7 @@ class TestTextCoverage:
 
 
 # ── EasyOCR device / canvas settings ────────────────────────────────────
+
 
 class TestEasyOcrDeviceSettings:
     """Both knobs must actually reach EasyOCR.
@@ -170,6 +176,7 @@ class TestEasyOcrDeviceSettings:
 
 # ── Gate decision logic ───────────────────────────────────────────────────────
 
+
 class TestGateImage:
     def _patch_coverage(self, monkeypatch, value):
         fake = MagicMock()
@@ -179,6 +186,7 @@ class TestGateImage:
 
     def test_low_coverage_rejects_without_calling_vlm(self, sample_png, monkeypatch):
         import pka.ingestion.image_gate as gate
+
         self._patch_coverage(monkeypatch, 0.01)
         classify = MagicMock()
         monkeypatch.setattr(gate, "classify_and_describe", classify)
@@ -191,6 +199,7 @@ class TestGateImage:
 
     def test_unknown_category_rejects(self, sample_png, monkeypatch):
         import pka.ingestion.image_gate as gate
+
         self._patch_coverage(monkeypatch, 0.5)
         monkeypatch.setattr(gate, "get_gate_vision_provider", lambda: MagicMock())
         monkeypatch.setattr(gate, "classify_and_describe", lambda *a, **k: ("unknown", ""))
@@ -201,11 +210,10 @@ class TestGateImage:
 
     def test_passes_both_gates(self, sample_png, monkeypatch):
         import pka.ingestion.image_gate as gate
+
         self._patch_coverage(monkeypatch, 0.5)
         monkeypatch.setattr(gate, "get_gate_vision_provider", lambda: MagicMock())
-        monkeypatch.setattr(
-            gate, "classify_and_describe", lambda *a, **k: ("slide", "A slide.")
-        )
+        monkeypatch.setattr(gate, "classify_and_describe", lambda *a, **k: ("slide", "A slide."))
 
         res = gate.gate_image(sample_png, coverage_min=0.05)
         assert res.passed
@@ -215,6 +223,7 @@ class TestGateImage:
     def test_uses_gate_model_and_provider(self, sample_png, monkeypatch):
         """The gate classifies with its own provider + model, not the main one."""
         import pka.ingestion.image_gate as gate
+
         self._patch_coverage(monkeypatch, 0.5)
         sentinel = object()
         monkeypatch.setattr(gate, "get_gate_vision_provider", lambda: sentinel)
@@ -235,15 +244,18 @@ class TestGateImage:
 
 # ── Pipeline integration ──────────────────────────────────────────────────────
 
+
 class TestGateInPipeline:
     @pytest.fixture(autouse=True)
     def _enable_gate(self, monkeypatch):
         from pka.config import settings
+
         monkeypatch.setattr(settings, "image_gate_enabled", True)
         init_db()
 
     def _reject_all(self, monkeypatch):
         import pka.ingestion.image_gate as gate
+
         fake = MagicMock()
         fake.text_coverage.return_value = 0.0
         monkeypatch.setattr(gate, "_get_easyocr", lambda: fake)
@@ -251,6 +263,7 @@ class TestGateInPipeline:
     def test_rejected_image_recorded_and_cached(self, sample_png, monkeypatch):
         import pka.ingestion.image_gate as gate
         from pka.ingestion.image_pipeline import ingest_image
+
         self._reject_all(monkeypatch)
 
         img = _image_file(sample_png)
@@ -261,6 +274,7 @@ class TestGateInPipeline:
 
     def test_dry_run_does_not_cache(self, sample_png, monkeypatch):
         from pka.ingestion.image_pipeline import ingest_image
+
         self._reject_all(monkeypatch)
 
         img = _image_file(sample_png)
@@ -284,6 +298,7 @@ class TestGateInPipeline:
 
     def test_ingest_images_counts_rejections(self, tmp_path, monkeypatch):
         from pka.ingestion.image_pipeline import ingest_images
+
         self._reject_all(monkeypatch)
 
         imgs = [_image_file(tmp_path / f"i{i}.png") for i in range(2)]
@@ -330,11 +345,12 @@ class TestGateInPipeline:
 
     def test_ingest_images_skips_cached_rejects(self, tmp_path, monkeypatch):
         from pka.ingestion.image_pipeline import ingest_images
+
         self._reject_all(monkeypatch)
 
         imgs = [_image_file(tmp_path / "one.png")]
-        ingest_images(imgs)                       # first run rejects + caches
-        stats = ingest_images(imgs)               # second run skips via cache
+        ingest_images(imgs)  # first run rejects + caches
+        stats = ingest_images(imgs)  # second run skips via cache
         assert stats["rejected"] == 0
         assert stats["skipped"] == 1
 
@@ -345,27 +361,40 @@ class TestGateInPipeline:
         from pka.db.queries import get_engine
         from pka.db.schema import documents, images
         from pka.ingestion.image_pipeline import ingest_image, register_images
+
         self._reject_all(monkeypatch)
 
         img = _image_file(tmp_path / "drop.png")
-        register_images([img])                    # metadata pass creates the rows
+        register_images([img])  # metadata pass creates the rows
         with get_engine().connect() as con:
-            assert con.execute(
-                sa.select(sa.func.count()).select_from(images)
-                .where(images.c.path == str(img.path))
-            ).scalar() == 1
+            assert (
+                con.execute(
+                    sa.select(sa.func.count())
+                    .select_from(images)
+                    .where(images.c.path == str(img.path))
+                ).scalar()
+                == 1
+            )
 
         res = ingest_image(img)
         assert res["status"] == "rejected"
         with get_engine().connect() as con:
-            assert con.execute(
-                sa.select(sa.func.count()).select_from(images)
-                .where(images.c.path == str(img.path))
-            ).scalar() == 0
-            assert con.execute(
-                sa.select(sa.func.count()).select_from(documents)
-                .where(documents.c.url_or_path == str(img.path))
-            ).scalar() == 0
+            assert (
+                con.execute(
+                    sa.select(sa.func.count())
+                    .select_from(images)
+                    .where(images.c.path == str(img.path))
+                ).scalar()
+                == 0
+            )
+            assert (
+                con.execute(
+                    sa.select(sa.func.count())
+                    .select_from(documents)
+                    .where(documents.c.url_or_path == str(img.path))
+                ).scalar()
+                == 0
+            )
 
     def test_register_ignores_cached_rejects(self, tmp_path, monkeypatch):
         """Reruns of metadata sync do not re-register a previously rejected path."""
@@ -382,10 +411,14 @@ class TestGateInPipeline:
         assert stats["skipped"] == 1
         assert stats["processed"] == 0
         with get_engine().connect() as con:
-            assert con.execute(
-                sa.select(sa.func.count()).select_from(images)
-                .where(images.c.path == str(img.path))
-            ).scalar() == 0
+            assert (
+                con.execute(
+                    sa.select(sa.func.count())
+                    .select_from(images)
+                    .where(images.c.path == str(img.path))
+                ).scalar()
+                == 0
+            )
 
 
 class TestGateLabelThreadedToContentPass:
@@ -394,6 +427,7 @@ class TestGateLabelThreadedToContentPass:
     @pytest.fixture(autouse=True)
     def _enable_gate(self, monkeypatch):
         from pka.config import settings
+
         monkeypatch.setattr(settings, "image_gate_enabled", True)
         init_db()
 
@@ -409,7 +443,8 @@ class TestGateLabelThreadedToContentPass:
         monkeypatch.setattr(gate, "_get_easyocr", lambda: cov)
         monkeypatch.setattr(gate, "get_gate_vision_provider", lambda: MagicMock())
         monkeypatch.setattr(
-            gate, "classify_and_describe",
+            gate,
+            "classify_and_describe",
             lambda *a, **k: ("whiteboard", "gate model's throwaway description"),
         )
 
@@ -425,11 +460,11 @@ class TestGateLabelThreadedToContentPass:
         res = ingest_image(_image_file(tmp_path / "board.png"))
 
         assert res["status"] == "ok"
-        assert res["image_type"] == "whiteboard"        # gate label, not re-derived
-        assert main.complete.call_count == 1            # one main call, no reclassify
+        assert res["image_type"] == "whiteboard"  # gate label, not re-derived
+        assert main.complete.call_count == 1  # one main call, no reclassify
         prompt = main.complete.call_args[0][0]
-        assert '"transcript"' in prompt                 # transcript prompt for whiteboard
-        assert '"image_type"' not in prompt             # not the classify prompt
+        assert '"transcript"' in prompt  # transcript prompt for whiteboard
+        assert '"image_type"' not in prompt  # not the classify prompt
 
     def test_skip_gate_falls_back_to_two_calls(self, tmp_path, monkeypatch, mock_chroma):
         import pka.ingestion.image_extractor as extractor
@@ -452,7 +487,7 @@ class TestGateLabelThreadedToContentPass:
         res = ingest_image(_image_file(tmp_path / "poster.png"), skip_gate=True)
 
         assert res["image_type"] == "poster"
-        assert main.complete.call_count == 2            # classify, then content prompt
+        assert main.complete.call_count == 2  # classify, then content prompt
         assert '"image_type"' in main.complete.call_args_list[0][0][0]
         assert '"content"' in main.complete.call_args_list[1][0][0]
 
@@ -484,7 +519,8 @@ class TestClassifyStrict:
         prov = MagicMock()
         prov.complete.return_value = '{"image_type": "unknown", "description": "a wall"}'
         assert classify_and_describe(sample_png, provider=prov, strict=True) == (
-            "unknown", "a wall",
+            "unknown",
+            "a wall",
         )
 
 
@@ -530,9 +566,7 @@ class TestBrowseDefersPendingImages:
         # Once the embed pass sets indexed_at, it appears in browse.
         with get_engine().begin() as con:
             con.execute(
-                sa.update(images)
-                .where(images.c.path == str(img.path))
-                .values(indexed_at=1)
+                sa.update(images).where(images.c.path == str(img.path)).values(indexed_at=1)
             )
         _total, items = list_documents(sources=["image"])
         assert any(i["url_or_path"] == str(img.path) for i in items)
@@ -554,9 +588,7 @@ class TestBrowseDefersPendingImages:
 
         with eng.begin() as con:
             con.execute(
-                sa.update(images)
-                .where(images.c.path == str(img.path))
-                .values(indexed_at=1)
+                sa.update(images).where(images.c.path == str(img.path)).values(indexed_at=1)
             )
         out = list_images(image_type=None, limit=20, offset=0, engine=eng)
         assert len(out) == 1

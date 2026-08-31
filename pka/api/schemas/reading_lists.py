@@ -1,4 +1,5 @@
 """Reading-list create/update/item models."""
+
 from pydantic import BaseModel
 
 

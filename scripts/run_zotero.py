@@ -4,6 +4,7 @@
 Thin shim — the implementation lives in pka.cli.zotero (run via
 `alexandria zotero` once installed, or `python scripts/run_zotero.py` from the repo).
 """
+
 import sys
 from pathlib import Path
 

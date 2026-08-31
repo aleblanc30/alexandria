@@ -1,4 +1,5 @@
 """Finite-support Gaussian-like kernel for bookmark-date trend reconstruction."""
+
 from __future__ import annotations
 
 import calendar
@@ -76,9 +77,7 @@ def build_kernel_timeline(
         sizes[label] = len(timestamps)
         period_values: dict[str, float] = {}
         for month_key, center_ts in months:
-            weight = sum(
-                finite_gaussian_kernel((center_ts - ts) / 86400.0) for ts in timestamps
-            )
+            weight = sum(finite_gaussian_kernel((center_ts - ts) / 86400.0) for ts in timestamps)
             if weight:
                 period_values[month_key] = weight
         timeline[label] = period_values

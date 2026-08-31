@@ -1,4 +1,5 @@
 """Zotero attachment key persistence and refresh."""
+
 import sqlalchemy as sa
 
 from pka.connectors.zotero import (
@@ -48,9 +49,7 @@ def test_upsert_stores_zotero_attachment_key():
     )
     with get_engine().connect() as con:
         row = con.execute(
-            sa.select(documents.c.zotero_attachment_key).where(
-                documents.c.source_id == "RAFT0001"
-            )
+            sa.select(documents.c.zotero_attachment_key).where(documents.c.source_id == "RAFT0001")
         ).fetchone()
     assert row[0] == "RAFT0002"
 
@@ -58,24 +57,26 @@ def test_upsert_stores_zotero_attachment_key():
 def test_refresh_zotero_metadata_updates_existing_row():
     init_db()
     upsert_document(Source.ZOTERO, "RAFT0001", "Raft", None, 1700000000)
-    n = refresh_zotero_metadata({
-        "RAFT0001": {
-            "zotero_attachment_key": "RAFT0002",
-            "doi": "10.1/raft",
-            "arxiv_id": None,
-            "year": 2023,
-            "authors_json": None,
-            "zotero_url": None,
-            "zotero_path": None,
-            "url_or_path": None,
+    n = refresh_zotero_metadata(
+        {
+            "RAFT0001": {
+                "zotero_attachment_key": "RAFT0002",
+                "doi": "10.1/raft",
+                "arxiv_id": None,
+                "year": 2023,
+                "authors_json": None,
+                "zotero_url": None,
+                "zotero_path": None,
+                "url_or_path": None,
+            }
         }
-    })
+    )
     assert n == 1
     with get_engine().connect() as con:
         row = con.execute(
-            sa.select(
-                documents.c.zotero_attachment_key, documents.c.doi, documents.c.year
-            ).where(documents.c.source_id == "RAFT0001")
+            sa.select(documents.c.zotero_attachment_key, documents.c.doi, documents.c.year).where(
+                documents.c.source_id == "RAFT0001"
+            )
         ).fetchone()
     assert row == ("RAFT0002", "10.1/raft", 2023)
 
@@ -83,16 +84,21 @@ def test_refresh_zotero_metadata_updates_existing_row():
 def test_refresh_zotero_metadata_does_not_null_out_stored_doi():
     """A missing value in the incoming dict must not blank an already-stored one."""
     init_db()
-    upsert_document(
-        Source.ZOTERO, "RAFT0001", "Raft", None, 1700000000, doi="10.1/original"
-    )
-    refresh_zotero_metadata({
-        "RAFT0001": {
-            "zotero_attachment_key": None, "doi": None, "arxiv_id": None,
-            "year": None, "authors_json": None, "zotero_url": None,
-            "zotero_path": None, "url_or_path": None,
+    upsert_document(Source.ZOTERO, "RAFT0001", "Raft", None, 1700000000, doi="10.1/original")
+    refresh_zotero_metadata(
+        {
+            "RAFT0001": {
+                "zotero_attachment_key": None,
+                "doi": None,
+                "arxiv_id": None,
+                "year": None,
+                "authors_json": None,
+                "zotero_url": None,
+                "zotero_path": None,
+                "url_or_path": None,
+            }
         }
-    })
+    )
     with get_engine().connect() as con:
         doi = con.execute(
             sa.select(documents.c.doi).where(documents.c.source_id == "RAFT0001")
@@ -105,21 +111,33 @@ def test_refresh_zotero_metadata_migrates_bare_doi_url_or_path():
     converge with a freshly inserted DOI-only item after the backfill runs."""
     init_db()
     upsert_document(
-        Source.ZOTERO, "OLD0001", "Old item", "10.1145/xyz", 1700000000,
+        Source.ZOTERO,
+        "OLD0001",
+        "Old item",
+        "10.1145/xyz",
+        1700000000,
     )
-    n = refresh_zotero_metadata({
-        "OLD0001": {
-            "zotero_attachment_key": None, "doi": "10.1145/xyz", "arxiv_id": None,
-            "year": None, "authors_json": None, "zotero_url": None,
-            "zotero_path": None, "url_or_path": None,
+    n = refresh_zotero_metadata(
+        {
+            "OLD0001": {
+                "zotero_attachment_key": None,
+                "doi": "10.1145/xyz",
+                "arxiv_id": None,
+                "year": None,
+                "authors_json": None,
+                "zotero_url": None,
+                "zotero_path": None,
+                "url_or_path": None,
+            }
         }
-    })
+    )
     assert n == 1
     upsert_document(Source.ZOTERO, "NEW0001", "New item", None, 1700000000, doi="10.1145/xyz")
     with get_engine().connect() as con:
         rows = con.execute(
-            sa.select(documents.c.source_id, documents.c.url_or_path, documents.c.doi)
-            .where(documents.c.source_id.in_(["OLD0001", "NEW0001"]))
+            sa.select(documents.c.source_id, documents.c.url_or_path, documents.c.doi).where(
+                documents.c.source_id.in_(["OLD0001", "NEW0001"])
+            )
         ).fetchall()
     by_id = {r[0]: (r[1], r[2]) for r in rows}
     assert by_id["OLD0001"] == (None, "10.1145/xyz")
@@ -131,9 +149,7 @@ def test_ingest_zotero_items_persists_attachment_key(mock_chroma):
     ingest_zotero_items([_item()])
     with get_engine().connect() as con:
         key = con.execute(
-            sa.select(documents.c.zotero_attachment_key).where(
-                documents.c.source == "zotero"
-            )
+            sa.select(documents.c.zotero_attachment_key).where(documents.c.source == "zotero")
         ).scalar()
     assert key == "RAFT0002"
 
@@ -168,14 +184,20 @@ def test_zotero_item_arxiv_id_and_doi_join_with_fetched_arxiv_document(mock_chro
 
     arxiv_id = parse_arxiv_url(arxiv_url)
     upsert_document(
-        Source.FIREFOX, "FF0001", "Some Paper", arxiv_url, 1700000000,
-        doi=resolve_doi(None, arxiv_id), arxiv_id=arxiv_id,
+        Source.FIREFOX,
+        "FF0001",
+        "Some Paper",
+        arxiv_url,
+        1700000000,
+        doi=resolve_doi(None, arxiv_id),
+        arxiv_id=arxiv_id,
     )
 
     with get_engine().connect() as con:
         rows = con.execute(
-            sa.select(documents.c.source, documents.c.arxiv_id, documents.c.doi)
-            .where(documents.c.source_id.in_(["ZOT0001", "FF0001"]))
+            sa.select(documents.c.source, documents.c.arxiv_id, documents.c.doi).where(
+                documents.c.source_id.in_(["ZOT0001", "FF0001"])
+            )
         ).fetchall()
     by_source = {r[0]: (r[1], r[2]) for r in rows}
     assert by_source["zotero"] == by_source["firefox"]

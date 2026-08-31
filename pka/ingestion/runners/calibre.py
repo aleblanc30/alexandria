@@ -1,4 +1,5 @@
 """Calibre book ingestion."""
+
 from __future__ import annotations
 
 import json
@@ -42,11 +43,7 @@ def _page_range(section: dict) -> dict:
     Omitted rather than passed as ``None`` — Chroma metadata values must be
     scalars, so a ``None`` here fails the whole upsert.
     """
-    return {
-        key: section[key]
-        for key in ("page_start", "page_end")
-        if section.get(key) is not None
-    }
+    return {key: section[key] for key in ("page_start", "page_end") if section.get(key) is not None}
 
 
 def _attach_book_synopsis(book: CalibreBook, doc_id: int, *, dry_run: bool) -> int:
@@ -64,7 +61,9 @@ def _attach_book_synopsis(book: CalibreBook, doc_id: int, *, dry_run: bool) -> i
 
     try:
         synopsis = lookup_book(
-            title=book.title, authors=book.authors, isbn=book.isbn,
+            title=book.title,
+            authors=book.authors,
+            isbn=book.isbn,
         )
     except Exception as exc:
         log.warning("Book lookup failed for %s: %s", book.source_id, exc)
@@ -77,9 +76,9 @@ def _attach_book_synopsis(book: CalibreBook, doc_id: int, *, dry_run: bool) -> i
         return 0
 
     meta = {
-        "title":       book.title,
-        "pass":        "external_synopsis",
-        "book_title":  synopsis.title or book.title,
+        "title": book.title,
+        "pass": "external_synopsis",
+        "book_title": synopsis.title or book.title,
         "resolved_by": synopsis.resolved_by,
     }
     if synopsis.isbn:
@@ -111,18 +110,16 @@ def ingest_calibre_metadata(
             return "dry_run"
         tags, note = split_calibre_tags(book.tags)
         doc_id = insert_document_if_new(
-            source       = Source.CALIBRE,
-            source_id    = book.source_id,
-            title        = book.title,
-            url_or_path  = str(book.preferred_path) if book.preferred_path else None,
-            date_added   = book.date_added,
-            fetch_status = (
-                FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING
-            ),
-            note         = note,
-            isbn         = _calibre_isbn(book),
-            year         = book.year,
-            authors_json = _calibre_authors_json(book),
+            source=Source.CALIBRE,
+            source_id=book.source_id,
+            title=book.title,
+            url_or_path=str(book.preferred_path) if book.preferred_path else None,
+            date_added=book.date_added,
+            fetch_status=(FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING),
+            note=note,
+            isbn=_calibre_isbn(book),
+            year=book.year,
+            authors_json=_calibre_authors_json(book),
         )
         if doc_id is None:
             return "skipped"
@@ -159,18 +156,18 @@ def ingest_calibre_books(
         if doc_id is None:
             tags, note = split_calibre_tags(book.tags)
             doc_id = upsert_document(
-                source       = Source.CALIBRE,
-                source_id    = book.source_id,
-                title        = book.title,
-                url_or_path  = str(book.preferred_path) if book.preferred_path else None,
-                date_added   = book.date_added,
-                fetch_status = (
+                source=Source.CALIBRE,
+                source_id=book.source_id,
+                title=book.title,
+                url_or_path=str(book.preferred_path) if book.preferred_path else None,
+                date_added=book.date_added,
+                fetch_status=(
                     FetchStatus.AVAILABLE if book.preferred_path else FetchStatus.MISSING
                 ),
-                note         = note,
-                isbn         = _calibre_isbn(book),
-                year         = book.year,
-                authors_json = _calibre_authors_json(book),
+                note=note,
+                isbn=_calibre_isbn(book),
+                year=book.year,
+                authors_json=_calibre_authors_json(book),
             )
             doc_ids[book.source_id] = doc_id
             insert_source_tags(doc_id, tags, source=Source.CALIBRE)
@@ -196,7 +193,9 @@ def ingest_calibre_books(
         process=_process,
         progress_key=progress_key,
         on_error_log=lambda book, exc: log.exception(
-            "Failed calibre book %s: %s", book.source_id, exc,
+            "Failed calibre book %s: %s",
+            book.source_id,
+            exc,
         ),
     )
 
@@ -213,7 +212,7 @@ def ingest_calibre_fulltext(
     known = document_index(Source.CALIBRE)
 
     for book in books:
-        if (stop := should_stop(progress_key)):
+        if stop := should_stop(progress_key):
             stats["stopped"] = stop
             break
         failed = False
@@ -239,7 +238,9 @@ def ingest_calibre_fulltext(
                     # OCR-candidate set (planning/BACKLOG.md).
                     log.info(
                         "No text layer in %s (%d pages) — marking %s",
-                        book.title, report.page_count, FetchStatus.NO_TEXT_LAYER,
+                        book.title,
+                        report.page_count,
+                        FetchStatus.NO_TEXT_LAYER,
                     )
                     if not dry_run:
                         set_fetch_status(doc_id, FetchStatus.NO_TEXT_LAYER)
@@ -258,7 +259,7 @@ def ingest_calibre_fulltext(
                     Source.CALIBRE,
                     extra_metadata={
                         "title": book.title,
-                        "pass":  "fulltext",
+                        "pass": "fulltext",
                         "section_title": section.get("title", ""),
                         "section_index": section.get("index", 0),
                         **_page_range(section),
@@ -275,9 +276,7 @@ def ingest_calibre_fulltext(
                 # The §3.2 gap this closes: hundreds of body chunks and not one
                 # of them says what the book is about, and /search collapses to
                 # the best single chunk per document.
-                full_text = "\n\n".join(
-                    sec.get("text", "") for sec in sections
-                )
+                full_text = "\n\n".join(sec.get("text", "") for sec in sections)
                 total_added += attach_summary_chunk(
                     doc_id,
                     full_text,

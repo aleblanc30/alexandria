@@ -1,4 +1,5 @@
 """Tests for dev-mode ingestion limits."""
+
 from types import SimpleNamespace
 
 import pytest
@@ -49,25 +50,37 @@ class TestDevLimits:
 
         items = [
             SimpleNamespace(
-                source_id=f"k{i}", pdf_attachment_key=None, pdf_path=None,
-                url=None, doi=None, year=None, authors=[],
+                source_id=f"k{i}",
+                pdf_attachment_key=None,
+                pdf_path=None,
+                url=None,
+                doi=None,
+                year=None,
+                authors=[],
             )
             for i in range(150)
         ]
         seen: list = []
 
         monkeypatch.setattr(
-            "pka.ingestion.zotero_sync.archive_document_count", lambda _src: 0,
+            "pka.ingestion.zotero_sync.archive_document_count",
+            lambda _src: 0,
         )
         monkeypatch.setattr(
-            "pka.ingestion.zotero_sync.count_pending_metadata", lambda _src: 0,
+            "pka.ingestion.zotero_sync.count_pending_metadata",
+            lambda _src: 0,
         )
         monkeypatch.setattr("pka.ingestion.zotero_sync.load_items", lambda: items)
         monkeypatch.setattr(
             "pka.ingestion.zotero_sync.ingest_zotero_metadata",
-            lambda batch, **kw: seen.append(len(batch)) or {
-                "processed": len(batch), "skipped": 0, "failed": 0,
-            },
+            lambda batch, **kw: (
+                seen.append(len(batch))
+                or {
+                    "processed": len(batch),
+                    "skipped": 0,
+                    "failed": 0,
+                }
+            ),
         )
 
         sp.reset("zotero")

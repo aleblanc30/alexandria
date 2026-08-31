@@ -8,6 +8,7 @@ Credentials live apart from ordinary config in a ``.secrets`` file (same
 ``KEY=value`` format, keys additionally prefixed with ``SECRET_``) so ``.env``
 can stay free of API keys and passwords. See ``SecretsFileSettingsSource``.
 """
+
 import json
 import logging
 import os
@@ -57,20 +58,21 @@ def parse_secrets_file(path: Path) -> dict[str, str]:
         if not line or line.startswith("#"):
             continue
         if line.startswith("export "):
-            line = line[len("export "):].lstrip()
+            line = line[len("export ") :].lstrip()
         key, sep, value = line.partition("=")
         if not sep:
             log.warning("Ignoring malformed line %d in %s", lineno, path)
             continue
         key = key.strip()
         if not key.startswith(SECRET_KEY_PREFIX):
-            log.warning("Ignoring key without %s prefix on line %d in %s",
-                        SECRET_KEY_PREFIX, lineno, path)
+            log.warning(
+                "Ignoring key without %s prefix on line %d in %s", SECRET_KEY_PREFIX, lineno, path
+            )
             continue
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
             value = value[1:-1]
-        out[key[len(SECRET_KEY_PREFIX):]] = value
+        out[key[len(SECRET_KEY_PREFIX) :]] = value
     return out
 
 
@@ -97,13 +99,15 @@ class SecretsFileSettingsSource(PydanticBaseSettingsSource):
         values: dict[str, Any] = {}
         for key, value in parse_secrets_file(path).items():
             if prefix and not key.upper().startswith(prefix.upper()):
-                log.warning("Secret %s%s does not start with %s — ignoring",
-                            SECRET_KEY_PREFIX, key, prefix)
+                log.warning(
+                    "Secret %s%s does not start with %s — ignoring", SECRET_KEY_PREFIX, key, prefix
+                )
                 continue
-            name = key[len(prefix):].lower()
+            name = key[len(prefix) :].lower()
             if name not in fields:
-                log.warning("Secret %s%s does not match any setting — ignoring",
-                            SECRET_KEY_PREFIX, key)
+                log.warning(
+                    "Secret %s%s does not match any setting — ignoring", SECRET_KEY_PREFIX, key
+                )
                 continue
             values[name] = value
         return values
@@ -266,7 +270,9 @@ class Settings(BaseSettings):
     # ``vision_model`` never re-classifies when the gate is on.
     image_gate_enabled: bool = True
     image_gate_text_coverage_min: float = 0.05  # fraction of pixels covered by text
-    image_gate_vision_provider: str = "ollama"  # ollama | ollama_cloud | openrouter | ovh | scaleway
+    image_gate_vision_provider: str = (
+        "ollama"  # ollama | ollama_cloud | openrouter | ovh | scaleway
+    )
     image_gate_vision_model: str = "moondream"  # small local classifier by default
 
     # ── Ollama (local chat / vision) ────────────────────────────────────────
@@ -353,7 +359,7 @@ class Settings(BaseSettings):
     # WAF without buying anything. The loader still appends "(by /u/<user>)"
     # from the feed URL when this carries no attribution.
     reddit_user_agent: str = "Alexandria/0.2 (local research library; saved-post indexer)"
-    reddit_saved_limit: int | None = None   # None = fetch all saved items
+    reddit_saved_limit: int | None = None  # None = fetch all saved items
     # Pause between feed pages (seconds), plus up to this much random jitter.
     # Only a backfill makes many requests in a row; an incremental sync usually
     # stops after one page and never sleeps.

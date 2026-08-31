@@ -2,6 +2,7 @@
 Calibre connector tests.
 Uses a synthetic metadata.db built in tmp_path — no real Calibre installation needed.
 """
+
 import sqlite3
 from pathlib import Path
 
@@ -15,6 +16,7 @@ def _book_by_title(items: list[CalibreBook], title: str) -> CalibreBook:
 
 
 # ── Fixture: minimal Calibre library ─────────────────────────────────────────
+
 
 def _make_calibre_library(root: Path) -> Path:
     """
@@ -161,10 +163,14 @@ def _make_calibre_library(root: Path) -> Path:
 
     # Create stub EPUB files so preferred_path resolution finds them
     for sub, fname in [
-        ("Daniel Kahneman/Thinking, Fast and Slow (1)",
-         "Thinking, Fast and Slow - Daniel Kahneman.epub"),
-        ("J.R.R. Tolkien/The Fellowship of the Ring (2)",
-         "The Fellowship of the Ring - J.R.R. Tolkien.epub"),
+        (
+            "Daniel Kahneman/Thinking, Fast and Slow (1)",
+            "Thinking, Fast and Slow - Daniel Kahneman.epub",
+        ),
+        (
+            "J.R.R. Tolkien/The Fellowship of the Ring (2)",
+            "The Fellowship of the Ring - J.R.R. Tolkien.epub",
+        ),
     ]:
         f = root / sub / fname
         f.parent.mkdir(parents=True, exist_ok=True)
@@ -180,132 +186,112 @@ def calibre_library(tmp_path) -> Path:
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
+
 class TestLoadBooks:
     def test_returns_list_of_calibre_books(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         assert all(isinstance(b, CalibreBook) for b in items)
 
     def test_correct_book_count(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         assert len(items) == 3
 
     def test_title_extracted(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         titles = {b.title for b in items}
         assert "Thinking, Fast and Slow" in titles
 
     def test_authors_extracted(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert "Daniel Kahneman" in book.authors
 
     def test_description_extracted(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert book.description is not None
         assert "decision-making" in book.description
 
     def test_tags_extracted_verbatim(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert "psychology" in book.tags
         assert "non-fiction" in book.tags
 
     def test_publisher_extracted(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert book.publisher == "Farrar, Straus and Giroux"
 
     def test_series_extracted(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = next(b for b in items if "Fellowship" in b.title)
         assert book.series == "The Lord of the Rings"
 
     def test_no_series_is_none(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert book.series is None
 
     def test_isbn_extracted(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert book.isbn == "978-0374533557"
 
     def test_formats_list_populated(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert "EPUB" in book.formats
         assert "PDF" in book.formats
 
     def test_epub_preferred_over_pdf(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert book.preferred_path is not None
         assert book.preferred_path.suffix.lower() == ".epub"
 
     def test_preferred_path_exists_on_disk(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert book.preferred_path.exists()
 
     def test_no_formats_gives_none_path(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         bare = next(b for b in items if b.title == "Bare Book")
         assert bare.preferred_path is None
 
     def test_year_parsed_from_pubdate(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert book.year == 2011
 
     def test_no_pubdate_gives_none_year(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         bare = next(b for b in items if b.title == "Bare Book")
         assert bare.year is None
 
     def test_date_added_is_unix_timestamp(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert isinstance(book.date_added, int)
         assert book.date_added > 0
 
     def test_rating_extracted(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = _book_by_title(items, "Thinking, Fast and Slow")
         assert book.rating == 8
 
     def test_no_description_is_none(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         book = next(b for b in items if "Fellowship" in b.title)
         assert book.description is None
 
     def test_raises_if_metadata_db_missing(self, tmp_path):
         with pytest.raises(FileNotFoundError):
-            load_books(library_root=tmp_path / "NonExistent",
-                       copy_path=tmp_path / "copy.db")
+            load_books(library_root=tmp_path / "NonExistent", copy_path=tmp_path / "copy.db")
 
     def test_source_id_is_string(self, calibre_library, tmp_path):
-        items = load_books(library_root=calibre_library,
-                           copy_path=tmp_path / "copy.db")
+        items = load_books(library_root=calibre_library, copy_path=tmp_path / "copy.db")
         for b in items:
             assert isinstance(b.source_id, str)
 
@@ -328,24 +314,25 @@ class TestSplitCalibreTags:
         assert note == "imported from zotero on friday"
 
     def test_mixed_tags_partitioned(self):
-        tags, note = split_calibre_tags([
-            "economics",
-            "leftover note that is quite long",
-            "psychology",
-        ])
+        tags, note = split_calibre_tags(
+            [
+                "economics",
+                "leftover note that is quite long",
+                "psychology",
+            ]
+        )
         assert tags == ["economics", "psychology"]
         assert note == "leftover note that is quite long"
 
     def test_multiple_long_tags_bundled_newline_separated(self):
-        tags, note = split_calibre_tags([
-            "first long leftover import note",
-            "second long leftover import note",
-        ])
-        assert tags == []
-        assert note == (
-            "first long leftover import note\n"
-            "second long leftover import note"
+        tags, note = split_calibre_tags(
+            [
+                "first long leftover import note",
+                "second long leftover import note",
+            ]
         )
+        assert tags == []
+        assert note == ("first long leftover import note\nsecond long leftover import note")
 
     def test_empty_tags(self):
         assert split_calibre_tags([]) == ([], None)

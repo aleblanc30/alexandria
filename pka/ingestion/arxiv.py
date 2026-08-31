@@ -1,4 +1,5 @@
 """arXiv API + PDF fetch for Firefox bookmark URLs."""
+
 from __future__ import annotations
 
 import asyncio
@@ -128,7 +129,9 @@ def parse_arxiv_atom(xml_text: str) -> ArxivMetadata | None:
             categories.append(child.get("term", ""))
 
     id_text = _find_text(entry, "id")
-    arxiv_id = parse_arxiv_url(id_text) if id_text.startswith("http") else normalize_arxiv_id(id_text)
+    arxiv_id = (
+        parse_arxiv_url(id_text) if id_text.startswith("http") else normalize_arxiv_id(id_text)
+    )
     if not arxiv_id:
         return None
 
@@ -188,7 +191,11 @@ async def _fetch_arxiv_pdf_text(
         return None, resp.status_code, f"pdf HTTP {resp.status_code}"
 
     result = await asyncio.to_thread(
-        _fetch_pdf_result, 0, pdf_url, resp.content, resp.status_code,
+        _fetch_pdf_result,
+        0,
+        pdf_url,
+        resp.content,
+        resp.status_code,
     )
     if result.status != "fetched" or not result.text:
         return None, resp.status_code, result.error_msg or "pdf extraction failed"

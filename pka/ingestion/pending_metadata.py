@@ -1,4 +1,5 @@
 """Compare source connectors against the archive to count pending metadata imports."""
+
 from __future__ import annotations
 
 import threading
@@ -63,13 +64,13 @@ def archive_document_count(source: Source | str) -> int:
     eng = get_engine()
     with eng.connect() as con:
         if src == Source.IMAGE:
-            return con.execute(
-                sa.select(sa.func.count()).select_from(images)
-            ).scalar() or 0
-        return con.execute(
-            sa.select(sa.func.count()).select_from(documents)
-            .where(documents.c.source == src)
-        ).scalar() or 0
+            return con.execute(sa.select(sa.func.count()).select_from(images)).scalar() or 0
+        return (
+            con.execute(
+                sa.select(sa.func.count()).select_from(documents).where(documents.c.source == src)
+            ).scalar()
+            or 0
+        )
 
 
 def count_pending_metadata(source: Source | str) -> int:
@@ -92,9 +93,7 @@ def _compute_pending_metadata(src: str) -> int:
         from pka.connectors.firefox import load_bookmarks
 
         known = set(document_index(Source.FIREFOX))
-        return sum(
-            1 for bm in take(load_bookmarks(), Source.FIREFOX) if bm.source_id not in known
-        )
+        return sum(1 for bm in take(load_bookmarks(), Source.FIREFOX) if bm.source_id not in known)
 
     if src == Source.ZOTERO:
         from pka.connectors.zotero import ensure_zotero_copy, load_item_keys
@@ -122,7 +121,8 @@ def _compute_pending_metadata(src: str) -> int:
         # pending leaves a permanent gap the metadata job can never close.
         known_paths = indexed_image_paths()
         return sum(
-            1 for img in admitted_images(take(scanned, Source.IMAGE))
+            1
+            for img in admitted_images(take(scanned, Source.IMAGE))
             if str(img.path) not in known_paths
         )
 
@@ -169,9 +169,7 @@ def _compute_source_corpus_size(src: str) -> int:
         if unavailable:
             return 0
         books = take(books, Source.CALIBRE)
-        n_files = sum(
-            1 for b in books if b.preferred_path and b.preferred_path.exists()
-        )
+        n_files = sum(1 for b in books if b.preferred_path and b.preferred_path.exists())
         return n_files or len(books)
 
     if src == Source.IMAGE:
@@ -185,4 +183,3 @@ def _compute_source_corpus_size(src: str) -> int:
         return len(admitted_images(take(scanned, Source.IMAGE)))
 
     return 0
-

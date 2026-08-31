@@ -1,4 +1,5 @@
 """``/tags`` — list source and overlay tags with optional filter."""
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query

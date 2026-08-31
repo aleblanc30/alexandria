@@ -1,4 +1,5 @@
 """``/runs`` — list, diagnostics, accept/reject, trigger new run."""
+
 import asyncio
 import json
 import logging
@@ -24,9 +25,7 @@ def _clustering_preflight() -> None:
     if n == 0:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "No embeddings in the vector store. Sync and embed documents first."
-            ),
+            detail=("No embeddings in the vector store. Sync and embed documents first."),
         )
     if n < 5:
         raise HTTPException(
@@ -52,6 +51,7 @@ def _require_run(con, run_id: int, *, require_running: bool = False) -> str:
 
 def _bg_thread(bg: BackgroundTasks, fn) -> None:
     """Schedule a blocking callable on a background worker thread."""
+
     async def _run_threaded() -> None:
         await asyncio.to_thread(fn)
 
@@ -72,24 +72,29 @@ def _running_run_id(engine) -> int | None:
 def _n_noise(con, run_id: int, *, total_chunked: int | None = None) -> int:
     """Chunked documents without a level-1 assignment in this run."""
     if total_chunked is None:
-        total_chunked = con.execute(
-            sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))
-        ).scalar() or 0
-    assigned = con.execute(
-        sa.select(sa.func.count(sa.distinct(cluster_assignments.c.document_id)))
-        .where(
-            (cluster_assignments.c.run_id == run_id)
-            & (cluster_assignments.c.level == 1)
+        total_chunked = (
+            con.execute(sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))).scalar() or 0
         )
-    ).scalar() or 0
+    assigned = (
+        con.execute(
+            sa.select(sa.func.count(sa.distinct(cluster_assignments.c.document_id))).where(
+                (cluster_assignments.c.run_id == run_id) & (cluster_assignments.c.level == 1)
+            )
+        ).scalar()
+        or 0
+    )
     return max(0, total_chunked - assigned)
 
 
 def _run_out(con, row, *, total_chunked: int | None = None) -> RunOut:
-    n_cl = con.execute(
-        sa.select(sa.func.count()).select_from(clusters)
-        .where(clusters.c.run_id == row["run_id"])
-    ).scalar() or 0
+    n_cl = (
+        con.execute(
+            sa.select(sa.func.count())
+            .select_from(clusters)
+            .where(clusters.c.run_id == row["run_id"])
+        ).scalar()
+        or 0
+    )
     return RunOut(
         run_id=row["run_id"],
         timestamp=row["timestamp"],
@@ -106,25 +111,24 @@ def _run_out(con, row, *, total_chunked: int | None = None) -> RunOut:
 @router.get("", response_model=list[RunOut])
 def list_runs(engine=Depends(get_engine)):
     with engine.connect() as con:
-        rows = fetchall_mappings(con.execute(
-            sa.select(cluster_runs).order_by(cluster_runs.c.run_id.desc())
-        ))
-        total_chunked = con.execute(
-            sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))
-        ).scalar() or 0
+        rows = fetchall_mappings(
+            con.execute(sa.select(cluster_runs).order_by(cluster_runs.c.run_id.desc()))
+        )
+        total_chunked = (
+            con.execute(sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))).scalar() or 0
+        )
         return [_run_out(con, r, total_chunked=total_chunked) for r in rows]
 
 
 @router.get("/{run_id}/diagnostics", response_model=DiagnosticsOut)
 def run_diagnostics(run_id: int, engine=Depends(get_engine)):
     from pka.clustering.lifecycle import compute_drift, compute_merge_suggestions
+
     with engine.connect() as con:
         _require_run(con, run_id)
         cluster_rows = con.execute(
-            sa.select(clusters.c.cluster_id,
-                      sa.func.count(cluster_assignments.c.id).label("n"))
-            .join(cluster_assignments,
-                  cluster_assignments.c.cluster_id == clusters.c.cluster_id)
+            sa.select(clusters.c.cluster_id, sa.func.count(cluster_assignments.c.id).label("n"))
+            .join(cluster_assignments, cluster_assignments.c.cluster_id == clusters.c.cluster_id)
             .where(clusters.c.run_id == run_id)
             .group_by(clusters.c.cluster_id)
         ).fetchall()
@@ -147,6 +151,7 @@ def accept_run(run_id: int, engine=Depends(get_engine)):
     if status != "finished":
         raise HTTPException(409, f"Cannot accept a {status} run")
     from pka.clustering.lifecycle import accept_run as _accept
+
     _accept(run_id)
 
 
@@ -157,6 +162,7 @@ def reject_run(run_id: int, notes: str = "", engine=Depends(get_engine)):
     if status != "finished":
         raise HTTPException(409, f"Cannot reject a {status} run")
     from pka.clustering.lifecycle import reject_run as _reject
+
     _reject(run_id, notes=notes)
 
 
@@ -165,6 +171,7 @@ def cancel_run(run_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
         _require_run(con, run_id, require_running=True)
     from pka.clustering.run_progress import request_cancel
+
     request_cancel(run_id)
     return {"status": "cancel_requested", "run_id": run_id}
 
@@ -198,7 +205,9 @@ def trigger_run(
             )
             log.info(
                 "Clustering run #%d finished (%d clusters, %d noise)",
-                result.run_id, result.n_clusters, result.n_noise,
+                result.run_id,
+                result.n_clusters,
+                result.n_noise,
             )
         except ClusterRunCancelled:
             set_run_status(run_id, "cancelled")

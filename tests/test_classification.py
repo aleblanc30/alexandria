@@ -1,4 +1,5 @@
 """Tests for ingest-time academic classification."""
+
 import sqlalchemy as sa
 
 from pka.classification import (
@@ -14,12 +15,14 @@ from pka.db.schema import overlay_tags
 class TestClassifyDocument:
     def test_zotero_journal_article(self):
         assert classify_document(
-            Source.ZOTERO, item_type="journalArticle",
+            Source.ZOTERO,
+            item_type="journalArticle",
         ) == ["academic", "paper"]
 
     def test_zotero_preprint(self):
         assert classify_document(
-            Source.ZOTERO, item_type="preprint",
+            Source.ZOTERO,
+            item_type="preprint",
         ) == ["academic", "preprint"]
 
     def test_zotero_book_not_academic(self):
@@ -44,10 +47,13 @@ class TestClassifyDocument:
         ) == ["academic", "paper"]
 
     def test_firefox_generic_url(self):
-        assert classify_document(
-            Source.FIREFOX,
-            url_or_path="https://example.com/blog",
-        ) == []
+        assert (
+            classify_document(
+                Source.FIREFOX,
+                url_or_path="https://example.com/blog",
+            )
+            == []
+        )
 
     def test_calibre_not_classified(self):
         assert classify_document(Source.CALIBRE, url_or_path="/books/foo.epub") == []
@@ -71,7 +77,11 @@ class TestSyncClassificationTags:
     def test_writes_inferred_tags(self):
         init_db()
         doc_id = upsert_document(
-            Source.ZOTERO, "Z001", "Paper", "https://example.com", 1700000000,
+            Source.ZOTERO,
+            "Z001",
+            "Paper",
+            "https://example.com",
+            1700000000,
             item_type="journalArticle",
         )
         sync_classification_tags(doc_id, ["academic", "paper"])
@@ -88,23 +98,29 @@ class TestSyncClassificationTags:
     def test_removes_stale_tags(self):
         init_db()
         doc_id = upsert_document(
-            Source.ZOTERO, "Z002", "Preprint", "https://example.com", 1700000000,
+            Source.ZOTERO,
+            "Z002",
+            "Preprint",
+            "https://example.com",
+            1700000000,
             item_type="preprint",
         )
         sync_classification_tags(doc_id, ["academic", "preprint"])
         sync_classification_tags(doc_id, ["academic", "paper"])
         with get_engine().connect() as con:
             rows = con.execute(
-                sa.select(overlay_tags.c.tag).where(
-                    overlay_tags.c.document_id == doc_id
-                )
+                sa.select(overlay_tags.c.tag).where(overlay_tags.c.document_id == doc_id)
             ).fetchall()
         assert {r[0] for r in rows} == {"academic", "paper"}
 
     def test_clears_tags_when_unclassified(self):
         init_db()
         doc_id = upsert_document(
-            Source.ZOTERO, "Z003", "Book", "https://example.com", 1700000000,
+            Source.ZOTERO,
+            "Z003",
+            "Book",
+            "https://example.com",
+            1700000000,
             item_type="book",
         )
         sync_classification_tags(doc_id, ["academic", "paper"])

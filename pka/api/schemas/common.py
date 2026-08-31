@@ -1,4 +1,5 @@
 """Pagination + shared response wrappers."""
+
 from pydantic import BaseModel
 
 

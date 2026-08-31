@@ -1,4 +1,5 @@
 """Shared iteration helpers for ingestion item loops."""
+
 from __future__ import annotations
 
 import logging
@@ -29,7 +30,7 @@ def run_metadata_loop(
     stats = {"processed": 0, "skipped": 0, "failed": 0}
 
     for item in items:
-        if (stop := should_stop(progress_key)):
+        if stop := should_stop(progress_key):
             stats["stopped"] = stop
             break
         source_id = get_source_id(item)
@@ -69,7 +70,7 @@ def run_embed_loop(
     stats = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
 
     for item in items:
-        if (stop := should_stop(progress_key)):
+        if stop := should_stop(progress_key):
             stats["stopped"] = stop
             break
         if should_skip(item):

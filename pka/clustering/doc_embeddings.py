@@ -1,4 +1,5 @@
 """Cached mean-pooled document embeddings (384-d MiniLM) in SQLite."""
+
 from __future__ import annotations
 
 import logging
@@ -35,9 +36,7 @@ def refresh_document_embedding(doc_id: int) -> bool:
     if not vector_ids:
         with eng.begin() as con:
             con.execute(
-                documents.update()
-                .where(documents.c.id == doc_id)
-                .values(doc_embedding=None)
+                documents.update().where(documents.c.id == doc_id).values(doc_embedding=None)
             )
         return False
 
@@ -63,11 +62,7 @@ def refresh_document_embedding(doc_id: int) -> bool:
     mean_vec = np.mean(np.array(vecs, dtype=np.float32), axis=0)
     blob = embedding_to_blob(mean_vec)
     with eng.begin() as con:
-        con.execute(
-            documents.update()
-            .where(documents.c.id == doc_id)
-            .values(doc_embedding=blob)
-        )
+        con.execute(documents.update().where(documents.c.id == doc_id).values(doc_embedding=blob))
     try:
         from pka.tag_training.lifecycle import apply_learned_tags_for_document
 
@@ -86,8 +81,7 @@ def load_cached_embeddings(
     eng = get_engine()
     with eng.connect() as con:
         rows = con.execute(
-            sa.select(documents.c.id, documents.c.doc_embedding)
-            .where(documents.c.id.in_(doc_ids))
+            sa.select(documents.c.id, documents.c.doc_embedding).where(documents.c.id.in_(doc_ids))
         ).fetchall()
     found: dict[int, np.ndarray] = {}
     missing: list[int] = []

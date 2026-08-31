@@ -1,4 +1,5 @@
 """Local map-reduce summarisation (DESIGN.md §3.2 mechanism 3)."""
+
 from __future__ import annotations
 
 import pytest
@@ -112,7 +113,7 @@ class TestFailureModes:
 
 class TestMapReduce:
     def test_long_input_maps_then_reduces(self, provider):
-        text = _sentences(400)          # comfortably over CHUNK_CHAR_LIMIT
+        text = _sentences(400)  # comfortably over CHUNK_CHAR_LIMIT
         assert len(text) > sz.CHUNK_CHAR_LIMIT
         out = sz.summarize_text(text, max_sentences=4)
         assert out is not None
@@ -139,6 +140,7 @@ class TestMapReduce:
 
         provider_text = _sentences(400)
         import pka.ingestion.summarize as mod
+
         mod.chat_json = flaky
         try:
             assert sz.summarize_text(provider_text, max_sentences=4) is not None
@@ -177,15 +179,21 @@ class TestAttachSummaryChunk:
     @pytest.fixture(autouse=True)
     def _db(self):
         from pka.db.queries import init_db
+
         init_db()
 
     @pytest.fixture
     def doc_id(self):
         from pka.constants import FetchStatus, Source
         from pka.db.queries import upsert_document
+
         return upsert_document(
-            source=Source.FIREFOX, source_id="s1", title="A Page",
-            url_or_path="http://x", date_added=0, fetch_status=FetchStatus.FETCHED,
+            source=Source.FIREFOX,
+            source_id="s1",
+            title="A Page",
+            url_or_path="http://x",
+            date_added=0,
+            fetch_status=FetchStatus.FETCHED,
         )
 
     @pytest.fixture
@@ -206,14 +214,10 @@ class TestAttachSummaryChunk:
         from pka.constants import Source
         from pka.ingestion.core import attach_summary_chunk
 
-        assert attach_summary_chunk(
-            doc_id, self._long(), Source.FIREFOX, dry_run=True
-        ) == 0
+        assert attach_summary_chunk(doc_id, self._long(), Source.FIREFOX, dry_run=True) == 0
         assert provider.calls == 0
 
-    def test_adds_a_summary_chunk_when_enabled(
-        self, doc_id, provider, summary_on, mock_chroma
-    ):
+    def test_adds_a_summary_chunk_when_enabled(self, doc_id, provider, summary_on, mock_chroma):
         from pka.constants import Source
         from pka.ingestion.core import attach_summary_chunk
 
@@ -222,9 +226,7 @@ class TestAttachSummaryChunk:
         metas = [i["meta"] for i in store.values() if i["meta"].get("pass") == "summary"]
         assert len(metas) == 1
 
-    def test_summary_is_cached_and_not_re_inferred(
-        self, doc_id, provider, summary_on, mock_chroma
-    ):
+    def test_summary_is_cached_and_not_re_inferred(self, doc_id, provider, summary_on, mock_chroma):
         """A purge-and-reingest must replay without paying for inference twice."""
         from pka.constants import Source
         from pka.db.queries import get_generated_summary
@@ -329,8 +331,10 @@ class TestMaterialFraming:
     def test_short_input_still_costs_no_call_with_material_set(self, provider):
         """Framing must not defeat the short-circuit that skips the provider."""
         out = sz.summarize_text(
-            "One short comment.", max_sentences=cfg.summary_max_sentences,
-            material="reddit_comment", context="Thread: whatever",
+            "One short comment.",
+            max_sentences=cfg.summary_max_sentences,
+            material="reddit_comment",
+            context="Thread: whatever",
         )
         assert out == "One short comment."
         assert provider.calls == 0

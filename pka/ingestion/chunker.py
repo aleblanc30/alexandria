@@ -5,6 +5,7 @@ Default sentence splitter uses an abbreviation-aware regex; a spaCy
 sentencizer is used instead when the ``spacy`` package is importable.
 The choice is made lazily on first call.
 """
+
 import logging
 import re
 import unicodedata
@@ -14,19 +15,37 @@ log = logging.getLogger(__name__)
 _SIMPLE_SENT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 
 _ABBREV = {
-    "Dr.", "Mr.", "Mrs.", "Ms.", "Prof.", "Sr.", "Jr.",
-    "Inc.", "Ltd.", "Co.", "Corp.",
-    "vs.", "etc.", "e.g.", "i.e.",
-    "U.S.", "U.K.",
-    "Fig.", "fig.", "Eq.", "eq.", "Ref.", "ref.",
+    "Dr.",
+    "Mr.",
+    "Mrs.",
+    "Ms.",
+    "Prof.",
+    "Sr.",
+    "Jr.",
+    "Inc.",
+    "Ltd.",
+    "Co.",
+    "Corp.",
+    "vs.",
+    "etc.",
+    "e.g.",
+    "i.e.",
+    "U.S.",
+    "U.K.",
+    "Fig.",
+    "fig.",
+    "Eq.",
+    "eq.",
+    "Ref.",
+    "ref.",
 }
 
 
 def clean_text(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
-    text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)   # de-hyphenate PDF line breaks
-    text = re.sub(r"\n{3,}", "\n\n", text)         # collapse excess blank lines
-    text = re.sub(r"[ \t]+", " ", text)            # normalise whitespace
+    text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)  # de-hyphenate PDF line breaks
+    text = re.sub(r"\n{3,}", "\n\n", text)  # collapse excess blank lines
+    text = re.sub(r"[ \t]+", " ", text)  # normalise whitespace
     return text.strip()
 
 
@@ -49,6 +68,7 @@ def _get_spacy():
     if _spacy_nlp is None:
         try:
             import spacy  # type: ignore
+
             try:
                 _spacy_nlp = spacy.load(
                     "en_core_web_sm",

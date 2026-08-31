@@ -5,6 +5,7 @@ The N+1 query problem in the per-document lookup loop is avoided by
 required relations (``source_tags``, ``overlay_tags``, ``cluster_assignments``)
 in batched ``IN`` queries.
 """
+
 import logging
 
 import sqlalchemy as sa
@@ -52,7 +53,8 @@ def search(req: SearchRequest, engine=Depends(get_engine)):
         except Exception:
             # Fall through to fulltext if the vector store is unavailable
             log.warning(
-                "Semantic search unavailable; falling back to fulltext", exc_info=True,
+                "Semantic search unavailable; falling back to fulltext",
+                exc_info=True,
             )
 
     with engine.connect() as con:
@@ -88,7 +90,8 @@ def search(req: SearchRequest, engine=Depends(get_engine)):
                 from pka.ingestion.image_pipeline import search_images_by_text
 
                 clip_hits = search_images_by_text(
-                    req.query, n=max(10, req.offset + req.limit),
+                    req.query,
+                    n=max(10, req.offset + req.limit),
                 )
             except Exception:
                 log.warning("CLIP image search unavailable", exc_info=True)
@@ -141,20 +144,22 @@ def search(req: SearchRequest, engine=Depends(get_engine)):
             filtered: list[tuple[int, float | None]] = []
             doc_ids_to_check = [d for d, _ in results]
             row_map = {
-                r["id"]: r for r in fetchall_mappings(con.execute(
-                    sa.select(documents).where(documents.c.id.in_(doc_ids_to_check))
-                ))
+                r["id"]: r
+                for r in fetchall_mappings(
+                    con.execute(sa.select(documents).where(documents.c.id.in_(doc_ids_to_check)))
+                )
             }
             cluster_membership: dict[int, int] = {}
             if req.cluster_ids and run_id:
                 cluster_membership = {
-                    r[0]: r[1] for r in con.execute(
+                    r[0]: r[1]
+                    for r in con.execute(
                         sa.select(
                             cluster_assignments.c.document_id,
                             cluster_assignments.c.cluster_id,
                         ).where(
-                            (cluster_assignments.c.run_id == run_id) &
-                            (cluster_assignments.c.document_id.in_(doc_ids_to_check))
+                            (cluster_assignments.c.run_id == run_id)
+                            & (cluster_assignments.c.document_id.in_(doc_ids_to_check))
                         )
                     ).fetchall()
                 }
@@ -178,7 +183,7 @@ def search(req: SearchRequest, engine=Depends(get_engine)):
 
         # ── Paginate ──────────────────────────────────────────────────────────
         total = len(results)
-        page = results[req.offset: req.offset + req.limit]
+        page = results[req.offset : req.offset + req.limit]
 
         docs_out = documents_out_batch(page, con, run_id)
 

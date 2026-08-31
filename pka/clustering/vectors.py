@@ -1,4 +1,5 @@
 """Shared vector math for clustering (cosine helpers)."""
+
 from __future__ import annotations
 
 import numpy as np

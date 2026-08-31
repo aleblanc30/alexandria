@@ -8,6 +8,7 @@ Orchestrates the four extraction passes and persists results to:
                     extraction + description + OCR, so images appear in unified
                     text search).
 """
+
 import json
 import logging
 import threading
@@ -104,21 +105,19 @@ def _ensure_image_document(img: ImageFile) -> int:
     ``source_id`` and ``url_or_path`` so the cover route can stream the bytes.
     """
     return upsert_document(
-        source       = Source.IMAGE,
-        source_id    = str(img.path),
-        title        = img.filename,
-        url_or_path  = str(img.path),
-        date_added   = img.date_taken,
-        fetch_status = FetchStatus.AVAILABLE,
+        source=Source.IMAGE,
+        source_id=str(img.path),
+        title=img.filename,
+        url_or_path=str(img.path),
+        date_added=img.date_taken,
+        fetch_status=FetchStatus.AVAILABLE,
     )
 
 
 def _image_already_indexed(path: Path) -> int | None:
     """Return image DB id if already registered (row exists), else None."""
     with get_engine().connect() as con:
-        row = con.execute(
-            sa.select(images.c.id).where(images.c.path == str(path))
-        ).fetchone()
+        row = con.execute(sa.select(images.c.id).where(images.c.path == str(path))).fetchone()
     return row[0] if row else None
 
 
@@ -189,7 +188,8 @@ def register_images(
         doc_id = _ensure_image_document(img)
         eng = get_engine()
         with eng.begin() as con:
-            con.execute(sa.text("""
+            con.execute(
+                sa.text("""
                 INSERT INTO images
                     (document_id, path, filename, image_type, width, height,
                      file_size, date_taken, indexed_at)
@@ -197,12 +197,17 @@ def register_images(
                     (:doc_id, :path, :fname, 'unknown', :w, :h, :sz, :dt, NULL)
                 ON CONFLICT(path) DO UPDATE SET
                     document_id = excluded.document_id
-            """), {
-                "doc_id": doc_id,
-                "path": str(img.path), "fname": img.filename,
-                "w": img.width, "h": img.height, "sz": img.file_size,
-                "dt": img.date_taken,
-            })
+            """),
+                {
+                    "doc_id": doc_id,
+                    "path": str(img.path),
+                    "fname": img.filename,
+                    "w": img.width,
+                    "h": img.height,
+                    "sz": img.file_size,
+                    "dt": img.date_taken,
+                },
+            )
         return "processed"
 
     return run_metadata_loop(
@@ -253,10 +258,10 @@ def _attach_book_synopses(doc_id: int, img: ImageFile, books: list[dict]) -> int
         # Chroma metadata takes scalars only — drop anything unresolved rather
         # than sending None.
         meta = {
-            "title":       img.filename,
-            "modality":    "image",
-            "pass":        "external_synopsis",
-            "book_title":  synopsis.title or title,
+            "title": img.filename,
+            "modality": "image",
+            "pass": "external_synopsis",
+            "book_title": synopsis.title or title,
             "resolved_by": synopsis.resolved_by,
         }
         if synopsis.isbn:
@@ -311,13 +316,14 @@ def ingest_image(
                 removed = delete_image_document(str(img.path))
                 if removed["chunk_vector_ids"]:
                     from pka.storage import vector_store
+
                     vector_store.purge_vectors(removed["chunk_vector_ids"])
                 if removed["clip_vector_id"]:
                     delete_clip_vectors([removed["clip_vector_id"]])
             return {
-                "status":        "rejected",
-                "reason":        gate.reason,
-                "image_type":    gate.image_type,
+                "status": "rejected",
+                "reason": gate.reason,
+                "image_type": gate.image_type,
                 "text_coverage": gate.text_coverage,
             }
         # NOTE: the gate's label — not the main pass's — is what becomes
@@ -337,10 +343,10 @@ def ingest_image(
     books: list[dict] = []
     if not skip_vision:
         extracted = extract_image_content(img.path, image_type=gate_type, model=vision_model)
-        image_type   = extracted.image_type
-        description  = extracted.description
+        image_type = extracted.image_type
+        description = extracted.description
         content_text = extracted.content
-        books        = extracted.books
+        books = extracted.books
 
     # ── Pass 3: OCR ───────────────────────────────────────────────────────────
     ocr_text = ""
@@ -357,11 +363,11 @@ def ingest_image(
 
     if dry_run:
         return {
-            "status":       "dry_run",
-            "image_type":   image_type,
-            "books":        books,
-            "has_ocr":      bool(ocr_text),
-            "has_clip":     clip_vector is not None,
+            "status": "dry_run",
+            "image_type": image_type,
+            "books": books,
+            "has_ocr": bool(ocr_text),
+            "has_clip": clip_vector is not None,
             "has_text_emb": text_doc is not None,
         }
 
@@ -372,7 +378,8 @@ def ingest_image(
 
     eng = get_engine()
     with eng.begin() as con:
-        con.execute(sa.text("""
+        con.execute(
+            sa.text("""
             INSERT INTO images
                 (document_id, path, filename, image_type, width, height,
                  file_size, date_taken, ocr_text, description, books_json,
@@ -388,20 +395,25 @@ def ingest_image(
                 books_json     = excluded.books_json,
                 clip_vector_id = excluded.clip_vector_id,
                 indexed_at     = excluded.indexed_at
-        """), {
-            "doc_id": doc_id,
-            "path": str(img.path), "fname": img.filename,
-            "itype": image_type,
-            "w": img.width, "h": img.height, "sz": img.file_size,
-            "dt": img.date_taken,
-            "ocr": ocr_text or None, "desc": description or None,
-            "books": json.dumps(books) if books else None,
-            "cvid": clip_vid, "now": now,
-        })
+        """),
+            {
+                "doc_id": doc_id,
+                "path": str(img.path),
+                "fname": img.filename,
+                "itype": image_type,
+                "w": img.width,
+                "h": img.height,
+                "sz": img.file_size,
+                "dt": img.date_taken,
+                "ocr": ocr_text or None,
+                "desc": description or None,
+                "books": json.dumps(books) if books else None,
+                "cvid": clip_vid,
+                "now": now,
+            },
+        )
 
-        row = con.execute(
-            sa.select(images.c.id).where(images.c.path == str(img.path))
-        ).fetchone()
+        row = con.execute(sa.select(images.c.id).where(images.c.path == str(img.path))).fetchone()
         image_id = row[0]
 
         # The vision classification becomes an inferred overlay tag on the
@@ -429,31 +441,33 @@ def ingest_image(
         try:
             col = _get_clip_collection()
             col.upsert(
-                ids        = [clip_vid],
-                embeddings = [clip_vector],
-                documents  = [img.filename],
-                metadatas  = [{
-                    "document_id": doc_id,
-                    "image_id":    image_id,
-                    "image_type":  image_type,
-                    "filename":    img.filename,
-                    "path":        str(img.path),
-                    "modality":    "clip",
-                }],
+                ids=[clip_vid],
+                embeddings=[clip_vector],
+                documents=[img.filename],
+                metadatas=[
+                    {
+                        "document_id": doc_id,
+                        "image_id": image_id,
+                        "image_type": image_type,
+                        "filename": img.filename,
+                        "path": str(img.path),
+                        "modality": "clip",
+                    }
+                ],
             )
         except Exception as exc:
             log.warning("CLIP Chroma upsert failed: %s", exc)
 
     return {
-        "status":       "ok",
-        "image_type":   image_type,
+        "status": "ok",
+        "image_type": image_type,
         # Extracted cover fields, also cached in ``images.books_json``. A later
         # (default-off) identifier lookup consumes these; nothing here looks
         # anything up or touches the network.
-        "books":        books,
+        "books": books,
         "synopsis_chunks": synopsis_chunks,
-        "has_ocr":      bool(ocr_text),
-        "has_clip":     clip_vector is not None,
+        "has_ocr": bool(ocr_text),
+        "has_clip": clip_vector is not None,
         "has_text_emb": text_doc is not None,
     }
 
@@ -487,13 +501,13 @@ def ingest_images(
         nonlocal rejected
         result = ingest_image(
             img,
-            vision_model = vision_model,
-            ocr_lang     = ocr_lang,
-            skip_ocr     = skip_ocr,
-            skip_clip    = skip_clip,
-            skip_vision  = skip_vision,
-            skip_gate    = skip_gate,
-            dry_run      = dry_run,
+            vision_model=vision_model,
+            ocr_lang=ocr_lang,
+            skip_ocr=skip_ocr,
+            skip_clip=skip_clip,
+            skip_vision=skip_vision,
+            skip_gate=skip_gate,
+            dry_run=dry_run,
         )
         if result["status"] == "rejected":
             rejected += 1
@@ -557,14 +571,16 @@ def search_images_by_text(query: str, n: int = 10) -> list[dict]:
     out: list[dict] = []
     for i, vid in enumerate(res["ids"][0]):
         meta = res["metadatas"][0][i]
-        out.append({
-            "vector_id":   vid,
-            "document_id": meta.get("document_id"),
-            "filename":    meta.get("filename"),
-            "path":        meta.get("path"),
-            "image_type":  meta.get("image_type"),
-            "distance":    res["distances"][0][i],
-        })
+        out.append(
+            {
+                "vector_id": vid,
+                "document_id": meta.get("document_id"),
+                "filename": meta.get("filename"),
+                "path": meta.get("path"),
+                "image_type": meta.get("image_type"),
+                "distance": res["distances"][0][i],
+            }
+        )
     return out
 
 
@@ -585,7 +601,9 @@ def search_images_by_inferred_text(query: str, n: int = 10) -> list[dict]:
         # Over-fetch: several chunks of the same image can occupy the top-n, and
         # non-image sources are excluded by the filter, not by re-ranking.
         hits = vector_store.query(
-            query, n_results=max(n * 3, 10), where={"source": str(Source.IMAGE)},
+            query,
+            n_results=max(n * 3, 10),
+            where={"source": str(Source.IMAGE)},
         )
     except Exception as exc:
         log.warning("Image text search unavailable: %s", exc)
@@ -602,14 +620,14 @@ def search_images_by_inferred_text(query: str, n: int = 10) -> list[dict]:
         if current is None or hit["distance"] < current["distance"]:
             best[doc_id] = {
                 "document_id": doc_id,
-                "vector_id":   hit["vector_id"],
-                "distance":    hit["distance"],
-                "text":        hit.get("text") or "",
+                "vector_id": hit["vector_id"],
+                "distance": hit["distance"],
+                "text": hit.get("text") or "",
                 # Which extraction rung produced the matching chunk
                 # ("external_synopsis", "summary", … ; absent for the main
                 # content+description+OCR block).
-                "pass":        meta.get("pass"),
-                "filename":    meta.get("title"),
+                "pass": meta.get("pass"),
+                "filename": meta.get("title"),
             }
     ranked = sorted(best.values(), key=lambda h: h["distance"])
     return ranked[:n]

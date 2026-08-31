@@ -1,4 +1,5 @@
 """Per-source path config: GET/PUT the folder or database path, native browse."""
+
 import json
 
 import pytest
@@ -10,10 +11,12 @@ from pka.db.queries import init_db
 @pytest.fixture()
 def client(empty_vector_store, monkeypatch, tmp_path):
     from pka.api import source_paths
+
     monkeypatch.setattr(source_paths, "ENV_FILE_PATH", tmp_path / ".env")
 
     init_db()
     from pka.api.main import app
+
     return TestClient(app, raise_server_exceptions=True)
 
 
@@ -33,6 +36,7 @@ class TestGetPath:
         folder = tmp_path / "books"
         folder.mkdir()
         from pka.config import settings
+
         settings.book_archive = folder
         r = client.get("/ingestion/sources/calibre/path")
         assert r.json()["exists"] is True
@@ -54,10 +58,12 @@ class TestUpdatePath:
         assert body["path"] == str(new_dir)
 
         from pka.config import settings
+
         assert settings.book_archive == new_dir
 
     def test_persists_to_env_file(self, client, tmp_path):
         from pka.api import source_paths
+
         new_dir = tmp_path / "my-books"
         client.put("/ingestion/sources/calibre/path", json={"path": str(new_dir)})
 
@@ -67,6 +73,7 @@ class TestUpdatePath:
 
     def test_rewrites_existing_key_in_place(self, client, tmp_path):
         from pka.api import source_paths
+
         source_paths.ENV_FILE_PATH.write_text(
             "ALEXANDRIA_DEV=1\nALEXANDRIA_BOOK_ARCHIVE='/old/path'\nALEXANDRIA_CHAT_MODEL=foo\n",
             encoding="utf-8",
@@ -101,6 +108,7 @@ class TestUpdatePath:
 class TestBrowsePath:
     def test_returns_chosen_path(self, client, monkeypatch):
         from pka.api import source_paths
+
         monkeypatch.setattr(source_paths, "open_native_picker", lambda src: "/chosen/dir")
         r = client.post("/ingestion/sources/firefox/browse")
         assert r.status_code == 200
@@ -108,6 +116,7 @@ class TestBrowsePath:
 
     def test_cancelled_dialog_returns_none(self, client, monkeypatch):
         from pka.api import source_paths
+
         monkeypatch.setattr(source_paths, "open_native_picker", lambda src: None)
         r = client.post("/ingestion/sources/firefox/browse")
         assert r.json() == {"path": None}
@@ -132,6 +141,7 @@ class TestImageDirs:
         present.mkdir()
         missing = tmp_path / "missing"
         from pka.config import settings
+
         settings.image_dirs = [present, missing]
 
         r = client.get("/ingestion/sources/image/dirs")
@@ -144,6 +154,7 @@ class TestImageDirs:
     def test_add_dir_appends_and_persists(self, client, tmp_path):
         from pka.api import source_paths
         from pka.config import settings
+
         settings.image_dirs = []
         new_dir = tmp_path / "shots"
         new_dir.mkdir()
@@ -160,6 +171,7 @@ class TestImageDirs:
 
     def test_add_dir_is_idempotent(self, client, tmp_path):
         from pka.config import settings
+
         settings.image_dirs = []
         d = tmp_path / "a"
         d.mkdir()
@@ -169,6 +181,7 @@ class TestImageDirs:
 
     def test_remove_dir(self, client, tmp_path):
         from pka.config import settings
+
         a, b = tmp_path / "a", tmp_path / "b"
         a.mkdir()
         b.mkdir()
@@ -185,6 +198,7 @@ class TestImageDirs:
 
     def test_browse_returns_chosen_path(self, client, monkeypatch):
         from pka.api import source_paths
+
         monkeypatch.setattr(source_paths, "open_image_dir_picker", lambda: "/chosen/images")
         r = client.post("/ingestion/sources/image/dirs/browse")
         assert r.status_code == 200

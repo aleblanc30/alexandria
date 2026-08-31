@@ -1,4 +1,5 @@
 """Integration tests for the Chroma vector store wrapper."""
+
 import pytest
 import sqlalchemy as sa
 
@@ -6,6 +7,7 @@ import sqlalchemy as sa
 @pytest.fixture()
 def real_chroma(isolated_settings):
     import pka.storage.vector_store as vs
+
     vs.reset_collection()
     yield vs
     vs.reset_collection()
@@ -71,19 +73,22 @@ class TestVectorStore:
             texts=["gone"],
             metadatas=[{"document_id": 9, "source": "zotero", "chunk_index": 0}],
         )
-        insert_chunks([{
-            "document_id": 9,
-            "chunk_index": 0,
-            "text": "gone",
-            "token_count": 1,
-            "vector_id": "dead",
-        }])
+        insert_chunks(
+            [
+                {
+                    "document_id": 9,
+                    "chunk_index": 0,
+                    "text": "gone",
+                    "token_count": 1,
+                    "vector_id": "dead",
+                }
+            ]
+        )
         n = real_chroma.purge_vectors(["dead"])
         assert n == 1
         with get_engine().connect() as con:
             count = con.execute(
-                sa.select(sa.func.count()).select_from(chunks)
-                .where(chunks.c.vector_id == "dead")
+                sa.select(sa.func.count()).select_from(chunks).where(chunks.c.vector_id == "dead")
             ).scalar()
         assert count == 0
 
@@ -100,13 +105,17 @@ class TestVectorStore:
 
         init_db()
         doc_id = upsert_document("zotero", "VC1", "Title", None, None)
-        insert_chunks([{
-            "document_id": doc_id,
-            "chunk_index": 0,
-            "text": "chunk text",
-            "token_count": 2,
-            "vector_id": None,
-        }])
+        insert_chunks(
+            [
+                {
+                    "document_id": doc_id,
+                    "chunk_index": 0,
+                    "text": "chunk text",
+                    "token_count": 2,
+                    "vector_id": None,
+                }
+            ]
+        )
 
         def _boom():
             raise RuntimeError("chroma down")
@@ -133,13 +142,17 @@ class TestVectorStore:
 
         init_db()
         doc_id = upsert_document("zotero", "RB1", "Rebuild doc", None, None)
-        insert_chunks([{
-            "document_id": doc_id,
-            "chunk_index": 0,
-            "text": "rebuild me",
-            "token_count": 2,
-            "vector_id": None,
-        }])
+        insert_chunks(
+            [
+                {
+                    "document_id": doc_id,
+                    "chunk_index": 0,
+                    "text": "rebuild me",
+                    "token_count": 2,
+                    "vector_id": None,
+                }
+            ]
+        )
         stats = real_chroma.rebuild_from_chunks(batch_size=8)
         assert stats["chunks"] == 1
         assert stats["processed"] == 1
@@ -199,7 +212,7 @@ class TestSharedClient:
         created = []
 
         def _slow_client():
-            time.sleep(0.02)          # widen the window a lock has to cover
+            time.sleep(0.02)  # widen the window a lock has to cover
             client = object()
             created.append(client)
             return client
@@ -263,7 +276,8 @@ class TestSharedClient:
         vs.reset_collection()
         monkeypatch.setattr(vs, "_new_client", _flaky_client)
         monkeypatch.setattr(
-            vs.SharedSystemClient, "clear_system_cache",
+            vs.SharedSystemClient,
+            "clear_system_cache",
             staticmethod(lambda: cleared.append(True)),
         )
 

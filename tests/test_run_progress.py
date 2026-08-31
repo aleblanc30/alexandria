@@ -1,4 +1,5 @@
 """Tests for cluster run cancel coordination."""
+
 import pytest
 
 from pka.clustering.run_progress import (

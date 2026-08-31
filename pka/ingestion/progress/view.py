@@ -4,6 +4,7 @@ Read-only with respect to the tracker: :func:`snapshot` works on detached
 copies, so normalizing for display can never race — or leak into — the live
 state a worker thread is writing.
 """
+
 from __future__ import annotations
 
 from pka.ingestion.progress.state import (
@@ -37,11 +38,11 @@ def to_dict(state: SyncState) -> dict:
     for name in STANDARD_PHASES:
         plan = plans[name]
         detail: dict = {
-            "name":      name,
-            "total":     plan.total,
+            "name": name,
+            "total": plan.total,
             "processed": plan.processed,
-            "percent":   phase_percent(plan),
-            "active":    state.status == "running" and state.phase == name,
+            "percent": phase_percent(plan),
+            "active": state.status == "running" and state.phase == name,
         }
         if name == "fetching" and plan.total > 0:
             pending = max(0, plan.total - plan.success - plan.failure)
@@ -53,20 +54,20 @@ def to_dict(state: SyncState) -> dict:
         phase_details.append(detail)
 
     return {
-        "source":           state.source,
-        "status":           state.status,
-        "phase":            state.phase,
-        "active_job":       state.active_job,
-        "total":            state.total,
-        "processed":        state.processed,
-        "failed":           state.failed,
-        "percent":          percent,
-        "overall_total":    total,
+        "source": state.source,
+        "status": state.status,
+        "phase": state.phase,
+        "active_job": state.active_job,
+        "total": state.total,
+        "processed": state.processed,
+        "failed": state.failed,
+        "percent": percent,
+        "overall_total": total,
         "overall_processed": done,
-        "phase_index":      state.phase_index,
-        "phase_count":      len(STANDARD_PHASES),
-        "phases":           list(STANDARD_PHASES),
-        "phase_details":    phase_details,
-        "error":            state.error,
-        "last_result":      state.last_result,
+        "phase_index": state.phase_index,
+        "phase_count": len(STANDARD_PHASES),
+        "phases": list(STANDARD_PHASES),
+        "phase_details": phase_details,
+        "error": state.error,
+        "last_result": state.last_result,
     }

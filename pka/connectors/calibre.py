@@ -13,6 +13,7 @@ File layout assumed (Calibre default):
         cover.jpg
         metadata.opf
 """
+
 import logging
 import sqlite3
 from contextlib import closing
@@ -35,7 +36,8 @@ MAX_TAG_WORDS = 4
 
 
 def split_calibre_tags(
-    tags: list[str], max_words: int = MAX_TAG_WORDS,
+    tags: list[str],
+    max_words: int = MAX_TAG_WORDS,
 ) -> tuple[list[str], str | None]:
     """Partition Calibre tags into real tags and leftover-note text.
 
@@ -56,23 +58,24 @@ def split_calibre_tags(
 
 @dataclass
 class CalibreBook:
-    source_id: str              # str(calibre book id)
+    source_id: str  # str(calibre book id)
     title: str
     authors: list[str]
-    description: str | None     # HTML; caller should strip tags if needed
+    description: str | None  # HTML; caller should strip tags if needed
     publisher: str | None
     series: str | None
     series_index: float | None
-    year: int | None            # from pubdate
+    year: int | None  # from pubdate
     isbn: str | None
-    tags: list[str]             # Calibre tags (verbatim)
-    formats: list[str]          # available format extensions, e.g. ['EPUB','PDF']
-    preferred_path: Path | None # path to the preferred readable format
-    date_added: int | None      # unix timestamp (timestamp field)
-    rating: int | None          # 0–10 in Calibre DB (displayed as 0–5 stars)
+    tags: list[str]  # Calibre tags (verbatim)
+    formats: list[str]  # available format extensions, e.g. ['EPUB','PDF']
+    preferred_path: Path | None  # path to the preferred readable format
+    date_added: int | None  # unix timestamp (timestamp field)
+    rating: int | None  # 0–10 in Calibre DB (displayed as 0–5 stars)
 
 
 # ── DB copy ───────────────────────────────────────────────────────────────────
+
 
 def _copy_db(library_root: Path) -> Path:
     src = library_root / "metadata.db"
@@ -84,9 +87,10 @@ def _copy_db(library_root: Path) -> Path:
 
 # ── Format path resolution ────────────────────────────────────────────────────
 
+
 def _resolve_format_path(
     library_root: Path,
-    book_path: str,       # relative path stored in books.path, e.g. "Author/Title (1)"
+    book_path: str,  # relative path stored in books.path, e.g. "Author/Title (1)"
     formats: dict[str, str],  # {EXT: filename_without_ext}
 ) -> Path | None:
     """
@@ -110,12 +114,14 @@ def _resolve_format_path(
 
 # ── Timestamp parsing ─────────────────────────────────────────────────────────
 
+
 def _parse_ts(dt_str: str | None) -> int | None:
     """Convert Calibre ISO datetime string (UTC) to unix timestamp."""
     if not dt_str:
         return None
     try:
         from datetime import datetime
+
         # Calibre uses 'YYYY-MM-DD HH:MM:SS.ffffff+00:00' or similar
         dt_str = dt_str.split("+")[0].strip()  # strip tz suffix
         dt = datetime.fromisoformat(dt_str)
@@ -135,6 +141,7 @@ def _parse_year(pubdate: str | None) -> int | None:
 
 
 # ── Main loader ───────────────────────────────────────────────────────────────
+
 
 def load_books(
     library_root: Path | None = None,
@@ -185,76 +192,93 @@ def load_books(
             book_id = row["id"]
 
             # Authors
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT a.name FROM authors a
                 JOIN books_authors_link bal ON a.id = bal.author
                 WHERE bal.book = ?
                 ORDER BY bal.id
-            """, (book_id,))
+            """,
+                (book_id,),
+            )
             authors = [r["name"] for r in cur.fetchall()]
 
             # Tags (verbatim)
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT t.name FROM tags t
                 JOIN books_tags_link btl ON t.id = btl.tag
                 WHERE btl.book = ?
-            """, (book_id,))
+            """,
+                (book_id,),
+            )
             tags = [r["name"] for r in cur.fetchall()]
 
             # Publisher
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT p.name FROM publishers p
                 JOIN books_publishers_link bpl ON p.id = bpl.publisher
                 WHERE bpl.book = ?
                 LIMIT 1
-            """, (book_id,))
+            """,
+                (book_id,),
+            )
             pub_row = cur.fetchone()
             publisher = pub_row["name"] if pub_row else None
 
             # Series
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT s.name FROM series s
                 JOIN books_series_link bsl ON s.id = bsl.series
                 WHERE bsl.book = ?
                 LIMIT 1
-            """, (book_id,))
+            """,
+                (book_id,),
+            )
             ser_row = cur.fetchone()
             series = ser_row["name"] if ser_row else None
 
             # Identifiers (ISBN, DOI, …)
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT type, val FROM identifiers WHERE book = ?
-            """, (book_id,))
+            """,
+                (book_id,),
+            )
             identifiers = {r["type"]: r["val"] for r in cur.fetchall()}
             isbn = identifiers.get("isbn")
 
             # Formats: {EXT: name_stem}
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT format, name FROM data WHERE book = ?
-            """, (book_id,))
-            formats_map: dict[str, str] = {
-                r["format"].upper(): r["name"]
-                for r in cur.fetchall()
-            }
+            """,
+                (book_id,),
+            )
+            formats_map: dict[str, str] = {r["format"].upper(): r["name"] for r in cur.fetchall()}
 
             preferred_path = _resolve_format_path(root, row["path"], formats_map)
 
-            books.append(CalibreBook(
-                source_id      = str(book_id),
-                title          = row["title"] or "",
-                authors        = authors,
-                description    = row["description"],
-                publisher      = publisher,
-                series         = series,
-                series_index   = row["series_index"],
-                year           = _parse_year(row["pubdate"]),
-                isbn           = isbn,
-                tags           = tags,
-                formats        = list(formats_map.keys()),
-                preferred_path = preferred_path,
-                date_added     = _parse_ts(row["timestamp"]),
-                rating         = row["rating"],
-            ))
+            books.append(
+                CalibreBook(
+                    source_id=str(book_id),
+                    title=row["title"] or "",
+                    authors=authors,
+                    description=row["description"],
+                    publisher=publisher,
+                    series=series,
+                    series_index=row["series_index"],
+                    year=_parse_year(row["pubdate"]),
+                    isbn=isbn,
+                    tags=tags,
+                    formats=list(formats_map.keys()),
+                    preferred_path=preferred_path,
+                    date_added=_parse_ts(row["timestamp"]),
+                    rating=row["rating"],
+                )
+            )
 
     log.info("Loaded %d Calibre books", len(books))
     return books

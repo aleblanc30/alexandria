@@ -1,22 +1,26 @@
 """Tests for book text extraction helpers."""
 
 
-
 class TestStripHtml:
     def test_removes_tags(self):
         from pka.ingestion.book_extractor import strip_html
+
         assert strip_html("<p>Hello <b>world</b></p>") == "Hello world"
 
     def test_collapses_whitespace(self):
         from pka.ingestion.book_extractor import strip_html
+
         assert "a  b" not in strip_html("<div>a    b</div>")
 
 
 class TestMetadataText:
     def test_includes_title_authors_description(self):
         from pka.ingestion.book_extractor import metadata_text
+
         text = metadata_text(
-            "My Book", "<p>A long enough description for embedding.</p>", ["Alice", "Bob"],
+            "My Book",
+            "<p>A long enough description for embedding.</p>",
+            ["Alice", "Bob"],
         )
         assert "My Book" in text
         assert "Alice" in text
@@ -26,6 +30,7 @@ class TestMetadataText:
 class TestExtractBookText:
     def test_unsupported_extension_returns_empty(self, tmp_path):
         from pka.ingestion.book_extractor import extract_book_text
+
         path = tmp_path / "book.mobi"
         path.write_bytes(b"x")
         assert extract_book_text(path) == []
@@ -60,6 +65,7 @@ class TestExtractPdf:
         )
 
         from pka.ingestion.book_extractor import extract_pdf
+
         groups = extract_pdf(path)
         assert len(groups) == 2
         assert groups[0]["title"] == "Pages 1–10"
@@ -85,6 +91,7 @@ class TestExtractPdf:
         monkeypatch.setattr("pdfplumber.open", lambda p: FakePdf())
 
         from pka.ingestion.book_extractor import extract_pdf
+
         groups = extract_pdf(path, max_pages=1)
         assert len(groups) == 1
 
@@ -116,12 +123,14 @@ class TestExtractEpub:
         epub.write_epub(str(path), book, {})
 
         from pka.ingestion.book_extractor import extract_epub
+
         chapters = extract_epub(path)
         assert len(chapters) >= 1
         assert "First chapter" in chapters[0]["text"]
 
     def test_missing_file_returns_empty(self, tmp_path):
         from pka.ingestion.book_extractor import extract_epub
+
         assert extract_epub(tmp_path / "missing.epub") == []
 
 
@@ -145,6 +154,7 @@ class TestExtractPdfFallback:
         monkeypatch.setattr("pypdf.PdfReader", lambda p: FakeReader())
 
         from pka.ingestion.book_extractor import extract_pdf
+
         groups = extract_pdf(path)
         assert len(groups) == 1
         assert "pypdf" in groups[0]["text"]
@@ -247,7 +257,9 @@ class TestPdfPageNumbers:
         from pka.ingestion.book_extractor import extract_pdf
 
         path = _fake_pdf_file(
-            tmp_path, monkeypatch, [f"Page {i}." for i in range(1, 16)],
+            tmp_path,
+            monkeypatch,
+            [f"Page {i}." for i in range(1, 16)],
         )
         groups = extract_pdf(path)
         assert [(g["page_start"], g["page_end"]) for g in groups] == [(1, 10), (11, 15)]

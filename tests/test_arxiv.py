@@ -1,4 +1,5 @@
 """Tests for arXiv URL parsing, Atom parsing, and fetch handler."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
@@ -99,6 +100,7 @@ class TestFetchArxivPaper:
         assert result.arxiv_id == "2301.00001"
         assert result.doi == "10.48550/arxiv.2301.00001"
         import json
+
         assert json.loads(result.authors_json) == ["Alice Smith", "Bob Jones"]
 
     @pytest.mark.asyncio

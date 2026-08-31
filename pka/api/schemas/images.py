@@ -1,4 +1,5 @@
 """Image response models."""
+
 from pydantic import BaseModel
 
 

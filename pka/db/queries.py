@@ -4,6 +4,7 @@ Reusable insert / select helpers for ``archive.db``.
 Engine setup, table initialisation, document/tag/collection/chunk upserts.
 Higher-level orchestration lives in :mod:`pka.ingestion.runners` and :mod:`pka.ingestion.core`.
 """
+
 import time
 from typing import Any
 
@@ -53,47 +54,28 @@ def init_db() -> None:
 
     with eng.begin() as con:
         # Migration: add ingested_at to existing DBs that predate the column
-        cols = [r[1] for r in con.execute(
-            sa.text("PRAGMA table_info(documents)")
-        ).fetchall()]
+        cols = [r[1] for r in con.execute(sa.text("PRAGMA table_info(documents)")).fetchall()]
         if "ingested_at" not in cols:
-            con.execute(sa.text(
-                "ALTER TABLE documents ADD COLUMN ingested_at INTEGER"
-            ))
-            con.execute(sa.text(
-                "UPDATE documents SET ingested_at = date_added "
-                "WHERE ingested_at IS NULL"
-            ))
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN ingested_at INTEGER"))
+            con.execute(
+                sa.text("UPDATE documents SET ingested_at = date_added WHERE ingested_at IS NULL")
+            )
         # Migration: cache generated summaries so a re-ingest never re-infers
         # (DESIGN.md §3.2)
         if "generated_summary" not in cols:
-            con.execute(sa.text(
-                "ALTER TABLE documents ADD COLUMN generated_summary TEXT"
-            ))
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN generated_summary TEXT"))
         if "zotero_attachment_key" not in cols:
-            con.execute(sa.text(
-                "ALTER TABLE documents ADD COLUMN zotero_attachment_key TEXT"
-            ))
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN zotero_attachment_key TEXT"))
         if "archive_url" not in cols:
-            con.execute(sa.text(
-                "ALTER TABLE documents ADD COLUMN archive_url TEXT"
-            ))
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN archive_url TEXT"))
         if "item_type" not in cols:
-            con.execute(sa.text(
-                "ALTER TABLE documents ADD COLUMN item_type TEXT"
-            ))
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN item_type TEXT"))
         if "card_summary" not in cols:
-            con.execute(sa.text(
-                "ALTER TABLE documents ADD COLUMN card_summary TEXT"
-            ))
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN card_summary TEXT"))
         if "note" not in cols:
-            con.execute(sa.text(
-                "ALTER TABLE documents ADD COLUMN note TEXT"
-            ))
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN note TEXT"))
         if "doc_embedding" not in cols:
-            con.execute(sa.text(
-                "ALTER TABLE documents ADD COLUMN doc_embedding BLOB"
-            ))
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN doc_embedding BLOB"))
         # Migration: structured bibliographic fields (DOCUMENT_METADATA_PLAN.md)
         if "doi" not in cols:
             con.execute(sa.text("ALTER TABLE documents ADD COLUMN doi TEXT"))
@@ -113,9 +95,7 @@ def init_db() -> None:
         # Migration: persist enrichment provenance alongside each chunk so the
         # API can report which rung of the ladder produced it (DESIGN.md §3.2).
         # Pre-existing chunks keep NULLs — there is no Chroma backfill.
-        chunk_cols = [r[1] for r in con.execute(
-            sa.text("PRAGMA table_info(chunks)")
-        ).fetchall()]
+        chunk_cols = [r[1] for r in con.execute(sa.text("PRAGMA table_info(chunks)")).fetchall()]
         for col in ("chunk_pass", "resolved_by", "source_ref", "ref_title"):
             if chunk_cols and col not in chunk_cols:
                 con.execute(sa.text(f"ALTER TABLE chunks ADD COLUMN {col} TEXT"))
@@ -126,90 +106,80 @@ def init_db() -> None:
                 con.execute(sa.text(f"ALTER TABLE chunks ADD COLUMN {col} INTEGER"))
 
         # Migration: link images to their unified documents row
-        img_cols = [r[1] for r in con.execute(
-            sa.text("PRAGMA table_info(images)")
-        ).fetchall()]
+        img_cols = [r[1] for r in con.execute(sa.text("PRAGMA table_info(images)")).fetchall()]
         if img_cols and "document_id" not in img_cols:
-            con.execute(sa.text(
-                "ALTER TABLE images ADD COLUMN document_id INTEGER "
-                "REFERENCES documents(id)"
-            ))
+            con.execute(
+                sa.text(
+                    "ALTER TABLE images ADD COLUMN document_id INTEGER REFERENCES documents(id)"
+                )
+            )
         # Migration: cache the per-type cover extraction (DESIGN.md §3.2)
         if img_cols and "books_json" not in img_cols:
-            con.execute(sa.text(
-                "ALTER TABLE images ADD COLUMN books_json TEXT"
-            ))
+            con.execute(sa.text("ALTER TABLE images ADD COLUMN books_json TEXT"))
 
         # Migration: add umap_points to cluster_runs
-        cr_cols = [r[1] for r in con.execute(
-            sa.text("PRAGMA table_info(cluster_runs)")
-        ).fetchall()]
+        cr_cols = [r[1] for r in con.execute(sa.text("PRAGMA table_info(cluster_runs)")).fetchall()]
         if cr_cols and "umap_points" not in cr_cols:
-            con.execute(sa.text(
-                "ALTER TABLE cluster_runs ADD COLUMN umap_points TEXT"
-            ))
+            con.execute(sa.text("ALTER TABLE cluster_runs ADD COLUMN umap_points TEXT"))
         if cr_cols and "status" not in cr_cols:
-            con.execute(sa.text(
-                "ALTER TABLE cluster_runs ADD COLUMN status TEXT DEFAULT 'finished'"
-            ))
-            con.execute(sa.text(
-                "UPDATE cluster_runs SET status = 'finished' WHERE status IS NULL"
-            ))
+            con.execute(
+                sa.text("ALTER TABLE cluster_runs ADD COLUMN status TEXT DEFAULT 'finished'")
+            )
+            con.execute(sa.text("UPDATE cluster_runs SET status = 'finished' WHERE status IS NULL"))
 
         # Migration: hierarchical cluster columns
-        cl_cols = [r[1] for r in con.execute(
-            sa.text("PRAGMA table_info(clusters)")
-        ).fetchall()]
+        cl_cols = [r[1] for r in con.execute(sa.text("PRAGMA table_info(clusters)")).fetchall()]
         if cl_cols and "level" not in cl_cols:
-            con.execute(sa.text(
-                "ALTER TABLE clusters ADD COLUMN level INTEGER NOT NULL DEFAULT 1"
-            ))
+            con.execute(sa.text("ALTER TABLE clusters ADD COLUMN level INTEGER NOT NULL DEFAULT 1"))
         if cl_cols and "parent_cluster_id" not in cl_cols:
-            con.execute(sa.text(
-                "ALTER TABLE clusters ADD COLUMN parent_cluster_id INTEGER "
-                "REFERENCES clusters(cluster_id)"
-            ))
+            con.execute(
+                sa.text(
+                    "ALTER TABLE clusters ADD COLUMN parent_cluster_id INTEGER "
+                    "REFERENCES clusters(cluster_id)"
+                )
+            )
 
-        ca_cols = [r[1] for r in con.execute(
-            sa.text("PRAGMA table_info(cluster_assignments)")
-        ).fetchall()]
+        ca_cols = [
+            r[1] for r in con.execute(sa.text("PRAGMA table_info(cluster_assignments)")).fetchall()
+        ]
         if ca_cols and "level" not in ca_cols:
-            con.execute(sa.text(
-                "ALTER TABLE cluster_assignments ADD COLUMN level INTEGER NOT NULL DEFAULT 1"
-            ))
+            con.execute(
+                sa.text(
+                    "ALTER TABLE cluster_assignments ADD COLUMN level INTEGER NOT NULL DEFAULT 1"
+                )
+            )
 
         # Migration: dedupe overlay_tags, then enforce (document_id, tag, origin)
         # uniqueness on DBs that predate the unique index.
-        con.execute(sa.text(
-            "DELETE FROM overlay_tags WHERE id NOT IN ("
-            " SELECT MIN(id) FROM overlay_tags GROUP BY document_id, tag, origin)"
-        ))
-        con.execute(sa.text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_overlay_doc_tag_origin "
-            "ON overlay_tags(document_id, tag, origin)"
-        ))
+        con.execute(
+            sa.text(
+                "DELETE FROM overlay_tags WHERE id NOT IN ("
+                " SELECT MIN(id) FROM overlay_tags GROUP BY document_id, tag, origin)"
+            )
+        )
+        con.execute(
+            sa.text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_overlay_doc_tag_origin "
+                "ON overlay_tags(document_id, tag, origin)"
+            )
+        )
 
         # Migration: index the two columns the progress/status counts filter on.
         # create_all() skips indexes on tables that already exist, so DBs
         # predating these declarations need them created explicitly.
-        con.execute(sa.text(
-            "CREATE INDEX IF NOT EXISTS ix_chunks_document_id ON chunks(document_id)"
-        ))
-        con.execute(sa.text(
-            "CREATE INDEX IF NOT EXISTS ix_documents_source ON documents(source)"
-        ))
-        con.execute(sa.text(
-            "CREATE INDEX IF NOT EXISTS ix_documents_doi ON documents(doi)"
-        ))
-        con.execute(sa.text(
-            "CREATE INDEX IF NOT EXISTS ix_documents_arxiv_id ON documents(arxiv_id)"
-        ))
-        con.execute(sa.text(
-            "CREATE INDEX IF NOT EXISTS ix_documents_isbn ON documents(isbn)"
-        ))
+        con.execute(
+            sa.text("CREATE INDEX IF NOT EXISTS ix_chunks_document_id ON chunks(document_id)")
+        )
+        con.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_documents_source ON documents(source)"))
+        con.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_documents_doi ON documents(doi)"))
+        con.execute(
+            sa.text("CREATE INDEX IF NOT EXISTS ix_documents_arxiv_id ON documents(arxiv_id)")
+        )
+        con.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_documents_isbn ON documents(isbn)"))
 
 
 # ── Documents ────────────────────────────────────────────────────────────────
+
 
 def insert_document_if_new(
     source: Source | str,
@@ -236,8 +206,7 @@ def insert_document_if_new(
     with eng.begin() as con:
         existing = con.execute(
             sa.select(documents.c.id).where(
-                (documents.c.source == str(source)) &
-                (documents.c.source_id == source_id)
+                (documents.c.source == str(source)) & (documents.c.source_id == source_id)
             )
         ).fetchone()
         if existing:
@@ -254,19 +223,28 @@ def insert_document_if_new(
                      :doi, :arxiv_id, :isbn, :year, :authors_json, :zurl, :zpath)
             """),
             {
-                "source": str(source), "sid": source_id,
-                "title": title, "url": url_or_path,
+                "source": str(source),
+                "sid": source_id,
+                "title": title,
+                "url": url_or_path,
                 "zak": zotero_attachment_key,
-                "da": date_added, "now": now, "fs": str(fetch_status),
-                "item_type": item_type, "note": note,
-                "doi": doi, "arxiv_id": arxiv_id, "isbn": isbn, "year": year,
-                "authors_json": authors_json, "zurl": zotero_url, "zpath": zotero_path,
+                "da": date_added,
+                "now": now,
+                "fs": str(fetch_status),
+                "item_type": item_type,
+                "note": note,
+                "doi": doi,
+                "arxiv_id": arxiv_id,
+                "isbn": isbn,
+                "year": year,
+                "authors_json": authors_json,
+                "zurl": zotero_url,
+                "zpath": zotero_path,
             },
         )
         row = con.execute(
             sa.select(documents.c.id).where(
-                (documents.c.source == str(source)) &
-                (documents.c.source_id == source_id)
+                (documents.c.source == str(source)) & (documents.c.source_id == source_id)
             )
         ).fetchone()
     return row[0]
@@ -326,27 +304,44 @@ def upsert_document(
                 zotero_url   = COALESCE(excluded.zotero_url, documents.zotero_url),
                 zotero_path  = COALESCE(excluded.zotero_path, documents.zotero_path)
         """)
-        con.execute(stmt, {
-            "source": str(source), "sid": source_id,
-            "title": title, "url": url_or_path,
-            "zak": zotero_attachment_key,
-            "da": date_added, "now": now, "fs": str(fetch_status),
-            "item_type": item_type, "note": note,
-            "doi": doi, "arxiv_id": arxiv_id, "isbn": isbn, "year": year,
-            "authors_json": authors_json, "zurl": zotero_url, "zpath": zotero_path,
-        })
+        con.execute(
+            stmt,
+            {
+                "source": str(source),
+                "sid": source_id,
+                "title": title,
+                "url": url_or_path,
+                "zak": zotero_attachment_key,
+                "da": date_added,
+                "now": now,
+                "fs": str(fetch_status),
+                "item_type": item_type,
+                "note": note,
+                "doi": doi,
+                "arxiv_id": arxiv_id,
+                "isbn": isbn,
+                "year": year,
+                "authors_json": authors_json,
+                "zurl": zotero_url,
+                "zpath": zotero_path,
+            },
+        )
         row = con.execute(
             sa.select(documents.c.id).where(
-                (documents.c.source == str(source)) &
-                (documents.c.source_id == source_id)
+                (documents.c.source == str(source)) & (documents.c.source_id == source_id)
             )
         ).fetchone()
     return row[0]
 
 
 _ZOTERO_REFRESH_COALESCE_KEYS = (
-    "zotero_attachment_key", "doi", "arxiv_id", "year", "authors_json",
-    "zotero_url", "zotero_path",
+    "zotero_attachment_key",
+    "doi",
+    "arxiv_id",
+    "year",
+    "authors_json",
+    "zotero_url",
+    "zotero_path",
 )
 
 
@@ -374,10 +369,7 @@ def refresh_zotero_metadata(by_source_id: dict[str, dict]) -> int:
             values["url_or_path"] = fields.get("url_or_path")
             result = con.execute(
                 sa.update(documents)
-                .where(
-                    (documents.c.source == Source.ZOTERO)
-                    & (documents.c.source_id == source_id)
-                )
+                .where((documents.c.source == Source.ZOTERO) & (documents.c.source_id == source_id))
                 .values(**values)
             )
             updated += result.rowcount or 0
@@ -390,10 +382,7 @@ def update_document_item_type(source: Source | str, source_id: str, item_type: s
     with eng.begin() as con:
         result = con.execute(
             sa.update(documents)
-            .where(
-                (documents.c.source == str(source))
-                & (documents.c.source_id == source_id)
-            )
+            .where((documents.c.source == str(source)) & (documents.c.source_id == source_id))
             .values(item_type=item_type)
         )
     return result.rowcount or 0
@@ -407,14 +396,13 @@ def insert_source_tags(document_id: int, tags: list[str], source: Source | str) 
         # Replace existing tags for this (document, source) pair
         con.execute(
             source_tags.delete().where(
-                (source_tags.c.document_id == document_id) &
-                (source_tags.c.source == str(source))
+                (source_tags.c.document_id == document_id) & (source_tags.c.source == str(source))
             )
         )
-        con.execute(source_tags.insert(), [
-            {"document_id": document_id, "tag_string": t, "source": str(source)}
-            for t in tags
-        ])
+        con.execute(
+            source_tags.insert(),
+            [{"document_id": document_id, "tag_string": t, "source": str(source)} for t in tags],
+        )
 
 
 def insert_source_collections(
@@ -428,14 +416,14 @@ def insert_source_collections(
     with eng.begin() as con:
         con.execute(
             source_collections.delete().where(
-                (source_collections.c.document_id == document_id) &
-                (source_collections.c.source == str(source))
+                (source_collections.c.document_id == document_id)
+                & (source_collections.c.source == str(source))
             )
         )
-        con.execute(source_collections.insert(), [
-            {"document_id": document_id, "collection": c, "source": str(source)}
-            for c in cols
-        ])
+        con.execute(
+            source_collections.insert(),
+            [{"document_id": document_id, "collection": c, "source": str(source)} for c in cols],
+        )
 
 
 # Enrichment provenance columns, optional per row (see :func:`document_enrichment`).
@@ -488,21 +476,20 @@ def document_enrichment(doc_ids: list[int]) -> dict[int, list[dict]]:
                 chunks.c.ref_title,
                 chunks.c.text,
             )
-            .where(
-                chunks.c.document_id.in_(doc_ids)
-                & chunks.c.chunk_pass.in_(ENRICHMENT_PASSES)
-            )
+            .where(chunks.c.document_id.in_(doc_ids) & chunks.c.chunk_pass.in_(ENRICHMENT_PASSES))
             .order_by(chunks.c.document_id, chunks.c.chunk_index)
         ).fetchall()
     out: dict[int, list[dict]] = {}
     for doc_id, chunk_pass, resolved_by, source_ref, ref_title, text in rows:
-        out.setdefault(doc_id, []).append({
-            "chunk_pass":  chunk_pass,
-            "resolved_by": resolved_by,
-            "source_ref":  source_ref,
-            "ref_title":   ref_title,
-            "text":        text,
-        })
+        out.setdefault(doc_id, []).append(
+            {
+                "chunk_pass": chunk_pass,
+                "resolved_by": resolved_by,
+                "source_ref": source_ref,
+                "ref_title": ref_title,
+                "text": text,
+            }
+        )
     return out
 
 
@@ -523,7 +510,6 @@ def document_index(source: Source | str) -> dict[str, int]:
             )
         ).fetchall()
     return {row[0]: row[1] for row in rows}
-
 
 
 def get_generated_summary(doc_id: int) -> str | None:
@@ -548,6 +534,7 @@ def set_generated_summary(doc_id: int, summary: str | None) -> None:
             .values(generated_summary=summary or None)
         )
 
+
 def document_titles(doc_ids: list[int]) -> dict[int, str]:
     """Batched ``documents.id`` → title (missing ids omitted, NULL title → "").
 
@@ -559,9 +546,7 @@ def document_titles(doc_ids: list[int]) -> dict[int, str]:
         return {}
     with get_engine().connect() as con:
         rows = con.execute(
-            sa.select(documents.c.id, documents.c.title).where(
-                documents.c.id.in_(doc_ids)
-            )
+            sa.select(documents.c.id, documents.c.title).where(documents.c.id.in_(doc_ids))
         ).fetchall()
     return {row[0]: row[1] or "" for row in rows}
 
@@ -571,9 +556,7 @@ def source_ids_with_chunks(source: Source | str) -> set[str]:
     with get_engine().connect() as con:
         rows = con.execute(
             sa.select(documents.c.source_id)
-            .select_from(
-                documents.join(chunks, chunks.c.document_id == documents.c.id)
-            )
+            .select_from(documents.join(chunks, chunks.c.document_id == documents.c.id))
             .where(documents.c.source == str(source))
             .distinct()
         ).fetchall()
@@ -585,15 +568,16 @@ def document_ids_with_chunks(source: Source | str | None = None) -> set[int]:
     with get_engine().connect() as con:
         q = sa.select(chunks.c.document_id).distinct()
         if source is not None:
-            q = q.select_from(
-                chunks.join(documents, chunks.c.document_id == documents.c.id)
-            ).where(documents.c.source == str(source))
+            q = q.select_from(chunks.join(documents, chunks.c.document_id == documents.c.id)).where(
+                documents.c.source == str(source)
+            )
         rows = con.execute(q).fetchall()
     return {row[0] for row in rows}
 
 
 def source_ingest_queue(
-    source: Source | str, limit: int | None = None,
+    source: Source | str,
+    limit: int | None = None,
 ) -> list[tuple[int, str]]:
     """Pending fetch URLs for ``source`` plus fetched docs missing chunks (orphans).
 
@@ -621,9 +605,7 @@ def source_ingest_queue(
                     & (documents.c.fetch_status == str(FetchStatus.FETCHED))
                     & has_url
                     & ~sa.exists(
-                        sa.select(chunks.c.id).where(
-                            chunks.c.document_id == documents.c.id
-                        )
+                        sa.select(chunks.c.id).where(chunks.c.document_id == documents.c.id)
                     )
                 )
             ).fetchall()
@@ -668,9 +650,7 @@ def set_fetch_status(doc_id: int, status: FetchStatus | str) -> None:
     """Record the outcome of trying to get text for a document."""
     with get_engine().begin() as con:
         con.execute(
-            sa.update(documents)
-            .where(documents.c.id == doc_id)
-            .values(fetch_status=str(status))
+            sa.update(documents).where(documents.c.id == doc_id).values(fetch_status=str(status))
         )
 
 
@@ -678,13 +658,12 @@ def update_card_summary(doc_id: int, summary: str | None) -> None:
     """Set or clear the card excerpt for a document."""
     with get_engine().begin() as con:
         con.execute(
-            sa.update(documents)
-            .where(documents.c.id == doc_id)
-            .values(card_summary=summary)
+            sa.update(documents).where(documents.c.id == doc_id).values(card_summary=summary)
         )
 
 
 # ── Reddit saved items ───────────────────────────────────────────────────────
+
 
 def upsert_reddit_item(
     doc_id: int,
@@ -703,8 +682,7 @@ def upsert_reddit_item(
     """
     with get_engine().begin() as con:
         existing = con.execute(
-            sa.select(reddit_items.c.id)
-            .where(reddit_items.c.document_id == doc_id)
+            sa.select(reddit_items.c.id).where(reddit_items.c.document_id == doc_id)
         ).fetchone()
         values = dict(
             kind=kind,
@@ -715,14 +693,10 @@ def upsert_reddit_item(
         )
         if existing:
             con.execute(
-                sa.update(reddit_items)
-                .where(reddit_items.c.document_id == doc_id)
-                .values(**values)
+                sa.update(reddit_items).where(reddit_items.c.document_id == doc_id).values(**values)
             )
         else:
-            con.execute(
-                sa.insert(reddit_items).values(document_id=doc_id, **values)
-            )
+            con.execute(sa.insert(reddit_items).values(document_id=doc_id, **values))
 
 
 def reddit_item(con: sa.Connection, doc_id: int) -> dict | None:
@@ -767,9 +741,7 @@ def all_reddit_items() -> list[dict]:
                 reddit_items.c.external_url,
                 reddit_items.c.body,
             )
-            .select_from(
-                documents.join(reddit_items, reddit_items.c.document_id == documents.c.id)
-            )
+            .select_from(documents.join(reddit_items, reddit_items.c.document_id == documents.c.id))
             .where(documents.c.source == str(Source.REDDIT))
         ).fetchall()
     return [
@@ -789,6 +761,7 @@ def all_reddit_items() -> list[dict]:
 
 # ── Image gate rejection cache ────────────────────────────────────────────────
 
+
 def record_image_rejection(
     path: str,
     reason: str,
@@ -798,7 +771,8 @@ def record_image_rejection(
     """Cache an image path rejected by the admission gate (upsert by path)."""
     now = int(time.time())
     with get_engine().begin() as con:
-        con.execute(sa.text("""
+        con.execute(
+            sa.text("""
             INSERT INTO image_rejections
                 (path, reason, text_coverage, image_type, rejected_at)
             VALUES
@@ -808,10 +782,15 @@ def record_image_rejection(
                 text_coverage = excluded.text_coverage,
                 image_type    = excluded.image_type,
                 rejected_at   = excluded.rejected_at
-        """), {
-            "path": path, "reason": reason, "cov": text_coverage,
-            "itype": image_type, "now": now,
-        })
+        """),
+            {
+                "path": path,
+                "reason": reason,
+                "cov": text_coverage,
+                "itype": image_type,
+                "now": now,
+            },
+        )
 
 
 def get_rejected_paths() -> set[str]:
@@ -859,8 +838,9 @@ def delete_image_document(path: str) -> dict[str, Any]:
     eng = get_engine()
     with eng.connect() as con:
         row = con.execute(
-            sa.select(images.c.id, images.c.document_id, images.c.clip_vector_id)
-            .where(images.c.path == path)
+            sa.select(images.c.id, images.c.document_id, images.c.clip_vector_id).where(
+                images.c.path == path
+            )
         ).fetchone()
     if row is None:
         return empty
@@ -899,8 +879,7 @@ def _batch_first_chunk_map(con: sa.Connection, doc_ids: list[int]) -> dict[int, 
         .subquery()
     )
     chunk_rows = con.execute(
-        sa.select(chunks.c.document_id, chunks.c.text)
-        .select_from(
+        sa.select(chunks.c.document_id, chunks.c.text).select_from(
             chunks.join(
                 min_idx,
                 (chunks.c.document_id == min_idx.c.document_id)
@@ -922,12 +901,14 @@ def document_description(con: sa.Connection, doc_id: int) -> str:
 
 
 def _doc_title_excerpts(
-    con: sa.Connection, ids: list[int],
+    con: sa.Connection,
+    ids: list[int],
 ) -> dict[int, tuple[str, str]]:
     """Map doc id -> (title, excerpt), preserving DB row order for ``ids``."""
     rows = con.execute(
-        sa.select(documents.c.id, documents.c.title, documents.c.card_summary)
-        .where(documents.c.id.in_(ids))
+        sa.select(documents.c.id, documents.c.title, documents.c.card_summary).where(
+            documents.c.id.in_(ids)
+        )
     ).fetchall()
     chunk_map = _batch_first_chunk_map(con, ids)
     return {
@@ -961,8 +942,7 @@ def sample_cluster_documents_for_clusters(
         return {cid: [] for cid in cluster_docs}
     by_id = _doc_title_excerpts(con, list(all_ids))
     return {
-        cid: [by_id[d] for d in doc_ids if d in by_id][:n]
-        for cid, doc_ids in cluster_docs.items()
+        cid: [by_id[d] for d in doc_ids if d in by_id][:n] for cid, doc_ids in cluster_docs.items()
     }
 
 
@@ -975,8 +955,7 @@ def _where_source_tag(q: sa.Select, tag: str) -> sa.Select:
     return q.where(
         sa.exists(
             sa.select(source_tags.c.id).where(
-                (source_tags.c.document_id == documents.c.id)
-                & (source_tags.c.tag_string == tag)
+                (source_tags.c.document_id == documents.c.id) & (source_tags.c.tag_string == tag)
             )
         )
     )
@@ -1005,8 +984,7 @@ def _apply_document_browse_filters(
         q = q.where(documents.c.source.in_(source_filter))
     if wayback_only:
         q = q.where(
-            (documents.c.source == str(Source.FIREFOX))
-            & documents.c.archive_url.isnot(None)
+            (documents.c.source == str(Source.FIREFOX)) & documents.c.archive_url.isnot(None)
         )
     for tag in source_tag_filter or []:
         q = _where_source_tag(q, tag)
@@ -1107,9 +1085,7 @@ def _browse_tag_maps(
             overlay_tags.c.origin,
         ).where(
             overlay_tags.c.document_id.in_(doc_ids),
-            overlay_tags.c.origin.in_(
-                [TagOrigin.CLUSTER_L1, TagOrigin.CLUSTER_L2]
-            ),
+            overlay_tags.c.origin.in_([TagOrigin.CLUSTER_L1, TagOrigin.CLUSTER_L2]),
         )
     ):
         if origin == TagOrigin.CLUSTER_L1:
@@ -1153,33 +1129,36 @@ def list_documents(
         )
         total = con.execute(count_q).scalar() or 0
 
-        page_q = _exclude_pending_images(
-            _apply_document_browse_filters(
-                sa.select(
-                    documents.c.id,
-                    documents.c.source,
-                    documents.c.source_id,
-                    documents.c.title,
-                    documents.c.url_or_path,
-                    documents.c.archive_url,
-                    documents.c.zotero_attachment_key,
-                    documents.c.card_summary,
-                ),
-                **filter_kwargs,
+        page_q = (
+            _exclude_pending_images(
+                _apply_document_browse_filters(
+                    sa.select(
+                        documents.c.id,
+                        documents.c.source,
+                        documents.c.source_id,
+                        documents.c.title,
+                        documents.c.url_or_path,
+                        documents.c.archive_url,
+                        documents.c.zotero_attachment_key,
+                        documents.c.card_summary,
+                    ),
+                    **filter_kwargs,
+                )
             )
-        ).order_by(
-            documents.c.date_added.is_(None),
-            documents.c.date_added.desc(),
-            documents.c.id.desc(),
-        ).limit(limit).offset(offset)
+            .order_by(
+                documents.c.date_added.is_(None),
+                documents.c.date_added.desc(),
+                documents.c.id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
         rows = con.execute(page_q).fetchall()
 
         doc_ids = [r[0] for r in rows]
         snippet_map: dict[int, str] = {}
         if doc_ids:
-            needs_chunk = [
-                r[0] for r in rows if not (r[7] and str(r[7]).strip())
-            ]
+            needs_chunk = [r[0] for r in rows if not (r[7] and str(r[7]).strip())]
             if needs_chunk:
                 snippet_map = _batch_first_chunk_map(con, needs_chunk)
         source_map, l1_map, l2_map = _browse_tag_maps(con, doc_ids)
@@ -1275,8 +1254,7 @@ def list_tags(
         rows: list[dict[str, Any]] = []
         if not origin or origin == "source":
             rows += [
-                {"tag": r[0], "origin": r[1], "count": r[2]}
-                for r in con.execute(src_q).fetchall()
+                {"tag": r[0], "origin": r[1], "count": r[2]} for r in con.execute(src_q).fetchall()
             ]
         overlay_origins = {
             str(TagOrigin.INFERRED),

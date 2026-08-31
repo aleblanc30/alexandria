@@ -1,4 +1,5 @@
 """Calibre sync — metadata and ingest (embed + fulltext) as separate jobs."""
+
 import logging
 
 from pka.constants import Source
@@ -65,16 +66,16 @@ def sync_calibre_ingest(
         return _unavailable_ingest(key, unavailable)
     books = take(books, Source.CALIBRE)
     n = len(books)
-    n_files = sum(
-        1 for b in books if b.preferred_path and b.preferred_path.exists()
-    )
+    n_files = sum(1 for b in books if b.preferred_path and b.preferred_path.exists())
     _plan_counts(key, n_files or n)
     sp.skip_phase(key, "fetching")
 
     stats: dict = {}
     sp.set_phase(key, "embedding", n)
     stats["metadata_embed"] = ingest_calibre_books(
-        books, dry_run=dry_run, progress_key=key,
+        books,
+        dry_run=dry_run,
+        progress_key=key,
     )
     log.info("Calibre metadata embed: %s", stats["metadata_embed"])
     if stats["metadata_embed"].get("stopped"):
@@ -85,9 +86,7 @@ def sync_calibre_ingest(
         stats["fulltext"] = dict(_EMPTY_EMBED)
         return stats
 
-    file_books = [
-        b for b in books if b.preferred_path and b.preferred_path.exists()
-    ]
+    file_books = [b for b in books if b.preferred_path and b.preferred_path.exists()]
     sp.set_phase(key, "embedding", n_files)
     stats["fulltext"] = ingest_calibre_fulltext(
         file_books,
@@ -110,6 +109,11 @@ def sync_calibre(
 ) -> dict:
     """Full pipeline. Kept for scripts/tests."""
     meta = sync_calibre_metadata(progress_key=progress_key, dry_run=dry_run)
-    return run_full_sync(meta, lambda: sync_calibre_ingest(
-        progress_key=progress_key, dry_run=dry_run, max_pages=max_pages,
-    ))
+    return run_full_sync(
+        meta,
+        lambda: sync_calibre_ingest(
+            progress_key=progress_key,
+            dry_run=dry_run,
+            max_pages=max_pages,
+        ),
+    )

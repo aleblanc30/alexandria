@@ -12,6 +12,7 @@ Usage::
     alexandria youtube --embed-only       # embed already-imported videos
     alexandria youtube --dry-run
 """
+
 from __future__ import annotations
 
 import argparse

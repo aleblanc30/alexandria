@@ -4,6 +4,7 @@
 Thin shim — the implementation lives in pka.cli.domain_report (run via
 `alexandria domain-report` once installed, or `python scripts/domain_report.py` from the repo).
 """
+
 import sys
 from pathlib import Path
 

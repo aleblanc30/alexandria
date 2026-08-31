@@ -3,6 +3,7 @@ FastAPI endpoint tests.
 Uses TestClient (synchronous httpx wrapper) — no running server needed.
 All storage and embedding calls are mocked; DB is real SQLite in tmp_path.
 """
+
 import time
 from unittest.mock import MagicMock
 
@@ -15,11 +16,13 @@ from pka.db.schema import cluster_assignments, cluster_runs, clusters
 
 # ── App fixture ───────────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 def client(empty_vector_store):
     """Return a TestClient with a fresh DB and mocked (empty) vector store."""
     init_db()
     from pka.api.main import app
+
     return TestClient(app, raise_server_exceptions=True)
 
 
@@ -27,22 +30,31 @@ def _seed_docs(n: int = 3) -> list[int]:
     ids = []
     for i in range(n):
         src = ["zotero", "firefox", "calibre"][i % 3]
-        ids.append(upsert_document(
-            src, f"K{i:03d}", f"Document {i}",
-            f"https://example.com/{i}", int(time.time()) - i * 86400
-        ))
+        ids.append(
+            upsert_document(
+                src,
+                f"K{i:03d}",
+                f"Document {i}",
+                f"https://example.com/{i}",
+                int(time.time()) - i * 86400,
+            )
+        )
     return ids
 
 
 def _seed_run(doc_ids: list[int], n_clusters: int = 2, *, with_l2: bool = False) -> int:
     from pka.db.queries import get_engine
+
     eng = get_engine()
     now = int(time.time())
     with eng.begin() as con:
         run_res = con.execute(
             cluster_runs.insert().values(
-                timestamp=now, algorithm="HDBSCAN-hierarchical",
-                parameters="{}", accepted=True, status="finished",
+                timestamp=now,
+                algorithm="HDBSCAN-hierarchical",
+                parameters="{}",
+                accepted=True,
+                status="finished",
             )
         )
         run_id = run_res.inserted_primary_key[0]
@@ -50,37 +62,53 @@ def _seed_run(doc_ids: list[int], n_clusters: int = 2, *, with_l2: bool = False)
         for i in range(n_clusters):
             cl_res = con.execute(
                 clusters.insert().values(
-                    label=f"Cluster {i}", description="",
-                    created_at=now, run_id=run_id,
-                    level=1, parent_cluster_id=None,
+                    label=f"Cluster {i}",
+                    description="",
+                    created_at=now,
+                    run_id=run_id,
+                    level=1,
+                    parent_cluster_id=None,
                 )
             )
             cid = cl_res.inserted_primary_key[0]
             l1_ids.append(cid)
             for did in doc_ids[i::n_clusters]:
-                con.execute(cluster_assignments.insert().values(
-                    document_id=did, cluster_id=cid,
-                    run_id=run_id, score=0.9, assigned_at=now,
-                    level=1,
-                ))
+                con.execute(
+                    cluster_assignments.insert().values(
+                        document_id=did,
+                        cluster_id=cid,
+                        run_id=run_id,
+                        score=0.9,
+                        assigned_at=now,
+                        level=1,
+                    )
+                )
         if with_l2 and l1_ids:
             parent = l1_ids[0]
             parent_docs = doc_ids[0::n_clusters]
             for sub_idx in range(2):
                 l2_res = con.execute(
                     clusters.insert().values(
-                        label=f"Subcluster {sub_idx}", description="",
-                        created_at=now, run_id=run_id,
-                        level=2, parent_cluster_id=parent,
+                        label=f"Subcluster {sub_idx}",
+                        description="",
+                        created_at=now,
+                        run_id=run_id,
+                        level=2,
+                        parent_cluster_id=parent,
                     )
                 )
                 l2_id = l2_res.inserted_primary_key[0]
                 for did in parent_docs[sub_idx::2]:
-                    con.execute(cluster_assignments.insert().values(
-                        document_id=did, cluster_id=l2_id,
-                        run_id=run_id, score=0.8, assigned_at=now,
-                        level=2,
-                    ))
+                    con.execute(
+                        cluster_assignments.insert().values(
+                            document_id=did,
+                            cluster_id=l2_id,
+                            run_id=run_id,
+                            score=0.8,
+                            assigned_at=now,
+                            level=2,
+                        )
+                    )
     return run_id
 
 
@@ -92,35 +120,46 @@ def _seed_image(client=None) -> int:
 
     now = int(time.time())
     doc_id = upsert_document(
-        "image", "/tmp/slide.png", "slide.png", "/tmp/slide.png", now,
+        "image",
+        "/tmp/slide.png",
+        "slide.png",
+        "/tmp/slide.png",
+        now,
         fetch_status="available",
     )
     with get_engine().begin() as con:
-        res = con.execute(images_tbl.insert().values(
-            document_id=doc_id,
-            path="/tmp/slide.png",
-            filename="slide.png",
-            image_type="slide",
-            width=800,
-            height=600,
-            file_size=12345,
-            date_taken=now,
-            ocr_text="Neural networks overview",
-            description="A slide about neural networks",
-            clip_vector_id="clip-1",
-            text_vector_id="text-1",
-            indexed_at=now,
-        ))
+        res = con.execute(
+            images_tbl.insert().values(
+                document_id=doc_id,
+                path="/tmp/slide.png",
+                filename="slide.png",
+                image_type="slide",
+                width=800,
+                height=600,
+                file_size=12345,
+                date_taken=now,
+                ocr_text="Neural networks overview",
+                description="A slide about neural networks",
+                clip_vector_id="clip-1",
+                text_vector_id="text-1",
+                indexed_at=now,
+            )
+        )
         image_id = res.inserted_primary_key[0]
-        con.execute(image_tags.insert().values(
-            image_id=image_id, tag="ml", origin="auto",
-        ))
+        con.execute(
+            image_tags.insert().values(
+                image_id=image_id,
+                tag="ml",
+                origin="auto",
+            )
+        )
     return image_id
 
 
 def _image_document_id(image_id: int) -> int:
     from pka.db.queries import get_engine
     from pka.db.schema import images as images_tbl
+
     with get_engine().connect() as con:
         return con.execute(
             sa.select(images_tbl.c.document_id).where(images_tbl.c.id == image_id)
@@ -128,6 +167,7 @@ def _image_document_id(image_id: int) -> int:
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
+
 
 class TestSearch:
     def test_returns_200(self, client):
@@ -157,8 +197,9 @@ class TestSearch:
 
     def test_source_filter_applied(self, client):
         _seed_docs()
-        r = client.post("/search", json={"query": "document", "mode": "fulltext",
-                                          "sources": ["zotero"]})
+        r = client.post(
+            "/search", json={"query": "document", "mode": "fulltext", "sources": ["zotero"]}
+        )
         for doc in r.json()["documents"]:
             assert doc["source"] == "zotero"
 
@@ -168,10 +209,15 @@ class TestSearch:
         _seed_docs(n)
         pages = []
         for offset in (0, 5, 10):
-            r = client.post("/search", json={
-                "query": "Document", "mode": "fulltext",
-                "limit": limit, "offset": offset,
-            })
+            r = client.post(
+                "/search",
+                json={
+                    "query": "Document",
+                    "mode": "fulltext",
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
             body = r.json()
             assert body["total"] == n
             pages.append([d["id"] for d in body["documents"]])
@@ -189,12 +235,14 @@ class TestSearch:
         ids = _seed_docs(1)
         monkeypatch.setattr(
             "pka.storage.vector_store.query",
-            lambda emb, n_results=10, where=None: [{
-                "vector_id": "v1",
-                "text": "matching chunk",
-                "distance": 0.25,
-                "metadata": {"document_id": ids[0], "source": "zotero"},
-            }],
+            lambda emb, n_results=10, where=None: [
+                {
+                    "vector_id": "v1",
+                    "text": "matching chunk",
+                    "distance": 0.25,
+                    "metadata": {"document_id": ids[0], "source": "zotero"},
+                }
+            ],
         )
         r = client.post("/search", json={"query": "raft", "mode": "semantic"})
         docs = r.json()["documents"]
@@ -205,12 +253,14 @@ class TestSearch:
         ids = _seed_docs(2)
         monkeypatch.setattr(
             "pka.storage.vector_store.query",
-            lambda emb, n_results=10, where=None: [{
-                "vector_id": "v1",
-                "text": "chunk",
-                "distance": 0.1,
-                "metadata": {"document_id": ids[0], "source": "zotero"},
-            }],
+            lambda emb, n_results=10, where=None: [
+                {
+                    "vector_id": "v1",
+                    "text": "chunk",
+                    "distance": 0.1,
+                    "metadata": {"document_id": ids[0], "source": "zotero"},
+                }
+            ],
         )
         r = client.post("/search", json={"query": "Document 1", "mode": "hybrid"})
         returned_ids = {d["id"] for d in r.json()["documents"]}
@@ -230,11 +280,14 @@ class TestSearch:
                 docs_tbl.update().where(docs_tbl.c.id == ids[1]).values(fetch_status="fetched")
             )
         monkeypatch.setattr("pka.storage.vector_store.query", lambda *a, **kw: [])
-        r = client.post("/search", json={
-            "query": "Document",
-            "mode": "fulltext",
-            "fetch_status": "pending",
-        })
+        r = client.post(
+            "/search",
+            json={
+                "query": "Document",
+                "mode": "fulltext",
+                "fetch_status": "pending",
+            },
+        )
         assert all(d["fetch_status"] == "pending" for d in r.json()["documents"])
 
     def test_clip_matches_merged_into_documents(self, client, monkeypatch):
@@ -243,14 +296,16 @@ class TestSearch:
         doc_id = _image_document_id(image_id)
         monkeypatch.setattr(
             "pka.ingestion.image_pipeline.search_images_by_text",
-            lambda q, n=10: [{
-                "vector_id": "clip-1",
-                "document_id": doc_id,
-                "filename": "slide.png",
-                "path": "/tmp/slide.png",
-                "image_type": "slide",
-                "distance": 0.2,
-            }],
+            lambda q, n=10: [
+                {
+                    "vector_id": "clip-1",
+                    "document_id": doc_id,
+                    "filename": "slide.png",
+                    "path": "/tmp/slide.png",
+                    "image_type": "slide",
+                    "distance": 0.2,
+                }
+            ],
         )
         r = client.post("/search", json={"query": "unrelated visual query"})
         body = r.json()
@@ -270,7 +325,8 @@ class TestSearch:
             return [{"vector_id": "clip-1", "document_id": doc_id, "distance": 0.1}]
 
         monkeypatch.setattr(
-            "pka.ingestion.image_pipeline.search_images_by_text", _fake,
+            "pka.ingestion.image_pipeline.search_images_by_text",
+            _fake,
         )
         r = client.post("/search", json={"query": "neural", "sources": ["zotero"]})
         ids = [d["id"] for d in r.json()["documents"]]
@@ -289,19 +345,27 @@ class TestSearch:
             ).fetchone()[0]
         with get_engine().begin() as con:
             con.execute(
-                cluster_runs.update()
-                .where(cluster_runs.c.run_id == run_id)
-                .values(accepted=True)
+                cluster_runs.update().where(cluster_runs.c.run_id == run_id).values(accepted=True)
             )
-        monkeypatch.setattr("pka.storage.vector_store.query", lambda *a, **kw: [
-            {"vector_id": "v1", "text": "c", "distance": 0.1,
-             "metadata": {"document_id": ids[0], "source": "zotero"}},
-        ])
-        r = client.post("/search", json={
-            "query": "Document",
-            "mode": "semantic",
-            "cluster_ids": [cid],
-        })
+        monkeypatch.setattr(
+            "pka.storage.vector_store.query",
+            lambda *a, **kw: [
+                {
+                    "vector_id": "v1",
+                    "text": "c",
+                    "distance": 0.1,
+                    "metadata": {"document_id": ids[0], "source": "zotero"},
+                },
+            ],
+        )
+        r = client.post(
+            "/search",
+            json={
+                "query": "Document",
+                "mode": "semantic",
+                "cluster_ids": [cid],
+            },
+        )
         assert all(d["cluster_id"] == cid for d in r.json()["documents"])
 
     def test_semantic_query_failure_falls_back_to_fulltext(self, client, monkeypatch):
@@ -321,11 +385,14 @@ class TestSearch:
         insert_source_tags(ids[0], ["ml", "python"], source="zotero")
         insert_source_tags(ids[1], ["ml"], source="firefox")
         insert_source_tags(ids[2], ["python"], source="calibre")
-        r = client.post("/search", json={
-            "query": "Document",
-            "mode": "fulltext",
-            "source_tags": ["ml", "python"],
-        })
+        r = client.post(
+            "/search",
+            json={
+                "query": "Document",
+                "mode": "fulltext",
+                "source_tags": ["ml", "python"],
+            },
+        )
         assert r.status_code == 200
         returned_ids = {d["id"] for d in r.json()["documents"]}
         assert returned_ids == {ids[0]}
@@ -336,11 +403,14 @@ class TestSearch:
         ids = _seed_docs(3)
         sync_classification_tags(ids[0], ["academic", "paper"])
         sync_classification_tags(ids[1], ["academic", "preprint"])
-        r = client.post("/search", json={
-            "query": "Document",
-            "mode": "fulltext",
-            "general_tags": ["preprint"],
-        })
+        r = client.post(
+            "/search",
+            json={
+                "query": "Document",
+                "mode": "fulltext",
+                "general_tags": ["preprint"],
+            },
+        )
         assert r.status_code == 200
         returned_ids = {d["id"] for d in r.json()["documents"]}
         assert returned_ids == {ids[1]}
@@ -354,15 +424,16 @@ class TestSearch:
         snapshot = "https://web.archive.org/web/20190603190145/https://example.com/1"
         with get_engine().begin() as con:
             con.execute(
-                docs_table.update()
-                .where(docs_table.c.id == ids[1])
-                .values(archive_url=snapshot)
+                docs_table.update().where(docs_table.c.id == ids[1]).values(archive_url=snapshot)
             )
-        r = client.post("/search", json={
-            "query": "Document",
-            "mode": "fulltext",
-            "wayback_only": True,
-        })
+        r = client.post(
+            "/search",
+            json={
+                "query": "Document",
+                "mode": "fulltext",
+                "wayback_only": True,
+            },
+        )
         assert r.status_code == 200
         data = r.json()
         assert data["total"] == 1
@@ -371,6 +442,7 @@ class TestSearch:
 
 
 # ── Documents ─────────────────────────────────────────────────────────────────
+
 
 class TestDocuments:
     def test_list_documents_200(self, client):
@@ -383,15 +455,30 @@ class TestDocuments:
 
     def test_list_documents_fields(self, client):
         ids = _seed_docs(1)
-        insert_chunks([{
-            "document_id": ids[0], "chunk_index": 0,
-            "text": "First chunk body text.", "token_count": 4, "vector_id": "v0",
-        }])
+        insert_chunks(
+            [
+                {
+                    "document_id": ids[0],
+                    "chunk_index": 0,
+                    "text": "First chunk body text.",
+                    "token_count": 4,
+                    "vector_id": "v0",
+                }
+            ]
+        )
         doc = client.get("/documents").json()["documents"][0]
         for key in (
-            "id", "source", "source_id", "title", "description", "url_or_path",
-            "archive_url", "zotero_attachment_key",
-            "source_tags", "cluster_l1_tags", "cluster_l2_tags",
+            "id",
+            "source",
+            "source_id",
+            "title",
+            "description",
+            "url_or_path",
+            "archive_url",
+            "zotero_attachment_key",
+            "source_tags",
+            "cluster_l1_tags",
+            "cluster_l2_tags",
         ):
             assert key in doc
         assert doc["description"] == "First chunk body text."
@@ -404,30 +491,58 @@ class TestDocuments:
 
         ids = _seed_docs(1)
         long_text = "word " * 70
-        insert_chunks([{
-            "document_id": ids[0], "chunk_index": 0,
-            "text": long_text, "token_count": 70, "vector_id": "v0",
-        }])
+        insert_chunks(
+            [
+                {
+                    "document_id": ids[0],
+                    "chunk_index": 0,
+                    "text": long_text,
+                    "token_count": 70,
+                    "vector_id": "v0",
+                }
+            ]
+        )
         doc = client.get("/documents").json()["documents"][0]
         assert len(doc["description"]) <= SUMMARY_MAX_LEN + 1  # +1 for the ellipsis
         assert doc["description"].endswith("…")
 
     def test_list_documents_prefers_card_summary(self, client):
         ids = _seed_docs(1)
-        insert_chunks([{
-            "document_id": ids[0], "chunk_index": 0,
-            "text": "Test Paper by Alice", "token_count": 4, "vector_id": "v0",
-        }])
+        insert_chunks(
+            [
+                {
+                    "document_id": ids[0],
+                    "chunk_index": 0,
+                    "text": "Test Paper by Alice",
+                    "token_count": 4,
+                    "vector_id": "v0",
+                }
+            ]
+        )
         update_card_summary(ids[0], "This is the abstract for the paper.")
         doc = client.get("/documents").json()["documents"][0]
         assert doc["description"] == "This is the abstract for the paper."
 
     def test_list_documents_uses_first_chunk(self, client):
         ids = _seed_docs(1)
-        insert_chunks([
-            {"document_id": ids[0], "chunk_index": 1, "text": "Second", "token_count": 1, "vector_id": "v1"},
-            {"document_id": ids[0], "chunk_index": 0, "text": "First", "token_count": 1, "vector_id": "v0"},
-        ])
+        insert_chunks(
+            [
+                {
+                    "document_id": ids[0],
+                    "chunk_index": 1,
+                    "text": "Second",
+                    "token_count": 1,
+                    "vector_id": "v1",
+                },
+                {
+                    "document_id": ids[0],
+                    "chunk_index": 0,
+                    "text": "First",
+                    "token_count": 1,
+                    "vector_id": "v0",
+                },
+            ]
+        )
         doc = client.get("/documents").json()["documents"][0]
         assert doc["description"] == "First"
 
@@ -446,9 +561,7 @@ class TestDocuments:
         snapshot = "https://web.archive.org/web/20190603190145/https://example.com/1"
         with get_engine().begin() as con:
             con.execute(
-                docs_table.update()
-                .where(docs_table.c.id == ids[1])
-                .values(archive_url=snapshot)
+                docs_table.update().where(docs_table.c.id == ids[1]).values(archive_url=snapshot)
             )
 
         r = client.get("/documents?wayback_only=true")
@@ -525,10 +638,12 @@ class TestDocuments:
         l1 = next(c for c in client.get("/clusters").json() if c["level"] == 1)
         l2 = next(c for c in client.get("/clusters").json() if c["level"] == 2)
         l1_tag = client.post(
-            f"/clusters/{l1['cluster_id']}/apply-tag", json={"tag": "topic-l1"},
+            f"/clusters/{l1['cluster_id']}/apply-tag",
+            json={"tag": "topic-l1"},
         ).json()["tag"]
         l2_tag = client.post(
-            f"/clusters/{l2['cluster_id']}/apply-tag", json={"tag": "topic-l2"},
+            f"/clusters/{l2['cluster_id']}/apply-tag",
+            json={"tag": "topic-l2"},
         ).json()["tag"]
 
         r1 = client.get("/documents", params=[("cluster_l1_tags", l1_tag)])
@@ -555,19 +670,33 @@ class TestDocuments:
 
     def test_get_document_description(self, client):
         ids = _seed_docs(1)
-        insert_chunks([{
-            "document_id": ids[0], "chunk_index": 0,
-            "text": "First chunk body text.", "token_count": 4, "vector_id": "v0",
-        }])
+        insert_chunks(
+            [
+                {
+                    "document_id": ids[0],
+                    "chunk_index": 0,
+                    "text": "First chunk body text.",
+                    "token_count": 4,
+                    "vector_id": "v0",
+                }
+            ]
+        )
         data = client.get(f"/documents/{ids[0]}").json()
         assert data["description"] == "First chunk body text."
 
     def test_get_document_prefers_card_summary(self, client):
         ids = _seed_docs(1)
-        insert_chunks([{
-            "document_id": ids[0], "chunk_index": 0,
-            "text": "Title chunk only", "token_count": 3, "vector_id": "v0",
-        }])
+        insert_chunks(
+            [
+                {
+                    "document_id": ids[0],
+                    "chunk_index": 0,
+                    "text": "Title chunk only",
+                    "token_count": 3,
+                    "vector_id": "v0",
+                }
+            ]
+        )
         update_card_summary(ids[0], "Stored card summary.")
         data = client.get(f"/documents/{ids[0]}").json()
         assert data["description"] == "Stored card summary."
@@ -577,11 +706,10 @@ class TestDocuments:
         run_id = _seed_run(ids, n_clusters=2)
         from pka.db.queries import get_engine
         from pka.db.schema import cluster_runs
+
         with get_engine().begin() as con:
             con.execute(
-                cluster_runs.update()
-                .where(cluster_runs.c.run_id == run_id)
-                .values(accepted=True)
+                cluster_runs.update().where(cluster_runs.c.run_id == run_id).values(accepted=True)
             )
         data = client.get(f"/documents/{ids[0]}").json()
         assert data["cluster_id"] is not None
@@ -592,8 +720,7 @@ class TestDocuments:
 
     def test_patch_tags_add(self, client):
         ids = _seed_docs(1)
-        r = client.patch(f"/documents/{ids[0]}/tags",
-                         json={"add": ["my-tag"], "remove": []})
+        r = client.patch(f"/documents/{ids[0]}/tags", json={"add": ["my-tag"], "remove": []})
         assert r.status_code == 200
         data = client.get(f"/documents/{ids[0]}").json()
         overlay = [t["tag"] for t in data["overlay_tags"]]
@@ -625,7 +752,11 @@ class TestDocumentCover:
         (book_dir / "cover.jpg").write_bytes(b"\xff\xd8\xff\xe0fakejpeg")
 
         doc_id = upsert_document(
-            "calibre", "1", "Title", str(book_dir / "book.epub"), int(time.time()),
+            "calibre",
+            "1",
+            "Title",
+            str(book_dir / "book.epub"),
+            int(time.time()),
         )
         r = client.get(f"/documents/{doc_id}/cover")
         assert r.status_code == 200
@@ -638,7 +769,11 @@ class TestDocumentCover:
         (book_dir / "book.epub").write_bytes(b"epub")
 
         doc_id = upsert_document(
-            "calibre", "1", "Title", str(book_dir / "book.epub"), int(time.time()),
+            "calibre",
+            "1",
+            "Title",
+            str(book_dir / "book.epub"),
+            int(time.time()),
         )
         r = client.get(f"/documents/{doc_id}/cover")
         assert r.status_code == 404
@@ -646,8 +781,7 @@ class TestDocumentCover:
     def test_404_for_non_calibre_source(self, client):
         ids = _seed_docs(3)
         firefox_id = next(
-            i for i in ids
-            if client.get(f"/documents/{i}").json()["source"] == "firefox"
+            i for i in ids if client.get(f"/documents/{i}").json()["source"] == "firefox"
         )
         r = client.get(f"/documents/{firefox_id}/cover")
         assert r.status_code == 404
@@ -658,10 +792,15 @@ class TestDocumentCover:
 
     def test_image_document_cover_streams_the_file(self, client, tmp_path):
         from PIL import Image as PILImage
+
         p = tmp_path / "photo.png"
         PILImage.new("RGB", (8, 8), color="blue").save(p)
         doc_id = upsert_document(
-            "image", str(p), "photo.png", str(p), int(time.time()),
+            "image",
+            str(p),
+            "photo.png",
+            str(p),
+            int(time.time()),
             fetch_status="available",
         )
         r = client.get(f"/documents/{doc_id}/cover")
@@ -688,9 +827,14 @@ class TestImageDocuments:
 
 # ── Reddit documents ──────────────────────────────────────────────────────────
 
+
 def _seed_reddit(source_id: str, url: str, *, item_type: str | None = None) -> int:
     return upsert_document(
-        "reddit", source_id, "Understanding Raft", url, int(time.time()),
+        "reddit",
+        source_id,
+        "Understanding Raft",
+        url,
+        int(time.time()),
         item_type=item_type,
     )
 
@@ -739,7 +883,9 @@ class TestRedditDocuments:
     def test_link_post_permalink_derived_when_no_detail_row(self, client):
         """A library archived before ``reddit_items`` existed still reaches the thread."""
         doc_id = _seed_reddit(
-            "t3_abc123", "https://example.com/paxos.pdf", item_type="post",
+            "t3_abc123",
+            "https://example.com/paxos.pdf",
+            item_type="post",
         )
 
         reddit = client.get(f"/documents/{doc_id}").json()["reddit"]
@@ -782,6 +928,7 @@ class TestRedditDocuments:
 
 
 # ── Tags ──────────────────────────────────────────────────────────────────────
+
 
 class TestTags:
     def test_returns_list(self, client):
@@ -844,10 +991,12 @@ class TestTags:
         l1 = next(c for c in client.get("/clusters").json() if c["level"] == 1)
         l2 = next(c for c in client.get("/clusters").json() if c["level"] == 2)
         l1_tag = client.post(
-            f"/clusters/{l1['cluster_id']}/apply-tag", json={"tag": "topic-l1"},
+            f"/clusters/{l1['cluster_id']}/apply-tag",
+            json={"tag": "topic-l1"},
         ).json()["tag"]
         l2_tag = client.post(
-            f"/clusters/{l2['cluster_id']}/apply-tag", json={"tag": "topic-l2"},
+            f"/clusters/{l2['cluster_id']}/apply-tag",
+            json={"tag": "topic-l2"},
         ).json()["tag"]
 
         l1_tags = [t["tag"] for t in client.get("/tags?origin=cluster_l1").json()]
@@ -858,6 +1007,7 @@ class TestTags:
 
 
 # ── Clusters ──────────────────────────────────────────────────────────────────
+
 
 class TestClusters:
     def test_returns_empty_without_active_run(self, client):
@@ -929,6 +1079,7 @@ class TestClusters:
         cid = client.get("/clusters").json()[0]["cluster_id"]
         from pka.db.queries import get_engine
         from pka.db.schema import clusters
+
         with get_engine().begin() as con:
             con.execute(
                 clusters.update()
@@ -952,10 +1103,12 @@ class TestClusters:
 
         from pka.db.queries import get_engine
         from pka.db.schema import overlay_tags
+
         with get_engine().connect() as con:
             rows = con.execute(
-                sa.select(overlay_tags.c.tag, overlay_tags.c.origin)
-                .where(overlay_tags.c.tag == data["tag"])
+                sa.select(overlay_tags.c.tag, overlay_tags.c.origin).where(
+                    overlay_tags.c.tag == data["tag"]
+                )
             ).fetchall()
         assert len(rows) >= 1
         assert all(r[1] == "cluster_l1" for r in rows)
@@ -965,15 +1118,16 @@ class TestClusters:
         _seed_run(ids, n_clusters=2, with_l2=True)
         l2 = next(c for c in client.get("/clusters").json() if c["level"] == 2)
         r = client.post(
-            f"/clusters/{l2['cluster_id']}/apply-tag", json={"tag": "subtopic-a"},
+            f"/clusters/{l2['cluster_id']}/apply-tag",
+            json={"tag": "subtopic-a"},
         )
         assert r.status_code == 200
         from pka.db.queries import get_engine
         from pka.db.schema import overlay_tags
+
         with get_engine().connect() as con:
             rows = con.execute(
-                sa.select(overlay_tags.c.origin)
-                .where(overlay_tags.c.tag == r.json()["tag"])
+                sa.select(overlay_tags.c.origin).where(overlay_tags.c.tag == r.json()["tag"])
             ).fetchall()
         assert rows
         assert all(row[0] == "cluster_l2" for row in rows)
@@ -1035,16 +1189,16 @@ class TestClusters:
         run_id = _seed_run(ids)
         from pka.db.queries import get_engine
         from pka.db.schema import cluster_runs
+
         with get_engine().begin() as con:
             con.execute(
-                cluster_runs.update()
-                .where(cluster_runs.c.run_id == run_id)
-                .values(accepted=True)
+                cluster_runs.update().where(cluster_runs.c.run_id == run_id).values(accepted=True)
             )
         assert client.get("/clusters/scatter/points").json() == []
 
 
 # ── Runs ──────────────────────────────────────────────────────────────────────
+
 
 class TestRuns:
     def test_list_runs_empty(self, client):
@@ -1079,11 +1233,17 @@ class TestRuns:
 
     def test_accept_failed_run_409(self, client):
         from pka.db.queries import get_engine
+
         with get_engine().begin() as con:
-            res = con.execute(cluster_runs.insert().values(
-                timestamp=int(time.time()), algorithm="HDBSCAN",
-                parameters="{}", accepted=False, status="failed",
-            ))
+            res = con.execute(
+                cluster_runs.insert().values(
+                    timestamp=int(time.time()),
+                    algorithm="HDBSCAN",
+                    parameters="{}",
+                    accepted=False,
+                    status="failed",
+                )
+            )
             run_id = res.inserted_primary_key[0]
         assert client.post(f"/runs/{run_id}/accept").status_code == 409
         assert client.post(f"/runs/{run_id}/reject").status_code == 409
@@ -1132,9 +1292,11 @@ class TestRuns:
             import time
 
             from pka.clustering.run_progress import check_cancel
+
             for _ in range(50):
                 if check_cancel(kw["run_id"]):
                     from pka.clustering.run_progress import ClusterRunCancelled
+
                     raise ClusterRunCancelled()
                 time.sleep(0.05)
             return MagicMock(run_id=kw["run_id"], n_clusters=1, n_noise=0)
@@ -1174,6 +1336,7 @@ class TestRuns:
 
 
 # ── Trends ────────────────────────────────────────────────────────────────────
+
 
 class TestTrends:
     def test_timeline_returns_dict(self, client):
@@ -1228,6 +1391,7 @@ class TestTrends:
 
 # ── Ingestion ─────────────────────────────────────────────────────────────────
 
+
 def _join_worker(ing_module, src: str, timeout: float = 5.0) -> None:
     """Wait for the background sync thread the router started for ``src``."""
     worker = ing_module._workers.get(src)
@@ -1239,6 +1403,7 @@ class TestIngestion:
     def setup_method(self):
         from pka.constants import ALL_SOURCES
         from pka.ingestion import progress as sp
+
         for src in ALL_SOURCES:
             sp.reset(src)
 
@@ -1284,18 +1449,21 @@ class TestIngestion:
 
     def test_pause_sync_requires_active_job(self, client):
         from pka.ingestion import progress as sp
+
         sp.reset("zotero")
         r = client.post("/ingestion/sync/zotero/pause")
         assert r.status_code == 409
 
     def test_cancel_sync_requires_active_job(self, client):
         from pka.ingestion import progress as sp
+
         sp.reset("zotero")
         r = client.post("/ingestion/sync/zotero/cancel")
         assert r.status_code == 409
 
     def test_pause_sync_when_running(self, client):
         from pka.ingestion import progress as sp
+
         sp.reset("firefox")
         sp.begin("firefox", phase="fetching")
         sp.set_phase("firefox", "fetching", 10)
@@ -1306,6 +1474,7 @@ class TestIngestion:
 
     def test_cancel_sync_when_running(self, client):
         from pka.ingestion import progress as sp
+
         sp.reset("zotero")
         sp.begin("zotero", phase="embedding")
         sp.set_phase("zotero", "embedding", 5)
@@ -1316,6 +1485,7 @@ class TestIngestion:
 
     def test_sync_progress_snapshot(self, client):
         from pka.ingestion import progress as sp
+
         sp.reset("firefox")
         sp.begin("firefox")
         sp.plan_pipeline("firefox", [("metadata", 2), ("fetching", 2)])
@@ -1345,8 +1515,9 @@ class TestIngestion:
             assert r.status_code == 200
             assert r.headers["content-type"].startswith("text/event-stream")
             frames = [
-                json.loads(line[len("data: "):])
-                for line in r.iter_lines() if line.startswith("data: ")
+                json.loads(line[len("data: ") :])
+                for line in r.iter_lines()
+                if line.startswith("data: ")
             ]
         assert len(frames) == 1
         assert frames[0]["progress"]["source"] == "zotero"
@@ -1368,8 +1539,9 @@ class TestIngestion:
         monkeypatch.setattr(router, "source_counts", lambda _e, _s: {})
         with client.stream("GET", "/ingestion/sync/events?source=zotero") as r:
             frames = [
-                json.loads(line[len("data: "):])
-                for line in r.iter_lines() if line.startswith("data: ")
+                json.loads(line[len("data: ") :])
+                for line in r.iter_lines()
+                if line.startswith("data: ")
             ]
         # Three snapshots, three distinct frames, and the stream closes itself.
         assert [f["progress"]["status"] for f in frames] == ["running", "running", "done"]
@@ -1622,6 +1794,7 @@ class TestIngestion:
 
 # ── Images ────────────────────────────────────────────────────────────────────
 
+
 class TestImages:
     def test_list_images_empty(self, client):
         r = client.get("/images")
@@ -1658,9 +1831,13 @@ class TestImages:
         img = tmp_path / "pic.png"
         img.write_bytes(b"\x89PNG\r\n\x1a\nfake")
         with get_engine().begin() as con:
-            image_id = con.execute(images_tbl.insert().values(
-                path=str(img), filename="pic.png", image_type="slide",
-            )).inserted_primary_key[0]
+            image_id = con.execute(
+                images_tbl.insert().values(
+                    path=str(img),
+                    filename="pic.png",
+                    image_type="slide",
+                )
+            ).inserted_primary_key[0]
 
         r = client.get(f"/images/{image_id}/file")
         assert r.status_code == 200
@@ -1679,13 +1856,15 @@ class TestImages:
         _seed_image()
         monkeypatch.setattr(
             "pka.ingestion.image_pipeline.search_images_by_text",
-            lambda q, n=10: [{
-                "vector_id": "clip-1",
-                "filename": "slide.png",
-                "path": "/tmp/slide.png",
-                "image_type": "slide",
-                "distance": 0.15,
-            }],
+            lambda q, n=10: [
+                {
+                    "vector_id": "clip-1",
+                    "filename": "slide.png",
+                    "path": "/tmp/slide.png",
+                    "image_type": "slide",
+                    "distance": 0.15,
+                }
+            ],
         )
         r = client.get("/images/search?q=neural")
         assert r.status_code == 200
@@ -1699,14 +1878,16 @@ class TestImages:
         doc_id = _image_document_id(image_id)
         monkeypatch.setattr(
             "pka.ingestion.image_pipeline.search_images_by_inferred_text",
-            lambda q, n=10: [{
-                "vector_id": "chunk-1",
-                "document_id": doc_id,
-                "distance": 0.3,
-                "text": "Neural networks overview",
-                "pass": None,
-                "filename": "slide.png",
-            }],
+            lambda q, n=10: [
+                {
+                    "vector_id": "chunk-1",
+                    "document_id": doc_id,
+                    "distance": 0.3,
+                    "text": "Neural networks overview",
+                    "pass": None,
+                    "filename": "slide.png",
+                }
+            ],
         )
         r = client.get("/images/search?q=neural")
         body = r.json()
@@ -1724,10 +1905,16 @@ class TestImages:
         )
         monkeypatch.setattr(
             "pka.ingestion.image_pipeline.search_images_by_inferred_text",
-            lambda q, n=10: [{
-                "vector_id": "chunk-1", "document_id": doc_id, "distance": 0.1,
-                "text": "", "pass": None, "filename": "slide.png",
-            }],
+            lambda q, n=10: [
+                {
+                    "vector_id": "chunk-1",
+                    "document_id": doc_id,
+                    "distance": 0.1,
+                    "text": "",
+                    "pass": None,
+                    "filename": "slide.png",
+                }
+            ],
         )
         body = client.get("/images/search?q=neural").json()
         assert len(body) == 1
@@ -1761,21 +1948,26 @@ class TestImages:
 
         with get_engine().begin() as con:
             con.execute(
-                images_tbl.update()
-                .where(images_tbl.c.id == image_id)
-                .values(indexed_at=None)
+                images_tbl.update().where(images_tbl.c.id == image_id).values(indexed_at=None)
             )
         monkeypatch.setattr(
             "pka.ingestion.image_pipeline.search_images_by_inferred_text",
-            lambda q, n=10: [{
-                "vector_id": "chunk-1", "document_id": doc_id, "distance": 0.1,
-                "text": "", "pass": None, "filename": "slide.png",
-            }],
+            lambda q, n=10: [
+                {
+                    "vector_id": "chunk-1",
+                    "document_id": doc_id,
+                    "distance": 0.1,
+                    "text": "",
+                    "pass": None,
+                    "filename": "slide.png",
+                }
+            ],
         )
         assert client.get("/images/search?q=neural").json() == []
 
 
 # ── Reading lists ─────────────────────────────────────────────────────────────
+
 
 class TestReadingLists:
     def test_create_list(self, client):
@@ -1792,8 +1984,9 @@ class TestReadingLists:
     def test_add_and_retrieve_item(self, client):
         ids = _seed_docs(1)
         list_id = client.post("/reading-lists", json={"name": "test"}).json()["list_id"]
-        client.post(f"/reading-lists/{list_id}/items",
-                    json={"document_id": ids[0], "note": "read this"})
+        client.post(
+            f"/reading-lists/{list_id}/items", json={"document_id": ids[0], "note": "read this"}
+        )
         items = client.get(f"/reading-lists/{list_id}/items").json()
         assert len(items) == 1
         assert items[0]["doc_id"] == ids[0]
@@ -1802,8 +1995,9 @@ class TestReadingLists:
     def test_remove_item(self, client):
         ids = _seed_docs(1)
         list_id = client.post("/reading-lists", json={"name": "r"}).json()["list_id"]
-        item_id = client.post(f"/reading-lists/{list_id}/items",
-                              json={"document_id": ids[0]}).json()["id"]
+        item_id = client.post(
+            f"/reading-lists/{list_id}/items", json={"document_id": ids[0]}
+        ).json()["id"]
         r = client.delete(f"/reading-lists/{list_id}/items/{item_id}")
         assert r.status_code == 204
         assert client.get(f"/reading-lists/{list_id}/items").json() == []

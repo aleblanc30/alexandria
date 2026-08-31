@@ -2,6 +2,7 @@
 
 This is idempotent and safe to run on an existing database.
 """
+
 from __future__ import annotations
 
 import logging

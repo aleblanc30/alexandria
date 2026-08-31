@@ -3,6 +3,7 @@
 Full-table ``Row`` objects support attribute access (``row.id``) but not
 string indexing (``row["id"]``).  Use ``.mappings()`` for dict-like access.
 """
+
 from collections.abc import Mapping
 from typing import Any
 

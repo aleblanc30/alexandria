@@ -1,4 +1,5 @@
 """Tests for source-vs-archive pending metadata counts."""
+
 import time
 
 import pytest
@@ -79,6 +80,7 @@ def test_probe_cache_disabled_when_ttl_zero(monkeypatch):
 # image as outstanding work pins a phase total the job can never reach, which is
 # what made a metadata sync sit at "8 / 10" forever.
 
+
 def _image_file(path) -> ImageFile:
     PILImage.new("RGB", (40, 30), color="white").save(path)
     return ImageFile(path, path.name, 40, 30, 1000, int(time.time()), {})
@@ -108,7 +110,8 @@ def test_image_corpus_size_excludes_gate_rejections(three_scanned_images, monkey
 
 
 def test_image_counters_ignore_rejections_when_gate_disabled(
-    three_scanned_images, monkeypatch,
+    three_scanned_images,
+    monkeypatch,
 ):
     """With the gate off both passes re-admit every path, so nothing is excluded."""
     monkeypatch.setattr(settings, "image_gate_enabled", False)
@@ -118,7 +121,8 @@ def test_image_counters_ignore_rejections_when_gate_disabled(
 
 
 def test_metadata_job_total_is_reachable_with_rejections(
-    three_scanned_images, monkeypatch,
+    three_scanned_images,
+    monkeypatch,
 ):
     """The total a metadata job pins must equal what the pass can actually persist."""
     from pka.ingestion.image_pipeline import register_images

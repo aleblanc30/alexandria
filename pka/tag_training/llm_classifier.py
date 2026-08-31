@@ -1,4 +1,5 @@
 """One-shot LLM binary classification for tag-training pseudo-labels."""
+
 from __future__ import annotations
 
 import logging
@@ -75,9 +76,7 @@ def random_negative_prompt_samples(session_id: int, *, n: int = 5) -> list[DocSa
     with eng.connect() as con:
         labeled = _session_labeled_doc_ids(con, session_id)
         pool = [
-            r[0]
-            for r in con.execute(sa.select(documents.c.id)).fetchall()
-            if r[0] not in labeled
+            r[0] for r in con.execute(sa.select(documents.c.id)).fetchall() if r[0] not in labeled
         ]
         if not pool:
             return []
@@ -125,8 +124,7 @@ def classify_document_for_tag(
     else:
         prompt += f"- Title: {title}\n"
     prompt += (
-        '\nRespond with ONLY valid JSON: {"label": 0} or {"label": 1}\n'
-        "No markdown, no explanation."
+        '\nRespond with ONLY valid JSON: {"label": 0} or {"label": 1}\nNo markdown, no explanation.'
     )
 
     parsed, err = chat_json(

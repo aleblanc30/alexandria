@@ -1,4 +1,5 @@
 """Tests for card summary text helpers."""
+
 from pka.card_summary import body_excerpt, preprint_card_summary, truncate_summary
 
 

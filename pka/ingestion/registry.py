@@ -1,4 +1,5 @@
 """Source → sync handler registry for ingestion jobs."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -15,8 +16,8 @@ class PhaseSpec:
     ingest pins the corpus up front and reports embedding as its own phase.
     """
 
-    plans_own_phases: bool = False   # ingest sets phase totals as it discovers work
-    tracks_embedding: bool = True    # False when fetch and embed run interleaved
+    plans_own_phases: bool = False  # ingest sets phase totals as it discovers work
+    tracks_embedding: bool = True  # False when fetch and embed run interleaved
 
 
 # Firefox fetches each bookmark over the network and embeds it in the same pass,

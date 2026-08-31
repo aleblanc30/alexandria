@@ -1,4 +1,5 @@
 """Wikipedia MediaWiki API fetch for Firefox bookmark URLs."""
+
 from __future__ import annotations
 
 import asyncio
@@ -142,16 +143,12 @@ async def fetch_via_wikipedia_api(
 
     http_status = resp.status_code
     if http_status >= 400:
-        return FetchResult(
-            doc_id, url, "unfetchable", None, http_status, f"HTTP {http_status}"
-        )
+        return FetchResult(doc_id, url, "unfetchable", None, http_status, f"HTTP {http_status}")
 
     try:
         data = resp.json()
     except ValueError:
-        return FetchResult(
-            doc_id, url, "unfetchable", None, http_status, "invalid json response"
-        )
+        return FetchResult(doc_id, url, "unfetchable", None, http_status, "invalid json response")
 
     text = _extract_page_text(data)
     if not text:

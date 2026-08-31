@@ -20,6 +20,7 @@ callable registered in :data:`_PROVIDERS` under the name used by
 adding one function and one registry entry; nothing in the cascade changes.
 Providers must never raise — :func:`search_synopsis` is called from ingestion.
 """
+
 from __future__ import annotations
 
 import logging
@@ -302,7 +303,8 @@ def search_synopsis(title: str, authors: list[str] | None = None) -> BookSynopsi
         if provider is None:
             log.warning(
                 "Unknown search provider %r; known: %s",
-                name, ", ".join(sorted(_PROVIDERS)),
+                name,
+                ", ".join(sorted(_PROVIDERS)),
             )
             continue
         try:

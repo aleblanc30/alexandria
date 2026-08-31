@@ -4,6 +4,7 @@
 Thin shim — the implementation lives in pka.cli.reddit (run via
 `alexandria reddit` once installed, or `python scripts/run_reddit.py` from the repo).
 """
+
 import sys
 from pathlib import Path
 

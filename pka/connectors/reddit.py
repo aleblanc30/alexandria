@@ -27,6 +27,7 @@ Content handling:
   - link posts expose ``external_url``; the runner queues those for the phase-2
     fetcher (reusing the Firefox fetch machinery).
 """
+
 from __future__ import annotations
 
 import logging
@@ -55,14 +56,14 @@ class RedditConnectorError(RuntimeError):
 
 @dataclass
 class RedditSaved:
-    source_id: str            # reddit fullname, e.g. "t3_abc123" / "t1_def456"
-    kind: str                 # "post" | "comment"
+    source_id: str  # reddit fullname, e.g. "t3_abc123" / "t1_def456"
+    kind: str  # "post" | "comment"
     title: str
-    permalink: str            # canonical reddit thread URL (always present)
+    permalink: str  # canonical reddit thread URL (always present)
     external_url: str | None  # off-reddit target for link posts, else None
-    subreddit: str            # display name, e.g. "MachineLearning"
-    body: str | None          # selftext / comment body (may be None)
-    date_added: int | None    # unix seconds (item creation; Reddit exposes no "saved at")
+    subreddit: str  # display name, e.g. "MachineLearning"
+    body: str | None  # selftext / comment body (may be None)
+    date_added: int | None  # unix seconds (item creation; Reddit exposes no "saved at")
     tags: list[str] = field(default_factory=list)  # checklist-required; unused today
 
     @property
@@ -77,6 +78,7 @@ class RedditSaved:
 
 
 # ── Item mapping ─────────────────────────────────────────────────────────────
+
 
 def _abs_permalink(permalink: object) -> str:
     p = str(permalink or "").strip()
@@ -108,8 +110,8 @@ def _describe(exc: BaseException) -> str:
 
 # -- Private feed loader (no OAuth app) ---------------------------------------
 
-_FEED_PAGE_MAX = 100     # Reddit caps a listing page at 100 items
-_FEED_PAGE_BUDGET = 20   # stop walking ``after`` eventually when limit is None
+_FEED_PAGE_MAX = 100  # Reddit caps a listing page at 100 items
+_FEED_PAGE_BUDGET = 20  # stop walking ``after`` eventually when limit is None
 
 
 def _feed_url(raw: str) -> tuple[str, dict[str, str]]:
@@ -393,6 +395,7 @@ def _atom_entry_to_saved(entry, base_netloc: str) -> RedditSaved | None:
     ``selftext``/``body`` split, so the kind comes from the ``t3_``/``t1_``
     prefix on ``<id>`` and the external target from the ``[link]`` anchor.
     """
+
     def _text(name: str) -> str:
         node = entry.find(f"atom:{name}", _ATOM_NS)
         return (node.text or "").strip() if node is not None and node.text else ""
@@ -409,9 +412,7 @@ def _atom_entry_to_saved(entry, base_netloc: str) -> RedditSaved | None:
     subreddit = (category.get("term") if category is not None else "") or ""
 
     content_node = entry.find("atom:content", _ATOM_NS)
-    body, external = _parse_atom_content(
-        content_node.text if content_node is not None else ""
-    )
+    body, external = _parse_atom_content(content_node.text if content_node is not None else "")
 
     updated = _text("updated") or _text("published")
     date_added = None
@@ -423,8 +424,10 @@ def _atom_entry_to_saved(entry, base_netloc: str) -> RedditSaved | None:
 
     title = _text("title")
     if kind == "comment":
-        title = f'Comment on "{title}"' if title else (
-            f"Comment in r/{subreddit}" if subreddit else "Reddit comment"
+        title = (
+            f'Comment on "{title}"'
+            if title
+            else (f"Comment in r/{subreddit}" if subreddit else "Reddit comment")
         )
 
     return RedditSaved(
@@ -461,8 +464,7 @@ def _parse_atom_entries(xml_text: str, base: str) -> list:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
         raise RedditConnectorError(
-            f"Reddit feed at {_redact(base)} did not return parseable Atom. "
-            f"{_describe(exc)}"
+            f"Reddit feed at {_redact(base)} did not return parseable Atom. {_describe(exc)}"
         ) from exc
     return root.findall("atom:entry", _ATOM_NS)
 
@@ -476,6 +478,7 @@ def _last_entry_fullname(entries: list) -> str:
 
 
 # ── Main loader ──────────────────────────────────────────────────────────────
+
 
 def load_saved(
     limit: int | None = -1,
@@ -572,7 +575,8 @@ def load_saved(
                 log.info(
                     "Incremental sync: reached an already-saved item on page %d; "
                     "stopping after %d new (backfill=True walks the whole feed)",
-                    page + 1, len(saved),
+                    page + 1,
+                    len(saved),
                 )
                 break
             # A server that ignores ``after`` would replay the same page forever.

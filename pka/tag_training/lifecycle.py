@@ -1,4 +1,5 @@
 """Tag training session CRUD, train, accept, and overlay application."""
+
 from __future__ import annotations
 
 import json
@@ -88,14 +89,19 @@ def _upsert_labels(
     }
     updates = [
         {"row_id": existing[did], "label": label, "source": source, "created_at": now}
-        for did, label in deduped.items() if did in existing
+        for did, label in deduped.items()
+        if did in existing
     ]
     inserts = [
         {
-            "session_id": session_id, "document_id": did,
-            "label": label, "source": source, "created_at": now,
+            "session_id": session_id,
+            "document_id": did,
+            "label": label,
+            "source": source,
+            "created_at": now,
         }
-        for did, label in deduped.items() if did not in existing
+        for did, label in deduped.items()
+        if did not in existing
     ]
     if updates:
         con.execute(
@@ -201,11 +207,15 @@ def create_session_from_source_tag(source_tag: str, target_tag: str) -> dict[str
 def get_session(session_id: int) -> dict[str, Any]:
     eng = get_engine()
     with eng.connect() as con:
-        row = con.execute(
-            sa.select(tag_training_sessions).where(
-                tag_training_sessions.c.session_id == session_id
+        row = (
+            con.execute(
+                sa.select(tag_training_sessions).where(
+                    tag_training_sessions.c.session_id == session_id
+                )
             )
-        ).mappings().fetchone()
+            .mappings()
+            .fetchone()
+        )
         if not row:
             raise LookupError(f"Session {session_id} not found")
 
@@ -261,8 +271,9 @@ def list_sessions() -> list[dict[str, Any]]:
     eng = get_engine()
     with eng.connect() as con:
         rows = con.execute(
-            sa.select(tag_training_sessions.c.session_id)
-            .order_by(tag_training_sessions.c.session_id.desc())
+            sa.select(tag_training_sessions.c.session_id).order_by(
+                tag_training_sessions.c.session_id.desc()
+            )
         ).fetchall()
     return [get_session(r[0]) for r in rows]
 
@@ -312,7 +323,11 @@ def _set_learned_overlay(
     # Delete-then-insert so confidence reflects the latest score.
     _clear_learned_overlay(con, doc_id, tag)
     insert_overlay_tags(
-        con, [doc_id], tag, TagOrigin.LEARNED, confidence=float(confidence),
+        con,
+        [doc_id],
+        tag,
+        TagOrigin.LEARNED,
+        confidence=float(confidence),
     )
 
 
@@ -379,7 +394,12 @@ def apply_learned_tags_for_document(doc_id: int) -> int:
             params = _parse_parameters(params_raw)
             threshold = float(params.get("threshold", 0.5))
             applied += _apply_model_to_documents(
-                con, tag, model_blob, [doc_id], threshold, now,
+                con,
+                tag,
+                model_blob,
+                [doc_id],
+                threshold,
+                now,
             )
     if applied:
         log.debug("Applied %d learned tag(s) to document %d", applied, doc_id)
@@ -437,8 +457,9 @@ def _fetch_model_row(session_id: int):
     eng = get_engine()
     with eng.connect() as con:
         return con.execute(
-            sa.select(tag_training_sessions.c.model_blob, tag_training_sessions.c.parameters)
-            .where(tag_training_sessions.c.session_id == session_id)
+            sa.select(tag_training_sessions.c.model_blob, tag_training_sessions.c.parameters).where(
+                tag_training_sessions.c.session_id == session_id
+            )
         ).fetchone()
 
 
@@ -504,7 +525,9 @@ def apply_pseudo_labels_llm(
 
     seed_samples = seed_collection_samples(session_id, n_max=seed_max)
     if not seed_samples:
-        raise ValueError("Need at least one seed document in the collection for LLM pseudo-labeling")
+        raise ValueError(
+            "Need at least one seed document in the collection for LLM pseudo-labeling"
+        )
 
     neg_samples, neg_source = negative_prompt_samples(session_id, n_max=neg_n)
 
@@ -595,8 +618,9 @@ def accept_session(session_id: int) -> dict[str, Any]:
     eng = get_engine()
     with eng.begin() as con:
         row = con.execute(
-            sa.select(tag_training_sessions.c.model_blob, tag_training_sessions.c.tag)
-            .where(tag_training_sessions.c.session_id == session_id)
+            sa.select(tag_training_sessions.c.model_blob, tag_training_sessions.c.tag).where(
+                tag_training_sessions.c.session_id == session_id
+            )
         ).fetchone()
         if not row or not row[0]:
             raise ValueError("No model on session")

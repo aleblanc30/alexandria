@@ -1,4 +1,5 @@
 """Config parsing — ``image_dirs`` env forms and the ``.secrets`` credential file."""
+
 import json
 import os
 
@@ -119,9 +120,7 @@ class TestSecretsFileSource:
 
     def test_unknown_setting_is_ignored(self, secrets_file, monkeypatch):
         monkeypatch.delenv("ALEXANDRIA_OPENROUTER_API_KEY", raising=False)
-        secrets_file(
-            "SECRET_ALEXANDRIA_NOT_A_SETTING=x\nSECRET_ALEXANDRIA_OPENROUTER_API_KEY=ok\n"
-        )
+        secrets_file("SECRET_ALEXANDRIA_NOT_A_SETTING=x\nSECRET_ALEXANDRIA_OPENROUTER_API_KEY=ok\n")
         assert Settings(_env_file=None).openrouter_api_key == "ok"
 
     def test_missing_file_falls_back_to_defaults(self, tmp_path, monkeypatch):

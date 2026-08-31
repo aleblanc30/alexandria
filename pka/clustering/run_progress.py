@@ -1,4 +1,5 @@
 """In-memory cancel coordination for background clustering runs."""
+
 from __future__ import annotations
 
 import threading

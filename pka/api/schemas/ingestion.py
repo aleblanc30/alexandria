@@ -1,4 +1,5 @@
 """Per-source ingestion path models."""
+
 from pydantic import BaseModel
 
 

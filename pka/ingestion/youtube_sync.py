@@ -5,6 +5,7 @@ embed. ``pending`` and corpus totals are computed from the videos loaded for the
 job, so status polling never touches the YouTube Data API (see
 ``pending_metadata`` where YouTube returns 0 for the network-free counts).
 """
+
 import logging
 
 from pka.constants import Source
@@ -71,7 +72,10 @@ def sync_youtube_ingest(
         return {"embed": dict(_EMPTY_EMBED)}
 
     stats = ingest_youtube_embed(
-        videos, skip_existing=skip_existing, dry_run=dry_run, progress_key=key,
+        videos,
+        skip_existing=skip_existing,
+        dry_run=dry_run,
+        progress_key=key,
     )
     log.info("YouTube embed: %s", stats)
     return {"embed": stats, "stopped": stats.get("stopped")}
@@ -85,7 +89,8 @@ def sync_youtube(
     key = progress_key or "youtube"
     meta = sync_youtube_metadata(progress_key=key, dry_run=dry_run)
     return run_full_sync(
-        meta, lambda: sync_youtube_ingest(progress_key=key, dry_run=dry_run),
+        meta,
+        lambda: sync_youtube_ingest(progress_key=key, dry_run=dry_run),
     )
 
 

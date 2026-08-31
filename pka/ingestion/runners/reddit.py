@@ -6,6 +6,7 @@ available" per DESIGN.md §3 — and fetches external link posts through the sha
 fetcher. This mirrors the Zotero metadata/embed split; link-post fetching reuses
 the Firefox machinery.
 """
+
 from __future__ import annotations
 
 import logging
@@ -177,7 +178,11 @@ def embed_fetched_text(
         # Summarise the *body*, not the composed blob — the title and card
         # summary are already their own signal.
         summary_chunks = attach_summary_chunk(
-            doc_id, text, Source.REDDIT, title=title or "", dry_run=dry_run,
+            doc_id,
+            text,
+            Source.REDDIT,
+            title=title or "",
+            dry_run=dry_run,
         )
         if not dry_run and card_summary is None:
             update_card_summary(doc_id, summary)
@@ -255,6 +260,8 @@ def ingest_reddit_embed(
         process=_process,
         progress_key=progress_key,
         on_error_log=lambda saved, exc: log.exception(
-            "Reddit embed %s failed: %s", saved.source_id, exc,
+            "Reddit embed %s failed: %s",
+            saved.source_id,
+            exc,
         ),
     )

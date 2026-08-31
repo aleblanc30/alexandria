@@ -1,4 +1,5 @@
 """Pydantic schemas for tag training API."""
+
 from typing import Any
 
 from pydantic import BaseModel, Field

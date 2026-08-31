@@ -4,6 +4,7 @@ The only module under ``progress/`` allowed to touch the database or the source
 connectors. It reads counts and hands them to the tracker; it never reaches into
 state itself.
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,11 +36,14 @@ def _pending_metadata_count(src: str) -> int:
 
 
 def _embedded_doc_count(con, src: str) -> int:
-    return con.execute(
-        sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))
-        .select_from(chunks.join(documents, chunks.c.document_id == documents.c.id))
-        .where(documents.c.source == src)
-    ).scalar() or 0
+    return (
+        con.execute(
+            sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))
+            .select_from(chunks.join(documents, chunks.c.document_id == documents.c.id))
+            .where(documents.c.source == src)
+        ).scalar()
+        or 0
+    )
 
 
 def _fetch_status_counts(con, src: str) -> dict[str, int]:
@@ -98,14 +102,15 @@ def get_phase_baselines(
 
     with engine.connect() as con:
         if src == Source.IMAGE:
-            archive_count = con.execute(
-                sa.select(sa.func.count()).select_from(images)
-            ).scalar() or 0
-            embedded = con.execute(
-                sa.select(sa.func.count()).select_from(images).where(
-                    _image_embedded()
-                )
-            ).scalar() or 0
+            archive_count = (
+                con.execute(sa.select(sa.func.count()).select_from(images)).scalar() or 0
+            )
+            embedded = (
+                con.execute(
+                    sa.select(sa.func.count()).select_from(images).where(_image_embedded())
+                ).scalar()
+                or 0
+            )
             corpus = _display_corpus_total(src, archive_count)
             return (
                 {"metadata": corpus, "fetching": corpus, "embedding": corpus},
@@ -113,10 +118,12 @@ def get_phase_baselines(
                 None,
             )
 
-        doc_count = con.execute(
-            sa.select(sa.func.count()).select_from(documents)
-            .where(documents.c.source == src)
-        ).scalar() or 0
+        doc_count = (
+            con.execute(
+                sa.select(sa.func.count()).select_from(documents).where(documents.c.source == src)
+            ).scalar()
+            or 0
+        )
 
         embedded = _embedded_doc_count(con, src)
         corpus = _display_corpus_total(src, doc_count)
@@ -184,12 +191,13 @@ def source_counts(engine, src: str) -> dict:
     """
     with engine.connect() as con:
         if src == Source.IMAGE:
-            registered = con.execute(
-                sa.select(sa.func.count()).select_from(images)
-            ).scalar() or 0
-            embedded = con.execute(
-                sa.select(sa.func.count()).select_from(images).where(_image_embedded())
-            ).scalar() or 0
+            registered = con.execute(sa.select(sa.func.count()).select_from(images)).scalar() or 0
+            embedded = (
+                con.execute(
+                    sa.select(sa.func.count()).select_from(images).where(_image_embedded())
+                ).scalar()
+                or 0
+            )
             fetch_stats = {
                 "registered": registered,
                 "embedded": embedded,
@@ -218,12 +226,8 @@ def _source_unavailable() -> dict[str, str | None]:
 def build_ingestion_status(engine) -> dict:
     """Aggregate counts for ``GET /ingestion/status``."""
     with engine.connect() as con:
-        doc_total = con.execute(
-            sa.select(sa.func.count()).select_from(documents)
-        ).scalar() or 0
-        image_total = con.execute(
-            sa.select(sa.func.count()).select_from(images)
-        ).scalar() or 0
+        doc_total = con.execute(sa.select(sa.func.count()).select_from(documents)).scalar() or 0
+        image_total = con.execute(sa.select(sa.func.count()).select_from(images)).scalar() or 0
         by_source: dict[str, int] = {}
         pending_metadata_by_source: dict[str, int] = {}
         fetch_by_source: dict[str, dict[str, int]] = {}
@@ -231,11 +235,12 @@ def build_ingestion_status(engine) -> dict:
             pending_metadata_by_source[src] = _pending_metadata_count(src)
             if src == Source.IMAGE:
                 n = image_total
-                embedded = con.execute(
-                    sa.select(sa.func.count()).select_from(images).where(
-                        _image_embedded()
-                    )
-                ).scalar() or 0
+                embedded = (
+                    con.execute(
+                        sa.select(sa.func.count()).select_from(images).where(_image_embedded())
+                    ).scalar()
+                    or 0
+                )
                 by_source[src] = n
                 fetch_by_source[src] = {
                     "registered": n,
@@ -243,18 +248,24 @@ def build_ingestion_status(engine) -> dict:
                     "pending": max(0, n - embedded),
                 }
             else:
-                n = con.execute(
-                    sa.select(sa.func.count()).select_from(documents)
-                    .where(documents.c.source == src)
-                ).scalar() or 0
+                n = (
+                    con.execute(
+                        sa.select(sa.func.count())
+                        .select_from(documents)
+                        .where(documents.c.source == src)
+                    ).scalar()
+                    or 0
+                )
                 by_source[src] = n
                 fetch_by_source[src] = _doc_source_stats(con, src)
         unfetchable = con.execute(
-            sa.select(sa.func.count()).select_from(documents)
+            sa.select(sa.func.count())
+            .select_from(documents)
             .where(documents.c.fetch_status == str(FetchStatus.UNFETCHABLE))
         ).scalar()
         pending = con.execute(
-            sa.select(sa.func.count()).select_from(documents)
+            sa.select(sa.func.count())
+            .select_from(documents)
             .where(documents.c.fetch_status == str(FetchStatus.PENDING))
         ).scalar()
     return {

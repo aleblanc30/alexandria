@@ -5,6 +5,7 @@ Usage::
     alexandria purge-source firefox
     alexandria purge-source zotero --dry-run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -63,14 +64,18 @@ def _purge_documents(source: str, *, dry_run: bool = False) -> dict[str, int]:
                 sa.select(documents.c.id).where(documents.c.source == source)
             ).fetchall()
         ]
-        vector_ids = [
-            r[0]
-            for r in con.execute(
-                sa.select(chunks.c.vector_id)
-                .where(chunks.c.document_id.in_(doc_ids))
-                .where(chunks.c.vector_id.isnot(None))
-            ).fetchall()
-        ] if doc_ids else []
+        vector_ids = (
+            [
+                r[0]
+                for r in con.execute(
+                    sa.select(chunks.c.vector_id)
+                    .where(chunks.c.document_id.in_(doc_ids))
+                    .where(chunks.c.vector_id.isnot(None))
+                ).fetchall()
+            ]
+            if doc_ids
+            else []
+        )
 
     counts: dict[str, int] = {"documents": len(doc_ids), "vectors": len(vector_ids)}
     if not doc_ids:
@@ -79,11 +84,14 @@ def _purge_documents(source: str, *, dry_run: bool = False) -> dict[str, int]:
     if dry_run:
         with eng.connect() as con:
             for tbl in _CHILD_TABLES:
-                counts[tbl.name] = con.execute(
-                    sa.select(sa.func.count())
-                    .select_from(tbl)
-                    .where(tbl.c.document_id.in_(doc_ids))
-                ).scalar() or 0
+                counts[tbl.name] = (
+                    con.execute(
+                        sa.select(sa.func.count())
+                        .select_from(tbl)
+                        .where(tbl.c.document_id.in_(doc_ids))
+                    ).scalar()
+                    or 0
+                )
         return counts
 
     if vector_ids:
@@ -114,15 +122,13 @@ def _purge_images(*, dry_run: bool = False) -> dict[str, int]:
     eng = get_engine()
     with eng.connect() as con:
         image_ids = [r[0] for r in con.execute(sa.select(images.c.id)).fetchall()]
-        rejection_count = con.execute(
-            sa.select(sa.func.count()).select_from(image_rejections)
-        ).scalar() or 0
+        rejection_count = (
+            con.execute(sa.select(sa.func.count()).select_from(image_rejections)).scalar() or 0
+        )
         clip_vector_ids = [
             r[0]
             for r in con.execute(
-                sa.select(images.c.clip_vector_id).where(
-                    images.c.clip_vector_id.isnot(None)
-                )
+                sa.select(images.c.clip_vector_id).where(images.c.clip_vector_id.isnot(None))
             ).fetchall()
         ]
 
@@ -143,11 +149,14 @@ def _purge_images(*, dry_run: bool = False) -> dict[str, int]:
 
     if dry_run:
         with eng.connect() as con:
-            counts["image_tags"] = con.execute(
-                sa.select(sa.func.count())
-                .select_from(image_tags)
-                .where(image_tags.c.image_id.in_(image_ids))
-            ).scalar() or 0
+            counts["image_tags"] = (
+                con.execute(
+                    sa.select(sa.func.count())
+                    .select_from(image_tags)
+                    .where(image_tags.c.image_id.in_(image_ids))
+                ).scalar()
+                or 0
+            )
         return counts
 
     if clip_vector_ids:

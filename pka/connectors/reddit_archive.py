@@ -34,6 +34,7 @@ Nothing in this module is allowed to break a sync. Every write is best-effort
 and reports failure through the log — an archive that took ingestion down with
 it would defeat its own purpose.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -66,6 +67,7 @@ def _digest(payload: dict) -> str:
 
 
 # ── Cumulative log ───────────────────────────────────────────────────────────
+
 
 def read_records(root: Path | None = None) -> list[dict]:
     """Every line of ``saved.jsonl``, oldest first. Unreadable lines are skipped.
@@ -115,7 +117,9 @@ def _known_digests(root: Path) -> dict[str, str]:
 
 
 def record_items(
-    items: list[dict], when: datetime | None = None, root: Path | None = None,
+    items: list[dict],
+    when: datetime | None = None,
+    root: Path | None = None,
 ) -> dict:
     """Append the items that are new or changed to ``saved.jsonl``.
 
@@ -141,10 +145,13 @@ def record_items(
                 continue
             stats["changed" if previous else "new"] += 1
             known[source_id] = digest
-            lines.append(json.dumps(
-                {"archived_at": when.isoformat(), "digest": digest, "item": item},
-                ensure_ascii=False, default=str,
-            ))
+            lines.append(
+                json.dumps(
+                    {"archived_at": when.isoformat(), "digest": digest, "item": item},
+                    ensure_ascii=False,
+                    default=str,
+                )
+            )
         if lines:
             directory.mkdir(parents=True, exist_ok=True)
             with (directory / _SAVED_LOG).open("a", encoding="utf-8", newline="\n") as fh:
@@ -155,12 +162,15 @@ def record_items(
 
     log.info(
         "Reddit archive: %d new, %d changed, %d unchanged",
-        stats["new"], stats["changed"], stats["unchanged"],
+        stats["new"],
+        stats["changed"],
+        stats["unchanged"],
     )
     return stats
 
 
 # ── One poll ─────────────────────────────────────────────────────────────────
+
 
 class PollArchive:
     """The snapshot directory for a single walk of the feed.

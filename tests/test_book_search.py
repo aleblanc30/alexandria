@@ -1,4 +1,5 @@
 """Third rung of the book-synopsis ladder (DESIGN.md §3.2)."""
+
 from __future__ import annotations
 
 import httpx
@@ -38,9 +39,7 @@ def _respond(monkeypatch, payload, status=200):
     def fake_get(url, params=None, **kwargs):
         captured["url"] = url
         captured["params"] = params
-        return httpx.Response(
-            status, json=payload, request=httpx.Request("GET", url)
-        )
+        return httpx.Response(status, json=payload, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(bs.httpx, "get", fake_get)
     return captured
@@ -159,9 +158,7 @@ class TestLadderIntegration:
     def test_third_rung_skipped_when_openlibrary_hits(self, monkeypatch, search_on):
         pages = {
             "/search.json": {
-                "docs": [
-                    {"key": "/works/OL1W", "title": "Dune", "author_name": ["Frank Herbert"]}
-                ]
+                "docs": [{"key": "/works/OL1W", "title": "Dune", "author_name": ["Frank Herbert"]}]
             },
             "/works/OL1W.json": {"description": "From the catalogue."},
         }
@@ -205,8 +202,7 @@ class TestProviderChain:
 
         def second(title, authors):
             order.append("brave")
-            return ol.BookSynopsis(title=title, description="From the web.",
-                                   resolved_by="brave")
+            return ol.BookSynopsis(title=title, description="From the web.", resolved_by="brave")
 
         monkeypatch.setitem(bs._PROVIDERS, "google_books", first)
         monkeypatch.setitem(bs._PROVIDERS, "brave", second)
@@ -219,13 +215,17 @@ class TestProviderChain:
         order = []
 
         monkeypatch.setitem(
-            bs._PROVIDERS, "google_books",
-            lambda t, a: (order.append("google_books")
-                          or ol.BookSynopsis(title=t, description="Catalogue.",
-                                             resolved_by="google_books")),
+            bs._PROVIDERS,
+            "google_books",
+            lambda t, a: (
+                order.append("google_books")
+                or ol.BookSynopsis(title=t, description="Catalogue.", resolved_by="google_books")
+            ),
         )
         monkeypatch.setitem(
-            bs._PROVIDERS, "brave", lambda t, a: order.append("brave"),
+            bs._PROVIDERS,
+            "brave",
+            lambda t, a: order.append("brave"),
         )
         out = bs.search_synopsis("Dune")
         assert out is not None and out.resolved_by == "google_books"
@@ -234,9 +234,9 @@ class TestProviderChain:
     def test_one_bad_provider_does_not_stop_the_chain(self, monkeypatch, search_on):
         monkeypatch.setattr(cfg, "search_provider", "nonsense,brave")
         monkeypatch.setitem(
-            bs._PROVIDERS, "brave",
-            lambda t, a: ol.BookSynopsis(title=t, description="From the web.",
-                                         resolved_by="brave"),
+            bs._PROVIDERS,
+            "brave",
+            lambda t, a: ol.BookSynopsis(title=t, description="From the web.", resolved_by="brave"),
         )
         out = bs.search_synopsis("Dune")
         assert out is not None and out.resolved_by == "brave"
@@ -249,9 +249,9 @@ class TestProviderChain:
 
         monkeypatch.setitem(bs._PROVIDERS, "google_books", boom)
         monkeypatch.setitem(
-            bs._PROVIDERS, "brave",
-            lambda t, a: ol.BookSynopsis(title=t, description="From the web.",
-                                         resolved_by="brave"),
+            bs._PROVIDERS,
+            "brave",
+            lambda t, a: ol.BookSynopsis(title=t, description="From the web.", resolved_by="brave"),
         )
         assert bs.search_synopsis("Dune").resolved_by == "brave"
 
@@ -302,8 +302,10 @@ class TestBrave:
         assert bs.search_synopsis("Dune", ["Frank Herbert"]) is None
 
     def test_author_may_appear_in_the_snippet(self, monkeypatch, brave_on):
-        _respond(monkeypatch, self._web(title="Dune | SomePublisher",
-                                        desc="Frank Herbert's desert epic."))
+        _respond(
+            monkeypatch,
+            self._web(title="Dune | SomePublisher", desc="Frank Herbert's desert epic."),
+        )
         assert bs.search_synopsis("Dune", ["Frank Herbert"]) is not None
 
     def test_empty_snippet_skipped(self, monkeypatch, brave_on):

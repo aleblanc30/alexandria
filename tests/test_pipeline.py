@@ -22,23 +22,33 @@ def fresh_db():
 
 def _make_zotero_item(**overrides) -> ZoteroItem:
     defaults = dict(
-        source_id="Z001", title="Test Paper",
+        source_id="Z001",
+        title="Test Paper",
         authors=["Alice"],
         abstract=(
             "An abstract with enough words to form a chunk that exceeds the "
             "minimum character threshold for embedding and persistence."
         ),
-        year=2023, doi="10.1/test", url=None, item_type="journalArticle",
-        collections=["CS"], tags=["test-tag"], pdf_path=None, date_added=1700000000,
+        year=2023,
+        doi="10.1/test",
+        url=None,
+        item_type="journalArticle",
+        collections=["CS"],
+        tags=["test-tag"],
+        pdf_path=None,
+        date_added=1700000000,
     )
     return ZoteroItem(**{**defaults, **overrides})
 
 
 def _make_firefox_bookmark(**overrides) -> FirefoxBookmark:
     defaults = dict(
-        source_id="F001", url="https://example.com",
-        title="Example", folder_path="Research/Web",
-        tags=["web"], date_added=1700000000,
+        source_id="F001",
+        url="https://example.com",
+        title="Example",
+        folder_path="Research/Web",
+        tags=["web"],
+        date_added=1700000000,
     )
     return FirefoxBookmark(**{**defaults, **overrides})
 
@@ -70,9 +80,11 @@ class TestIngestZoteroItems:
             ).fetchone()
             assert row[0] == "journalArticle"
             tags = {
-                r[0] for r in con.execute(
+                r[0]
+                for r in con.execute(
                     sa.select(overlay_tags.c.tag).where(
-                        overlay_tags.c.document_id == con.execute(
+                        overlay_tags.c.document_id
+                        == con.execute(
                             sa.select(documents.c.id).where(documents.c.source_id == "Z001")
                         ).scalar()
                     )
@@ -89,10 +101,9 @@ class TestIngestZoteroItems:
                 sa.select(documents.c.id).where(documents.c.source_id == "Z001")
             ).scalar()
             tags = {
-                r[0] for r in con.execute(
-                    sa.select(overlay_tags.c.tag).where(
-                        overlay_tags.c.document_id == doc_id
-                    )
+                r[0]
+                for r in con.execute(
+                    sa.select(overlay_tags.c.tag).where(overlay_tags.c.document_id == doc_id)
                 ).fetchall()
             }
         assert tags == {"academic", "preprint"}
@@ -116,7 +127,7 @@ class TestIngestZoteroItems:
         ingest_zotero_items([_make_zotero_item()])
         first_call_count = col.upsert.call_count
         ingest_zotero_items([_make_zotero_item()], skip_existing=True)
-        assert col.upsert.call_count == first_call_count   # no new upserts
+        assert col.upsert.call_count == first_call_count  # no new upserts
 
     def test_dry_run_skips_chroma_and_chunks(self, mock_chroma):
         _, col = mock_chroma
@@ -229,10 +240,9 @@ class TestIngestFirefoxBookmarks:
                 sa.select(documents.c.id).where(documents.c.source_id == "F001")
             ).scalar()
             tags = {
-                r[0] for r in con.execute(
-                    sa.select(overlay_tags.c.tag).where(
-                        overlay_tags.c.document_id == doc_id
-                    )
+                r[0]
+                for r in con.execute(
+                    sa.select(overlay_tags.c.tag).where(overlay_tags.c.document_id == doc_id)
                 ).fetchall()
             }
         assert tags == {"academic", "preprint"}
@@ -246,9 +256,9 @@ class TestIngestFirefoxBookmarks:
         assert second["skipped"] == 1
         with get_engine().connect() as con:
             count = con.execute(
-                sa.select(sa.func.count()).select_from(documents).where(
-                    documents.c.source == "firefox"
-                )
+                sa.select(sa.func.count())
+                .select_from(documents)
+                .where(documents.c.source == "firefox")
             ).scalar()
         assert count == 1
 
@@ -258,16 +268,19 @@ class TestIngestFetchedTexts:
         doc_id = __import__("pka.db.queries", fromlist=["upsert_document"]).upsert_document(
             "firefox", "F002", "Page", "https://x.com", None
         )
-        ingest_fetched_texts({
-            doc_id: (
-                "This is fetched content. It has multiple sentences with enough "
-                "length to exceed the minimum chunk size for embedding."
-            ),
-        })
+        ingest_fetched_texts(
+            {
+                doc_id: (
+                    "This is fetched content. It has multiple sentences with enough "
+                    "length to exceed the minimum chunk size for embedding."
+                ),
+            }
+        )
         assert document_has_chunks(doc_id)
 
     def test_dry_run_produces_no_chunks(self, mock_chroma):
         from pka.db.queries import upsert_document as ud
+
         doc_id = ud("firefox", "F003", "P", "https://y.com", None)
         ingest_fetched_texts(
             {doc_id: "Enough text to chunk. More sentences follow. And another one."},
@@ -312,7 +325,11 @@ class TestFetchedTextEnrichment:
         from pka.db.queries import upsert_document
 
         return upsert_document(
-            "firefox", source_id, title, f"https://example.com/{source_id}", None,
+            "firefox",
+            source_id,
+            title,
+            f"https://example.com/{source_id}",
+            None,
         )
 
     def test_title_embedded_and_in_chunk_metadata(self, mock_chroma):
@@ -341,8 +358,7 @@ class TestFetchedTextEnrichment:
         assert outcome["processed"] and outcome["chunks"] == 1
         with get_engine().connect() as con:
             n_chunks = con.execute(
-                sa.select(sa.func.count()).select_from(chunks)
-                .where(chunks.c.document_id == doc_id)
+                sa.select(sa.func.count()).select_from(chunks).where(chunks.c.document_id == doc_id)
             ).scalar()
             text, embedding = con.execute(
                 sa.select(chunks.c.text, documents.c.doc_embedding)
@@ -373,15 +389,17 @@ class TestFetchedTextEnrichment:
         doc_id = self._new_doc("F103", "Old bookmark title")
         body = "Paper body text long enough to survive the minimum chunk filter here."
         # The arXiv/bioRxiv/Amazon handlers overwrite documents.title on persist.
-        _persist_fetch_result(FetchResult(
-            doc_id,
-            "https://arxiv.org/abs/2301.00001",
-            str(FetchStatus.FETCHED),
-            body,
-            200,
-            None,
-            title="Attention Is All You Need Again",
-        ))
+        _persist_fetch_result(
+            FetchResult(
+                doc_id,
+                "https://arxiv.org/abs/2301.00001",
+                str(FetchStatus.FETCHED),
+                body,
+                200,
+                None,
+                title="Attention Is All You Need Again",
+            )
+        )
         embed_fetched_text(doc_id, body, skip_existing=False)
 
         records = self._records(store, doc_id)
@@ -393,9 +411,7 @@ class TestFetchedTextEnrichment:
         import pka.ingestion.runners.firefox as firefox_runner
 
         store, _ = mock_chroma
-        doc_ids = {
-            self._new_doc(f"F11{i}", f"Bookmark title {i}"): i for i in range(3)
-        }
+        doc_ids = {self._new_doc(f"F11{i}", f"Bookmark title {i}"): i for i in range(3)}
         calls: list[list[int]] = []
         real = firefox_runner.document_titles
 
@@ -404,13 +420,15 @@ class TestFetchedTextEnrichment:
             return real(ids)
 
         monkeypatch.setattr(firefox_runner, "document_titles", _spy)
-        ingest_fetched_texts({
-            doc_id: (
-                "Body text with several sentences. It is long enough to chunk "
-                "without help from the fallback path in this test case."
-            )
-            for doc_id in doc_ids
-        })
+        ingest_fetched_texts(
+            {
+                doc_id: (
+                    "Body text with several sentences. It is long enough to chunk "
+                    "without help from the fallback path in this test case."
+                )
+                for doc_id in doc_ids
+            }
+        )
 
         assert len(calls) == 1
         assert sorted(calls[0]) == sorted(doc_ids)
@@ -440,10 +458,20 @@ class TestPipelineStop:
         epub = tmp_path / "book.epub"
         epub.write_bytes(b"PK")
         book = CalibreBook(
-            source_id="B1", title="Book", authors=["A"], description="Desc",
-            publisher=None, series=None, series_index=None, year=2020, isbn=None,
-            tags=[], formats=["EPUB"], preferred_path=epub,
-            date_added=1700000000, rating=None,
+            source_id="B1",
+            title="Book",
+            authors=["A"],
+            description="Desc",
+            publisher=None,
+            series=None,
+            series_index=None,
+            year=2020,
+            isbn=None,
+            tags=[],
+            formats=["EPUB"],
+            preferred_path=epub,
+            date_added=1700000000,
+            rating=None,
         )
         ingest_calibre_books([book])
 
@@ -453,6 +481,7 @@ class TestPipelineStop:
 
         import pka.ingestion.runners.calibre as calibre_runner
         from pka.ingestion.book_extractor import BookExtraction
+
         original = calibre_runner.extract_book_report
         calibre_runner.extract_book_report = lambda p, **kw: BookExtraction(
             [{"title": "Ch", "text": "Section one. " * 20, "index": 0}],

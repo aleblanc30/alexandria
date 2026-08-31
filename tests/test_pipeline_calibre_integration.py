@@ -3,6 +3,7 @@
 Verifies that the metadata pass and the full-text pass produce non-colliding,
 strictly increasing ``chunk_index`` values.
 """
+
 import pytest
 import sqlalchemy as sa
 
@@ -21,13 +22,20 @@ def fresh_db():
 def _make_book(**overrides) -> CalibreBook:
     sid = overrides.pop("source_id", "B001")
     defaults = dict(
-        source_id=sid, title="Test Book",
+        source_id=sid,
+        title="Test Book",
         authors=["Author A"],
         description="A solid description with multiple sentences. Enough to chunk.",
-        publisher="Pub", series=None, series_index=None,
-        year=2023, isbn="ISBN001", tags=["tag1"],
-        formats=["EPUB"], preferred_path=None,
-        date_added=1700000000, rating=8,
+        publisher="Pub",
+        series=None,
+        series_index=None,
+        year=2023,
+        isbn="ISBN001",
+        tags=["tag1"],
+        formats=["EPUB"],
+        preferred_path=None,
+        date_added=1700000000,
+        rating=8,
     )
     return CalibreBook(**{**defaults, **overrides})
 
@@ -60,7 +68,8 @@ def test_metadata_pass_embeds_title_when_body_too_short(mock_chroma):
             sa.select(documents.c.id).where(documents.c.source_id == "SHORT")
         ).scalar()
         chunk_texts = [
-            r[0] for r in con.execute(
+            r[0]
+            for r in con.execute(
                 sa.select(chunks.c.text).where(chunks.c.document_id == doc_id)
             ).fetchall()
         ]
@@ -70,7 +79,9 @@ def test_metadata_pass_embeds_title_when_body_too_short(mock_chroma):
 
 
 def test_fulltext_pass_offsets_chunk_indices(
-    mock_chroma, tmp_path, monkeypatch,
+    mock_chroma,
+    tmp_path,
+    monkeypatch,
 ):
     from pka.ingestion.runners.calibre import ingest_calibre_books, ingest_calibre_fulltext
 
@@ -82,14 +93,12 @@ def test_fulltext_pass_offsets_chunk_indices(
     # Mock fulltext extractor to return two sections
     monkeypatch.setattr(
         "pka.ingestion.runners.calibre.extract_book_report",
-        lambda p, **kw: BookExtraction([
-            {"title": "Ch1",
-             "text":  "Sentence one. Sentence two. Sentence three.",
-             "index": 0},
-            {"title": "Ch2",
-             "text":  "Another section. With more text. And more.",
-             "index": 1},
-        ]),
+        lambda p, **kw: BookExtraction(
+            [
+                {"title": "Ch1", "text": "Sentence one. Sentence two. Sentence three.", "index": 0},
+                {"title": "Ch2", "text": "Another section. With more text. And more.", "index": 1},
+            ]
+        ),
     )
     ingest_calibre_fulltext([book])
 
@@ -128,13 +137,12 @@ def test_long_tags_bundled_into_note_and_dropped_from_tags(mock_chroma):
 
     with get_engine().connect() as con:
         doc_id, note = con.execute(
-            sa.select(documents.c.id, documents.c.note)
-            .where(documents.c.source_id == "NOTE1")
+            sa.select(documents.c.id, documents.c.note).where(documents.c.source_id == "NOTE1")
         ).one()
         stored_tags = [
-            r[0] for r in con.execute(
-                sa.select(source_tags.c.tag_string)
-                .where(source_tags.c.document_id == doc_id)
+            r[0]
+            for r in con.execute(
+                sa.select(source_tags.c.tag_string).where(source_tags.c.document_id == doc_id)
             ).fetchall()
         ]
 
@@ -161,14 +169,17 @@ class TestCalibreStructuredMetadata:
         from pka.ingestion.runners.calibre import ingest_calibre_metadata
 
         book = _make_book(
-            source_id="META1", isbn="978-0-13-235088-4", year=2008,
+            source_id="META1",
+            isbn="978-0-13-235088-4",
+            year=2008,
             authors=["Robert C. Martin"],
         )
         ingest_calibre_metadata([book])
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(documents.c.isbn, documents.c.year, documents.c.authors_json)
-                .where(documents.c.source_id == "META1")
+                sa.select(documents.c.isbn, documents.c.year, documents.c.authors_json).where(
+                    documents.c.source_id == "META1"
+                )
             ).one()
         assert row[0] == "9780132350884"
         assert row[1] == 2008
@@ -180,14 +191,17 @@ class TestCalibreStructuredMetadata:
         from pka.ingestion.runners.calibre import ingest_calibre_books
 
         book = _make_book(
-            source_id="EMB1", isbn="978-0-13-235088-4", year=2008,
+            source_id="EMB1",
+            isbn="978-0-13-235088-4",
+            year=2008,
             authors=["Robert C. Martin"],
         )
         ingest_calibre_books([book])
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(documents.c.isbn, documents.c.year, documents.c.authors_json)
-                .where(documents.c.source_id == "EMB1")
+                sa.select(documents.c.isbn, documents.c.year, documents.c.authors_json).where(
+                    documents.c.source_id == "EMB1"
+                )
             ).one()
         assert row[0] == "9780132350884"
         assert row[1] == 2008
@@ -237,18 +251,23 @@ class TestCalibreEnrichment:
     @pytest.fixture
     def lookup_on(self, monkeypatch):
         from pka.config import settings as cfg
+
         monkeypatch.setattr(cfg, "external_lookup_enabled", True)
 
     @pytest.fixture
     def fake_lookup(self, monkeypatch):
         from pka.ingestion.openlibrary import BookSynopsis
+
         calls = []
 
         def _lookup(title="", authors=None, isbn=None):
             calls.append({"title": title, "authors": authors, "isbn": isbn})
             return BookSynopsis(
-                title=title, description="A resolved synopsis. It has two sentences.",
-                authors=authors or [], isbn=isbn, resolved_by="isbn",
+                title=title,
+                description="A resolved synopsis. It has two sentences.",
+                authors=authors or [],
+                isbn=isbn,
+                resolved_by="isbn",
             )
 
         monkeypatch.setattr("pka.ingestion.openlibrary.lookup_book", _lookup)
@@ -256,15 +275,30 @@ class TestCalibreEnrichment:
 
     def _book(self, tmp_path, description=None, isbn=None):
         from pka.connectors.calibre import CalibreBook
+
         return CalibreBook(
-            source_id="1", title="Dune", authors=["Frank Herbert"],
-            description=description, publisher=None, series=None,
-            series_index=None, year=None, isbn=isbn, tags=[],
-            formats=[], preferred_path=None, date_added=0, rating=None,
+            source_id="1",
+            title="Dune",
+            authors=["Frank Herbert"],
+            description=description,
+            publisher=None,
+            series=None,
+            series_index=None,
+            year=None,
+            isbn=isbn,
+            tags=[],
+            formats=[],
+            preferred_path=None,
+            date_added=0,
+            rating=None,
         )
 
     def test_synopsis_skipped_when_calibre_has_a_description(
-        self, tmp_path, lookup_on, fake_lookup, mock_chroma,
+        self,
+        tmp_path,
+        lookup_on,
+        fake_lookup,
+        mock_chroma,
     ):
         """Pass 1 already embeds the publisher blurb — looking one up is waste."""
         from pka.ingestion.runners.calibre import ingest_calibre_books
@@ -273,7 +307,11 @@ class TestCalibreEnrichment:
         assert fake_lookup == []
 
     def test_synopsis_attached_when_calibre_has_none(
-        self, tmp_path, lookup_on, fake_lookup, mock_chroma,
+        self,
+        tmp_path,
+        lookup_on,
+        fake_lookup,
+        mock_chroma,
     ):
         from pka.ingestion.runners.calibre import ingest_calibre_books
 
@@ -282,10 +320,7 @@ class TestCalibreEnrichment:
         assert fake_lookup[0]["isbn"] == "9780306406157"
 
         store, _col = mock_chroma
-        metas = [
-            i["meta"] for i in store.values()
-            if i["meta"].get("pass") == "external_synopsis"
-        ]
+        metas = [i["meta"] for i in store.values() if i["meta"].get("pass") == "external_synopsis"]
         assert len(metas) == 1
         assert metas[0]["book_title"] == "Dune"
 
@@ -294,13 +329,14 @@ class TestCalibreEnrichment:
 
         ingest_calibre_books([self._book(tmp_path)])
         store, _col = mock_chroma
-        assert not [
-            i for i in store.values()
-            if i["meta"].get("pass") == "external_synopsis"
-        ]
+        assert not [i for i in store.values() if i["meta"].get("pass") == "external_synopsis"]
 
     def test_lookup_failure_does_not_break_the_pass(
-        self, tmp_path, lookup_on, monkeypatch, mock_chroma,
+        self,
+        tmp_path,
+        lookup_on,
+        monkeypatch,
+        mock_chroma,
     ):
         def _boom(title="", authors=None, isbn=None):
             raise RuntimeError("catalogue down")
@@ -322,19 +358,23 @@ def _pdf_book(tmp_path, monkeypatch, report, source_id="PDF1"):
     book = _make_book(source_id=source_id, formats=["PDF"], preferred_path=pdf)
     ingest_calibre_books([book])
     monkeypatch.setattr(
-        "pka.ingestion.runners.calibre.extract_book_report", lambda p, **kw: report,
+        "pka.ingestion.runners.calibre.extract_book_report",
+        lambda p, **kw: report,
     )
     return book
 
 
 def test_scanned_pdf_is_recorded_not_silently_skipped(
-    mock_chroma, tmp_path, monkeypatch,
+    mock_chroma,
+    tmp_path,
+    monkeypatch,
 ):
     """A scan and an un-run phase 2 both produce no chunks; only one is a scan."""
     from pka.ingestion.runners.calibre import ingest_calibre_fulltext
 
     book = _pdf_book(
-        tmp_path, monkeypatch,
+        tmp_path,
+        monkeypatch,
         BookExtraction([], PdfTextLayer.NONE, page_count=42),
         source_id="SCAN",
     )
@@ -353,7 +393,8 @@ def test_broken_pdf_is_not_marked_as_a_scan(mock_chroma, tmp_path, monkeypatch):
     from pka.ingestion.runners.calibre import ingest_calibre_fulltext
 
     book = _pdf_book(
-        tmp_path, monkeypatch,
+        tmp_path,
+        monkeypatch,
         BookExtraction([], PdfTextLayer.UNREADABLE),
         source_id="BROKEN",
     )
@@ -368,33 +409,42 @@ def test_broken_pdf_is_not_marked_as_a_scan(mock_chroma, tmp_path, monkeypatch):
 
 
 def test_pdf_chunks_carry_the_pages_they_were_read_from(
-    mock_chroma, tmp_path, monkeypatch,
+    mock_chroma,
+    tmp_path,
+    monkeypatch,
 ):
     store, _ = mock_chroma
     from pka.ingestion.runners.calibre import ingest_calibre_fulltext
 
     book = _pdf_book(
-        tmp_path, monkeypatch,
+        tmp_path,
+        monkeypatch,
         BookExtraction(
-            [{"title": "Pages 11–20", "index": 0,
-              "text": "Sentence one about the subject. Sentence two continues the discussion. Sentence three adds detail. Sentence four concludes the passage.",
-              "page_start": 11, "page_end": 20}],
-            PdfTextLayer.TEXT, page_count=20, text_pages=10,
+            [
+                {
+                    "title": "Pages 11–20",
+                    "index": 0,
+                    "text": "Sentence one about the subject. Sentence two continues the discussion. Sentence three adds detail. Sentence four concludes the passage.",
+                    "page_start": 11,
+                    "page_end": 20,
+                }
+            ],
+            PdfTextLayer.TEXT,
+            page_count=20,
+            text_pages=10,
         ),
     )
     ingest_calibre_fulltext([book])
 
     with get_engine().connect() as con:
         ranges = con.execute(
-            sa.select(chunks.c.page_start, chunks.c.page_end)
-            .where(chunks.c.page_start.isnot(None))
+            sa.select(chunks.c.page_start, chunks.c.page_end).where(chunks.c.page_start.isnot(None))
         ).fetchall()
     assert ranges and all(tuple(r) == (11, 20) for r in ranges)
 
     # Chroma carries it too — that is the copy semantic search reads back.
     fulltext_meta = [
-        item["meta"] for item in store.values()
-        if item["meta"].get("pass") == "fulltext"
+        item["meta"] for item in store.values() if item["meta"].get("pass") == "fulltext"
     ]
     assert fulltext_meta
     assert all(m["page_start"] == 11 and m["page_end"] == 20 for m in fulltext_meta)
@@ -409,19 +459,29 @@ def test_epub_chunks_have_no_page_range(mock_chroma, tmp_path, monkeypatch):
     epub.write_bytes(b"PK")
     book = _make_book(source_id="EPUB1", preferred_path=epub)
     from pka.ingestion.runners.calibre import ingest_calibre_books
+
     ingest_calibre_books([book])
     monkeypatch.setattr(
         "pka.ingestion.runners.calibre.extract_book_report",
-        lambda p, **kw: BookExtraction([
-            {"title": "Ch1", "index": 0,
-             "text": "Sentence one about the subject. Sentence two continues the discussion. Sentence three adds detail. Sentence four concludes the passage."},
-        ]),
+        lambda p, **kw: BookExtraction(
+            [
+                {
+                    "title": "Ch1",
+                    "index": 0,
+                    "text": "Sentence one about the subject. Sentence two continues the discussion. Sentence three adds detail. Sentence four concludes the passage.",
+                },
+            ]
+        ),
     )
     ingest_calibre_fulltext([book])
 
     assert all("page_start" not in item["meta"] for item in store.values())
     with get_engine().connect() as con:
-        assert con.execute(
-            sa.select(sa.func.count()).select_from(chunks)
-            .where(chunks.c.page_start.isnot(None))
-        ).scalar() == 0
+        assert (
+            con.execute(
+                sa.select(sa.func.count())
+                .select_from(chunks)
+                .where(chunks.c.page_start.isnot(None))
+            ).scalar()
+            == 0
+        )

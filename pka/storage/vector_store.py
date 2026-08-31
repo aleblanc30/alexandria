@@ -24,6 +24,7 @@ broken until it restarts. Ingestion embeds through ``asyncio.to_thread`` from a
 pool of fetch workers, so concurrent first-touch is the normal case, not a rare
 one.
 """
+
 from __future__ import annotations
 
 import logging
@@ -106,9 +107,7 @@ def vector_count() -> int:
         from pka.db.schema import chunks
 
         with get_engine().connect() as con:
-            return con.execute(
-                sa.select(sa.func.count()).select_from(chunks)
-            ).scalar() or 0
+            return con.execute(sa.select(sa.func.count()).select_from(chunks)).scalar() or 0
 
 
 def drop_document_collection() -> None:
@@ -158,8 +157,8 @@ def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
         metadatas = [
             {
                 "document_id": r.document_id,
-                "source":      r.source,
-                "title":       r.title or "",
+                "source": r.source,
+                "title": r.title or "",
                 "chunk_index": r.chunk_index,
             }
             for r in batch
@@ -167,11 +166,7 @@ def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
         upsert_chunks(vector_ids, texts, metadatas)
         with eng.begin() as con:
             for row, vid in zip(batch, vector_ids, strict=False):
-                con.execute(
-                    chunks.update()
-                    .where(chunks.c.id == row.id)
-                    .values(vector_id=vid)
-                )
+                con.execute(chunks.update().where(chunks.c.id == row.id).values(vector_id=vid))
         processed += len(batch)
         log.info("Rebuilt %d / %d chunk vectors", processed, total)
 
@@ -247,9 +242,7 @@ def purge_vectors(vector_ids: list[str]) -> int:
     except Exception as exc:
         log.warning("Chroma delete failed (%s); removing chunk rows only", exc)
     with get_engine().begin() as con:
-        con.execute(
-            chunks.delete().where(chunks.c.vector_id.in_(vector_ids))
-        )
+        con.execute(chunks.delete().where(chunks.c.vector_id.in_(vector_ids)))
     log.info("Purged %d corrupt chunk rows", len(vector_ids))
     return len(vector_ids)
 
@@ -266,10 +259,12 @@ def query(
     res = get_collection().query(**kwargs)
     out: list[dict] = []
     for i, vid in enumerate(res["ids"][0]):
-        out.append({
-            "vector_id": vid,
-            "text":      res["documents"][0][i],
-            "distance":  res["distances"][0][i],
-            "metadata":  res["metadatas"][0][i],
-        })
+        out.append(
+            {
+                "vector_id": vid,
+                "text": res["documents"][0][i],
+                "distance": res["distances"][0][i],
+                "metadata": res["metadatas"][0][i],
+            }
+        )
     return out

@@ -1,4 +1,5 @@
 """FastAPI application entry point."""
+
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -42,10 +43,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title       = "Alexandria",
-    version     = "0.0.5",
-    description = "Local-first research library API",
-    lifespan    = lifespan,
+    title="Alexandria",
+    version="0.0.5",
+    description="Local-first research library API",
+    lifespan=lifespan,
 )
 
 # CORS only needed in dev — in production the frontend is served same-origin.
@@ -53,14 +54,22 @@ app = FastAPI(
 if os.environ.get("ALEXANDRIA_DEV") == "1":
     app.add_middleware(
         CORSMiddleware,
-        allow_origins = ["http://localhost:5173"],
-        allow_methods = ["*"],
-        allow_headers = ["*"],
+        allow_origins=["http://localhost:5173"],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
 for router in (
-    search, documents, images, clusters,
-    runs, tags, trends, ingestion, reading_lists, tag_training,
+    search,
+    documents,
+    images,
+    clusters,
+    runs,
+    tags,
+    trends,
+    ingestion,
+    reading_lists,
+    tag_training,
 ):
     app.include_router(router.router)
 

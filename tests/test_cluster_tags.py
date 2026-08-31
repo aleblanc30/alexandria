@@ -1,4 +1,5 @@
 """Tests for cluster label → overlay tag helpers."""
+
 import time
 
 import pytest
@@ -22,29 +23,36 @@ def fresh_db():
 def _seed_cluster_with_docs(n_docs: int = 2) -> tuple[int, int, list[int]]:
     doc_ids = []
     for i in range(n_docs):
-        doc_ids.append(
-            upsert_document("zotero", f"T{i:03d}", f"Doc {i}", None, int(time.time()))
-        )
+        doc_ids.append(upsert_document("zotero", f"T{i:03d}", f"Doc {i}", None, int(time.time())))
     now = int(time.time())
     with get_engine().begin() as con:
         run_res = con.execute(
             cluster_runs.insert().values(
-                timestamp=now, algorithm="test", parameters="{}", accepted=True,
+                timestamp=now,
+                algorithm="test",
+                parameters="{}",
+                accepted=True,
             )
         )
         run_id = run_res.inserted_primary_key[0]
         cl_res = con.execute(
             clusters.insert().values(
-                label="Raft Consensus", description="", created_at=now,
-                run_id=run_id, level=1,
+                label="Raft Consensus",
+                description="",
+                created_at=now,
+                run_id=run_id,
+                level=1,
             )
         )
         cluster_id = cl_res.inserted_primary_key[0]
         for did in doc_ids:
             con.execute(
                 cluster_assignments.insert().values(
-                    document_id=did, cluster_id=cluster_id, run_id=run_id,
-                    assigned_at=now, level=1,
+                    document_id=did,
+                    cluster_id=cluster_id,
+                    run_id=run_id,
+                    assigned_at=now,
+                    level=1,
                 )
             )
     return cluster_id, run_id, doc_ids
@@ -64,10 +72,16 @@ class TestApplyTagToDocuments:
         cluster_id, run_id, doc_ids = _seed_cluster_with_docs(2)
         with get_engine().begin() as con:
             a1, s1 = apply_tag_to_documents(
-                con, doc_ids, "topic", TagOrigin.CLUSTER_L1,
+                con,
+                doc_ids,
+                "topic",
+                TagOrigin.CLUSTER_L1,
             )
             a2, s2 = apply_tag_to_documents(
-                con, doc_ids, "topic", TagOrigin.CLUSTER_L1,
+                con,
+                doc_ids,
+                "topic",
+                TagOrigin.CLUSTER_L1,
             )
         assert a1 == 2 and s1 == 0
         assert a2 == 0 and s2 == 2
@@ -93,7 +107,10 @@ class TestApplyTagToDocuments:
         try:
             with eng.begin() as con:
                 applied, skipped = apply_tag_to_documents(
-                    con, doc_ids, "batched-topic", TagOrigin.CLUSTER_L1,
+                    con,
+                    doc_ids,
+                    "batched-topic",
+                    TagOrigin.CLUSTER_L1,
                 )
         finally:
             sa.event.remove(eng, "before_cursor_execute", count_stmt)
@@ -104,6 +121,9 @@ class TestApplyTagToDocuments:
         _, _, doc_ids = _seed_cluster_with_docs(2)
         with get_engine().begin() as con:
             applied, skipped = apply_tag_to_documents(
-                con, doc_ids + doc_ids, "dup-topic", TagOrigin.CLUSTER_L1,
+                con,
+                doc_ids + doc_ids,
+                "dup-topic",
+                TagOrigin.CLUSTER_L1,
             )
         assert applied == 2 and skipped == 0

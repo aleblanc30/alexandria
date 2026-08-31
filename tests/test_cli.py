@@ -1,4 +1,5 @@
 """Tests for the unified ``alexandria`` CLI dispatcher."""
+
 import importlib
 
 import pytest

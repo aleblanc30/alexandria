@@ -57,9 +57,10 @@ class TestParseWikipediaUrl:
         assert parse_wikipedia_url("https://en.m.wikipedia.org/wiki/Foo") == ("en", "Foo")
 
     def test_index_php_title(self):
-        assert parse_wikipedia_url(
-            "https://en.wikipedia.org/w/index.php?title=Foo&oldid=123"
-        ) == ("en", "Foo")
+        assert parse_wikipedia_url("https://en.wikipedia.org/w/index.php?title=Foo&oldid=123") == (
+            "en",
+            "Foo",
+        )
 
     def test_fragment_stripped(self):
         assert parse_wikipedia_url("https://en.wikipedia.org/wiki/Foo#section") == (
@@ -85,9 +86,10 @@ class TestIsWikipediaSpecial:
         assert is_wikipedia_special("https://en.wikipedia.org/wiki/Special:Search") is True
 
     def test_special_index_php(self):
-        assert is_wikipedia_special(
-            "https://en.wikipedia.org/w/index.php?title=Special:Random"
-        ) is True
+        assert (
+            is_wikipedia_special("https://en.wikipedia.org/w/index.php?title=Special:Random")
+            is True
+        )
 
     def test_article_is_not_special(self):
         assert is_wikipedia_special("https://en.wikipedia.org/wiki/Python") is False

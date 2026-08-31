@@ -10,6 +10,7 @@ PDF:  pdfplumber (layout-aware) with pypdf fallback.
 
 HTML tag stripping is handled here so chunker.py always receives clean text.
 """
+
 import logging
 import re
 from dataclasses import dataclass, field
@@ -26,8 +27,8 @@ class BookExtraction:
 
     sections: list[dict] = field(default_factory=list)
     status: PdfTextLayer = PdfTextLayer.TEXT
-    page_count: int = 0     # pages in the file, uncapped (PDF only)
-    text_pages: int = 0     # pages that yielded a text layer (PDF only)
+    page_count: int = 0  # pages in the file, uncapped (PDF only)
+    text_pages: int = 0  # pages that yielded a text layer (PDF only)
 
 
 # ── HTML stripping ─────────────────────────────────────────────────────────
@@ -45,6 +46,7 @@ def strip_html(html: str) -> str:
 
 
 # ── EPUB extraction ────────────────────────────────────────────────────────
+
 
 def extract_epub(path: Path, max_chars_per_chapter: int | None = None) -> list[dict]:
     """
@@ -83,8 +85,9 @@ def extract_epub(path: Path, max_chars_per_chapter: int | None = None) -> list[d
             text = text[:max_chars_per_chapter]
 
         # Try to get chapter title from <title> or first <h*> tag
-        title_match = re.search(r"<(?:title|h[1-3])[^>]*>(.*?)</(?:title|h[1-3])>",
-                                 raw_html, re.IGNORECASE | re.DOTALL)
+        title_match = re.search(
+            r"<(?:title|h[1-3])[^>]*>(.*?)</(?:title|h[1-3])>", raw_html, re.IGNORECASE | re.DOTALL
+        )
         ch_title = strip_html(title_match.group(1)) if title_match else f"Chapter {idx + 1}"
 
         chapters.append({"title": ch_title, "text": text, "index": idx})
@@ -102,11 +105,13 @@ PAGE_GROUP = 10
 
 
 def _pages_via_pdfplumber(
-    path: Path, max_pages: int | None,
+    path: Path,
+    max_pages: int | None,
 ) -> tuple[list[tuple[int, str]], int] | None:
     """``([(page_no, text), …], page_count)``, or None when the file won't open."""
     try:
         import pdfplumber
+
         with pdfplumber.open(str(path)) as pdf:
             page_count = len(pdf.pages)
             found: list[tuple[int, str]] = []
@@ -123,11 +128,13 @@ def _pages_via_pdfplumber(
 
 
 def _pages_via_pypdf(
-    path: Path, max_pages: int | None,
+    path: Path,
+    max_pages: int | None,
 ) -> tuple[list[tuple[int, str]], int] | None:
     """Same contract as :func:`_pages_via_pdfplumber`, using pypdf."""
     try:
         import pypdf
+
         reader = pypdf.PdfReader(str(path))
         page_count = len(reader.pages)
         found: list[tuple[int, str]] = []
@@ -148,13 +155,15 @@ def _page_groups(pages: list[tuple[int, str]]) -> list[dict]:
     for i in range(0, len(pages), PAGE_GROUP):
         block = pages[i : i + PAGE_GROUP]
         first, last = block[0][0], block[-1][0]
-        groups.append({
-            "title":      f"Pages {first}–{last}",
-            "text":       "\n\n".join(text for _, text in block),
-            "index":      i // PAGE_GROUP,
-            "page_start": first,
-            "page_end":   last,
-        })
+        groups.append(
+            {
+                "title": f"Pages {first}–{last}",
+                "text": "\n\n".join(text for _, text in block),
+                "index": i // PAGE_GROUP,
+                "page_start": first,
+                "page_end": last,
+            }
+        )
     return groups
 
 
@@ -193,14 +202,19 @@ def extract_pdf_report(path: Path, max_pages: int | None = None) -> BookExtracti
         status = PdfTextLayer.UNKNOWN if capped else PdfTextLayer.NONE
         log.debug(
             "No text layer in first %s page(s) of %s (status=%s)",
-            max_pages if capped else page_count, path.name, status,
+            max_pages if capped else page_count,
+            path.name,
+            status,
         )
         return BookExtraction([], status, page_count=page_count)
 
     groups = _page_groups(pages)
     log.debug("Extracted %d page-groups from %s", len(groups), path.name)
     return BookExtraction(
-        groups, PdfTextLayer.TEXT, page_count=page_count, text_pages=len(pages),
+        groups,
+        PdfTextLayer.TEXT,
+        page_count=page_count,
+        text_pages=len(pages),
     )
 
 
@@ -214,6 +228,7 @@ def extract_pdf(path: Path, max_pages: int | None = None) -> list[dict]:
 
 
 # ── Unified entry point ────────────────────────────────────────────────────
+
 
 def extract_book_report(
     path: Path,
@@ -234,7 +249,8 @@ def extract_book_report(
     if ext == ".epub":
         chapters = extract_epub(path, max_chars_per_chapter=max_chars_per_chapter)
         return BookExtraction(
-            chapters, PdfTextLayer.TEXT if chapters else PdfTextLayer.EMPTY,
+            chapters,
+            PdfTextLayer.TEXT if chapters else PdfTextLayer.EMPTY,
         )
     log.debug("Unsupported format for full-text extraction: %s", ext)
     return BookExtraction([], PdfTextLayer.UNREADABLE)
@@ -250,7 +266,9 @@ def extract_book_text(
     Returns [] if format is unsupported or extraction fails.
     """
     return extract_book_report(
-        path, max_pages=max_pages, max_chars_per_chapter=max_chars_per_chapter,
+        path,
+        max_pages=max_pages,
+        max_chars_per_chapter=max_chars_per_chapter,
     ).sections
 
 

@@ -4,6 +4,7 @@
 Thin shim — the implementation lives in pka.cli.purge_source (run via
 `alexandria purge-source` once installed, or `python scripts/purge_source.py` from the repo).
 """
+
 import sys
 from pathlib import Path
 

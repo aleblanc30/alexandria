@@ -1,4 +1,5 @@
 """Tests for Zotero sync orchestration."""
+
 from unittest.mock import MagicMock
 
 from pka.connectors.zotero import ZoteroItem
@@ -6,9 +7,18 @@ from pka.connectors.zotero import ZoteroItem
 
 def _zotero_item(key: str, **overrides) -> ZoteroItem:
     defaults = dict(
-        source_id=key, title="Paper", authors=[], abstract="Abstract.",
-        year=2024, doi=None, url=None, item_type="journalArticle",
-        collections=[], tags=[], pdf_path=None, date_added=1700000000,
+        source_id=key,
+        title="Paper",
+        authors=[],
+        abstract="Abstract.",
+        year=2024,
+        doi=None,
+        url=None,
+        item_type="journalArticle",
+        collections=[],
+        tags=[],
+        pdf_path=None,
+        date_added=1700000000,
         pdf_attachment_key=None,
     )
     return ZoteroItem(**{**defaults, **overrides})
@@ -72,7 +82,8 @@ class TestSyncZoteroIngest:
         )
         embed_mock = MagicMock()
         monkeypatch.setattr(
-            "pka.ingestion.zotero_sync.ingest_zotero_embed", embed_mock,
+            "pka.ingestion.zotero_sync.ingest_zotero_embed",
+            embed_mock,
         )
         out = sync_zotero_ingest(progress_key="zotero")
         embed_mock.assert_not_called()
@@ -89,7 +100,10 @@ class TestSyncZoteroIngest:
         monkeypatch.setattr(
             "pka.ingestion.zotero_sync.ingest_zotero_embed",
             lambda items, **kw: {
-                "processed": len(items), "skipped": 0, "failed": 0, "chunks": 2,
+                "processed": len(items),
+                "skipped": 0,
+                "failed": 0,
+                "chunks": 2,
             },
         )
         out = sync_zotero_ingest(progress_key="zotero")
@@ -107,7 +121,8 @@ class TestSyncZoteroFull:
         )
         embed_mock = MagicMock()
         monkeypatch.setattr(
-            "pka.ingestion.zotero_sync.sync_zotero_ingest", embed_mock,
+            "pka.ingestion.zotero_sync.sync_zotero_ingest",
+            embed_mock,
         )
         out = sync_zotero(progress_key="zotero")
         embed_mock.assert_not_called()

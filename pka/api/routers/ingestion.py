@@ -1,4 +1,5 @@
 """``/ingestion`` — status overview and per-source background sync triggers."""
+
 import asyncio
 import json
 import logging
@@ -54,7 +55,7 @@ async def sync_progress(source: str | None = None, engine=Depends(get_engine)):
 # One open connection replaces the 500 ms poll loop. Events carry the per-source
 # slice of ``/ingestion/status`` too, so a running sync hits no other endpoint.
 
-_EVENT_INTERVAL_SECONDS = 0.2      # coalesce to at most 5 events/sec
+_EVENT_INTERVAL_SECONDS = 0.2  # coalesce to at most 5 events/sec
 _IDLE_INTERVAL_SECONDS = 1.0
 _HEARTBEAT_SECONDS = 15.0
 # Progress is in memory; the counts alongside it cost queries, and they move far
@@ -106,6 +107,7 @@ async def sync_events(source: str, engine=Depends(get_engine)):
 # ── Image folders (list-valued source) ──────────────────────────────────────
 # Declared before the ``/sources/{source}/…`` routes so the static ``image``
 # segment is matched by these handlers rather than the single-path fallbacks.
+
 
 @router.get("/sources/image/dirs")
 async def get_image_dirs():
@@ -205,24 +207,35 @@ def purge_source_endpoint(source: str):
 
 @router.get("/unfetchable")
 async def unfetchable_urls(
-    limit: int = 50, offset: int = 0,
+    limit: int = 50,
+    offset: int = 0,
     engine=Depends(get_engine),
 ):
     with engine.connect() as con:
         rows = con.execute(
             sa.select(
-                documents.c.id, documents.c.title,
-                documents.c.url_or_path, fetch_log.c.http_status,
-                fetch_log.c.error_msg, fetch_log.c.timestamp,
+                documents.c.id,
+                documents.c.title,
+                documents.c.url_or_path,
+                fetch_log.c.http_status,
+                fetch_log.c.error_msg,
+                fetch_log.c.timestamp,
             )
             .join(fetch_log, fetch_log.c.document_id == documents.c.id)
             .where(documents.c.fetch_status == str(FetchStatus.UNFETCHABLE))
             .order_by(fetch_log.c.timestamp.desc())
-            .limit(limit).offset(offset)
+            .limit(limit)
+            .offset(offset)
         ).fetchall()
     return [
-        {"id": r[0], "title": r[1], "url": r[2],
-         "http_status": r[3], "error": r[4], "timestamp": r[5]}
+        {
+            "id": r[0],
+            "title": r[1],
+            "url": r[2],
+            "http_status": r[3],
+            "error": r[4],
+            "timestamp": r[5],
+        }
         for r in rows
     ]
 
@@ -263,7 +276,9 @@ def _seed_baselines(src: str) -> None:
     seed_progress_from_db(get_engine(), src)
 
 
-def _run_ingestion_job(src: str, *, begin_job: sp.JobKind, error_label: str, run, pre_begin=None) -> None:
+def _run_ingestion_job(
+    src: str, *, begin_job: sp.JobKind, error_label: str, run, pre_begin=None
+) -> None:
     """Shared metadata/ingest/full job skeleton: init, begin, run handler, finish."""
     from pka.db.queries import get_engine, init_db
 
@@ -284,7 +299,7 @@ def _ingest_pre_begin(src: str) -> None:
     from pka.ingestion.pending_metadata import source_corpus_size
 
     if phase_spec(src).plans_own_phases:
-        return   # its ingest sets the totals once it knows the work
+        return  # its ingest sets the totals once it knows the work
     sp.begin_ingest(src, source_corpus_size(src))
 
 
@@ -302,16 +317,21 @@ def _backfill_kwargs(src: str, backfill: bool) -> dict:
 
 def _sync_metadata(src: str, backfill: bool = False) -> None:
     _run_ingestion_job(
-        src, begin_job="metadata", error_label="Metadata sync",
+        src,
+        begin_job="metadata",
+        error_label="Metadata sync",
         run=lambda: require_handlers(src).sync_metadata(
-            progress_key=src, **_backfill_kwargs(src, backfill),
+            progress_key=src,
+            **_backfill_kwargs(src, backfill),
         ),
     )
 
 
 def _sync_ingest(src: str) -> None:
     _run_ingestion_job(
-        src, begin_job="ingest", error_label="Ingest",
+        src,
+        begin_job="ingest",
+        error_label="Ingest",
         run=lambda: require_handlers(src).sync_ingest(progress_key=src),
         pre_begin=_ingest_pre_begin,
     )
@@ -320,9 +340,12 @@ def _sync_ingest(src: str) -> None:
 def _sync(src: str, backfill: bool = False) -> None:
     """Background entry point for ``POST /ingestion/sync/{source}`` (full pipeline)."""
     _run_ingestion_job(
-        src, begin_job="metadata", error_label="Ingestion sync",
+        src,
+        begin_job="metadata",
+        error_label="Ingestion sync",
         run=lambda: require_handlers(src).sync_full(
-            progress_key=src, **_backfill_kwargs(src, backfill),
+            progress_key=src,
+            **_backfill_kwargs(src, backfill),
         ),
     )
 
@@ -349,7 +372,8 @@ def _stop_running_job(src: str) -> None:
         old.join(timeout=_FORCE_STOP_TIMEOUT)
         if old.is_alive():
             raise HTTPException(
-                409, f"Previous sync for {src} has not stopped yet; try again",
+                409,
+                f"Previous sync for {src} has not stopped yet; try again",
             )
 
 

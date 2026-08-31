@@ -1,4 +1,5 @@
 """``/documents`` list and ``/documents/{id}`` detail + tag patch."""
+
 import mimetypes
 from pathlib import Path
 from typing import Annotated
@@ -78,10 +79,13 @@ def get_document_cover(doc_id: int, engine=Depends(get_engine)):
     documents *are* the image, so their ``url_or_path`` is streamed directly.
     """
     with engine.connect() as con:
-        row = fetchone_mapping(con.execute(
-            sa.select(documents_tbl.c.source, documents_tbl.c.url_or_path)
-            .where(documents_tbl.c.id == doc_id)
-        ))
+        row = fetchone_mapping(
+            con.execute(
+                sa.select(documents_tbl.c.source, documents_tbl.c.url_or_path).where(
+                    documents_tbl.c.id == doc_id
+                )
+            )
+        )
     if not row or not row["url_or_path"]:
         raise HTTPException(404, detail="No cover available")
 
@@ -111,9 +115,9 @@ def patch_tags(doc_id: int, req: TagPatchRequest, engine=Depends(get_engine)):
         if req.remove:
             con.execute(
                 overlay_tags.delete().where(
-                    (overlay_tags.c.document_id == doc_id) &
-                    overlay_tags.c.tag.in_(req.remove) &
-                    (overlay_tags.c.origin == str(TagOrigin.MANUAL))
+                    (overlay_tags.c.document_id == doc_id)
+                    & overlay_tags.c.tag.in_(req.remove)
+                    & (overlay_tags.c.origin == str(TagOrigin.MANUAL))
                 )
             )
     return {"ok": True}

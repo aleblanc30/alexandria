@@ -1,4 +1,5 @@
 """Tests for domain extraction and frequency reporting."""
+
 from pka.constants import FetchStatus, Source
 from pka.db.queries import init_db, upsert_document
 from pka.domains import (
@@ -46,19 +47,35 @@ class TestBuildDomainFrequencyReport:
     def test_sorts_by_count_and_aggregates_status(self):
         init_db()
         upsert_document(
-            Source.FIREFOX, "f1", "A", "https://www.example.com/a", 1,
+            Source.FIREFOX,
+            "f1",
+            "A",
+            "https://www.example.com/a",
+            1,
             fetch_status=FetchStatus.FETCHED,
         )
         upsert_document(
-            Source.FIREFOX, "f2", "B", "https://example.com/b", 1,
+            Source.FIREFOX,
+            "f2",
+            "B",
+            "https://example.com/b",
+            1,
             fetch_status=FetchStatus.PENDING,
         )
         upsert_document(
-            Source.FIREFOX, "f3", "C", "https://arxiv.org/abs/2301.00001", 1,
+            Source.FIREFOX,
+            "f3",
+            "C",
+            "https://arxiv.org/abs/2301.00001",
+            1,
             fetch_status=FetchStatus.FETCHED,
         )
         upsert_document(
-            Source.ZOTERO, "z1", "D", "/books/local.epub", 1,
+            Source.ZOTERO,
+            "z1",
+            "D",
+            "/books/local.epub",
+            1,
         )
 
         rows = build_domain_frequency_report(source=Source.FIREFOX)

@@ -1,4 +1,5 @@
 """Tests for Amazon book page URL detection and HTML extraction."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -186,15 +187,17 @@ class TestAmazonFetchIntegration:
             date_added=None,
             fetch_status=FetchStatus.PENDING,
         )
-        _persist_fetch_result(FetchResult(
-            doc_id,
-            "https://www.amazon.com/dp/B012345678",
-            "fetched",
-            "A portrait of the Jazz Age.",
-            200,
-            "fetched via amazon book handler",
-            title="The Great Gatsby",
-        ))
+        _persist_fetch_result(
+            FetchResult(
+                doc_id,
+                "https://www.amazon.com/dp/B012345678",
+                "fetched",
+                "A portrait of the Jazz Age.",
+                200,
+                "fetched via amazon book handler",
+                title="The Great Gatsby",
+            )
+        )
         with get_engine().connect() as con:
             row = con.execute(
                 sa.select(documents.c.title).where(documents.c.id == doc_id)

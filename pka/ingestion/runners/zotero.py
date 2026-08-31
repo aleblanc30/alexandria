@@ -1,4 +1,5 @@
 """Zotero document ingestion."""
+
 from __future__ import annotations
 
 import json
@@ -80,7 +81,7 @@ def ingest_zotero_items(
     stats = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0}
 
     for item in items:
-        if (stop := should_stop(progress_key)):
+        if stop := should_stop(progress_key):
             stats["stopped"] = stop
             break
         failed = False
@@ -96,7 +97,9 @@ def ingest_zotero_items(
                 continue
 
             result = ingest_text_block(
-                doc_id, zotero_embed_text(item), Source.ZOTERO,
+                doc_id,
+                zotero_embed_text(item),
+                Source.ZOTERO,
                 extra_metadata={"title": item.title},
                 min_chars=1,
                 dry_run=dry_run,
@@ -170,7 +173,9 @@ def ingest_zotero_embed(
         if skip_existing and item.source_id in embedded:
             return False, 0
         result = ingest_text_block(
-            doc_id, zotero_embed_text(item), Source.ZOTERO,
+            doc_id,
+            zotero_embed_text(item),
+            Source.ZOTERO,
             extra_metadata={"title": item.title},
             min_chars=1,
             dry_run=dry_run,
@@ -186,6 +191,8 @@ def ingest_zotero_embed(
         process=_process,
         progress_key=progress_key,
         on_error_log=lambda item, exc: log.exception(
-            "Zotero embed %s failed: %s", item.source_id, exc,
+            "Zotero embed %s failed: %s",
+            item.source_id,
+            exc,
         ),
     )

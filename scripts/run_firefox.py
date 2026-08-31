@@ -4,6 +4,7 @@
 Thin shim — the implementation lives in pka.cli.firefox (run via
 `alexandria firefox` once installed, or `python scripts/run_firefox.py` from the repo).
 """
+
 import sys
 from pathlib import Path
 

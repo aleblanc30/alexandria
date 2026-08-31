@@ -7,6 +7,7 @@ Usage::
     alexandria zotero --metadata-only
     alexandria zotero --force-reindex
 """
+
 from __future__ import annotations
 
 import argparse
@@ -25,12 +26,13 @@ log = logging.getLogger("run_zotero")
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="alexandria zotero")
-    parser.add_argument("--dry-run",       action="store_true",
-                        help="Skip embedding and storage writes")
-    parser.add_argument("--metadata-only", action="store_true",
-                        help="Register items only (no embedding)")
-    parser.add_argument("--force-reindex", action="store_true",
-                        help="Re-chunk and re-embed all items")
+    parser.add_argument("--dry-run", action="store_true", help="Skip embedding and storage writes")
+    parser.add_argument(
+        "--metadata-only", action="store_true", help="Register items only (no embedding)"
+    )
+    parser.add_argument(
+        "--force-reindex", action="store_true", help="Re-chunk and re-embed all items"
+    )
     args = parser.parse_args(argv)
 
     setup_logging()

@@ -7,6 +7,7 @@ with a running Zotero process.
 Dev (``ALEXANDRIA_DEV=1``): snapshot ``zotero.sqlite`` once into ``data/`` and reuse it.
 Prod: fresh online backup on each connector access.
 """
+
 import logging
 import sqlite3
 from contextlib import closing
@@ -22,17 +23,17 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class ZoteroItem:
-    source_id: str          # Zotero item key (8-char alphanumeric)
+    source_id: str  # Zotero item key (8-char alphanumeric)
     title: str
     authors: list[str]
     abstract: str | None
     year: int | None
     doi: str | None
-    url: str | None         # Zotero item URL field (article page, etc.)
-    item_type: str          # journalArticle, book, webpage, ...
+    url: str | None  # Zotero item URL field (article page, etc.)
+    item_type: str  # journalArticle, book, webpage, ...
     collections: list[str]  # Zotero collection names
-    tags: list[str]         # Zotero tag strings (verbatim)
-    pdf_path: Path | None   # path to attached PDF, if any
+    tags: list[str]  # Zotero tag strings (verbatim)
+    pdf_path: Path | None  # path to attached PDF, if any
     date_added: int | None  # unix timestamp
     highlight_text: str | None = None  # PDF highlight/comment (annotation items)
     pdf_attachment_key: str | None = None  # 8-char key of the PDF attachment item
@@ -248,8 +249,8 @@ def load_items(
         annotation_texts = _load_annotation_texts(cur)
 
         for row in rows:
-            item_id  = row["itemID"]
-            key      = row["key"]
+            item_id = row["itemID"]
+            key = row["key"]
             typeName = row["typeName"]
 
             try:
@@ -260,43 +261,52 @@ def load_items(
 
             fields = _load_item_fields(cur, item_id, uses_value_id)
 
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT c.firstName, c.lastName
                 FROM   itemCreators ic
                 JOIN   creators c     ON ic.creatorID = c.creatorID
                 JOIN   creatorTypes ct ON ic.creatorTypeID = ct.creatorTypeID
                 WHERE  ic.itemID = ? AND ct.creatorType = 'author'
                 ORDER  BY ic.orderIndex
-            """, (item_id,))
-            authors = [
-                f"{r['firstName']} {r['lastName']}".strip()
-                for r in cur.fetchall()
-            ]
+            """,
+                (item_id,),
+            )
+            authors = [f"{r['firstName']} {r['lastName']}".strip() for r in cur.fetchall()]
 
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT col.collectionName
                 FROM   collectionItems ci
                 JOIN   collections col ON ci.collectionID = col.collectionID
                 WHERE  ci.itemID = ?
-            """, (item_id,))
+            """,
+                (item_id,),
+            )
             collections = [r["collectionName"] for r in cur.fetchall()]
 
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT t.name
                 FROM   itemTags it2
                 JOIN   tags t ON it2.tagID = t.tagID
                 WHERE  it2.itemID = ?
-            """, (item_id,))
+            """,
+                (item_id,),
+            )
             tags = [r["name"] for r in cur.fetchall()]
 
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT ia.path, i2.key AS attachment_key
                 FROM   itemAttachments ia
                 JOIN   items i2 ON ia.itemID = i2.itemID
                 WHERE  ia.parentItemID = ?
                   AND  ia.contentType = 'application/pdf'
                 LIMIT  1
-            """, (item_id,))
+            """,
+                (item_id,),
+            )
             att = cur.fetchone()
             pdf_path: Path | None = None
             pdf_attachment_key: str | None = None
@@ -304,28 +314,27 @@ def load_items(
                 pdf_attachment_key = att["attachment_key"]
                 raw = att["path"]
                 if raw.startswith("storage:"):
-                    pdf_path = (
-                        settings.zotero_db.parent
-                        / "storage" / key / raw[len("storage:"):]
-                    )
+                    pdf_path = settings.zotero_db.parent / "storage" / key / raw[len("storage:") :]
                 else:
                     pdf_path = Path(raw)
 
-            items.append(ZoteroItem(
-                source_id   = key,
-                title       = fields.get("title", ""),
-                authors     = authors,
-                abstract    = fields.get("abstractNote"),
-                year        = _parse_year(fields.get("date")),
-                doi         = fields.get("DOI"),
-                url         = fields.get("url"),
-                item_type   = typeName,
-                collections = collections,
-                tags        = tags,
-                pdf_path    = pdf_path,
-                pdf_attachment_key = pdf_attachment_key,
-                date_added  = ts,
-                highlight_text = annotation_texts.get(item_id),
-            ))
+            items.append(
+                ZoteroItem(
+                    source_id=key,
+                    title=fields.get("title", ""),
+                    authors=authors,
+                    abstract=fields.get("abstractNote"),
+                    year=_parse_year(fields.get("date")),
+                    doi=fields.get("DOI"),
+                    url=fields.get("url"),
+                    item_type=typeName,
+                    collections=collections,
+                    tags=tags,
+                    pdf_path=pdf_path,
+                    pdf_attachment_key=pdf_attachment_key,
+                    date_added=ts,
+                    highlight_text=annotation_texts.get(item_id),
+                )
+            )
 
     return items

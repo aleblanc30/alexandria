@@ -5,6 +5,7 @@ connectors: callers compute their counts first and hand them in. Reading is
 :func:`snapshot_states`, which returns detached copies, so serialization
 (:mod:`pka.ingestion.progress.view`) never runs under the lock.
 """
+
 from __future__ import annotations
 
 import copy
@@ -42,6 +43,7 @@ def _get_or_create(source: str, **defaults) -> SyncState:
 
 # ── Reads ────────────────────────────────────────────────────────────────────
 
+
 def is_running(source: str) -> bool:
     with _lock:
         state = _states.get(source)
@@ -72,6 +74,7 @@ def snapshot_states(source: str | None = None) -> dict[str, SyncState]:
 
 
 # ── Job lifecycle ────────────────────────────────────────────────────────────
+
 
 def begin_job(source: str, job: JobKind, phase: str = "loading") -> None:
     with _lock:
@@ -163,6 +166,7 @@ def set_job_result(source: str, result: dict | None) -> None:
 
 # ── Phase plan ───────────────────────────────────────────────────────────────
 
+
 def set_corpus_total(source: str, total: int) -> None:
     """Set shared corpus size on all phases (authoritative job scope)."""
     with _lock:
@@ -227,6 +231,7 @@ def skip_phase(source: str, phase: str) -> None:
 
 # ── Item progress ────────────────────────────────────────────────────────────
 
+
 def advance(source: str, *, failed: bool = False, phase: str | None = None) -> None:
     with _lock:
         state = _states.get(source)
@@ -264,6 +269,7 @@ def tick(progress_key: str | None, *, failed: bool = False, phase: str | None = 
 
 # ── DB-derived display counts ────────────────────────────────────────────────
 
+
 def hydrate(
     source: str,
     totals: dict[str, int],
@@ -280,6 +286,7 @@ def hydrate(
 
 
 # ── Stop requests ────────────────────────────────────────────────────────────
+
 
 def request_cancel(source: str) -> bool:
     with _lock:

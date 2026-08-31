@@ -1,4 +1,5 @@
 """``/images`` — list, search-by-text, file, and detail view."""
+
 import mimetypes
 from pathlib import Path
 
@@ -74,9 +75,9 @@ def search_images(
 def get_image_file(image_id: int, engine=Depends(get_engine)):
     """Serve the raw image file so the frontend can render it in an ``<img>``."""
     with engine.connect() as con:
-        row = fetchone_mapping(con.execute(
-            sa.select(images_tbl.c.path).where(images_tbl.c.id == image_id)
-        ))
+        row = fetchone_mapping(
+            con.execute(sa.select(images_tbl.c.path).where(images_tbl.c.id == image_id))
+        )
     if not row or not row["path"]:
         raise HTTPException(404, "Image not found")
 
@@ -91,9 +92,9 @@ def get_image_file(image_id: int, engine=Depends(get_engine)):
 @router.get("/{image_id}", response_model=ImageOut)
 def get_image(image_id: int, engine=Depends(get_engine)):
     with engine.connect() as con:
-        row = fetchone_mapping(con.execute(
-            sa.select(images_tbl).where(images_tbl.c.id == image_id)
-        ))
+        row = fetchone_mapping(
+            con.execute(sa.select(images_tbl).where(images_tbl.c.id == image_id))
+        )
         if not row:
             raise HTTPException(404, "Image not found")
         tags = image_tags_for(con, image_id)

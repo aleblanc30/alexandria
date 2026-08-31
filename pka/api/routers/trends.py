@@ -1,4 +1,5 @@
 """``/trends`` — timelines aggregated by cluster label or source."""
+
 import datetime
 from collections import defaultdict
 
@@ -30,15 +31,13 @@ def timeline(engine=Depends(get_engine)):
                 clusters.c.label,
                 documents.c.date_added,
             )
-            .join(cluster_assignments,
-                  cluster_assignments.c.document_id == documents.c.id)
-            .join(clusters,
-                  clusters.c.cluster_id == cluster_assignments.c.cluster_id)
+            .join(cluster_assignments, cluster_assignments.c.document_id == documents.c.id)
+            .join(clusters, clusters.c.cluster_id == cluster_assignments.c.cluster_id)
             .where(
-                (cluster_assignments.c.run_id == run_id) &
-                (cluster_assignments.c.level == 1) &
-                (clusters.c.level == 1) &
-                (documents.c.date_added.is_not(None))
+                (cluster_assignments.c.run_id == run_id)
+                & (cluster_assignments.c.level == 1)
+                & (clusters.c.level == 1)
+                & (documents.c.date_added.is_not(None))
             )
         ).fetchall()
 
@@ -54,8 +53,9 @@ def sources_over_time(
     """Return ``{source: {period: count}}`` for the sources-over-time chart."""
     with engine.connect() as con:
         rows = con.execute(
-            sa.select(documents.c.source, documents.c.date_added)
-            .where(documents.c.date_added.is_not(None))
+            sa.select(documents.c.source, documents.c.date_added).where(
+                documents.c.date_added.is_not(None)
+            )
         ).fetchall()
     result: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for src, ts in rows:

@@ -69,10 +69,10 @@ class GateResult:
     """Outcome of the admission gate for one image."""
 
     passed: bool
-    reason: str | None            # None when passed
-    image_type: str               # gate classifier label (reject record + content prompt)
-    description: str              # gate classifier description (not reused downstream)
-    text_coverage: float          # measured fraction 0..1
+    reason: str | None  # None when passed
+    image_type: str  # gate classifier label (reject record + content prompt)
+    description: str  # gate classifier description (not reused downstream)
+    text_coverage: float  # measured fraction 0..1
 
 
 def gate_image(

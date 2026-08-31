@@ -11,10 +11,10 @@ from pka.connectors.images import ImageFile
 from pka.db.queries import get_engine, init_db
 from pka.db.schema import chunks, documents, images, overlay_tags
 
-FAKE_CLIP_DIM  = 512
-FAKE_TEXT_DIM  = 8
-FAKE_CLIP_VEC  = [0.01] * FAKE_CLIP_DIM
-FAKE_TEXT_VEC  = [0.1]  * FAKE_TEXT_DIM
+FAKE_CLIP_DIM = 512
+FAKE_TEXT_DIM = 8
+FAKE_CLIP_VEC = [0.01] * FAKE_CLIP_DIM
+FAKE_TEXT_VEC = [0.1] * FAKE_TEXT_DIM
 
 
 @pytest.fixture(autouse=True)
@@ -82,8 +82,7 @@ def mock_chroma_clip(monkeypatch):
 
 
 @pytest.fixture()
-def all_mocks(mock_vision, mock_ocr, mock_clip, mock_text_embed,
-              mock_chroma_clip, mock_chroma):
+def all_mocks(mock_vision, mock_ocr, mock_clip, mock_text_embed, mock_chroma_clip, mock_chroma):
     """Combine all mocks for full pipeline tests."""
     return mock_chroma_clip
 
@@ -92,47 +91,44 @@ class TestIngestImage:
     def test_returns_ok_status(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         result = ingest_image(img)
         assert result["status"] == "ok"
 
     def test_image_type_stored(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img)
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(images.c.image_type)
-                .where(images.c.path == str(sample_image))
+                sa.select(images.c.image_type).where(images.c.path == str(sample_image))
             ).fetchone()
         assert row[0] == "slide"
 
     def test_ocr_text_stored(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img)
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(images.c.ocr_text)
-                .where(images.c.path == str(sample_image))
+                sa.select(images.c.ocr_text).where(images.c.path == str(sample_image))
             ).fetchone()
         assert "Neural Networks" in (row[0] or "")
 
     def test_description_stored(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img)
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(images.c.description)
-                .where(images.c.path == str(sample_image))
+                sa.select(images.c.description).where(images.c.path == str(sample_image))
             ).fetchone()
         assert "machine learning" in (row[0] or "").lower()
 
@@ -140,8 +136,8 @@ class TestIngestImage:
         """image_type becomes an inferred overlay tag on the unified document."""
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img)
         with get_engine().connect() as con:
             row = con.execute(
@@ -156,92 +152,94 @@ class TestIngestImage:
         """An image is a first-class document: source=image, linked + searchable."""
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img)
         with get_engine().connect() as con:
             image_row = con.execute(
-                sa.select(images.c.id, images.c.document_id)
-                .where(images.c.path == str(sample_image))
+                sa.select(images.c.id, images.c.document_id).where(
+                    images.c.path == str(sample_image)
+                )
             ).fetchone()
             doc = con.execute(
-                sa.select(documents.c.source, documents.c.title,
-                          documents.c.url_or_path, documents.c.card_summary)
-                .where(documents.c.id == image_row[1])
+                sa.select(
+                    documents.c.source,
+                    documents.c.title,
+                    documents.c.url_or_path,
+                    documents.c.card_summary,
+                ).where(documents.c.id == image_row[1])
             ).fetchone()
             n_chunks = con.execute(
-                sa.select(sa.func.count()).select_from(chunks)
+                sa.select(sa.func.count())
+                .select_from(chunks)
                 .where(chunks.c.document_id == image_row[1])
             ).scalar()
-        assert image_row[1] is not None                     # images.document_id set
+        assert image_row[1] is not None  # images.document_id set
         assert doc[0] == "image"
-        assert doc[1] == sample_image.name                  # title = filename
-        assert doc[2] == str(sample_image)                  # url_or_path = image path
+        assert doc[1] == sample_image.name  # title = filename
+        assert doc[2] == str(sample_image)  # url_or_path = image path
         assert "machine learning" in (doc[3] or "").lower()  # card_summary = description
-        assert n_chunks >= 1                                 # searchable text embedded
+        assert n_chunks >= 1  # searchable text embedded
 
     def test_clip_vector_id_stored(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img)
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(images.c.clip_vector_id)
-                .where(images.c.path == str(sample_image))
+                sa.select(images.c.clip_vector_id).where(images.c.path == str(sample_image))
             ).fetchone()
         assert row[0] is not None
 
     def test_clip_upsert_called(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img)
         assert all_mocks.upsert.called
 
     def test_dry_run_writes_nothing(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         result = ingest_image(img, dry_run=True)
         assert result["status"] == "dry_run"
         with get_engine().connect() as con:
-            count = con.execute(
-                sa.select(sa.func.count()).select_from(images)
-            ).scalar()
+            count = con.execute(sa.select(sa.func.count()).select_from(images)).scalar()
         assert count == 0
 
     def test_skip_vision_leaves_unknown_type(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         result = ingest_image(img, skip_vision=True)
         assert result["image_type"] == "unknown"
 
     def test_skip_ocr_stores_none(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img, skip_ocr=True)
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(images.c.ocr_text)
-                .where(images.c.path == str(sample_image))
+                sa.select(images.c.ocr_text).where(images.c.path == str(sample_image))
             ).fetchone()
         assert row[0] is None
 
-    def test_content_text_reaches_the_index(self, sample_image, mock_vision, mock_ocr,
-                                            mock_clip, mock_chroma_clip, mock_chroma):
+    def test_content_text_reaches_the_index(
+        self, sample_image, mock_vision, mock_ocr, mock_clip, mock_chroma_clip, mock_chroma
+    ):
         """The per-type extraction (not just the description) is what gets embedded."""
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img)
         with get_engine().connect() as con:
             text = con.execute(
@@ -249,8 +247,8 @@ class TestIngestImage:
                 .join(images, images.c.document_id == chunks.c.document_id)
                 .where(images.c.path == str(sample_image))
             ).scalar()
-        assert "learning rate schedules" in text          # transcript content
-        assert "Neural Networks" in text                  # OCR still included
+        assert "learning rate schedules" in text  # transcript content
+        assert "Neural Networks" in text  # OCR still included
 
     def test_book_fields_exposed_and_cached(self, sample_image, all_mocks, monkeypatch):
         """Cover extraction is returned by ingest_image and cached in books_json."""
@@ -261,8 +259,11 @@ class TestIngestImage:
         from pka.ingestion.image_pipeline import ingest_image
 
         extracted = [
-            {"title": "Godel, Escher, Bach", "authors": ["Douglas Hofstadter"],
-             "isbn": "9780465026562"},
+            {
+                "title": "Godel, Escher, Bach",
+                "authors": ["Douglas Hofstadter"],
+                "isbn": "9780465026562",
+            },
             {"title": "The Society of Mind", "authors": ["Marvin Minsky"], "isbn": None},
         ]
         monkeypatch.setattr(
@@ -274,27 +275,26 @@ class TestIngestImage:
                 books=extracted,
             ),
         )
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         result = ingest_image(img)
         assert result["books"] == extracted
         with get_engine().connect() as con:
             stored = con.execute(
-                sa.select(images.c.books_json)
-                .where(images.c.path == str(sample_image))
+                sa.select(images.c.books_json).where(images.c.path == str(sample_image))
             ).scalar()
         assert json.loads(stored) == extracted
 
     def test_upsert_on_reindex(self, sample_image, all_mocks):
         from pka.connectors.images import ImageFile
         from pka.ingestion.image_pipeline import ingest_image
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img)
         ingest_image(img)  # second call — should upsert, not duplicate
         with get_engine().connect() as con:
             count = con.execute(
-                sa.select(sa.func.count()).select_from(images)
+                sa.select(sa.func.count())
+                .select_from(images)
                 .where(images.c.path == str(sample_image))
             ).scalar()
         assert count == 1
@@ -307,12 +307,14 @@ class TestIngestImages:
 
     def test_processes_all_images(self, tmp_path, all_mocks):
         from pka.ingestion.image_pipeline import ingest_images
+
         imgs = [self._make_image_file(tmp_path / f"img{i}.jpg") for i in range(3)]
         stats = ingest_images(imgs)
         assert stats["processed"] == 3
 
     def test_skip_existing_skips_already_indexed(self, tmp_path, all_mocks):
         from pka.ingestion.image_pipeline import ingest_images
+
         imgs = [self._make_image_file(tmp_path / "single.jpg")]
         ingest_images(imgs)
         stats = ingest_images(imgs, skip_existing=True)
@@ -321,6 +323,7 @@ class TestIngestImages:
 
     def test_by_type_counts(self, tmp_path, all_mocks):
         from pka.ingestion.image_pipeline import ingest_images
+
         imgs = [self._make_image_file(tmp_path / f"s{i}.jpg") for i in range(2)]
         stats = ingest_images(imgs)
         assert "slide" in stats["by_type"]
@@ -345,6 +348,7 @@ class TestSearchImagesByText:
             lambda: mock_col,
         )
         from pka.ingestion.image_pipeline import search_images_by_text
+
         hits = search_images_by_text("neural networks", n=5)
         assert len(hits) == 1
         assert hits[0]["vector_id"] == "vid-1"
@@ -357,6 +361,7 @@ class TestSearchImagesByText:
             lambda q: None,
         )
         from pka.ingestion.image_pipeline import search_images_by_text
+
         assert search_images_by_text("query") == []
 
     def test_returns_empty_when_clip_disabled(self, monkeypatch):
@@ -373,6 +378,7 @@ class TestSearchImagesByText:
             lambda: pytest.fail("CLIP collection opened with clip_enabled off"),
         )
         from pka.ingestion.image_pipeline import search_images_by_text
+
         assert search_images_by_text("query") == []
         assert called["n"] == 0
 
@@ -394,9 +400,10 @@ class TestSearchImagesByInferredText:
         ]
         monkeypatch.setattr("pka.storage.vector_store.query", lambda *a, **kw: hits)
         from pka.ingestion.image_pipeline import search_images_by_inferred_text
+
         out = search_images_by_inferred_text("neural networks", n=5)
         assert [h["document_id"] for h in out] == [7, 9]
-        assert out[0]["vector_id"] == "v2"          # nearer of the two doc-7 chunks
+        assert out[0]["vector_id"] == "v2"  # nearer of the two doc-7 chunks
         assert out[0]["pass"] == "external_synopsis"
         assert out[1]["pass"] is None
 
@@ -410,6 +417,7 @@ class TestSearchImagesByInferredText:
 
         monkeypatch.setattr("pka.storage.vector_store.query", _query)
         from pka.ingestion.image_pipeline import search_images_by_inferred_text
+
         search_images_by_inferred_text("q", n=5)
         assert seen["where"] == {"source": "image"}
         assert seen["n_results"] >= 5  # over-fetch: chunks collapse per document
@@ -422,6 +430,7 @@ class TestSearchImagesByInferredText:
             lambda *a, **kw: [self._hit("v1", 3, 0.2, "gradient descent")],
         )
         from pka.ingestion.image_pipeline import search_images_by_inferred_text
+
         assert len(search_images_by_inferred_text("gradient descent")) == 1
 
     def test_returns_empty_when_store_unavailable(self, monkeypatch):
@@ -430,6 +439,7 @@ class TestSearchImagesByInferredText:
 
         monkeypatch.setattr("pka.storage.vector_store.query", _boom)
         from pka.ingestion.image_pipeline import search_images_by_inferred_text
+
         assert search_images_by_inferred_text("query") == []
 
     def test_skips_hits_without_document_id(self, monkeypatch):
@@ -439,6 +449,7 @@ class TestSearchImagesByInferredText:
             lambda *a, **kw: [bad, self._hit("v1", 4, 0.5)],
         )
         from pka.ingestion.image_pipeline import search_images_by_inferred_text
+
         out = search_images_by_inferred_text("query")
         assert [h["document_id"] for h in out] == [4]
 
@@ -450,24 +461,27 @@ class TestRegisterImages:
 
     def test_registers_new_image(self, tmp_path):
         from pka.ingestion.image_pipeline import register_images
+
         img = self._make_image_file(tmp_path / "new.jpg")
         stats = register_images([img])
         assert stats["processed"] == 1
         assert stats["skipped"] == 0
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(images.c.filename, images.c.document_id)
-                .where(images.c.path == str(img.path))
+                sa.select(images.c.filename, images.c.document_id).where(
+                    images.c.path == str(img.path)
+                )
             ).fetchone()
             doc_source = con.execute(
                 sa.select(documents.c.source).where(documents.c.id == row[1])
             ).scalar()
         assert row is not None
-        assert row[1] is not None          # linked to a documents row
-        assert doc_source == "image"       # registered as an image document
+        assert row[1] is not None  # linked to a documents row
+        assert doc_source == "image"  # registered as an image document
 
     def test_skips_existing_path(self, tmp_path):
         from pka.ingestion.image_pipeline import register_images
+
         img = self._make_image_file(tmp_path / "dup.jpg")
         register_images([img])
         stats = register_images([img])
@@ -476,18 +490,18 @@ class TestRegisterImages:
 
     def test_dry_run_counts_without_db_row(self, tmp_path):
         from pka.ingestion.image_pipeline import register_images
+
         img = self._make_image_file(tmp_path / "dry.jpg")
         stats = register_images([img], dry_run=True)
         assert stats["processed"] == 1
         with get_engine().connect() as con:
-            count = con.execute(
-                sa.select(sa.func.count()).select_from(images)
-            ).scalar()
+            count = con.execute(sa.select(sa.func.count()).select_from(images)).scalar()
         assert count == 0
 
     def test_stops_on_cancel(self, tmp_path):
         from pka.ingestion import progress as sp
         from pka.ingestion.image_pipeline import register_images
+
         sp.begin("image")
         sp.set_phase("image", "embedding", 5)
         sp.request_cancel("image")
@@ -518,6 +532,7 @@ class TestRegisterImages:
 class TestClipCollectionCache:
     def test_clip_collection_cached(self, isolated_settings):
         import pka.ingestion.image_pipeline as ip
+
         ip.reset_clip_collection()
         col_a = ip._get_clip_collection()
         col_b = ip._get_clip_collection()
@@ -584,18 +599,24 @@ class TestBookSynopsisCascade:
         """Synopsis chunk metadata out of the in-memory Chroma store."""
         store, _col = mock_chroma
         return [
-            item["meta"] for item in store.values()
+            item["meta"]
+            for item in store.values()
             if item["meta"].get("pass") == "external_synopsis"
         ]
 
     def test_one_chunk_per_visible_book(
-        self, sample_image, book_vision, fake_lookup, mock_ocr, mock_clip,
-        mock_chroma_clip, mock_chroma,
+        self,
+        sample_image,
+        book_vision,
+        fake_lookup,
+        mock_ocr,
+        mock_clip,
+        mock_chroma_clip,
+        mock_chroma,
     ):
         from pka.ingestion.image_pipeline import ingest_image
 
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         result = ingest_image(img, skip_gate=True)
 
         assert result["synopsis_chunks"] == 2
@@ -605,14 +626,19 @@ class TestBookSynopsisCascade:
         assert all(m["resolved_by"] == "search" for m in metas)
 
     def test_card_summary_and_description_stay_the_photo_caption(
-        self, sample_image, book_vision, fake_lookup, mock_ocr, mock_clip,
-        mock_chroma_clip, mock_chroma,
+        self,
+        sample_image,
+        book_vision,
+        fake_lookup,
+        mock_ocr,
+        mock_clip,
+        mock_chroma_clip,
+        mock_chroma,
     ):
         """Enrichment must not rewrite what the browse card says about the image."""
         from pka.ingestion.image_pipeline import ingest_image
 
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img, skip_gate=True)
 
         with get_engine().connect() as con:
@@ -622,13 +648,18 @@ class TestBookSynopsisCascade:
         assert card[0] == "Two books on a table."
 
     def test_synopsis_chunks_do_not_collide_with_the_main_chunk(
-        self, sample_image, book_vision, fake_lookup, mock_ocr, mock_clip,
-        mock_chroma_clip, mock_chroma,
+        self,
+        sample_image,
+        book_vision,
+        fake_lookup,
+        mock_ocr,
+        mock_clip,
+        mock_chroma_clip,
+        mock_chroma,
     ):
         from pka.ingestion.image_pipeline import ingest_image
 
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         ingest_image(img, skip_gate=True)
 
         with get_engine().connect() as con:
@@ -636,21 +667,31 @@ class TestBookSynopsisCascade:
         assert len(idxs) == len(set(idxs)), f"duplicate chunk_index: {idxs}"
 
     def test_disabled_lookup_adds_nothing(
-        self, sample_image, book_vision, mock_ocr, mock_clip,
-        mock_chroma_clip, mock_chroma,
+        self,
+        sample_image,
+        book_vision,
+        mock_ocr,
+        mock_clip,
+        mock_chroma_clip,
+        mock_chroma,
     ):
         """conftest pins external_lookup_enabled off; the real lookup must no-op."""
         from pka.ingestion.image_pipeline import ingest_image
 
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         result = ingest_image(img, skip_gate=True)
         assert result["synopsis_chunks"] == 0
         assert self._synopsis_meta(mock_chroma) == []
 
     def test_lookup_failure_does_not_break_ingestion(
-        self, sample_image, book_vision, monkeypatch, mock_ocr, mock_clip,
-        mock_chroma_clip, mock_chroma,
+        self,
+        sample_image,
+        book_vision,
+        monkeypatch,
+        mock_ocr,
+        mock_clip,
+        mock_chroma_clip,
+        mock_chroma,
     ):
         def _boom(title="", authors=None, isbn=None):
             raise RuntimeError("openlibrary down")
@@ -658,15 +699,20 @@ class TestBookSynopsisCascade:
         monkeypatch.setattr("pka.ingestion.openlibrary.lookup_book", _boom)
         from pka.ingestion.image_pipeline import ingest_image
 
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         result = ingest_image(img, skip_gate=True)
         assert result["status"] == "ok"
         assert result["synopsis_chunks"] == 0
 
     def test_non_book_image_never_looks_anything_up(
-        self, sample_image, mock_vision, mock_ocr, mock_clip,
-        mock_chroma_clip, mock_chroma, monkeypatch,
+        self,
+        sample_image,
+        mock_vision,
+        mock_ocr,
+        mock_clip,
+        mock_chroma_clip,
+        mock_chroma,
+        monkeypatch,
     ):
         calls = []
         monkeypatch.setattr(
@@ -675,15 +721,20 @@ class TestBookSynopsisCascade:
         )
         from pka.ingestion.image_pipeline import ingest_image
 
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         result = ingest_image(img, skip_gate=True)
         assert result["synopsis_chunks"] == 0
         assert calls == []
 
     def test_entry_without_title_or_isbn_is_skipped(
-        self, sample_image, monkeypatch, fake_lookup, mock_ocr, mock_clip,
-        mock_chroma_clip, mock_chroma,
+        self,
+        sample_image,
+        monkeypatch,
+        fake_lookup,
+        mock_ocr,
+        mock_clip,
+        mock_chroma_clip,
+        mock_chroma,
     ):
         from pka.ingestion.image_extractor import ImageContent
 
@@ -693,12 +744,13 @@ class TestBookSynopsisCascade:
                 image_type="bookshelf",
                 description="A shelf.",
                 content="spines",
-                books=[{"title": "", "authors": [], "isbn": None},
-                       {"title": "Dune", "authors": [], "isbn": None}],
+                books=[
+                    {"title": "", "authors": [], "isbn": None},
+                    {"title": "Dune", "authors": [], "isbn": None},
+                ],
             ),
         )
         from pka.ingestion.image_pipeline import ingest_image
 
-        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000,
-                        int(time.time()), {})
+        img = ImageFile(sample_image, sample_image.name, 1920, 1080, 1000, int(time.time()), {})
         assert ingest_image(img, skip_gate=True)["synopsis_chunks"] == 1

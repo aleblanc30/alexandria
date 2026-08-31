@@ -1,4 +1,5 @@
 """Image sync — register (metadata) and ingest (OCR/CLIP/embed) as separate jobs."""
+
 import logging
 
 from pka.config import settings as cfg
@@ -78,5 +79,6 @@ def sync_images(
     """Full pipeline. Kept for scripts/tests."""
     meta = sync_images_metadata(progress_key=progress_key, dry_run=dry_run)
     return run_full_sync(
-        meta, lambda: sync_images_ingest(progress_key=progress_key, dry_run=dry_run),
+        meta,
+        lambda: sync_images_ingest(progress_key=progress_key, dry_run=dry_run),
     )

@@ -7,6 +7,7 @@ Cluster lifecycle management (spec §5.4):
   - compute_drift()   : per-cluster drift score; flags clusters for split review.
   - compute_merges()  : pairwise centroid similarity; flags merge candidates.
 """
+
 import logging
 import time
 
@@ -25,25 +26,22 @@ from pka.db.schema import (
 
 log = logging.getLogger(__name__)
 
-DRIFT_THRESHOLD  = 0.60   # flag cluster for split review above this score
-MERGE_THRESHOLD  = 0.85   # flag pair for merge review above this similarity
+DRIFT_THRESHOLD = 0.60  # flag cluster for split review above this score
+MERGE_THRESHOLD = 0.85  # flag pair for merge review above this similarity
 
 
 # ── Accept / reject ───────────────────────────────────────────────────────────
+
 
 def accept_run(run_id: int) -> None:
     """Mark run_id as the single accepted (active) run; deactivate all others."""
     eng = get_engine()
     with eng.begin() as con:
         con.execute(
-            cluster_runs.update()
-            .where(cluster_runs.c.run_id != run_id)
-            .values(accepted=False)
+            cluster_runs.update().where(cluster_runs.c.run_id != run_id).values(accepted=False)
         )
         con.execute(
-            cluster_runs.update()
-            .where(cluster_runs.c.run_id == run_id)
-            .values(accepted=True)
+            cluster_runs.update().where(cluster_runs.c.run_id == run_id).values(accepted=True)
         )
     log.info("Run #%d accepted as active.", run_id)
 
@@ -72,6 +70,7 @@ def get_active_run_id() -> int | None:
 
 
 # ── Centroid helpers ──────────────────────────────────────────────────────────
+
 
 def _embeddings_available(result: dict) -> bool:
     """True when Chroma returned at least one embedding (avoids numpy truthiness bugs)."""
@@ -107,10 +106,7 @@ def _doc_mean_embeddings(doc_ids: list[int]) -> dict[int, np.ndarray]:
             continue
         doc_vecs.setdefault(did, []).append(np.asarray(emb, dtype=np.float32))
 
-    return {
-        did: np.mean(v, axis=0).astype(np.float32)
-        for did, v in doc_vecs.items()
-    }
+    return {did: np.mean(v, axis=0).astype(np.float32) for did, v in doc_vecs.items()}
 
 
 def _get_cluster_centroids(
@@ -167,6 +163,7 @@ def _nearest_centroid(
 
 # ── Assign new documents ──────────────────────────────────────────────────────
 
+
 def assign_new_docs(run_id: int | None = None) -> dict:
     """
     Assign documents that have chunks but no level-1 cluster assignment in the
@@ -182,9 +179,9 @@ def assign_new_docs(run_id: int | None = None) -> dict:
 
     with eng.connect() as con:
         assigned_ids = set(
-            r[0] for r in con.execute(
-                sa.select(cluster_assignments.c.document_id)
-                .where(
+            r[0]
+            for r in con.execute(
+                sa.select(cluster_assignments.c.document_id).where(
                     (cluster_assignments.c.run_id == active_run)
                     & (cluster_assignments.c.level == 1)
                 )
@@ -192,16 +189,12 @@ def assign_new_docs(run_id: int | None = None) -> dict:
         )
 
         all_chunked_ids = set(
-            r[0] for r in con.execute(
-                sa.select(chunks.c.document_id).distinct()
-            ).fetchall()
+            r[0] for r in con.execute(sa.select(chunks.c.document_id).distinct()).fetchall()
         )
 
         l2_parent_rows = con.execute(
-            sa.select(clusters.c.cluster_id, clusters.c.parent_cluster_id)
-            .where(
-                (clusters.c.run_id == active_run)
-                & (clusters.c.level == 2)
+            sa.select(clusters.c.cluster_id, clusters.c.parent_cluster_id).where(
+                (clusters.c.run_id == active_run) & (clusters.c.level == 2)
             )
         ).fetchall()
 
@@ -236,27 +229,31 @@ def assign_new_docs(run_id: int | None = None) -> dict:
         if l1_cid is None:
             continue
 
-        assignment_rows.append({
-            "document_id": doc_id,
-            "cluster_id":  l1_cid,
-            "run_id":      active_run,
-            "score":       l1_score,
-            "assigned_at": now,
-            "level":       1,
-        })
+        assignment_rows.append(
+            {
+                "document_id": doc_id,
+                "cluster_id": l1_cid,
+                "run_id": active_run,
+                "score": l1_score,
+                "assigned_at": now,
+                "level": 1,
+            }
+        )
 
         child_centroids = l2_by_parent.get(l1_cid, {})
         if child_centroids:
             l2_cid, l2_score = _nearest_centroid(doc_vec, child_centroids)
             if l2_cid is not None:
-                assignment_rows.append({
-                    "document_id": doc_id,
-                    "cluster_id":  l2_cid,
-                    "run_id":      active_run,
-                    "score":       l2_score,
-                    "assigned_at": now,
-                    "level":       2,
-                })
+                assignment_rows.append(
+                    {
+                        "document_id": doc_id,
+                        "cluster_id": l2_cid,
+                        "run_id": active_run,
+                        "score": l2_score,
+                        "assigned_at": now,
+                        "level": 2,
+                    }
+                )
 
     if assignment_rows:
         with eng.begin() as con:
@@ -268,6 +265,7 @@ def assign_new_docs(run_id: int | None = None) -> dict:
 
 
 # ── Drift detection ───────────────────────────────────────────────────────────
+
 
 def compute_drift(run_id: int | None = None) -> list[dict]:
     """
@@ -285,8 +283,7 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
     eng = get_engine()
     with eng.connect() as con:
         run_row = con.execute(
-            sa.select(cluster_runs.c.timestamp)
-            .where(cluster_runs.c.run_id == active_run)
+            sa.select(cluster_runs.c.timestamp).where(cluster_runs.c.run_id == active_run)
         ).fetchone()
         if not run_row:
             return []
@@ -294,10 +291,8 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
 
         # Level-1 cluster labels only (L2 sub-clusters are not merge/drift targets)
         label_rows = con.execute(
-            sa.select(clusters.c.cluster_id, clusters.c.label)
-            .where(
-                (clusters.c.run_id == active_run)
-                & (clusters.c.level == 1)
+            sa.select(clusters.c.cluster_id, clusters.c.label).where(
+                (clusters.c.run_id == active_run) & (clusters.c.level == 1)
             )
         ).fetchall()
         label_map = {r[0]: r[1] for r in label_rows}
@@ -316,9 +311,9 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
             )
             .join(documents, documents.c.id == cluster_assignments.c.document_id)
             .where(
-                (cluster_assignments.c.run_id == active_run) &
-                (cluster_assignments.c.level == 1) &
-                (documents.c.ingested_at > run_ts)
+                (cluster_assignments.c.run_id == active_run)
+                & (cluster_assignments.c.level == 1)
+                & (documents.c.ingested_at > run_ts)
             )
         ):
             recent_by_cluster.setdefault(cid, []).append(did)
@@ -329,8 +324,15 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
     for cid, centroid in centroids.items():
         recent_ids = recent_by_cluster.get(cid, [])
         if not recent_ids:
-            results.append({"cluster_id": cid, "label": label_map.get(cid, ""),
-                             "drift_score": 0.0, "n_recent": 0, "flagged": False})
+            results.append(
+                {
+                    "cluster_id": cid,
+                    "label": label_map.get(cid, ""),
+                    "drift_score": 0.0,
+                    "n_recent": 0,
+                    "flagged": False,
+                }
+            )
             continue
 
         vecs_list = [doc_means[d] for d in recent_ids if d in doc_means]
@@ -341,24 +343,30 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
         vecs_n = l2_normalize_rows(vecs)
 
         c_norm = centroid / (np.linalg.norm(centroid) + 1e-9)
-        cosine_sims  = vecs_n @ c_norm
-        drift_score  = float(1.0 - cosine_sims.mean())
+        cosine_sims = vecs_n @ c_norm
+        drift_score = float(1.0 - cosine_sims.mean())
 
-        results.append({
-            "cluster_id":  cid,
-            "label":       label_map.get(cid, ""),
-            "drift_score": round(drift_score, 3),
-            "n_recent":    len(recent_ids),
-            "flagged":     drift_score > DRIFT_THRESHOLD,
-        })
+        results.append(
+            {
+                "cluster_id": cid,
+                "label": label_map.get(cid, ""),
+                "drift_score": round(drift_score, 3),
+                "n_recent": len(recent_ids),
+                "flagged": drift_score > DRIFT_THRESHOLD,
+            }
+        )
 
     results.sort(key=lambda x: x["drift_score"], reverse=True)
-    log.info("Drift computed for %d clusters; %d flagged for split review.",
-             len(results), sum(1 for r in results if r["flagged"]))
+    log.info(
+        "Drift computed for %d clusters; %d flagged for split review.",
+        len(results),
+        sum(1 for r in results if r["flagged"]),
+    )
     return results
 
 
 # ── Merge detection ───────────────────────────────────────────────────────────
+
 
 def compute_merge_suggestions(run_id: int | None = None) -> list[dict]:
     """
@@ -377,17 +385,15 @@ def compute_merge_suggestions(run_id: int | None = None) -> list[dict]:
     eng = get_engine()
     with eng.connect() as con:
         label_rows = con.execute(
-            sa.select(clusters.c.cluster_id, clusters.c.label)
-            .where(
-                (clusters.c.run_id == active_run)
-                & (clusters.c.level == 1)
+            sa.select(clusters.c.cluster_id, clusters.c.label).where(
+                (clusters.c.run_id == active_run) & (clusters.c.level == 1)
             )
         ).fetchall()
     label_map = {r[0]: r[1] for r in label_rows}
 
-    cids    = list(centroids.keys())
-    matrix  = np.stack([centroids[c] for c in cids]).astype(np.float32)
-    normed  = l2_normalize_rows(matrix)
+    cids = list(centroids.keys())
+    matrix = np.stack([centroids[c] for c in cids]).astype(np.float32)
+    normed = l2_normalize_rows(matrix)
     sim_mat = normed @ normed.T  # (n, n)
 
     suggestions = []
@@ -395,21 +401,23 @@ def compute_merge_suggestions(run_id: int | None = None) -> list[dict]:
         for j in range(i + 1, len(cids)):
             sim = float(sim_mat[i, j])
             if sim >= MERGE_THRESHOLD:
-                suggestions.append({
-                    "cluster_id_a": cids[i],
-                    "label_a":      label_map.get(cids[i], ""),
-                    "cluster_id_b": cids[j],
-                    "label_b":      label_map.get(cids[j], ""),
-                    "similarity":   round(sim, 3),
-                })
+                suggestions.append(
+                    {
+                        "cluster_id_a": cids[i],
+                        "label_a": label_map.get(cids[i], ""),
+                        "cluster_id_b": cids[j],
+                        "label_b": label_map.get(cids[j], ""),
+                        "similarity": round(sim, 3),
+                    }
+                )
 
     suggestions.sort(key=lambda x: x["similarity"], reverse=True)
-    log.info("%d merge suggestions above threshold %.2f.",
-             len(suggestions), MERGE_THRESHOLD)
+    log.info("%d merge suggestions above threshold %.2f.", len(suggestions), MERGE_THRESHOLD)
     return suggestions
 
 
 # ── Incremental update ───────────────────────────────────────────────────────
+
 
 def run_incremental_clustering(
     *,
@@ -426,11 +434,11 @@ def run_incremental_clustering(
     if active is None:
         result = run_clustering(label_model=label_model, **run_kwargs)
         return {
-            "action":  "full_run",
-            "run_id":  result.run_id,
+            "action": "full_run",
+            "run_id": result.run_id,
             "assigned": 0,
-            "flagged":  0,
-            "result":  result,
+            "flagged": 0,
+            "result": result,
         }
 
     stats = assign_new_docs(active)
@@ -444,21 +452,22 @@ def run_incremental_clustering(
         )
         result = run_clustering(label_model=label_model, **run_kwargs)
         return {
-            "action":   "full_run_drift",
-            "run_id":   result.run_id,
+            "action": "full_run_drift",
+            "run_id": result.run_id,
             "assigned": stats["assigned"],
-            "flagged":  len(flagged),
-            "result":   result,
+            "flagged": len(flagged),
+            "result": result,
         }
 
     log.info(
         "Incremental update: assigned %d doc(s) to run #%d (no drift)",
-        stats["assigned"], active,
+        stats["assigned"],
+        active,
     )
     return {
-        "action":   "assign_only",
-        "run_id":   active,
+        "action": "assign_only",
+        "run_id": active,
         "assigned": stats["assigned"],
-        "flagged":  0,
-        "result":   None,
+        "flagged": 0,
+        "result": None,
     }

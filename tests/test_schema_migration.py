@@ -13,6 +13,7 @@ deliberately never updated — it is the oldest archive ``alexandria init`` clai
 to migrate, so a column added to ``schema.py`` without a matching migration
 shows up here as a diff against a freshly created database.
 """
+
 import sqlite3
 
 import pytest
@@ -215,18 +216,23 @@ def _snapshot(db_path) -> dict:
     con = sqlite3.connect(db_path)
     try:
         out = {}
-        tables = [r[0] for r in con.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-        )]
+        tables = [
+            r[0]
+            for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+        ]
         for t in tables:
             # Column order is not compared: ALTER appends, CREATE TABLE declares.
-            cols = {r[1]: (r[2].upper(), r[3], _normalise_default(r[4]))
-                    for r in con.execute(f"PRAGMA table_info({t})")}
+            cols = {
+                r[1]: (r[2].upper(), r[3], _normalise_default(r[4]))
+                for r in con.execute(f"PRAGMA table_info({t})")
+            }
             named, unique_cols = {}, []
             for r in con.execute(f"PRAGMA index_list({t})"):
                 members = tuple(x[2] for x in con.execute(f"PRAGMA index_info({r[1]})"))
                 if r[1].startswith("sqlite_autoindex"):
-                    unique_cols.append(members)   # UNIQUE constraints get generated names
+                    unique_cols.append(members)  # UNIQUE constraints get generated names
                 else:
                     named[r[1]] = (bool(r[2]), members)
             out[t] = {"columns": cols, "indexes": named, "unique": sorted(unique_cols)}
@@ -240,7 +246,7 @@ def _head_schema(tmp_path) -> dict:
     path = tmp_path / "head.db"
     eng = sa.create_engine(f"sqlite:///{path}")
     meta.create_all(eng)
-    eng.dispose()          # Windows locks an open SQLite file; release before reading
+    eng.dispose()  # Windows locks an open SQLite file; release before reading
     return _snapshot(path)
 
 
@@ -264,19 +270,24 @@ def _seed_v1_rows() -> None:
             " ingested_at, fetch_status) VALUES ('firefox', 'seed-1', 'Seeded doc',"
             " 'https://example.invalid/seed', 1700000000, 1700000000, 'fetched')"
         )
-        con.execute("INSERT INTO chunks (document_id, chunk_index, text, token_count)"
-                    " VALUES (1, 0, 'seed chunk text', 3)")
+        con.execute(
+            "INSERT INTO chunks (document_id, chunk_index, text, token_count)"
+            " VALUES (1, 0, 'seed chunk text', 3)"
+        )
         # Three identical overlay tags: legal in v1, and the unique index cannot be
         # created until init_db's dedupe removes two of them.
         for _ in range(3):
-            con.execute("INSERT INTO overlay_tags (document_id, tag, origin, confidence)"
-                        " VALUES (1, 'dupe-tag', 'llm', 0.9)")
+            con.execute(
+                "INSERT INTO overlay_tags (document_id, tag, origin, confidence)"
+                " VALUES (1, 'dupe-tag', 'llm', 0.9)"
+            )
         con.execute(
             "INSERT INTO cluster_runs (timestamp, algorithm) VALUES (1700000000, 'hdbscan')"
         )
         con.execute("INSERT INTO clusters (label, run_id) VALUES ('seed cluster', 1)")
-        con.execute("INSERT INTO cluster_assignments (document_id, cluster_id, run_id)"
-                    " VALUES (1, 1, 1)")
+        con.execute(
+            "INSERT INTO cluster_assignments (document_id, cluster_id, run_id) VALUES (1, 1, 1)"
+        )
         con.execute("INSERT INTO images (path, filename) VALUES ('/seed/img.png', 'img.png')")
         con.commit()
     finally:
@@ -325,9 +336,12 @@ class TestForwardMigration:
         init_db()
 
         with get_engine().connect() as con:
-            assert con.execute(sa.text(
-                "SELECT title FROM documents WHERE source_id = 'seed-1'"
-            )).scalar() == "Seeded doc"
+            assert (
+                con.execute(
+                    sa.text("SELECT title FROM documents WHERE source_id = 'seed-1'")
+                ).scalar()
+                == "Seeded doc"
+            )
             assert con.execute(sa.text("SELECT COUNT(*) FROM chunks")).scalar() == 1
             # Dedupe keeps exactly one of the three identical tags.
             assert con.execute(sa.text("SELECT COUNT(*) FROM overlay_tags")).scalar() == 1

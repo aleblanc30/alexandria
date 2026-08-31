@@ -18,6 +18,7 @@ Installed as the ``alexandria`` console script::
 Each subcommand delegates to a ``pka.cli.<module>.main(argv)`` that owns its
 own argparse parser; ``scripts/*.py`` remain as thin repo-local shims.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -25,19 +26,22 @@ import sys
 
 #: subcommand -> (module under pka.cli, one-line help)
 COMMANDS: dict[str, tuple[str, str]] = {
-    "init":                    ("init_db", "Create/upgrade the SQLite archive (idempotent)"),
-    "zotero":                  ("zotero", "Sync the Zotero library"),
-    "firefox":                 ("firefox", "Ingest Firefox bookmarks (metadata + fetch + embed)"),
-    "reddit":                  ("reddit", "Ingest Reddit saved posts (metadata + embed + fetch)"),
-    "calibre":                 ("calibre", "Ingest a Calibre library"),
-    "images":                  ("images", "Scan and index the images folder"),
-    "youtube":                 ("youtube", "Ingest saved YouTube videos (metadata + embed)"),
-    "clustering":              ("clustering", "Run the clustering pipeline"),
-    "domain-report":           ("domain_report", "Domain frequency report over ingested URLs"),
-    "purge-source":            ("purge_source", "Remove archived data for a source"),
-    "purge-cluster-runs":      ("purge_cluster_runs", "Delete stored clustering runs"),
-    "backfill-classification": ("backfill_classification", "Backfill item types and classification tags"),
-    "dev":                     ("dev", "Run backend + frontend together for local development (opens browser)"),
+    "init": ("init_db", "Create/upgrade the SQLite archive (idempotent)"),
+    "zotero": ("zotero", "Sync the Zotero library"),
+    "firefox": ("firefox", "Ingest Firefox bookmarks (metadata + fetch + embed)"),
+    "reddit": ("reddit", "Ingest Reddit saved posts (metadata + embed + fetch)"),
+    "calibre": ("calibre", "Ingest a Calibre library"),
+    "images": ("images", "Scan and index the images folder"),
+    "youtube": ("youtube", "Ingest saved YouTube videos (metadata + embed)"),
+    "clustering": ("clustering", "Run the clustering pipeline"),
+    "domain-report": ("domain_report", "Domain frequency report over ingested URLs"),
+    "purge-source": ("purge_source", "Remove archived data for a source"),
+    "purge-cluster-runs": ("purge_cluster_runs", "Delete stored clustering runs"),
+    "backfill-classification": (
+        "backfill_classification",
+        "Backfill item types and classification tags",
+    ),
+    "dev": ("dev", "Run backend + frontend together for local development (opens browser)"),
 }
 
 

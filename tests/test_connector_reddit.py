@@ -1,4 +1,5 @@
 """Reddit saved-posts connector — the private Atom feed and its failure modes."""
+
 from __future__ import annotations
 
 import json
@@ -23,10 +24,7 @@ from pka.connectors.reddit import (
 
 FEED_URL = "https://www.reddit.com/saved.rss?feed=abc123token&user=someone"
 
-_EMPTY_ATOM = (
-    '<?xml version="1.0" encoding="UTF-8"?>'
-    '<feed xmlns="http://www.w3.org/2005/Atom"/>'
-)
+_EMPTY_ATOM = '<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"/>'
 
 
 class _Feed(tuple):
@@ -60,14 +58,16 @@ def feed_http(monkeypatch):
     monkeypatch.setattr("pka.connectors.reddit.time.sleep", sleeps.append)
 
     def _get(url, params=None, headers=None, timeout=None, follow_redirects=False):
-        calls.append({
-            "url": url,
-            "params": dict(params or {}),
-            "headers": headers,
-            # httpx logs the full URL at INFO and the URL carries the feed token,
-            # so the loader is expected to have quietened this logger by now.
-            "httpx_log_level": logging.getLogger("httpx").level,
-        })
+        calls.append(
+            {
+                "url": url,
+                "params": dict(params or {}),
+                "headers": headers,
+                # httpx logs the full URL at INFO and the URL carries the feed token,
+                # so the loader is expected to have quietened this logger by now.
+                "httpx_log_level": logging.getLogger("httpx").level,
+            }
+        )
         return pages.pop(0) if pages else _FakeResponse(_EMPTY_ATOM)
 
     monkeypatch.setattr(httpx, "get", _get)
@@ -92,6 +92,7 @@ class TestLoaderSelection:
         with pytest.raises(RedditConnectorError, match="SECRET_ALEXANDRIA_REDDIT_FEED_URL"):
             load_saved()
 
+
 class TestFeedBlockMitigations:
     """old.reddit.com plus an unrecognised UA earn "403 Blocked" from Reddit."""
 
@@ -100,7 +101,8 @@ class TestFeedBlockMitigations:
         pages.append(_FakeResponse(ATOM_SELF))
 
         load_saved(
-            url="https://old.reddit.com/saved.json?feed=tok&user=someone", limit=None,
+            url="https://old.reddit.com/saved.json?feed=tok&user=someone",
+            limit=None,
         )
 
         # Both the host and the .json form the user pasted are normalised away.
@@ -133,28 +135,41 @@ class TestFeedBlockMitigations:
             load_saved(url=FEED_URL, limit=None)
 
         message = str(excinfo.value)
-        assert "Server said: Blocked" in message   # the actual evidence
-        assert "bot protection" in message         # and how to read it
-        assert "abc123token" not in message        # still redacted
+        assert "Server said: Blocked" in message  # the actual evidence
+        assert "bot protection" in message  # and how to read it
+        assert "abc123token" not in message  # still redacted
 
     def test_403_with_json_body_points_at_the_token(self, feed_http):
         calls, pages = feed_http
-        pages.append(_FakeResponse(
-            '{"message": "Forbidden", "error": 403}', status_code=403,
-        ))
+        pages.append(
+            _FakeResponse(
+                '{"message": "Forbidden", "error": 403}',
+                status_code=403,
+            )
+        )
 
-        message = str(pytest.raises(
-            RedditConnectorError, load_saved, url=FEED_URL, limit=None,
-        ).value)
+        message = str(
+            pytest.raises(
+                RedditConnectorError,
+                load_saved,
+                url=FEED_URL,
+                limit=None,
+            ).value
+        )
         assert '"error": 403' in message
 
     def test_long_block_page_is_truncated(self, feed_http):
         calls, pages = feed_http
         pages.append(_FakeResponse("x" * 5000, status_code=403))
 
-        message = str(pytest.raises(
-            RedditConnectorError, load_saved, url=FEED_URL, limit=None,
-        ).value)
+        message = str(
+            pytest.raises(
+                RedditConnectorError,
+                load_saved,
+                url=FEED_URL,
+                limit=None,
+            ).value
+        )
         # The excerpt is cut short; the whole body goes to the saved file instead.
         assert "…" in message
         assert "x" * 500 not in message
@@ -169,7 +184,8 @@ class TestFeedBlockMitigations:
         load_saved(url=FEED_URL, limit=None)
 
         assert calls[0]["httpx_log_level"] == logging.WARNING  # quiet in flight
-        assert httpx_log.level == logging.INFO                 # restored after
+        assert httpx_log.level == logging.INFO  # restored after
+
 
 # ── Atom (.rss) feed loader ──────────────────────────────────────────────────
 #
@@ -236,9 +252,7 @@ class TestAtomFeedLoader:
         assert item.collection == "r/socialism"
         assert "manifesto" in item.body
         assert item.external_url is None
-        expected = int(
-            datetime.fromisoformat("2026-08-16T09:11:48+00:00").timestamp()
-        )
+        expected = int(datetime.fromisoformat("2026-08-16T09:11:48+00:00").timestamp())
         assert item.date_added == expected
 
     def test_link_post_takes_external_from_link_anchor(self, feed_http):
@@ -319,7 +333,7 @@ class TestAtomPagination:
 
         assert len(items) == 101
         assert "after" not in calls[0]["params"]
-        assert calls[1]["params"]["after"] == "t3_099"   # last id of page 1
+        assert calls[1]["params"]["after"] == "t3_099"  # last id of page 1
         assert calls[1]["params"]["feed"] == "abc123token"
 
     def test_short_page_ends_the_walk(self, feed_http):
@@ -329,7 +343,7 @@ class TestAtomPagination:
         items = load_saved(url=FEED_URL, limit=None)
 
         assert len(items) == 2
-        assert len(calls) == 1   # fewer entries than asked for → no more pages
+        assert len(calls) == 1  # fewer entries than asked for → no more pages
 
     def test_ignored_cursor_does_not_loop_forever(self, feed_http):
         """A server replaying the same page must not spin the budget."""
@@ -340,8 +354,8 @@ class TestAtomPagination:
 
         items = load_saved(url=FEED_URL, limit=None)
 
-        assert len(items) == 100     # deduped
-        assert len(calls) == 2       # second page added nothing new → stop
+        assert len(items) == 100  # deduped
+        assert len(calls) == 2  # second page added nothing new → stop
 
     def test_limit_caps_page_size_and_results(self, feed_http):
         calls, pages = feed_http
@@ -352,38 +366,43 @@ class TestAtomPagination:
         assert [i.source_id for i in items] == ["t3_a", "t3_b"]
         assert calls[0]["params"]["limit"] == "2"
 
+
 class TestFeedThrottle:
     @staticmethod
     def _atom(ids):
         entries = "".join(
-            f"<entry><id>{f}</id><title>P</title><category term=\"x\"/>"
+            f'<entry><id>{f}</id><title>P</title><category term="x"/>'
             f"<updated>2026-01-01T00:00:00+00:00</updated>"
-            f"<link href=\"https://www.reddit.com/r/x/comments/{f[3:]}/p/\"/>"
-            f"<content type=\"html\">body</content></entry>"
+            f'<link href="https://www.reddit.com/r/x/comments/{f[3:]}/p/"/>'
+            f'<content type="html">body</content></entry>'
             for f in ids
         )
-        return ('<?xml version="1.0" encoding="UTF-8"?>'
-                '<feed xmlns="http://www.w3.org/2005/Atom">' + entries + "</feed>")
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<feed xmlns="http://www.w3.org/2005/Atom">' + entries + "</feed>"
+        )
 
     def test_no_sleep_before_the_first_request(self, feed_http, monkeypatch):
         feed_http.pages.append(_FakeResponse(self._atom(["t3_a"])))
 
         load_saved(url=FEED_URL, limit=None)
 
-        assert feed_http.sleeps == []   # single page pays nothing
+        assert feed_http.sleeps == []  # single page pays nothing
 
     def test_sleeps_between_pages_within_configured_bounds(self, feed_http, monkeypatch):
         monkeypatch.setattr(cfg, "reddit_feed_poll_interval_seconds", 1.0)
         monkeypatch.setattr(cfg, "reddit_feed_poll_jitter_seconds", 0.5)
-        feed_http.pages.append(_FakeResponse(
-            self._atom([f"t3_{i:03d}" for i in range(100)]),
-        ))
+        feed_http.pages.append(
+            _FakeResponse(
+                self._atom([f"t3_{i:03d}" for i in range(100)]),
+            )
+        )
         feed_http.pages.append(_FakeResponse(self._atom(["t3_last"])))
 
         load_saved(url=FEED_URL, limit=None)
 
-        assert len(feed_http.sleeps) == 1              # one gap between two pages
-        assert 1.0 <= feed_http.sleeps[0] <= 1.5       # base + jitter
+        assert len(feed_http.sleeps) == 1  # one gap between two pages
+        assert 1.0 <= feed_http.sleeps[0] <= 1.5  # base + jitter
 
     def test_jitter_varies_the_delay(self, feed_http, monkeypatch):
         """A fixed cadence is what rate limiters notice; the delay must move."""
@@ -393,10 +412,8 @@ class TestFeedThrottle:
         for _ in range(4):
             feed_http.pages.append(_FakeResponse(full))
         # Distinct ids per page so the walk continues.
-        feed_http.pages[1] = _FakeResponse(
-            self._atom([f"t3_1{i:02d}" for i in range(100)]))
-        feed_http.pages[2] = _FakeResponse(
-            self._atom([f"t3_2{i:02d}" for i in range(100)]))
+        feed_http.pages[1] = _FakeResponse(self._atom([f"t3_1{i:02d}" for i in range(100)]))
+        feed_http.pages[2] = _FakeResponse(self._atom([f"t3_2{i:02d}" for i in range(100)]))
         feed_http.pages[3] = _FakeResponse(self._atom(["t3_end"]))
 
         load_saved(url=FEED_URL, limit=None)
@@ -406,8 +423,7 @@ class TestFeedThrottle:
     def test_throttle_can_be_disabled(self, feed_http, monkeypatch):
         monkeypatch.setattr(cfg, "reddit_feed_poll_interval_seconds", 0.0)
         monkeypatch.setattr(cfg, "reddit_feed_poll_jitter_seconds", 0.0)
-        feed_http.pages.append(_FakeResponse(
-            self._atom([f"t3_{i:03d}" for i in range(100)])))
+        feed_http.pages.append(_FakeResponse(self._atom([f"t3_{i:03d}" for i in range(100)])))
         feed_http.pages.append(_FakeResponse(self._atom(["t3_last"])))
 
         load_saved(url=FEED_URL, limit=None)
@@ -421,26 +437,35 @@ class TestIncrementalVsBackfill:
     _atom = staticmethod(TestFeedThrottle._atom)
 
     def test_stops_at_first_known_id_mid_page(self, feed_http):
-        feed_http.pages.append(_FakeResponse(
-            self._atom(["t3_new1", "t3_new2", "t3_old", "t3_older"]),
-        ))
+        feed_http.pages.append(
+            _FakeResponse(
+                self._atom(["t3_new1", "t3_new2", "t3_old", "t3_older"]),
+            )
+        )
 
         items = load_saved(
-            url=FEED_URL, limit=None,
-            known_ids={"t3_old", "t3_older"}, stop_on_known=True,
+            url=FEED_URL,
+            limit=None,
+            known_ids={"t3_old", "t3_older"},
+            stop_on_known=True,
         )
 
         assert [i.source_id for i in items] == ["t3_new1", "t3_new2"]
         assert len(feed_http.calls) == 1
-        assert feed_http.sleeps == []   # nothing new means no second request
+        assert feed_http.sleeps == []  # nothing new means no second request
 
     def test_backfill_walks_past_known_items(self, feed_http):
-        feed_http.pages.append(_FakeResponse(
-            self._atom(["t3_new", "t3_old"]),
-        ))
+        feed_http.pages.append(
+            _FakeResponse(
+                self._atom(["t3_new", "t3_old"]),
+            )
+        )
 
         items = load_saved(
-            url=FEED_URL, limit=None, known_ids={"t3_old"}, stop_on_known=False,
+            url=FEED_URL,
+            limit=None,
+            known_ids={"t3_old"},
+            stop_on_known=False,
         )
 
         assert [i.source_id for i in items] == ["t3_new", "t3_old"]
@@ -449,18 +474,25 @@ class TestIncrementalVsBackfill:
         feed_http.pages.append(_FakeResponse(self._atom(["t3_old"])))
 
         items = load_saved(
-            url=FEED_URL, limit=None, known_ids={"t3_old"}, stop_on_known=True,
+            url=FEED_URL,
+            limit=None,
+            known_ids={"t3_old"},
+            stop_on_known=True,
         )
 
         assert items == []
+
 
 class TestFailedResponseDump:
     """A block page explains itself in HTML that will not fit in a log line."""
 
     def test_body_is_written_to_diagnostics_and_named_in_the_error(self, feed_http):
-        feed_http.pages.append(_FakeResponse(
-            "<body>Blocked, and here is why</body>", status_code=403,
-        ))
+        feed_http.pages.append(
+            _FakeResponse(
+                "<body>Blocked, and here is why</body>",
+                status_code=403,
+            )
+        )
 
         with pytest.raises(RedditConnectorError) as excinfo:
             load_saved(url=FEED_URL, limit=None)
@@ -546,7 +578,7 @@ class TestPollArchive:
     _atom = staticmethod(TestFeedThrottle._atom)
 
     def test_raw_pages_are_kept_verbatim_under_a_timestamped_directory(self, feed_http):
-        full_page = self._atom([f"t3_{i:03d}" for i in range(100)])   # 100 → keep walking
+        full_page = self._atom([f"t3_{i:03d}" for i in range(100)])  # 100 → keep walking
         feed_http.pages.append(_FakeResponse(full_page))
         feed_http.pages.append(_FakeResponse(self._atom(["t3_last"])))
 
@@ -579,8 +611,8 @@ class TestPollArchive:
             feed_http.pages.append(_FakeResponse(self._atom(["t3_a", "t3_b"])))
             load_saved(url=FEED_URL, limit=None)
 
-        assert len(_saved_log()) == 2                    # not four
-        assert len(_poll_dirs()) == 2                    # but both polls kept
+        assert len(_saved_log()) == 2  # not four
+        assert len(_poll_dirs()) == 2  # but both polls kept
         second = json.loads((_poll_dirs()[1] / "manifest.json").read_text(encoding="utf-8"))
         assert (second["new"], second["unchanged"]) == (0, 2)
 
@@ -589,7 +621,7 @@ class TestPollArchive:
         feed_http.pages.append(_FakeResponse(original))
         load_saved(url=FEED_URL, limit=None)
 
-        edited = original.replace(">body<", ">edited<")   # the entry was rewritten
+        edited = original.replace(">body<", ">edited<")  # the entry was rewritten
         assert edited != original
         feed_http.pages.append(_FakeResponse(edited))
         load_saved(url=FEED_URL, limit=None)
@@ -645,7 +677,7 @@ class TestPollArchive:
         load_saved(url=FEED_URL, limit=None)
         path = cfg.data_dir / "reddit" / "saved.jsonl"
         with path.open("a", encoding="utf-8") as fh:
-            fh.write('{"item": {"source_i')          # killed mid-append
+            fh.write('{"item": {"source_i')  # killed mid-append
 
         assert [i["source_id"] for i in reddit_archive.read_items()] == ["t3_a"]
 
@@ -656,7 +688,7 @@ class TestLoadFromArchive:
     _atom = staticmethod(TestFeedThrottle._atom)
 
     def test_items_come_back_without_touching_the_network(self, feed_http):
-        for page in (ATOM_LINK_POST, ATOM_COMMENT):   # two polls, one item each
+        for page in (ATOM_LINK_POST, ATOM_COMMENT):  # two polls, one item each
             feed_http.pages.append(_FakeResponse(page))
             load_saved(url=FEED_URL, limit=None)
         calls_after_poll = len(feed_http.calls)

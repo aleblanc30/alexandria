@@ -1,4 +1,5 @@
 """Shared helper to resolve the currently-accepted cluster run."""
+
 import sqlalchemy as sa
 
 from pka.db.schema import cluster_runs

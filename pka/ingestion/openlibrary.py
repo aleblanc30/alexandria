@@ -24,6 +24,7 @@ replayable without re-running the VLM.
 All entry points return ``None`` (never raise) when the lookup is disabled,
 unavailable, or unverifiable — ingestion loops must not break on enrichment.
 """
+
 from __future__ import annotations
 
 import logging
@@ -91,6 +92,7 @@ def reset_cache() -> None:
 
 # ── ISBN validation ───────────────────────────────────────────────────────────
 
+
 def normalize_isbn(raw: object) -> str | None:
     """Strip separators and return a 10- or 13-character ISBN, or ``None``."""
     if raw is None:
@@ -128,6 +130,7 @@ def isbn_checksum_valid(raw: object) -> bool:
 
 
 # ── Title matching (round-trip verification) ──────────────────────────────────
+
 
 def _fold_accents(value: str) -> str:
     """Strip diacritics so "Gödel" and "Godel" compare equal.
@@ -181,6 +184,7 @@ def authors_match(extracted: list[str], canonical: list[str]) -> bool:
 
 # ── HTTP ──────────────────────────────────────────────────────────────────────
 
+
 def _get_json(path: str, params: dict[str, str] | None = None) -> Any | None:
     """GET a JSON document from Open Library. ``None`` on any failure."""
     url = f"{cfg.openlibrary_base_url.rstrip('/')}{path}"
@@ -221,6 +225,7 @@ def _description_text(record: Any) -> str:
 
 
 # ── Lookup rungs ──────────────────────────────────────────────────────────────
+
 
 def lookup_by_isbn(isbn: object) -> BookSynopsis | None:
     """Resolve an edition by ISBN, then its work, for a description."""
@@ -279,9 +284,7 @@ def lookup_by_title_author(title: str, authors: list[str] | None = None) -> Book
         if not isinstance(doc, dict):
             continue
         canonical_title = str(doc.get("title") or "").strip()
-        canonical_authors = [
-            str(a) for a in (doc.get("author_name") or []) if str(a).strip()
-        ]
+        canonical_authors = [str(a) for a in (doc.get("author_name") or []) if str(a).strip()]
         if not titles_match(query_title, canonical_title):
             continue
         if not authors_match(author_list, canonical_authors):

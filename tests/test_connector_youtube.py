@@ -3,6 +3,7 @@
 No network or OAuth is exercised: the connector is driven by the injected
 ``youtube_service`` fake and credential checks are stubbed where relevant.
 """
+
 from __future__ import annotations
 
 from pka.connectors.youtube import (
@@ -16,6 +17,7 @@ from pka.connectors.youtube import (
 from pka.constants import Source, TagOrigin
 
 # ── Pure helpers ──────────────────────────────────────────────────────────────
+
 
 class TestHelpers:
     def test_video_watch_url(self):
@@ -31,8 +33,12 @@ class TestHelpers:
 
     def test_embed_text_includes_all_fields(self):
         v = YouTubeVideo(
-            source_id="x", url="u", title="Title", channel="Chan",
-            description="Desc", tags=["a", "b"],
+            source_id="x",
+            url="u",
+            title="Title",
+            channel="Chan",
+            description="Desc",
+            tags=["a", "b"],
         )
         text = youtube_embed_text(v)
         assert "Title" in text
@@ -41,20 +47,22 @@ class TestHelpers:
         assert "Tags: a, b" in text
 
     def test_embed_text_skips_empty_fields(self):
-        v = YouTubeVideo(source_id="x", url="u", title="Only Title", channel="",
-                         description="", tags=[])
+        v = YouTubeVideo(
+            source_id="x", url="u", title="Only Title", channel="", description="", tags=[]
+        )
         assert youtube_embed_text(v) == "Only Title"
 
     def test_card_summary(self):
-        v = YouTubeVideo(source_id="x", url="u", title="t", channel="c",
-                         description="  hello  ", tags=[])
+        v = YouTubeVideo(
+            source_id="x", url="u", title="t", channel="c", description="  hello  ", tags=[]
+        )
         assert youtube_card_summary(v) == "hello"
-        v2 = YouTubeVideo(source_id="x", url="u", title="t", channel="c",
-                          description="", tags=[])
+        v2 = YouTubeVideo(source_id="x", url="u", title="t", channel="c", description="", tags=[])
         assert youtube_card_summary(v2) is None
 
 
 # ── Connector loading (fake service) ──────────────────────────────────────────
+
 
 class TestLoadSavedVideos:
     def test_returns_youtube_videos(self, youtube_service):
@@ -94,11 +102,17 @@ class TestLoadSavedVideos:
             channels={"items": []},
             playlists={"items": [{"id": "PL1", "snippet": {"title": "P"}}]},
             playlist_items={
-                "PL1": {"items": [
-                    {"snippet": {"publishedAt": "2024-01-01T00:00:00Z",
-                                 "resourceId": {"videoId": "ghost"}},
-                     "contentDetails": {"videoId": "ghost"}},
-                ]}
+                "PL1": {
+                    "items": [
+                        {
+                            "snippet": {
+                                "publishedAt": "2024-01-01T00:00:00Z",
+                                "resourceId": {"videoId": "ghost"},
+                            },
+                            "contentDetails": {"videoId": "ghost"},
+                        },
+                    ]
+                }
             },
             videos={},  # no hydration data (private/deleted video)
         )
@@ -108,6 +122,7 @@ class TestLoadSavedVideos:
 
 
 # ── End-to-end sync (metadata + embed) ────────────────────────────────────────
+
 
 def _patch_loader(monkeypatch, youtube_service):
     """Route the sync's connector call through the fake service."""
@@ -119,6 +134,7 @@ def _patch_loader(monkeypatch, youtube_service):
     monkeypatch.setattr(source_access, "try_load_youtube_videos", _fake_try_load)
     # youtube_sync imported the symbol directly — patch it there too.
     import pka.ingestion.youtube_sync as ys
+
     monkeypatch.setattr(ys, "try_load_youtube_videos", _fake_try_load)
 
 
@@ -138,9 +154,7 @@ class TestSyncYoutube:
         assert set(docs) == {"vid_raft", "vid_paxos"}
         assert source_ids_with_chunks(Source.YOUTUBE) == {"vid_raft", "vid_paxos"}
 
-    def test_metadata_writes_tags_collections_and_video_tag(
-        self, youtube_service, monkeypatch
-    ):
+    def test_metadata_writes_tags_collections_and_video_tag(self, youtube_service, monkeypatch):
         _patch_loader(monkeypatch, youtube_service)
         import sqlalchemy as sa
 
@@ -152,11 +166,10 @@ class TestSyncYoutube:
 
         with get_engine().connect() as con:
             tags = {r[0] for r in con.execute(sa.select(source_tags.c.tag_string))}
-            collections = {r[0] for r in con.execute(
-                sa.select(source_collections.c.collection)
-            )}
+            collections = {r[0] for r in con.execute(sa.select(source_collections.c.collection))}
             inferred = {
-                r[0] for r in con.execute(
+                r[0]
+                for r in con.execute(
                     sa.select(overlay_tags.c.tag).where(
                         overlay_tags.c.origin == str(TagOrigin.INFERRED)
                     )

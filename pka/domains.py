@@ -1,4 +1,5 @@
 """HTTP domain extraction and frequency reporting for ingested documents."""
+
 from __future__ import annotations
 
 from collections import defaultdict

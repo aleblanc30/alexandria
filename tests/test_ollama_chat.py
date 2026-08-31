@@ -4,6 +4,7 @@ The public ``pka.ollama_chat.chat_json`` / ``resolve_chat_model`` shims delegate
 to whichever provider ``chat_provider`` selects (Ollama by default); the concrete
 logic under test lives in ``pka.providers.ollama``.
 """
+
 import pytest
 
 from pka import ollama_chat as oc
@@ -57,7 +58,9 @@ class TestResolveChatModel:
     def test_fallback_when_tags_fail(self, monkeypatch):
         monkeypatch.setattr(prov.cfg, "chat_model", "")
         prov._cached_chat_model = None
-        monkeypatch.setattr("httpx.get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
+        monkeypatch.setattr(
+            "httpx.get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down"))
+        )
         assert oc.resolve_chat_model() in ("llama3", "")
 
 

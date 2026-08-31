@@ -10,6 +10,7 @@ Four layers, each depending only on the ones above it:
 Import this package (``from pka.ingestion import progress as sp``) for the
 public API; reach for a submodule only when you need something narrower.
 """
+
 from __future__ import annotations
 
 from pka.ingestion.progress.state import (

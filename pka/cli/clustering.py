@@ -13,6 +13,7 @@ Usage::
     alexandria clustering --drift           # print drift report
     alexandria clustering --merges          # print merge suggestions
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,29 +37,44 @@ log = logging.getLogger("run_clustering")
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="alexandria clustering")
-    parser.add_argument("--min-cluster-size", type=int,   default=None)
-    parser.add_argument("--min-samples",      type=int,   default=None)
-    parser.add_argument("--n-neighbors",      type=int,   default=None)
-    parser.add_argument("--min-dist",         type=float, default=0.1)
-    parser.add_argument("--n-components",     type=int,   default=5,
-                        help="Legacy UMAP clustering dims (cluster-space=legacy_umap)")
-    parser.add_argument("--pca-components",   type=int,   default=None)
-    parser.add_argument("--cluster-space",    type=str,   default=None,
-                        choices=["pca", "legacy_umap"])
-    parser.add_argument("--label-model",      type=str,   default=None)
-    parser.add_argument("--skip-labelling",   action="store_true")
-    parser.add_argument("--async-labelling",  action="store_true",
-                        help="Persist TF-IDF labels first; LLM relabel in background")
-    parser.add_argument("--incremental",      action="store_true",
-                        help="Assign new docs to active run; full re-run if drift flagged")
-    parser.add_argument("--accept",           action="store_true",
-                        help="Auto-accept this run without manual review")
-    parser.add_argument("--assign-new",       action="store_true",
-                        help="Assign unassigned docs to existing clusters (no re-run)")
-    parser.add_argument("--drift",            action="store_true",
-                        help="Print drift report for the active run")
-    parser.add_argument("--merges",           action="store_true",
-                        help="Print merge suggestions for the active run")
+    parser.add_argument("--min-cluster-size", type=int, default=None)
+    parser.add_argument("--min-samples", type=int, default=None)
+    parser.add_argument("--n-neighbors", type=int, default=None)
+    parser.add_argument("--min-dist", type=float, default=0.1)
+    parser.add_argument(
+        "--n-components",
+        type=int,
+        default=5,
+        help="Legacy UMAP clustering dims (cluster-space=legacy_umap)",
+    )
+    parser.add_argument("--pca-components", type=int, default=None)
+    parser.add_argument("--cluster-space", type=str, default=None, choices=["pca", "legacy_umap"])
+    parser.add_argument("--label-model", type=str, default=None)
+    parser.add_argument("--skip-labelling", action="store_true")
+    parser.add_argument(
+        "--async-labelling",
+        action="store_true",
+        help="Persist TF-IDF labels first; LLM relabel in background",
+    )
+    parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Assign new docs to active run; full re-run if drift flagged",
+    )
+    parser.add_argument(
+        "--accept", action="store_true", help="Auto-accept this run without manual review"
+    )
+    parser.add_argument(
+        "--assign-new",
+        action="store_true",
+        help="Assign unassigned docs to existing clusters (no re-run)",
+    )
+    parser.add_argument(
+        "--drift", action="store_true", help="Print drift report for the active run"
+    )
+    parser.add_argument(
+        "--merges", action="store_true", help="Print merge suggestions for the active run"
+    )
     args = parser.parse_args(argv)
 
     setup_logging()
@@ -77,8 +93,13 @@ def main(argv: list[str] | None = None) -> int:
             sys.exit(1)
         for entry in compute_drift(active):
             flag = " ← SPLIT?" if entry["flagged"] else ""
-            log.info("  [%s] drift=%.3f  recent=%d%s",
-                     entry["label"], entry["drift_score"], entry["n_recent"], flag)
+            log.info(
+                "  [%s] drift=%.3f  recent=%d%s",
+                entry["label"],
+                entry["drift_score"],
+                entry["n_recent"],
+                flag,
+            )
         return 0
 
     if args.merges:
@@ -87,29 +108,32 @@ def main(argv: list[str] | None = None) -> int:
             log.error("No active run. Run clustering first.")
             sys.exit(1)
         for s in compute_merge_suggestions(active):
-            log.info("  MERGE? '%s' + '%s'  sim=%.3f",
-                     s["label_a"], s["label_b"], s["similarity"])
+            log.info("  MERGE? '%s' + '%s'  sim=%.3f", s["label_a"], s["label_b"], s["similarity"])
         return 0
 
     run_kw = dict(
-        min_cluster_size = args.min_cluster_size,
-        min_samples      = args.min_samples,
-        n_neighbors      = args.n_neighbors,
-        min_dist         = args.min_dist,
-        n_components     = args.n_components,
-        pca_components   = args.pca_components,
-        cluster_space    = args.cluster_space,
-        label_model      = args.label_model,
-        skip_labelling   = args.skip_labelling,
-        async_labelling  = args.async_labelling or None,
+        min_cluster_size=args.min_cluster_size,
+        min_samples=args.min_samples,
+        n_neighbors=args.n_neighbors,
+        min_dist=args.min_dist,
+        n_components=args.n_components,
+        pca_components=args.pca_components,
+        cluster_space=args.cluster_space,
+        label_model=args.label_model,
+        skip_labelling=args.skip_labelling,
+        async_labelling=args.async_labelling or None,
     )
 
     if args.incremental:
         log.info("Starting incremental clustering update…")
         summary = run_incremental_clustering(**run_kw)
-        log.info("Incremental result: action=%s run_id=%s assigned=%s flagged=%s",
-                 summary["action"], summary["run_id"],
-                 summary["assigned"], summary["flagged"])
+        log.info(
+            "Incremental result: action=%s run_id=%s assigned=%s flagged=%s",
+            summary["action"],
+            summary["run_id"],
+            summary["assigned"],
+            summary["flagged"],
+        )
         result = summary.get("result")
         if result is None:
             if args.accept and summary.get("run_id"):
@@ -122,10 +146,12 @@ def main(argv: list[str] | None = None) -> int:
     log.info("Run #%d complete:", result.run_id)
     log.info("  Clusters : %d", result.n_clusters)
     log.info("  Noise    : %d", result.n_noise)
-    log.info("  Sizes    : min=%d  max=%d  mean=%.1f",
-             result.diagnostics["size_min"],
-             result.diagnostics["size_max"],
-             result.diagnostics["size_mean"])
+    log.info(
+        "  Sizes    : min=%d  max=%d  mean=%.1f",
+        result.diagnostics["size_min"],
+        result.diagnostics["size_max"],
+        result.diagnostics["size_mean"],
+    )
     if result.diagnostics.get("timings_ms"):
         log.info("  Timings  : %s", result.diagnostics["timings_ms"])
     log.info("Cluster labels:")
@@ -138,9 +164,11 @@ def main(argv: list[str] | None = None) -> int:
         accept_run(result.run_id)
         log.info("Run #%d accepted as active.", result.run_id)
     else:
-        log.info("Run #%d stored but NOT accepted. "
-                 "Review diagnostics and run with --accept, or accept via UI.",
-                 result.run_id)
+        log.info(
+            "Run #%d stored but NOT accepted. "
+            "Review diagnostics and run with --accept, or accept via UI.",
+            result.run_id,
+        )
     return 0
 
 

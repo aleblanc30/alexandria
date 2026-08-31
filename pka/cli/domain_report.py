@@ -6,6 +6,7 @@ Usage::
     alexandria domain-report --source firefox --limit 50
     alexandria domain-report --json
 """
+
 from __future__ import annotations
 
 import argparse

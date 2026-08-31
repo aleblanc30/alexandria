@@ -93,9 +93,7 @@ _TYPE_ALIASES = {
 }
 
 
-_IMAGE_TYPE_RE = re.compile(
-    r'"?image_type"?\s*[:=]\s*"?([a-z]+(?:[ _-][a-z]+)*)', re.IGNORECASE
-)
+_IMAGE_TYPE_RE = re.compile(r'"?image_type"?\s*[:=]\s*"?([a-z]+(?:[ _-][a-z]+)*)', re.IGNORECASE)
 _DESCRIPTION_RE = re.compile(r'"?description"?\s*[:=]\s*"(.*)"\s*}?\s*$', re.IGNORECASE | re.DOTALL)
 
 
@@ -183,9 +181,7 @@ Rules for "books":
 # Label-specific hint appended to the one book prompt: what is actually readable
 # differs sharply between a front cover and a shelf of spines.
 _BOOK_HINTS = {
-    "book_cover": (
-        "This image shows a single front cover, so return exactly one entry."
-    ),
+    "book_cover": ("This image shows a single front cover, so return exactly one entry."),
     "multiple_book_covers": (
         "Several front covers face the camera. Return one entry per cover whose "
         "title is readable, and do not merge two books into one entry."
@@ -228,7 +224,9 @@ _BOOKS_ARRAY_RE = re.compile(r'"?books"?\s*:\s*(\[.*\])', re.IGNORECASE | re.DOT
 _BOOK_OBJECT_RE = re.compile(r"\{[^{}]*\}", re.DOTALL)
 _TITLE_FIELD_RE = re.compile(r'"?title"?\s*[:=]\s*"([^"]*)"', re.IGNORECASE)
 _AUTHORS_FIELD_RE = re.compile(r'"?authors?"?\s*[:=]\s*(?:\[([^\]]*)\]|"([^"]*)")', re.IGNORECASE)
-_ISBN_FIELD_RE = re.compile(r'"?isbn(?:_1[03])?"?\s*[:=]\s*"?([0-9Xx][0-9Xx\s-]{8,})', re.IGNORECASE)
+_ISBN_FIELD_RE = re.compile(
+    r'"?isbn(?:_1[03])?"?\s*[:=]\s*"?([0-9Xx][0-9Xx\s-]{8,})', re.IGNORECASE
+)
 
 # Values models emit instead of admitting they cannot read a title. Dropping the
 # entry is deliberate: a placeholder title becomes a bogus identifier lookup.
@@ -332,11 +330,13 @@ def _normalize_books(raw: object) -> list[dict]:
         title = _clean_field(entry.get("title"))
         if not title:
             continue
-        books.append({
-            "title":   title,
-            "authors": _normalize_authors(entry.get("authors") or entry.get("author")),
-            "isbn":    _normalize_isbn(entry.get("isbn")),
-        })
+        books.append(
+            {
+                "title": title,
+                "authors": _normalize_authors(entry.get("authors") or entry.get("author")),
+                "isbn": _normalize_isbn(entry.get("isbn")),
+            }
+        )
     return books
 
 
@@ -369,11 +369,13 @@ def _salvage_books(raw: str) -> list[dict]:
             continue
         authors = _AUTHORS_FIELD_RE.search(obj)
         isbn = _ISBN_FIELD_RE.search(obj)
-        entries.append({
-            "title":   title.group(1),
-            "authors": (authors.group(1) or authors.group(2)) if authors else "",
-            "isbn":    isbn.group(1) if isbn else None,
-        })
+        entries.append(
+            {
+                "title": title.group(1),
+                "authors": (authors.group(1) or authors.group(2)) if authors else "",
+                "isbn": isbn.group(1) if isbn else None,
+            }
+        )
     return _normalize_books(entries)
 
 
@@ -566,10 +568,10 @@ def extract_image_content(
 
     content, books, parsed_description = _parse_content_reply(raw, image_type)
     return ImageContent(
-        image_type  = image_type,
-        description = parsed_description or description,
-        content     = content,
-        books       = books,
+        image_type=image_type,
+        description=parsed_description or description,
+        content=content,
+        books=books,
     )
 
 

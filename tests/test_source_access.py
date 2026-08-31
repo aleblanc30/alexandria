@@ -1,4 +1,5 @@
 """Tests for graceful optional source access."""
+
 import pytest
 
 from pka.connectors.calibre import load_books
@@ -41,7 +42,8 @@ class TestSourceAccess:
         present.mkdir()
         missing = tmp_path / "missing"
         monkeypatch.setattr(
-            "pka.ingestion.source_access.settings.image_dirs", [missing, present],
+            "pka.ingestion.source_access.settings.image_dirs",
+            [missing, present],
         )
         ok, msg = images_available()
         assert ok is True

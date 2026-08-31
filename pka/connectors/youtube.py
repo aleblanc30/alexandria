@@ -16,6 +16,7 @@ are lazy-imported inside the auth helpers so this module stays importable (and
 testable via an injected fake ``service``) without the optional ``youtube``
 extra installed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,8 +30,8 @@ log = logging.getLogger(__name__)
 YOUTUBE_READONLY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 _API_SERVICE_NAME = "youtube"
 _API_VERSION = "v3"
-_PAGE_SIZE = 50               # max maxResults for playlists / playlistItems
-_VIDEO_HYDRATE_BATCH = 50     # videos.list accepts up to 50 ids per call
+_PAGE_SIZE = 50  # max maxResults for playlists / playlistItems
+_VIDEO_HYDRATE_BATCH = 50  # videos.list accepts up to 50 ids per call
 LIKED_PLAYLIST_TITLE = "Liked videos"
 
 
@@ -40,17 +41,18 @@ class YouTubeAuthError(RuntimeError):
 
 @dataclass
 class YouTubeVideo:
-    source_id: str            # YouTube video id (stable within the source)
-    url: str                  # canonical watch URL
+    source_id: str  # YouTube video id (stable within the source)
+    url: str  # canonical watch URL
     title: str
-    channel: str              # channel / video owner title
+    channel: str  # channel / video owner title
     description: str
-    tags: list[str] = field(default_factory=list)       # the video's own tags
+    tags: list[str] = field(default_factory=list)  # the video's own tags
     playlists: list[str] = field(default_factory=list)  # playlist titles containing it
     date_added: int | None = None  # earliest playlist-add time (unix seconds)
 
 
 # ── Small pure helpers (import-safe, unit-tested) ─────────────────────────────
+
 
 def video_watch_url(video_id: str) -> str:
     return f"https://www.youtube.com/watch?v={video_id}"
@@ -100,6 +102,7 @@ def youtube_credentials_available() -> tuple[bool, str | None]:
 
 
 # ── Auth + client construction (lazy google imports) ──────────────────────────
+
 
 def _require_google_libs() -> None:
     try:
@@ -165,6 +168,7 @@ def build_service():
 
 # ── API traversal (operate on a duck-typed ``service`` → fake-able in tests) ───
 
+
 def _liked_playlist(service) -> tuple[str, str] | None:
     """Resolve the user's *Liked videos* playlist id (not returned by mine=True)."""
     resp = service.channels().list(part="contentDetails", mine=True).execute()
@@ -181,9 +185,16 @@ def _list_owned_playlists(service) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     page_token = None
     while True:
-        resp = service.playlists().list(
-            part="snippet", mine=True, maxResults=_PAGE_SIZE, pageToken=page_token,
-        ).execute()
+        resp = (
+            service.playlists()
+            .list(
+                part="snippet",
+                mine=True,
+                maxResults=_PAGE_SIZE,
+                pageToken=page_token,
+            )
+            .execute()
+        )
         for item in resp.get("items", []):
             pid = item.get("id")
             title = (item.get("snippet") or {}).get("title", "")
@@ -204,12 +215,16 @@ def _list_playlist_items(service, playlist_id: str) -> list[tuple[str, int | Non
     out: list[tuple[str, int | None]] = []
     page_token = None
     while True:
-        resp = service.playlistItems().list(
-            part="snippet,contentDetails",
-            playlistId=playlist_id,
-            maxResults=_PAGE_SIZE,
-            pageToken=page_token,
-        ).execute()
+        resp = (
+            service.playlistItems()
+            .list(
+                part="snippet,contentDetails",
+                playlistId=playlist_id,
+                maxResults=_PAGE_SIZE,
+                pageToken=page_token,
+            )
+            .execute()
+        )
         for item in resp.get("items", []):
             snippet = item.get("snippet") or {}
             content = item.get("contentDetails") or {}
@@ -226,7 +241,7 @@ def _hydrate_videos(service, video_ids: list[str]) -> dict[str, dict]:
     """Batch-fetch canonical ``snippet`` blocks keyed by video id."""
     details: dict[str, dict] = {}
     for start in range(0, len(video_ids), _VIDEO_HYDRATE_BATCH):
-        batch = video_ids[start:start + _VIDEO_HYDRATE_BATCH]
+        batch = video_ids[start : start + _VIDEO_HYDRATE_BATCH]
         resp = service.videos().list(part="snippet", id=",".join(batch)).execute()
         for item in resp.get("items", []):
             vid = item.get("id")
@@ -271,19 +286,22 @@ def load_saved_videos(service=None) -> list[YouTubeVideo]:
         entry = membership[video_id]
         snippet = details.get(video_id, {})
         title = (snippet.get("title") or "").strip() or video_id
-        videos.append(YouTubeVideo(
-            source_id=video_id,
-            url=video_watch_url(video_id),
-            title=title,
-            channel=(snippet.get("channelTitle") or "").strip(),
-            description=(snippet.get("description") or "").strip(),
-            tags=list(snippet.get("tags") or []),
-            playlists=entry["playlists"],
-            date_added=entry["added"],
-        ))
+        videos.append(
+            YouTubeVideo(
+                source_id=video_id,
+                url=video_watch_url(video_id),
+                title=title,
+                channel=(snippet.get("channelTitle") or "").strip(),
+                description=(snippet.get("description") or "").strip(),
+                tags=list(snippet.get("tags") or []),
+                playlists=entry["playlists"],
+                date_added=entry["added"],
+            )
+        )
 
     log.info(
         "Loaded %d saved YouTube videos across %d playlists",
-        len(videos), len(playlists),
+        len(videos),
+        len(playlists),
     )
     return videos

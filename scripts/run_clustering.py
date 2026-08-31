@@ -4,6 +4,7 @@
 Thin shim — the implementation lives in pka.cli.clustering (run via
 `alexandria clustering` once installed, or `python scripts/run_clustering.py` from the repo).
 """
+
 import sys
 from pathlib import Path
 

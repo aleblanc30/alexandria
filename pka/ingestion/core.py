@@ -1,4 +1,5 @@
 """Single chunk → embed → persist path for text-bearing documents."""
+
 from __future__ import annotations
 
 import logging
@@ -49,9 +50,9 @@ def ingest_text_block(
     if text and text.strip():
         chunk_texts = sentence_window_chunks(
             text,
-            window    = cfg.chunk_sentences,
-            overlap   = cfg.chunk_overlap,
-            min_chars = min_chars if min_chars is not None else cfg.min_chunk_chars,
+            window=cfg.chunk_sentences,
+            overlap=cfg.chunk_overlap,
+            min_chars=min_chars if min_chars is not None else cfg.min_chunk_chars,
         )
     if not chunk_texts and fallback_text and fallback_text.strip():
         chunk_texts = [fallback_text.strip()]
@@ -70,40 +71,40 @@ def ingest_text_block(
     }
 
     upsert_chunks(
-        ids       = vector_ids,
-        texts     = chunk_texts,
-        metadatas = [
-            {**base_meta, "chunk_index": chunk_offset + i}
-            for i in range(len(chunk_texts))
-        ],
+        ids=vector_ids,
+        texts=chunk_texts,
+        metadatas=[{**base_meta, "chunk_index": chunk_offset + i} for i in range(len(chunk_texts))],
     )
     # Mirror the enrichment provenance Chroma already carries into SQLite, which
     # is what the API serves documents from (DESIGN.md §3.2). Absent keys stay
     # NULL; the Chroma payload above is untouched.
     meta = extra_metadata or {}
     provenance = {
-        "chunk_pass":  meta.get("pass"),
+        "chunk_pass": meta.get("pass"),
         "resolved_by": meta.get("resolved_by"),
-        "source_ref":  meta.get("isbn") or meta.get("work_key"),
-        "ref_title":   meta.get("book_title"),
+        "source_ref": meta.get("isbn") or meta.get("work_key"),
+        "ref_title": meta.get("book_title"),
         # Page range behind the chunk, for paginated sources. The block is the
         # unit that carries it, so every chunk cut from one block shares its
         # range — enough to cite a passage back to the pages it was read from.
-        "page_start":  meta.get("page_start"),
-        "page_end":    meta.get("page_end"),
+        "page_start": meta.get("page_start"),
+        "page_end": meta.get("page_end"),
     }
-    insert_chunks([
-        {
-            "document_id": doc_id,
-            "chunk_index": chunk_offset + i,
-            "text":        t,
-            "token_count": len(t.split()),
-            "vector_id":   vid,
-            **provenance,
-        }
-        for i, (t, vid) in enumerate(zip(chunk_texts, vector_ids, strict=True))
-    ])
+    insert_chunks(
+        [
+            {
+                "document_id": doc_id,
+                "chunk_index": chunk_offset + i,
+                "text": t,
+                "token_count": len(t.split()),
+                "vector_id": vid,
+                **provenance,
+            }
+            for i, (t, vid) in enumerate(zip(chunk_texts, vector_ids, strict=True))
+        ]
+    )
     from pka.clustering.doc_embeddings import refresh_document_embedding
+
     refresh_document_embedding(doc_id)
     return {"chunks_added": len(chunk_texts), "skipped": False}
 
@@ -113,7 +114,7 @@ def ingest_text_block(
 # summarise) — see the DESIGN.md §3.2 table.
 _SUMMARY_FLAGS = {
     str(Source.FIREFOX): "bookmark_summary_enabled",
-    str(Source.REDDIT):  "bookmark_summary_enabled",
+    str(Source.REDDIT): "bookmark_summary_enabled",
     str(Source.CALIBRE): "book_summary_enabled",
 }
 

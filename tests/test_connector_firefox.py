@@ -1,4 +1,3 @@
-
 import pytest
 
 from pka.connectors.firefox import FirefoxBookmark, load_bookmarks
@@ -49,6 +48,7 @@ class TestLoadBookmarks:
     def test_deduplicates_urls(self, tmp_path):
         """Inserting the same URL in two folders should yield one bookmark."""
         import sqlite3
+
         db = tmp_path / "dup.sqlite"
         con = sqlite3.connect(db)
         con.executescript("""

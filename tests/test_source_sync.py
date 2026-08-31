@@ -1,4 +1,5 @@
 """Unit tests for per-source sync orchestrators."""
+
 from unittest.mock import MagicMock
 
 from pka.connectors.calibre import CalibreBook
@@ -16,16 +17,29 @@ def _mock_pending_counts(monkeypatch, sync_module: str, *, pending: int = 1, bas
 
 def _firefox_bm() -> FirefoxBookmark:
     return FirefoxBookmark(
-        source_id="F1", url="https://example.com", title="Ex",
-        folder_path=None, tags=[], date_added=1700000000,
+        source_id="F1",
+        url="https://example.com",
+        title="Ex",
+        folder_path=None,
+        tags=[],
+        date_added=1700000000,
     )
 
 
 def _zotero_item(**overrides) -> ZoteroItem:
     defaults = dict(
-        source_id="Z1", title="Paper", authors=[], abstract="Abstract text.",
-        year=2024, doi=None, url=None, item_type="journalArticle",
-        collections=[], tags=[], pdf_path=None, date_added=1700000000,
+        source_id="Z1",
+        title="Paper",
+        authors=[],
+        abstract="Abstract text.",
+        year=2024,
+        doi=None,
+        url=None,
+        item_type="journalArticle",
+        collections=[],
+        tags=[],
+        pdf_path=None,
+        date_added=1700000000,
     )
     return ZoteroItem(**{**defaults, **overrides})
 
@@ -36,10 +50,20 @@ def _calibre_book(tmp_path, *, with_file: bool = True) -> CalibreBook:
         path = tmp_path / "test.epub"
         path.write_bytes(b"PK")
     return CalibreBook(
-        source_id="1", title="Book", authors=["Author"], description="Desc",
-        publisher=None, series=None, series_index=None, year=2020, isbn=None,
-        tags=[], formats=["EPUB"] if with_file else [],
-        preferred_path=path, date_added=1700000000, rating=None,
+        source_id="1",
+        title="Book",
+        authors=["Author"],
+        description="Desc",
+        publisher=None,
+        series=None,
+        series_index=None,
+        year=2020,
+        isbn=None,
+        tags=[],
+        formats=["EPUB"] if with_file else [],
+        preferred_path=path,
+        date_added=1700000000,
+        rating=None,
     )
 
 
@@ -67,10 +91,12 @@ class TestFirefoxSync:
         )
         fetch_embed_mock = MagicMock()
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.fetch_and_embed_pending", fetch_embed_mock,
+            "pka.ingestion.firefox_sync.fetch_and_embed_pending",
+            fetch_embed_mock,
         )
 
         from pka.ingestion.firefox_sync import sync_firefox
+
         sp.begin("firefox")
         stats = sync_firefox(progress_key="firefox")
 
@@ -106,10 +132,12 @@ class TestFirefoxSync:
             }
 
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.fetch_and_embed_pending", fake_fetch_embed,
+            "pka.ingestion.firefox_sync.fetch_and_embed_pending",
+            fake_fetch_embed,
         )
 
         from pka.ingestion.firefox_sync import sync_firefox
+
         sp.begin("firefox")
         stats = sync_firefox(progress_key="firefox")
 
@@ -141,7 +169,8 @@ class TestFirefoxSync:
 
         fetch_embed_mock = MagicMock(side_effect=fake_fetch_embed)
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.fetch_and_embed_pending", fetch_embed_mock,
+            "pka.ingestion.firefox_sync.fetch_and_embed_pending",
+            fetch_embed_mock,
         )
 
         from pka.ingestion.firefox_sync import sync_firefox_ingest
@@ -181,10 +210,12 @@ class TestFirefoxSync:
             }
 
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.fetch_and_embed_pending", fake_fetch_embed,
+            "pka.ingestion.firefox_sync.fetch_and_embed_pending",
+            fake_fetch_embed,
         )
 
         from pka.ingestion.firefox_sync import sync_firefox
+
         sp.begin("firefox")
         stats = sync_firefox(progress_key="firefox")
 
@@ -218,10 +249,12 @@ class TestFirefoxSync:
             }
 
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.fetch_and_embed_pending", fake_fetch_embed,
+            "pka.ingestion.firefox_sync.fetch_and_embed_pending",
+            fake_fetch_embed,
         )
 
         from pka.ingestion.firefox_sync import sync_firefox_ingest
+
         sp.begin("firefox")
         stats = sync_firefox_ingest(progress_key="firefox")
 
@@ -242,6 +275,7 @@ class TestFirefoxSync:
         monkeypatch.setattr("pka.ingestion.firefox_sync.firefox_ingest_queue", get_queue)
 
         from pka.ingestion.firefox_sync import sync_firefox
+
         sp.begin("firefox")
         stats = sync_firefox(progress_key="firefox")
 
@@ -266,6 +300,7 @@ class TestZoteroSync:
         monkeypatch.setattr("pka.ingestion.zotero_sync.ingest_zotero_embed", embed)
 
         from pka.ingestion.zotero_sync import sync_zotero
+
         sp.begin("zotero")
         stats = sync_zotero(progress_key="zotero")
 
@@ -292,6 +327,7 @@ class TestCalibreSync:
         monkeypatch.setattr("pka.ingestion.calibre_sync.ingest_calibre_fulltext", full)
 
         from pka.ingestion.calibre_sync import sync_calibre
+
         sp.begin("calibre")
         stats = sync_calibre(progress_key="calibre")
 
@@ -319,6 +355,7 @@ class TestCalibreSync:
         monkeypatch.setattr("pka.ingestion.calibre_sync.ingest_calibre_fulltext", full)
 
         from pka.ingestion.calibre_sync import sync_calibre
+
         sp.begin("calibre")
         stats = sync_calibre(progress_key="calibre")
 
@@ -339,6 +376,7 @@ class TestCalibreSync:
         monkeypatch.setattr("pka.ingestion.calibre_sync.ingest_calibre_fulltext", full)
 
         from pka.ingestion.calibre_sync import sync_calibre
+
         sp.begin("calibre")
         stats = sync_calibre(progress_key="calibre")
         assert stats["stopped"] == "cancel"
@@ -360,6 +398,7 @@ class TestImageSync:
         monkeypatch.setattr("pka.ingestion.image_sync.ingest_images", ingest)
 
         from pka.ingestion.image_sync import sync_images
+
         sp.begin("image")
         stats = sync_images(progress_key="image")
 

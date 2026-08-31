@@ -1,4 +1,5 @@
 """Binary classifier training and uncertainty sampling on doc embeddings."""
+
 from __future__ import annotations
 
 import json
@@ -214,16 +215,20 @@ def uncertainty_queue(
     out: list[dict[str, Any]] = []
     for doc_id, title in ranked[:batch_size]:
         p = scores.get(doc_id, 0.5)
-        out.append({
-            "doc_id": doc_id,
-            "title": title,
-            "probability": p,
-            "uncertainty": abs(p - 0.5),
-        })
+        out.append(
+            {
+                "doc_id": doc_id,
+                "title": title,
+                "probability": p,
+                "uncertainty": abs(p - 0.5),
+            }
+        )
     return out
 
 
-def score_all_unlabeled(session_id: int, model_blob: str, threshold: float) -> list[tuple[int, float]]:
+def score_all_unlabeled(
+    session_id: int, model_blob: str, threshold: float
+) -> list[tuple[int, float]]:
     """Return (doc_id, probability) for unlabeled docs above threshold."""
     doc_ids = unlabeled_doc_ids_with_embeddings(session_id)
     scores = predict_proba(model_blob, doc_ids)
@@ -235,8 +240,4 @@ def set_doc_embedding_for_test(doc_id: int, vec: np.ndarray) -> None:
     eng = get_engine()
     blob = embedding_to_blob(vec.astype(np.float32))
     with eng.begin() as con:
-        con.execute(
-            documents.update()
-            .where(documents.c.id == doc_id)
-            .values(doc_embedding=blob)
-        )
+        con.execute(documents.update().where(documents.c.id == doc_id).values(doc_embedding=blob))

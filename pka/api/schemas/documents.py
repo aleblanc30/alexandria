@@ -1,10 +1,11 @@
 """Document, tag, and document-detail response models."""
+
 from pydantic import BaseModel
 
 
 class TagOut(BaseModel):
     tag: str
-    origin: str   # source | inferred | manual | llm
+    origin: str  # source | inferred | manual | llm
     confidence: float | None = None
 
 
@@ -22,20 +23,21 @@ class DocumentOut(BaseModel):
     overlay_tags: list[TagOut]
     cluster_id: int | None
     cluster_label: str | None
-    similarity: float | None = None   # only present in search results
+    similarity: float | None = None  # only present in search results
     description: str = ""
     note: str | None = None
     # Structured bibliographic fields (DESIGN.md §3.2, DOCUMENT_METADATA_PLAN.md).
     doi: str | None = None
-    doi_url: str | None = None        # https://doi.org/<doi>, computed
+    doi_url: str | None = None  # https://doi.org/<doi>, computed
     arxiv_id: str | None = None
     isbn: str | None = None
-    year: int | None = None           # publication year, not date_added
+    year: int | None = None  # publication year, not date_added
     authors: list[str] = []
 
 
 class ImageDetail(BaseModel):
     """Image-specific fields, present only when ``source == image``."""
+
     image_type: str | None = None
     ocr_text: str | None = None
 
@@ -47,10 +49,11 @@ class RedditDetail(BaseModel):
     the cards use. ``permalink`` is the reddit thread; for a link post that is a
     different URL from ``url_or_path``, which points at the external target.
     """
-    kind: str | None = None            # post | comment
-    subreddit: str | None = None       # display name, no "r/" prefix
+
+    kind: str | None = None  # post | comment
+    subreddit: str | None = None  # display name, no "r/" prefix
     permalink: str | None = None
-    external_url: str | None = None    # link-post target, else None
+    external_url: str | None = None  # link-post target, else None
     body: str | None = None
 
 
@@ -60,11 +63,12 @@ class EnrichmentOut(BaseModel):
     ``label`` is rendered here rather than in the frontend so the enrichment
     ladder stays the single source of truth for how each rung is named.
     """
-    kind: str                  # summary | external_synopsis
-    resolved_by: str | None    # isbn|search|google_books|brave|local_model
-    label: str                 # human-readable, e.g. "Open Library · ISBN"
-    source_ref: str | None     # ISBN or Open Library work key
-    ref_title: str | None      # resolved book title
+
+    kind: str  # summary | external_synopsis
+    resolved_by: str | None  # isbn|search|google_books|brave|local_model
+    label: str  # human-readable, e.g. "Open Library · ISBN"
+    source_ref: str | None  # ISBN or Open Library work key
+    ref_title: str | None  # resolved book title
     text: str
 
 

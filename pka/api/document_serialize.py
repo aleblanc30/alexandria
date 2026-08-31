@@ -4,6 +4,7 @@ Both the search results path (batched) and the single-document detail path build
 the same set of relations (source tags, overlay tags, cluster assignment,
 description), so they live here to avoid drift and N+1 duplication.
 """
+
 import json
 from urllib.parse import urlsplit
 
@@ -59,15 +60,17 @@ def documents_out_batch(
     doc_ids = list(sim_map.keys())
 
     doc_rows = {
-        r["id"]: r for r in fetchall_mappings(con.execute(
-            sa.select(documents).where(documents.c.id.in_(doc_ids))
-        ))
+        r["id"]: r
+        for r in fetchall_mappings(
+            con.execute(sa.select(documents).where(documents.c.id.in_(doc_ids)))
+        )
     }
 
     source_tag_map: dict[int, list[str]] = {did: [] for did in doc_ids}
     for r in con.execute(
-        sa.select(source_tags.c.document_id, source_tags.c.tag_string)
-        .where(source_tags.c.document_id.in_(doc_ids))
+        sa.select(source_tags.c.document_id, source_tags.c.tag_string).where(
+            source_tags.c.document_id.in_(doc_ids)
+        )
     ).fetchall():
         source_tag_map[r[0]].append(r[1])
 
@@ -80,9 +83,7 @@ def documents_out_batch(
             overlay_tags.c.confidence,
         ).where(overlay_tags.c.document_id.in_(doc_ids))
     ).fetchall():
-        overlay_tag_map[r[0]].append(
-            {"tag": r[1], "origin": r[2], "confidence": r[3]}
-        )
+        overlay_tag_map[r[0]].append({"tag": r[1], "origin": r[2], "confidence": r[3]})
 
     cluster_map: dict[int, tuple[int, str]] = {}
     if run_id:
@@ -94,15 +95,16 @@ def documents_out_batch(
             )
             .join(clusters, clusters.c.cluster_id == cluster_assignments.c.cluster_id)
             .where(
-                (cluster_assignments.c.run_id == run_id) &
-                (cluster_assignments.c.document_id.in_(doc_ids)) &
-                (cluster_assignments.c.level == 1)
+                (cluster_assignments.c.run_id == run_id)
+                & (cluster_assignments.c.document_id.in_(doc_ids))
+                & (cluster_assignments.c.level == 1)
             )
         ).fetchall():
             cluster_map[r[0]] = (r[1], r[2])
 
     needs_chunk = [
-        did for did in doc_ids
+        did
+        for did in doc_ids
         if did in doc_rows
         and not (doc_rows[did].get("card_summary") and str(doc_rows[did]["card_summary"]).strip())
     ]
@@ -115,36 +117,43 @@ def documents_out_batch(
             continue
         cid, clabel = cluster_map.get(doc_id, (None, None))
         description = resolve_description(row.get("card_summary"), chunk_map.get(doc_id))
-        out.append(DocumentOut(
-            id=doc_id, source=row["source"], source_id=row["source_id"],
-            title=row["title"] or "", url_or_path=row["url_or_path"],
-            archive_url=row.get("archive_url"),
-            zotero_attachment_key=row.get("zotero_attachment_key"),
-            date_added=row["date_added"], fetch_status=row["fetch_status"],
-            source_tags=source_tag_map.get(doc_id, []),
-            overlay_tags=overlay_tag_map.get(doc_id, []),
-            cluster_id=cid, cluster_label=clabel,
-            similarity=sim,
-            description=description,
-            note=row.get("note"),
-            doi=row.get("doi"),
-            doi_url=_doi_url(row.get("doi")),
-            arxiv_id=row.get("arxiv_id"),
-            isbn=row.get("isbn"),
-            year=row.get("year"),
-            authors=_authors(row),
-        ))
+        out.append(
+            DocumentOut(
+                id=doc_id,
+                source=row["source"],
+                source_id=row["source_id"],
+                title=row["title"] or "",
+                url_or_path=row["url_or_path"],
+                archive_url=row.get("archive_url"),
+                zotero_attachment_key=row.get("zotero_attachment_key"),
+                date_added=row["date_added"],
+                fetch_status=row["fetch_status"],
+                source_tags=source_tag_map.get(doc_id, []),
+                overlay_tags=overlay_tag_map.get(doc_id, []),
+                cluster_id=cid,
+                cluster_label=clabel,
+                similarity=sim,
+                description=description,
+                note=row.get("note"),
+                doi=row.get("doi"),
+                doi_url=_doi_url(row.get("doi")),
+                arxiv_id=row.get("arxiv_id"),
+                isbn=row.get("isbn"),
+                year=row.get("year"),
+                authors=_authors(row),
+            )
+        )
     return out
 
 
 # Human-readable name for each rung of the enrichment ladder (DESIGN.md §3.2).
 # Owned by the backend so the ladder stays the single source of truth.
 _ENRICHMENT_LABELS = {
-    "isbn":         "Open Library · ISBN",
-    "search":       "Open Library · title match",
+    "isbn": "Open Library · ISBN",
+    "search": "Open Library · title match",
     "google_books": "Google Books",
-    "brave":        "Brave search",
-    "local_model":  "Local model",
+    "brave": "Brave search",
+    "local_model": "Local model",
 }
 _ENRICHMENT_FALLBACK_LABEL = "External source"
 
@@ -159,14 +168,16 @@ def enrichment_out(rows: list[dict]) -> list[EnrichmentOut]:
     for row in rows:
         kind = row["chunk_pass"]
         resolved_by = row["resolved_by"] or ("local_model" if kind == "summary" else None)
-        out.append(EnrichmentOut(
-            kind        = kind,
-            resolved_by = resolved_by,
-            label       = _ENRICHMENT_LABELS.get(resolved_by, _ENRICHMENT_FALLBACK_LABEL),
-            source_ref  = row["source_ref"],
-            ref_title   = row["ref_title"],
-            text        = row["text"] or "",
-        ))
+        out.append(
+            EnrichmentOut(
+                kind=kind,
+                resolved_by=resolved_by,
+                label=_ENRICHMENT_LABELS.get(resolved_by, _ENRICHMENT_FALLBACK_LABEL),
+                source_ref=row["source_ref"],
+                ref_title=row["ref_title"],
+                text=row["text"] or "",
+            )
+        )
     return out
 
 
@@ -193,11 +204,15 @@ def _reddit_detail(con, doc_id: int, row, collections: list[str]) -> RedditDetai
     source_id = row["source_id"] or ""
     url = row["url_or_path"] or ""
     kind = row.get("item_type") or (
-        "comment" if source_id.startswith("t1_") else
-        "post" if source_id.startswith("t3_") else None
+        "comment"
+        if source_id.startswith("t1_")
+        else "post"
+        if source_id.startswith("t3_")
+        else None
     )
     subreddit = next(
-        (c[2:] for c in collections if c.startswith("r/") and len(c) > 2), None,
+        (c[2:] for c in collections if c.startswith("r/") and len(c) > 2),
+        None,
     )
     # Where url_or_path points is what separates the two cases, and it is the
     # only signal left once the connector's ``external_url`` is gone: a self-post
@@ -221,37 +236,49 @@ def _reddit_detail(con, doc_id: int, row, collections: list[str]) -> RedditDetai
 
 def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | None:
     """Build a single :class:`DocumentDetail`, or ``None`` if the document is missing."""
-    row = fetchone_mapping(con.execute(
-        sa.select(documents).where(documents.c.id == doc_id)
-    ))
+    row = fetchone_mapping(con.execute(sa.select(documents).where(documents.c.id == doc_id)))
     if not row:
         return None
 
-    stags = [r[0] for r in con.execute(
-        sa.select(source_tags.c.tag_string)
-        .where(source_tags.c.document_id == doc_id)
-    ).fetchall()]
-    otags = [{"tag": r[0], "origin": r[1], "confidence": r[2]}
-             for r in con.execute(
-        sa.select(overlay_tags.c.tag, overlay_tags.c.origin, overlay_tags.c.confidence)
-        .where(overlay_tags.c.document_id == doc_id)
-    ).fetchall()]
-    colls = [r[0] for r in con.execute(
-        sa.select(source_collections.c.collection)
-        .where(source_collections.c.document_id == doc_id)
-    ).fetchall()]
-    n_chunks = con.execute(
-        sa.select(sa.func.count()).select_from(chunks)
-        .where(chunks.c.document_id == doc_id)
-    ).scalar() or 0
+    stags = [
+        r[0]
+        for r in con.execute(
+            sa.select(source_tags.c.tag_string).where(source_tags.c.document_id == doc_id)
+        ).fetchall()
+    ]
+    otags = [
+        {"tag": r[0], "origin": r[1], "confidence": r[2]}
+        for r in con.execute(
+            sa.select(overlay_tags.c.tag, overlay_tags.c.origin, overlay_tags.c.confidence).where(
+                overlay_tags.c.document_id == doc_id
+            )
+        ).fetchall()
+    ]
+    colls = [
+        r[0]
+        for r in con.execute(
+            sa.select(source_collections.c.collection).where(
+                source_collections.c.document_id == doc_id
+            )
+        ).fetchall()
+    ]
+    n_chunks = (
+        con.execute(
+            sa.select(sa.func.count()).select_from(chunks).where(chunks.c.document_id == doc_id)
+        ).scalar()
+        or 0
+    )
     description = document_description(con, doc_id)
 
     image_detail = None
     if row["source"] == Source.IMAGE:
-        img_row = fetchone_mapping(con.execute(
-            sa.select(images.c.image_type, images.c.ocr_text)
-            .where(images.c.document_id == doc_id)
-        ))
+        img_row = fetchone_mapping(
+            con.execute(
+                sa.select(images.c.image_type, images.c.ocr_text).where(
+                    images.c.document_id == doc_id
+                )
+            )
+        )
         if img_row:
             image_detail = ImageDetail(
                 image_type=img_row["image_type"],
@@ -265,8 +292,7 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
     cluster_id = cluster_label = None
     if run_id:
         ca = con.execute(
-            sa.select(cluster_assignments.c.cluster_id)
-            .where(
+            sa.select(cluster_assignments.c.cluster_id).where(
                 (cluster_assignments.c.document_id == doc_id)
                 & (cluster_assignments.c.run_id == run_id)
                 & (cluster_assignments.c.level == 1)
@@ -275,19 +301,24 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
         if ca:
             cluster_id = ca[0]
             cl = con.execute(
-                sa.select(clusters.c.label)
-                .where(clusters.c.cluster_id == cluster_id)
+                sa.select(clusters.c.label).where(clusters.c.cluster_id == cluster_id)
             ).fetchone()
             cluster_label = cl[0] if cl else None
 
     return DocumentDetail(
-        id=doc_id, source=row["source"], source_id=row["source_id"],
-        title=row["title"] or "", url_or_path=row["url_or_path"],
+        id=doc_id,
+        source=row["source"],
+        source_id=row["source_id"],
+        title=row["title"] or "",
+        url_or_path=row["url_or_path"],
         archive_url=row.get("archive_url"),
         zotero_attachment_key=row.get("zotero_attachment_key"),
-        date_added=row["date_added"], fetch_status=row["fetch_status"],
-        source_tags=stags, overlay_tags=otags,
-        cluster_id=cluster_id, cluster_label=cluster_label,
+        date_added=row["date_added"],
+        fetch_status=row["fetch_status"],
+        source_tags=stags,
+        overlay_tags=otags,
+        cluster_id=cluster_id,
+        cluster_label=cluster_label,
         description=description,
         note=row.get("note"),
         doi=row.get("doi"),
@@ -296,7 +327,8 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
         isbn=row.get("isbn"),
         year=row.get("year"),
         authors=_authors(row),
-        collections=colls, chunks_count=n_chunks,
+        collections=colls,
+        chunks_count=n_chunks,
         image=image_detail,
         reddit=reddit_detail,
         enrichment=enrichment_out(document_enrichment([doc_id]).get(doc_id, [])),

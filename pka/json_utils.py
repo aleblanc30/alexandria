@@ -1,4 +1,5 @@
 """Shared helpers for parsing LLM JSON responses."""
+
 from __future__ import annotations
 
 import json

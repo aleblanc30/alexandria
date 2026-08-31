@@ -1,4 +1,5 @@
 """Shared logging setup for CLI subcommands."""
+
 import logging
 
 

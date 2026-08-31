@@ -6,6 +6,7 @@ the ingestion layer (image_pipeline.py).
 
 Supported formats: JPEG, PNG, WEBP, TIFF, BMP, GIF (first frame only).
 """
+
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,12 +22,13 @@ class ImageFile:
     filename: str
     width: int | None
     height: int | None
-    file_size: int            # bytes
-    date_taken: int | None    # unix timestamp (EXIF DateTimeOriginal → mtime fallback)
-    exif: dict                # raw EXIF key-value pairs (strings)
+    file_size: int  # bytes
+    date_taken: int | None  # unix timestamp (EXIF DateTimeOriginal → mtime fallback)
+    exif: dict  # raw EXIF key-value pairs (strings)
 
 
 # ── EXIF extraction ───────────────────────────────────────────────────────────
+
 
 def _read_exif(path: Path) -> tuple[dict, int | None, int | None, int | None]:
     """
@@ -38,6 +40,7 @@ def _read_exif(path: Path) -> tuple[dict, int | None, int | None, int | None]:
 
     try:
         from PIL import ExifTags, Image
+
         with Image.open(path) as img:
             width, height = img.size
             raw = img._getexif() if hasattr(img, "_getexif") else None
@@ -52,6 +55,7 @@ def _read_exif(path: Path) -> tuple[dict, int | None, int | None, int | None]:
                 if dt_str:
                     try:
                         from datetime import datetime
+
                         dt = datetime.strptime(dt_str[:19], "%Y:%m:%d %H:%M:%S")
                         date_ts = int(dt.timestamp())
                     except Exception:
@@ -66,6 +70,7 @@ def _read_exif(path: Path) -> tuple[dict, int | None, int | None, int | None]:
 
 
 # ── Directory walker ──────────────────────────────────────────────────────────
+
 
 def scan_images(root: Path) -> list[ImageFile]:
     """
@@ -92,15 +97,17 @@ def scan_images(root: Path) -> list[ImageFile]:
             size = p.stat().st_size
             exif, w, h, date_ts = _read_exif(p)
 
-            results.append(ImageFile(
-                path       = p,
-                filename   = p.name,
-                width      = w,
-                height     = h,
-                file_size  = size,
-                date_taken = date_ts,
-                exif       = exif,
-            ))
+            results.append(
+                ImageFile(
+                    path=p,
+                    filename=p.name,
+                    width=w,
+                    height=h,
+                    file_size=size,
+                    date_taken=date_ts,
+                    exif=exif,
+                )
+            )
         except Exception as exc:
             log.warning("Skipping %s: %s", p, exc)
 

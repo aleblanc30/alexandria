@@ -1,4 +1,5 @@
 """Tests for bioRxiv URL parsing, JSON parsing, and fetch handler."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
@@ -15,22 +16,25 @@ from pka.ingestion.biorxiv import (
 
 _BIORXIV_JSON = {
     "messages": [{"status": "ok", "count": 1}],
-    "collection": [{
-        "doi": "10.1101/2024.01.16.575895",
-        "title": "A neural circuit for reward",
-        "authors": "Smith, A.; Jones, B.",
-        "abstract": "We map dopamine neurons in the ventral tegmental area.",
-        "version": "2",
-        "category": "neuroscience",
-    }],
+    "collection": [
+        {
+            "doi": "10.1101/2024.01.16.575895",
+            "title": "A neural circuit for reward",
+            "authors": "Smith, A.; Jones, B.",
+            "abstract": "We map dopamine neurons in the ventral tegmental area.",
+            "version": "2",
+            "category": "neuroscience",
+        }
+    ],
 }
 
 
 class TestParseBiorxivUrl:
     def test_content_url_with_version(self):
-        assert parse_biorxiv_url(
-            "https://www.biorxiv.org/content/10.1101/2024.01.16.575895v2"
-        ) == ("10.1101/2024.01.16.575895", 2)
+        assert parse_biorxiv_url("https://www.biorxiv.org/content/10.1101/2024.01.16.575895v2") == (
+            "10.1101/2024.01.16.575895",
+            2,
+        )
 
     def test_full_pdf_url(self):
         assert parse_biorxiv_url(
@@ -92,6 +96,7 @@ class TestFetchBiorxivPaper:
         assert "BioRxiv PDF body" in (result.text or "")
         assert result.doi == "10.1101/2024.01.16.575895"
         import json
+
         assert json.loads(result.authors_json) == ["Smith, A.", "Jones, B."]
 
     @pytest.mark.asyncio

@@ -1,4 +1,5 @@
 """Card summary text for browse/search cards."""
+
 from __future__ import annotations
 
 SUMMARY_MAX_LEN = 280

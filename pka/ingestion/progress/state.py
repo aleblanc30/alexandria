@@ -4,6 +4,7 @@ Stdlib (plus :mod:`pka.constants`) only — no locking, no DB, no I/O. Everythin
 here operates on a single :class:`SyncState` handed in by the caller, which is
 what makes it safe to run against a snapshot copy as well as the live object.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -23,8 +24,8 @@ class PhasePlan:
     name: str
     total: int = 0
     processed: int = 0
-    success: int = 0   # fetching phase: resolved without error
-    failure: int = 0   # fetching phase: unfetchable
+    success: int = 0  # fetching phase: resolved without error
+    failure: int = 0  # fetching phase: unfetchable
 
 
 @dataclass
@@ -43,8 +44,8 @@ class SyncState:
     stop_requested: StopReason | None = None
     active_job: JobKind | None = None
     last_result: dict | None = None
-    metadata_baseline: int = 0   # archive row count at metadata job start
-    metadata_pending: int = 0    # source items not in archive at job start
+    metadata_baseline: int = 0  # archive row count at metadata job start
+    metadata_pending: int = 0  # source items not in archive at job start
     metadata_sync_active: bool = False
 
 
@@ -58,10 +59,7 @@ def phase_map(state: SyncState) -> dict[str, PhasePlan]:
 
 def ensure_standard_phases(state: SyncState) -> None:
     existing = phase_map(state)
-    state.phases = [
-        existing.get(name, PhasePlan(name=name))
-        for name in STANDARD_PHASES
-    ]
+    state.phases = [existing.get(name, PhasePlan(name=name)) for name in STANDARD_PHASES]
 
 
 def overall(state: SyncState) -> tuple[int, int]:

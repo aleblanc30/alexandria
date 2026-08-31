@@ -1,4 +1,5 @@
 """Apply cluster labels as overlay tags on documents."""
+
 from __future__ import annotations
 
 import re
@@ -67,16 +68,19 @@ def insert_overlay_tags(
     to_insert = [did for did in unique_ids if did not in existing]
     if to_insert:
         now = int(time.time())
-        con.execute(overlay_tags.insert(), [
-            {
-                "document_id": did,
-                "tag": tag,
-                "origin": str(origin),
-                "confidence": confidence,
-                "created_at": now,
-            }
-            for did in to_insert
-        ])
+        con.execute(
+            overlay_tags.insert(),
+            [
+                {
+                    "document_id": did,
+                    "tag": tag,
+                    "origin": str(origin),
+                    "confidence": confidence,
+                    "created_at": now,
+                }
+                for did in to_insert
+            ],
+        )
     return len(to_insert), len(existing)
 
 

@@ -22,8 +22,7 @@ from pka.ingestion.fetcher import (
 def _pdf_extraction(text: str) -> BookExtraction:
     """One page-group of extracted text, as the real extractor would return it."""
     return BookExtraction(
-        [{"title": "Pages 1–1", "text": text, "index": 0,
-          "page_start": 1, "page_end": 1}],
+        [{"title": "Pages 1–1", "text": text, "index": 0, "page_start": 1, "page_end": 1}],
         PdfTextLayer.TEXT,
         page_count=1,
         text_pages=1,
@@ -47,7 +46,8 @@ class TestExtractPdfFromBytes:
             seen["path"] = Path(path)
             assert Path(path).read_bytes().startswith(b"%PDF")
             return BookExtraction(
-                [{"title": "", "text": "extracted text"}], PdfTextLayer.TEXT,
+                [{"title": "", "text": "extracted text"}],
+                PdfTextLayer.TEXT,
             )
 
         monkeypatch.setattr(fetch_base, "extract_pdf_report", fake_extract)
@@ -70,7 +70,11 @@ class TestExtractPdfFromBytes:
         assert not seen["path"].exists()
 
 
-def _html_response(status: int = 200, body: str = "<html><body><p>Hello world, this is content.</p></body></html>", content_type: str = "text/html") -> MagicMock:
+def _html_response(
+    status: int = 200,
+    body: str = "<html><body><p>Hello world, this is content.</p></body></html>",
+    content_type: str = "text/html",
+) -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status
     resp.text = body
@@ -141,7 +145,9 @@ class TestFetchOne:
     @pytest.mark.asyncio
     async def test_text_extracted_on_success(self):
         mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.get.return_value = _html_response(200, "<html><body><p>" + "word " * 50 + "</p></body></html>")
+        mock_client.get.return_value = _html_response(
+            200, "<html><body><p>" + "word " * 50 + "</p></body></html>"
+        )
         result = await _fetch_one(mock_client, doc_id=1, url="https://example.com")
         assert result.text is not None
         assert len(result.text) > 0
@@ -219,7 +225,9 @@ class TestFetchOne:
         monkeypatch.setattr(
             "pka.ingestion.fetch_base._extract_pdf_from_bytes",
             lambda data, **kw: BookExtraction(
-                [], PdfTextLayer.NONE, page_count=12,
+                [],
+                PdfTextLayer.NONE,
+                page_count=12,
             ),
         )
         result = await _fetch_one(mock_client, doc_id=1, url="https://example.com/scan.pdf")
@@ -332,9 +340,7 @@ class TestFetchPending:
 
         with get_engine().connect() as con:
             row = con.execute(
-                sa.select(docs_table.c.fetch_status).where(
-                    docs_table.c.source_id == "F4"
-                )
+                sa.select(docs_table.c.fetch_status).where(docs_table.c.source_id == "F4")
             ).fetchone()
         assert row[0] == "unfetchable"
 
@@ -409,7 +415,9 @@ class TestFetchAndEmbedPending:
                 None,
             )
 
-        monkeypatch.setattr("pka.db.queries.firefox_ingest_queue", lambda limit: [(d1, "https://embed.example")])
+        monkeypatch.setattr(
+            "pka.db.queries.firefox_ingest_queue", lambda limit: [(d1, "https://embed.example")]
+        )
         monkeypatch.setattr("pka.ingestion.fetcher._fetch_one", fake_fetch)
 
         stats = await fetch_and_embed_pending(limit=None, embed_fn=embed_fn)
@@ -423,7 +431,11 @@ class TestFetchAndEmbedPending:
     @pytest.mark.asyncio
     async def test_includes_orphans_in_work_queue(self, monkeypatch):
         orphan = upsert_document(
-            "firefox", "F31", "T", "https://orphan.example", None,
+            "firefox",
+            "F31",
+            "T",
+            "https://orphan.example",
+            None,
             fetch_status=FetchStatus.FETCHED,
         )
         embed_calls: list[int] = []
@@ -433,7 +445,9 @@ class TestFetchAndEmbedPending:
             return {"processed": True, "chunks": 1, "skipped": False, "failed": False}
 
         async def fake_fetch(client, doc_id, url):
-            return FetchResult(doc_id, url, "fetched", "Recovered orphan page text content.", 200, None)
+            return FetchResult(
+                doc_id, url, "fetched", "Recovered orphan page text content.", 200, None
+            )
 
         monkeypatch.setattr("pka.ingestion.fetcher._fetch_one", fake_fetch)
 
@@ -446,15 +460,18 @@ class TestFetchAndEmbedPending:
 class TestExtractText:
     def test_trafilatura_primary(self, monkeypatch):
         import sys
+
         fake_traf = MagicMock()
         fake_traf.extract.return_value = "Extracted article body text."
         monkeypatch.setitem(sys.modules, "trafilatura", fake_traf)
         from pka.ingestion.fetcher import _extract_text
+
         text = _extract_text("<html><body>ignored</body></html>", "https://x.com")
         assert text == "Extracted article body text."
 
     def test_readability_fallback(self, monkeypatch):
         import sys
+
         fake_traf = MagicMock()
         fake_traf.extract.return_value = None
         monkeypatch.setitem(sys.modules, "trafilatura", fake_traf)
@@ -468,11 +485,13 @@ class TestExtractText:
         monkeypatch.setitem(sys.modules, "readability", fake_readability)
 
         from pka.ingestion.fetcher import _extract_text
+
         text = _extract_text("<html></html>", "https://x.com")
         assert "Readability" in text
 
     def test_html_strip_last_resort(self, monkeypatch):
         import sys
+
         fake_traf = MagicMock()
         fake_traf.extract.return_value = None
         monkeypatch.setitem(sys.modules, "trafilatura", fake_traf)
@@ -484,6 +503,7 @@ class TestExtractText:
         monkeypatch.setitem(sys.modules, "readability", fake_readability)
 
         from pka.ingestion.fetcher import _extract_text
+
         text = _extract_text("<p>Plain fallback text content.</p>", "https://x.com")
         assert "Plain fallback" in text
 
@@ -509,10 +529,18 @@ class TestResetUnfetchableForFetch:
     def test_does_not_reset_when_not_dev(self, monkeypatch):
         monkeypatch.setattr("pka.config.settings.dev", False)
         wiki_id = upsert_document(
-            "firefox", "F-WIKI", "Wiki", "https://en.wikipedia.org/wiki/Python", None,
+            "firefox",
+            "F-WIKI",
+            "Wiki",
+            "https://en.wikipedia.org/wiki/Python",
+            None,
         )
         other_id = upsert_document(
-            "firefox", "F-403", "Blocked", "https://example.com/blocked", None,
+            "firefox",
+            "F-403",
+            "Blocked",
+            "https://example.com/blocked",
+            None,
         )
         import sqlalchemy as sa
 
@@ -544,13 +572,25 @@ class TestResetUnfetchableForFetch:
     def test_resets_all_unfetchable_in_dev(self, monkeypatch):
         monkeypatch.setattr("pka.config.settings.dev", True)
         wiki_id = upsert_document(
-            "firefox", "F-WIKI2", "Wiki", "https://en.wikipedia.org/wiki/Go", None,
+            "firefox",
+            "F-WIKI2",
+            "Wiki",
+            "https://en.wikipedia.org/wiki/Go",
+            None,
         )
         other_id = upsert_document(
-            "firefox", "F-403B", "Blocked", "https://example.com/gone", None,
+            "firefox",
+            "F-403B",
+            "Blocked",
+            "https://example.com/gone",
+            None,
         )
         local_id = upsert_document(
-            "firefox", "F-LOCAL", "Local", "file:///C:/Users/foo.pdf", None,
+            "firefox",
+            "F-LOCAL",
+            "Local",
+            "file:///C:/Users/foo.pdf",
+            None,
         )
         import sqlalchemy as sa
 
@@ -593,13 +633,15 @@ _ARXIV_ATOM = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 _BIORXIV_JSON = {
-    "collection": [{
-        "doi": "10.1101/2024.01.16.575895",
-        "title": "A neural circuit for reward",
-        "authors": "Smith, A.",
-        "abstract": "We map dopamine neurons in the ventral tegmental area.",
-        "version": "1",
-    }],
+    "collection": [
+        {
+            "doi": "10.1101/2024.01.16.575895",
+            "title": "A neural circuit for reward",
+            "authors": "Smith, A.",
+            "abstract": "We map dopamine neurons in the ventral tegmental area.",
+            "version": "1",
+        }
+    ],
 }
 
 
@@ -642,16 +684,18 @@ class TestPreprintFetchIntegration:
             date_added=None,
             fetch_status=FetchStatus.PENDING,
         )
-        _persist_fetch_result(FetchResult(
-            doc_id,
-            "https://arxiv.org/abs/2301.00001",
-            "fetched",
-            "Paper text for embedding.",
-            200,
-            "fetched via arxiv api",
-            title="Attention Is All You Need Again",
-            card_summary="We revisit transformer architectures for language modeling.",
-        ))
+        _persist_fetch_result(
+            FetchResult(
+                doc_id,
+                "https://arxiv.org/abs/2301.00001",
+                "fetched",
+                "Paper text for embedding.",
+                200,
+                "fetched via arxiv api",
+                title="Attention Is All You Need Again",
+                card_summary="We revisit transformer architectures for language modeling.",
+            )
+        )
         with get_engine().connect() as con:
             row = con.execute(
                 sa.select(documents.c.title, documents.c.card_summary).where(
@@ -679,23 +723,27 @@ class TestPreprintFetchIntegration:
             date_added=None,
             fetch_status=FetchStatus.PENDING,
         )
-        _persist_fetch_result(FetchResult(
-            doc_id,
-            "https://arxiv.org/abs/2301.00001",
-            "fetched",
-            "Paper text for embedding.",
-            200,
-            "fetched via arxiv api",
-            title="Attention Is All You Need Again",
-            card_summary="We revisit transformer architectures for language modeling.",
-            doi="10.48550/arxiv.2301.00001",
-            arxiv_id="2301.00001",
-            authors_json=json.dumps(["Alice Smith", "Bob Jones"]),
-        ))
+        _persist_fetch_result(
+            FetchResult(
+                doc_id,
+                "https://arxiv.org/abs/2301.00001",
+                "fetched",
+                "Paper text for embedding.",
+                200,
+                "fetched via arxiv api",
+                title="Attention Is All You Need Again",
+                card_summary="We revisit transformer architectures for language modeling.",
+                doi="10.48550/arxiv.2301.00001",
+                arxiv_id="2301.00001",
+                authors_json=json.dumps(["Alice Smith", "Bob Jones"]),
+            )
+        )
         with get_engine().connect() as con:
             row = con.execute(
                 sa.select(
-                    documents.c.doi, documents.c.arxiv_id, documents.c.authors_json,
+                    documents.c.doi,
+                    documents.c.arxiv_id,
+                    documents.c.authors_json,
                 ).where(documents.c.id == doc_id)
             ).fetchone()
         assert row[0] == "10.48550/arxiv.2301.00001"
@@ -720,14 +768,18 @@ class TestPreprintFetchIntegration:
             fetch_status=FetchStatus.PENDING,
             doi="10.48550/arxiv.2301.00001",
         )
-        _persist_fetch_result(FetchResult(
-            doc_id, "https://arxiv.org/abs/2301.00001", "fetched",
-            "Paper text.", 200, "fetched via arxiv api",
-        ))
+        _persist_fetch_result(
+            FetchResult(
+                doc_id,
+                "https://arxiv.org/abs/2301.00001",
+                "fetched",
+                "Paper text.",
+                200,
+                "fetched via arxiv api",
+            )
+        )
         with get_engine().connect() as con:
-            doi = con.execute(
-                sa.select(documents.c.doi).where(documents.c.id == doc_id)
-            ).scalar()
+            doi = con.execute(sa.select(documents.c.doi).where(documents.c.id == doc_id)).scalar()
         assert doi == "10.48550/arxiv.2301.00001"
 
     @pytest.mark.asyncio
@@ -749,23 +801,24 @@ class TestPreprintFetchIntegration:
         )
         abstract = "We revisit transformer architectures for language modeling."
         body = "PDF opening line that should not replace the abstract on the card.\n" * 5
-        _persist_fetch_result(FetchResult(
-            doc_id,
-            "https://arxiv.org/abs/2301.00001",
-            "fetched",
-            body,
-            200,
-            "fetched via arxiv api",
-            title="Attention Is All You Need Again",
-            card_summary=abstract,
-        ))
+        _persist_fetch_result(
+            FetchResult(
+                doc_id,
+                "https://arxiv.org/abs/2301.00001",
+                "fetched",
+                body,
+                200,
+                "fetched via arxiv api",
+                title="Attention Is All You Need Again",
+                card_summary=abstract,
+            )
+        )
         embed_fetched_text(doc_id, body, card_summary=abstract, skip_existing=False)
         with get_engine().connect() as con:
             row = con.execute(
                 sa.select(documents.c.card_summary).where(documents.c.id == doc_id)
             ).fetchone()
         assert row[0] == abstract
-
 
 
 class TestEventLoopNotBlocked:
@@ -795,10 +848,12 @@ class TestEventLoopNotBlocked:
         mock_client.get.return_value = _html_response(200)
 
         started = time.monotonic()
-        results = await asyncio.gather(*(
-            _fetch_one(mock_client, doc_id=i, url=f"https://loopblock-{i}.example/{i}")
-            for i in range(parallel_urls)
-        ))
+        results = await asyncio.gather(
+            *(
+                _fetch_one(mock_client, doc_id=i, url=f"https://loopblock-{i}.example/{i}")
+                for i in range(parallel_urls)
+            )
+        )
         elapsed = time.monotonic() - started
 
         assert all(r.status == "fetched" for r in results)

@@ -1,4 +1,5 @@
 """Search request/response models. ``sources`` uses the :class:`Source` enum."""
+
 from pydantic import BaseModel
 
 from pka.api.schemas.documents import DocumentOut
@@ -7,7 +8,7 @@ from pka.constants import Source
 
 class SearchRequest(BaseModel):
     query: str
-    sources: list[Source] = []          # [] = all
+    sources: list[Source] = []  # [] = all
     source_tags: list[str] = []
     general_tags: list[str] = []
     cluster_l1_tags: list[str] = []
@@ -18,7 +19,7 @@ class SearchRequest(BaseModel):
     date_from: int | None = None
     date_to: int | None = None
     fetch_status: str | None = None
-    mode: str = "semantic"              # semantic | fulltext | hybrid
+    mode: str = "semantic"  # semantic | fulltext | hybrid
     limit: int = 20
     offset: int = 0
 

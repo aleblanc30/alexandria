@@ -4,6 +4,7 @@
 Thin shim — the implementation lives in pka.cli.purge_cluster_runs (run via
 `alexandria purge-cluster-runs` once installed, or `python scripts/purge_cluster_runs.py` from the repo).
 """
+
 import sys
 from pathlib import Path
 

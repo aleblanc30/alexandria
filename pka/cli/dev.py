@@ -16,6 +16,7 @@ of another process already holding the port: uvicorn's ``--reload``
 supervisor stays alive even when its worker fails to bind, so a bare
 liveness check on the subprocess isn't enough to catch that.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -100,9 +101,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         backend = subprocess.Popen(
             [
-                sys.executable, "-m", "uvicorn", "pka.api.main:app",
-                "--reload", "--reload-dir", str(REPO_ROOT / "pka"),
-                "--port", str(BACKEND_PORT),
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "pka.api.main:app",
+                "--reload",
+                "--reload-dir",
+                str(REPO_ROOT / "pka"),
+                "--port",
+                str(BACKEND_PORT),
             ],
             cwd=REPO_ROOT,
             env=backend_env,

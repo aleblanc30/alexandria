@@ -1,4 +1,5 @@
 """Reddit sync — metadata persistence and inline-body embedding (phase 1)."""
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -23,8 +24,7 @@ def _fetch_status(source_id: str) -> str:
     with get_engine().connect() as con:
         return con.execute(
             sa.select(documents.c.fetch_status).where(
-                (documents.c.source == str(Source.REDDIT))
-                & (documents.c.source_id == source_id)
+                (documents.c.source == str(Source.REDDIT)) & (documents.c.source_id == source_id)
             )
         ).scalar_one()
 
@@ -50,11 +50,15 @@ def test_subreddit_stored_as_collection(monkeypatch, reddit_saved_items, mock_ch
 
     doc_id = document_index(Source.REDDIT)["t3_selfpost"]
     with get_engine().connect() as con:
-        cols = con.execute(
-            sa.select(source_collections.c.collection).where(
-                source_collections.c.document_id == doc_id
+        cols = (
+            con.execute(
+                sa.select(source_collections.c.collection).where(
+                    source_collections.c.document_id == doc_id
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     assert cols == ["r/compsci"]
 
 
@@ -92,7 +96,9 @@ def test_ingest_does_not_repoll_the_live_feed(monkeypatch, reddit_saved_items, m
 
 
 def test_ingest_queue_returns_only_pending_link_posts(
-    monkeypatch, reddit_saved_items, mock_chroma,
+    monkeypatch,
+    reddit_saved_items,
+    mock_chroma,
 ):
     _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
@@ -184,6 +190,7 @@ def test_reingest_is_idempotent(monkeypatch, reddit_saved_items, mock_chroma):
 
 # ── reddit_items detail row ───────────────────────────────────────────────────
 
+
 def _reddit_row(source_id: str):
     from pka.db.queries import reddit_item
 
@@ -193,7 +200,9 @@ def _reddit_row(source_id: str):
 
 
 def test_metadata_persists_reddit_detail_fields(
-    monkeypatch, reddit_saved_items, mock_chroma,
+    monkeypatch,
+    reddit_saved_items,
+    mock_chroma,
 ):
     _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
@@ -203,13 +212,13 @@ def test_metadata_persists_reddit_detail_fields(
     assert comment["subreddit"] == "compsci"
     assert comment["external_url"] is None
     # The body verbatim, not the 280-char card excerpt.
-    assert comment["body"] == (
-        "Raft's leader election is the clearest part of the protocol."
-    )
+    assert comment["body"] == ("Raft's leader election is the clearest part of the protocol.")
 
 
 def test_link_post_keeps_permalink_separate_from_external_url(
-    monkeypatch, reddit_saved_items, mock_chroma,
+    monkeypatch,
+    reddit_saved_items,
+    mock_chroma,
 ):
     """The saved thread survives even though url_or_path is the external target."""
     _patch_load(monkeypatch, reddit_saved_items)
@@ -217,9 +226,7 @@ def test_link_post_keeps_permalink_separate_from_external_url(
 
     row = _reddit_row("t3_linkpost")
     assert row["external_url"] == "https://example.com/paxos.pdf"
-    assert row["permalink"] == (
-        "https://www.reddit.com/r/distributed/comments/linkpost/paxos/"
-    )
+    assert row["permalink"] == ("https://www.reddit.com/r/distributed/comments/linkpost/paxos/")
 
     doc_id = document_index(Source.REDDIT)["t3_linkpost"]
     with get_engine().connect() as con:
@@ -230,7 +237,9 @@ def test_link_post_keeps_permalink_separate_from_external_url(
 
 
 def test_metadata_rerun_backfills_detail_rows(
-    monkeypatch, reddit_saved_items, mock_chroma,
+    monkeypatch,
+    reddit_saved_items,
+    mock_chroma,
 ):
     """A library archived before ``reddit_items`` existed fills in on the next run.
 
@@ -254,7 +263,9 @@ def test_metadata_rerun_backfills_detail_rows(
 
 
 def test_dry_run_metadata_does_not_write_detail_rows(
-    monkeypatch, reddit_saved_items, mock_chroma,
+    monkeypatch,
+    reddit_saved_items,
+    mock_chroma,
 ):
     _patch_load(monkeypatch, reddit_saved_items)
 
@@ -267,6 +278,7 @@ def test_dry_run_metadata_does_not_write_detail_rows(
 
 # ── Generated summaries for inline bodies ─────────────────────────────────────
 
+
 def _long_body(word: str = "Consensus") -> str:
     return " ".join(f"{word} detail number {i} matters here." for i in range(40))
 
@@ -277,7 +289,9 @@ def _summary_chunks(mock_chroma) -> list[dict]:
 
 
 def test_inline_bodies_get_no_summary_when_the_flag_is_off(
-    monkeypatch, reddit_saved_items, mock_chroma,
+    monkeypatch,
+    reddit_saved_items,
+    mock_chroma,
 ):
     _patch_load(monkeypatch, reddit_saved_items)
     rs.sync_reddit_metadata()
@@ -287,7 +301,9 @@ def test_inline_bodies_get_no_summary_when_the_flag_is_off(
 
 
 def test_long_inline_body_gets_a_summary_chunk(
-    monkeypatch, reddit_saved_items, mock_chroma,
+    monkeypatch,
+    reddit_saved_items,
+    mock_chroma,
 ):
     """Self-posts and comments owe a summary just as fetched link posts do."""
     from pka.config import settings as cfg
@@ -295,7 +311,8 @@ def test_long_inline_body_gets_a_summary_chunk(
 
     monkeypatch.setattr(cfg, "bookmark_summary_enabled", True)
     monkeypatch.setattr(
-        sz, "chat_json",
+        sz,
+        "chat_json",
         lambda *a, **k: ({"summary": "Consensus protocols and their trade-offs."}, None),
     )
 
@@ -311,7 +328,9 @@ def test_long_inline_body_gets_a_summary_chunk(
 
 
 def test_comment_summary_is_framed_as_a_comment_with_its_thread(
-    monkeypatch, reddit_saved_items, mock_chroma,
+    monkeypatch,
+    reddit_saved_items,
+    mock_chroma,
 ):
     """The summariser is told what the text is and which thread it came from."""
     from pka.config import settings as cfg
@@ -337,13 +356,11 @@ def test_comment_summary_is_framed_as_a_comment_with_its_thread(
 
     assert len(prompts) == 1
     assert "indexing a Reddit comment" in prompts[0]
-    assert 'Understanding Raft' in prompts[0]
+    assert "Understanding Raft" in prompts[0]
     assert "Subreddit: r/compsci" in prompts[0]
 
 
-def test_metadata_can_be_replayed_from_the_archive(
-    monkeypatch, reddit_saved_items, mock_chroma
-):
+def test_metadata_can_be_replayed_from_the_archive(monkeypatch, reddit_saved_items, mock_chroma):
     """--from-archive rebuilds the rows from disk without polling the feed."""
     from dataclasses import asdict
 
@@ -360,5 +377,7 @@ def test_metadata_can_be_replayed_from_the_archive(
 
     assert stats["metadata"]["processed"] == 3
     assert set(document_index(Source.REDDIT)) == {
-        "t3_selfpost", "t3_linkpost", "t1_comment1",
+        "t3_selfpost",
+        "t3_linkpost",
+        "t1_comment1",
     }

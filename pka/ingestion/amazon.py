@@ -1,4 +1,5 @@
 """Amazon book product page extraction for Firefox bookmark URLs."""
+
 from __future__ import annotations
 
 import re

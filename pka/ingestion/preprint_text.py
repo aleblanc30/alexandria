@@ -1,4 +1,5 @@
 """Shared text assembly for arXiv / bioRxiv fetch handlers."""
+
 from __future__ import annotations
 
 

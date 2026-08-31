@@ -1,4 +1,5 @@
 """Tests for document embedding cache (MiniLM mean-pool)."""
+
 import numpy as np
 import pytest
 
@@ -34,24 +35,30 @@ class TestRefreshDocumentEmbedding:
 
     def test_writes_mean_pooled_embedding(self, mock_chroma):
         doc_id = upsert_document("zotero", "EM1", "Has chunks", None, None)
-        insert_chunks([{
-            "document_id": doc_id,
-            "chunk_index": 0,
-            "text": "hello world",
-            "token_count": 2,
-            "vector_id": "vec-em1",
-        }])
+        insert_chunks(
+            [
+                {
+                    "document_id": doc_id,
+                    "chunk_index": 0,
+                    "text": "hello world",
+                    "token_count": 2,
+                    "vector_id": "vec-em1",
+                }
+            ]
+        )
         from pka.storage import vector_store as vs
 
         vs.upsert_chunks(
             ids=["vec-em1"],
             texts=["hello world"],
-            metadatas=[{
-                "document_id": doc_id,
-                "source": "zotero",
-                "title": "Has chunks",
-                "chunk_index": 0,
-            }],
+            metadatas=[
+                {
+                    "document_id": doc_id,
+                    "source": "zotero",
+                    "title": "Has chunks",
+                    "chunk_index": 0,
+                }
+            ],
         )
         assert refresh_document_embedding(doc_id) is True
         cached, missing = load_cached_embeddings([doc_id])

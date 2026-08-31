@@ -1,4 +1,5 @@
 """Zotero sync — metadata and embed as separate jobs."""
+
 import json
 import logging
 
@@ -112,5 +113,6 @@ def sync_zotero(
     """Full sync (metadata + embed). Kept for scripts/tests."""
     meta = sync_zotero_metadata(progress_key=progress_key, dry_run=dry_run)
     return run_full_sync(
-        meta, lambda: sync_zotero_ingest(progress_key=progress_key, dry_run=dry_run),
+        meta,
+        lambda: sync_zotero_ingest(progress_key=progress_key, dry_run=dry_run),
     )

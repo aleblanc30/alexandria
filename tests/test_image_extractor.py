@@ -1,4 +1,5 @@
 """Unit tests for image extraction helpers (no real Ollama/CLIP/OCR)."""
+
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -16,16 +17,19 @@ def sample_png(tmp_path) -> Path:
 class TestParseLlmJson:
     def test_parses_plain_json(self):
         from pka.ingestion.image_extractor import _parse_llm_json
+
         raw = '{"image_type": "slide", "description": "A slide."}'
         assert _parse_llm_json(raw)["image_type"] == "slide"
 
     def test_strips_markdown_fences(self):
         from pka.ingestion.image_extractor import _parse_llm_json
+
         raw = '```json\n{"image_type": "poster", "description": "Poster."}\n```'
         assert _parse_llm_json(raw)["image_type"] == "poster"
 
     def test_extracts_embedded_object(self):
         from pka.ingestion.image_extractor import _parse_llm_json
+
         raw = 'Here is the result: {"image_type": "notes", "description": "Notes."}'
         assert _parse_llm_json(raw)["image_type"] == "notes"
 
@@ -33,12 +37,14 @@ class TestParseLlmJson:
 class TestEncodeImage:
     def test_returns_base64_string(self, sample_png):
         from pka.ingestion.image_extractor import _encode_image
+
         b64 = _encode_image(sample_png)
         assert isinstance(b64, str)
         assert len(b64) > 20
 
     def test_downscales_large_images(self, tmp_path):
         from pka.ingestion.image_extractor import _encode_image
+
         p = tmp_path / "big.png"
         PILImage.new("RGB", (3000, 2000), color="blue").save(p)
         b64 = _encode_image(p, max_px=512)
@@ -55,6 +61,7 @@ class TestClassifyAndDescribe:
         monkeypatch.setattr("pka.providers.ollama.httpx.post", lambda *a, **kw: resp)
 
         from pka.ingestion.image_extractor import classify_and_describe
+
         itype, desc = classify_and_describe(sample_png)
         assert itype == "slide"
         assert "ML" in desc
@@ -68,6 +75,7 @@ class TestClassifyAndDescribe:
         monkeypatch.setattr("pka.providers.ollama.httpx.post", lambda *a, **kw: resp)
 
         from pka.ingestion.image_extractor import classify_and_describe
+
         itype, _ = classify_and_describe(sample_png)
         assert itype == "unknown"
 
@@ -85,6 +93,7 @@ class TestClassifyAndDescribe:
         monkeypatch.setattr("pka.providers.ollama.httpx.post", lambda *a, **kw: resp)
 
         from pka.ingestion.image_extractor import classify_and_describe
+
         itype, desc = classify_and_describe(sample_png)
         assert itype == "book_cover"
         assert desc == "A cover."
@@ -96,20 +105,22 @@ class TestClassifyAndDescribe:
             ("book-cover", "book_cover"),
             ("  WHITEBOARD  ", "whiteboard"),
             ("multiple book covers", "multiple_book_covers"),
-            ("book covers", "multiple_book_covers"),   # alias, not the single-cover label
+            ("book covers", "multiple_book_covers"),  # alias, not the single-cover label
             ("Bookshelves", "bookshelf"),
             ("bookcase", "bookshelf"),
-            ("book cover shelf thing", "unknown"),     # not a label, must not fuzzy-match
+            ("book cover shelf thing", "unknown"),  # not a label, must not fuzzy-match
             ("", "unknown"),
         ],
     )
     def test_label_normalisation(self, raw, expected):
         from pka.ingestion.image_extractor import _normalize_type
+
         assert _normalize_type(raw) == expected
 
     def test_salvage_maps_spaced_label(self):
         """The invalid-JSON salvage path must fold labels the same way."""
         from pka.ingestion.image_extractor import _salvage_vision_fields
+
         broken = '{"image_type": "book cover", "description": "A "signed" first edition."}'
         itype, desc = _salvage_vision_fields(broken)
         assert itype == "book_cover"
@@ -121,6 +132,7 @@ class TestClassifyAndDescribe:
             lambda *a, **kw: (_ for _ in ()).throw(ConnectionError("down")),
         )
         from pka.ingestion.image_extractor import classify_and_describe
+
         itype, desc = classify_and_describe(sample_png)
         assert itype == "unknown"
         assert desc == ""
@@ -137,6 +149,7 @@ class TestClassifyAndDescribe:
         monkeypatch.setattr("pka.providers.ollama.httpx.post", lambda *a, **kw: resp)
 
         from pka.ingestion.image_extractor import classify_and_describe
+
         itype, desc = classify_and_describe(sample_png)
         assert itype == "notes"
         assert desc == 'A photo of "handwritten" lecture notes.'
@@ -156,6 +169,7 @@ class TestClassifyAndDescribe:
 
         monkeypatch.setattr("pka.providers.ollama.httpx.post", _post)
         from pka.ingestion.image_extractor import classify_and_describe
+
         classify_and_describe(sample_png)
         assert captured["payload"]["format"] == "json"
 
@@ -230,8 +244,8 @@ class TestPerTypeContentPrompts:
         out = extract_image_content(sample_png, provider=prov)
         assert prov.complete.call_count == 2
         first, second = (call[0][0] for call in prov.complete.call_args_list)
-        assert '"image_type"' in first          # classify prompt
-        assert '"transcript"' in second         # per-type content prompt
+        assert '"image_type"' in first  # classify prompt
+        assert '"transcript"' in second  # per-type content prompt
         assert out.image_type == "notes"
         assert out.content == "hypothesis: retrieval is the bottleneck"
         assert out.description == "A notebook page."  # kept from the classify call
@@ -241,7 +255,7 @@ class TestPerTypeContentPrompts:
 
         prov = self._provider('{"image_type": "unknown", "description": "A blank wall."}')
         out = extract_image_content(sample_png, provider=prov)
-        assert prov.complete.call_count == 1    # no content prompt exists for unknown
+        assert prov.complete.call_count == 1  # no content prompt exists for unknown
         assert out.image_type == "unknown"
         assert out.description == "A blank wall."
         assert out.content == ""
@@ -271,11 +285,13 @@ class TestBookExtraction:
           ],
           "description": "Two paperbacks on a desk."
         }"""
-        out = extract_image_content(sample_png, image_type="multiple_book_covers",
-                                    provider=prov)
+        out = extract_image_content(sample_png, image_type="multiple_book_covers", provider=prov)
         assert out.books == [
-            {"title": "Godel, Escher, Bach", "authors": ["Douglas Hofstadter"],
-             "isbn": "9780465026562"},
+            {
+                "title": "Godel, Escher, Bach",
+                "authors": ["Douglas Hofstadter"],
+                "isbn": "9780465026562",
+            },
             {"title": "The Society of Mind", "authors": ["Marvin Minsky"], "isbn": None},
         ]
         # The same fields are what gets indexed, via image_search_text.
@@ -327,7 +343,8 @@ class TestBookExtraction:
         )
         out = extract_image_content(sample_png, image_type="book_cover", provider=prov)
         assert [b["title"] for b in out.books] == [
-            "The Timeless Way of Building", "A Pattern Language",
+            "The Timeless Way of Building",
+            "A Pattern Language",
         ]
         assert out.books[0]["isbn"] == "0195024024"
         assert out.books[1]["authors"] == ["Christopher Alexander"]
@@ -349,15 +366,18 @@ class TestOcrImage:
     def _use_easyocr(self, monkeypatch):
         """Pin the EasyOCR backend — these tests exercise that provider."""
         import pka.providers as providers
+
         monkeypatch.setattr(providers.cfg, "ocr_provider", "easyocr")
         providers.reset_providers()
 
     def test_success(self, sample_png, monkeypatch):
         from pka.providers.easy_ocr import EasyOcrProvider
+
         reader = MagicMock()
         reader.readtext.return_value = ["  Hello OCR  "]
         monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
         from pka.ingestion.image_extractor import ocr_image
+
         assert ocr_image(sample_png) == "Hello OCR"
 
     def test_failure_returns_empty(self, sample_png, monkeypatch):
@@ -368,6 +388,7 @@ class TestOcrImage:
 
         monkeypatch.setattr(EasyOcrProvider, "_reader", _boom)
         from pka.ingestion.image_extractor import ocr_image
+
         assert ocr_image(sample_png) == ""
 
 
@@ -391,8 +412,9 @@ class TestClipEmbed:
     def _mock_torch(self, monkeypatch):
         monkeypatch.setattr(
             "torch.no_grad",
-            lambda: MagicMock(__enter__=MagicMock(return_value=None),
-                              __exit__=MagicMock(return_value=False)),
+            lambda: MagicMock(
+                __enter__=MagicMock(return_value=None), __exit__=MagicMock(return_value=False)
+            ),
         )
 
     def test_image_embedding(self, sample_png, monkeypatch):
@@ -407,6 +429,7 @@ class TestClipEmbed:
         )
 
         from pka.ingestion.image_extractor import clip_embed_image
+
         assert clip_embed_image(sample_png) == [0.1, 0.2, 0.3]
 
     def test_text_embedding(self, monkeypatch):
@@ -421,6 +444,7 @@ class TestClipEmbed:
         )
 
         from pka.ingestion.image_extractor import clip_embed_text
+
         assert clip_embed_text("query") == [0.5, 0.6]
 
     def test_clip_failure_returns_none(self, sample_png, monkeypatch):
@@ -429,19 +453,23 @@ class TestClipEmbed:
             lambda: (_ for _ in ()).throw(RuntimeError("clip")),
         )
         from pka.ingestion.image_extractor import clip_embed_image
+
         assert clip_embed_image(sample_png) is None
 
 
 class TestImageSearchText:
     def test_combines_description_and_ocr(self):
         from pka.ingestion.image_extractor import image_search_text
+
         text = image_search_text("OCR text", "Description here")
         assert text == "Description here\n\nOCR text"
 
     def test_empty_input_returns_none(self):
         from pka.ingestion.image_extractor import image_search_text
+
         assert image_search_text("", "") is None
 
     def test_ocr_only(self):
         from pka.ingestion.image_extractor import image_search_text
+
         assert image_search_text("scan line", "") == "scan line"
