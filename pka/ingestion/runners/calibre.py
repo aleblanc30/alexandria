@@ -218,7 +218,7 @@ def ingest_calibre_fulltext(
                     # A scan: the file is readable, it just has no text to read.
                     # Recorded rather than silently counted as "skipped", which
                     # is also what an un-run phase 2 looks like — this is the
-                    # OCR-candidate set (BACKLOG.md).
+                    # OCR-candidate set (planning/BACKLOG.md).
                     log.info(
                         "No text layer in %s (%d pages) — marking %s",
                         book.title, report.page_count, FetchStatus.NO_TEXT_LAYER,

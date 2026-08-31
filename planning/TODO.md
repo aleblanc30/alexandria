@@ -14,6 +14,7 @@ two when its priority changes; do not duplicate it in both.
 - [ ] **Ingest Zotero PDF attachments** — `item.pdf_path` is recorded and never read, so Zotero indexes title + abstract only (DESIGN.md §3.2); needs a phase-2 pass mirroring `ingest_calibre_fulltext` over `extract_book_report`, offset by `existing_chunk_count()` — no new extraction machinery.
 - [ ] **Exempt preprint PDFs from the page cap** — `fetch_pdf_max_pages` caps every PDF route at 3 pages, so arXiv/bioRxiv now index only title + abstract + 3 pages.
 - [x] **Make `_DomainRateLimiter` actually rate-limit** — `wait` now claims a slot under the lock instead of deriving a delay from a shared last-send time, so concurrent waiters on one domain are spaced rather than released together.
+- [ ] **Domain-aware fetch dispatch** — the fetch pool picks a URL off a flat queue and only then waits on the per-domain limiter, so a run of same-host URLs parks every worker on that host while other domains sit ready; plan in `FETCH_DISPATCH_PLAN.md`.
 
 ## Source connectors
 

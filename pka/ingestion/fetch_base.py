@@ -150,7 +150,7 @@ def _fetch_pdf_result(
         if report.status == PdfTextLayer.NONE:
             # Readable, paginated, and not one page carries text: a scan. Kept
             # apart from "unfetchable" so re-fetching never retries it and the
-            # OCR-candidate set stays queryable (BACKLOG.md).
+            # OCR-candidate set stays queryable (planning/BACKLOG.md).
             return FetchResult(
                 doc_id, url, str(FetchStatus.NO_TEXT_LAYER), None, http_status,
                 f"pdf has no text layer ({report.page_count} pages)",

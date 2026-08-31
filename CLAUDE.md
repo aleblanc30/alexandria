@@ -24,6 +24,13 @@ intent and is superseded wherever it disagrees with the above — notably, it
 specifies local-*only* with no cloud dependencies, whereas the project is now
 local-*first* (see `DESIGN.md` §1.1).
 
+Work tracking and in-flight design proposals live in `planning/`, not at repo
+root: `planning/TODO.md` (high-priority, one line each), `planning/BACKLOG.md`
+(nice-to-haves), and one dedicated `planning/<NAME>.md` per larger plan (e.g.
+`planning/FETCH_DISPATCH_PLAN.md`, `planning/WAYBACK.md`). None of these are
+authoritative about current behavior — they describe proposed or deferred
+work, not what the code does.
+
 ## Boundaries
 
 - **Do not run real ingestion.** `alexandria zotero|firefox|calibre|images|reddit|youtube`
@@ -119,6 +126,7 @@ Two configuration facts that otherwise read as bugs:
 | API surface | `pka/api/main.py` (router list), matching router + schema modules |
 | Frontend views | `frontend/src/router.ts`, relevant store + `api/client.ts` |
 | Tag training / trends | `pka/tag_training/`, `pka/trends/` |
+| Backlog, todo, in-flight plans | `planning/` — `TODO.md`, `BACKLOG.md`, one file per larger plan |
 
 Adding a new source connector: use the **`add-source-connector` skill**.
 

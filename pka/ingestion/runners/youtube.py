@@ -3,7 +3,7 @@
 Metadata-only content: each document embeds ``title + channel + description +
 tags``. There is no separate fetch phase — the Data API returns the content
 alongside the metadata — so ``fetch_status`` is set to ``FETCHED`` on insert.
-Transcript-based Phase-2 enrichment is deferred (see ``BACKLOG.md``).
+Transcript-based Phase-2 enrichment is deferred (see ``planning/BACKLOG.md``).
 """
 from __future__ import annotations
 

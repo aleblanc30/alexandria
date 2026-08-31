@@ -49,17 +49,17 @@ local OCR/embeddings:
 
 | Capability | Config setting | Backends | Interface (`pka/providers/base.py`) |
 |-----------|----------------|----------|-------------------------------------|
-| Chat (text→JSON) | `chat_provider` | ollama, ollama_cloud, openrouter, ovh | `ChatProvider` |
-| Vision (image→text) | `vision_provider` | ollama, ollama_cloud, openrouter, ovh | `VisionProvider` |
+| Chat (text→JSON) | `chat_provider` | ollama, ollama_cloud, openrouter, ovh, scaleway | `ChatProvider` |
+| Vision (image→text) | `vision_provider` | ollama, ollama_cloud, openrouter, ovh, scaleway | `VisionProvider` |
 | OCR (image→text) | `ocr_provider` | vlm, easyocr | `OcrProvider` |
 | Image embed (CLIP) | `image_embed_provider` | clip | `ImageEmbedder` |
 
 The image-embed capability is additionally gated by `clip_enabled` (default
 **off**) — see §3.3; the other three always run.
 
-OpenRouter and OVH share one OpenAI-compatible implementation
+OpenRouter, OVH, and Scaleway share one OpenAI-compatible implementation
 (`openai_compat.py`); credentials/models come from `ALEXANDRIA_OPENROUTER_*` /
-`ALEXANDRIA_OVH_*`.
+`ALEXANDRIA_OVH_*` / `ALEXANDRIA_SCALEWAY_*`.
 
 `ollama` and `ollama_cloud` likewise share `ollama.py`, because Ollama Cloud
 serves the same native `/api/chat`; the cloud form is the same classes built
@@ -169,7 +169,7 @@ have — a template to copy, not an exception to be argued down:
   description/tags via `videos.list`. Embed text is
   `title + channel + description + tags`. Note: the Data API no longer exposes
   *Watch Later*, so it is not included. Transcript enrichment is deferred
-  (`BACKLOG.md`).
+  (`planning/BACKLOG.md`).
 
 Otherwise the connector follows the standard §2 checklist and the Zotero-style
 two-phase flow (metadata import, then embed — no async fetch phase).
@@ -215,7 +215,7 @@ is worth OCR and only the first is recorded, as `fetch_status = no_text_layer` o
 both the Calibre and the fetch route. Nothing re-queues that state: re-reading the
 same bytes cannot produce text. It exists so that "not extracted yet" and "has
 nothing to extract" stop looking identical from the database, and it is the work
-queue the OCR entry in `BACKLOG.md` would consume.
+queue the OCR entry in `planning/BACKLOG.md` would consume.
 
 **Page ranges travel with the chunk.** A PDF section is a group of ten
 *text-bearing* pages labelled with its real 1-based page numbers — a page with no
@@ -455,8 +455,8 @@ Three mechanisms close these, in ascending cost:
 | Calibre, no ISBN | Title/author lookup → second catalogue. Skipped entirely when Calibre already holds a description, since pass 1 embeds that | off (`external_lookup_enabled`) |
 | Calibre full text | Local map-reduce summary over the extracted sections | off (`book_summary_enabled`) |
 | Long fetched articles | Same path as bookmarks — they are the same runner | off (`bookmark_summary_enabled`) |
-| Zotero | *No summary* — the abstract already is one. The real gap is that attached PDFs are never ingested (`TODO.md`). | — |
-| YouTube | *No summary* — nothing to summarise beyond uploader metadata. Transcripts (`BACKLOG.md`). | — |
+| Zotero | *No summary* — the abstract already is one. The real gap is that attached PDFs are never ingested (`planning/TODO.md`). | — |
+| YouTube | *No summary* — nothing to summarise beyond uploader metadata. Transcripts (`planning/BACKLOG.md`). | — |
 
 **Resolution ladder.** Covers and no-ISBN Calibre books share one cascade:
 checksum-validated ISBN → Open Library by title+author with the canonical result

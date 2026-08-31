@@ -595,7 +595,7 @@ The thinnest pipeline: it mirrors Zotero's shape exactly — no fetch phase, one
 embed pass — because the Data API returns content alongside metadata, so
 documents are inserted already `FETCHED`. The network cost sits in the
 *connector*, not in a fetch phase. No generated summary and no full text
-(transcript enrichment is deferred; see `BACKLOG.md`).
+(transcript enrichment is deferred; see `planning/BACKLOG.md`).
 
 ```mermaid
 flowchart TD

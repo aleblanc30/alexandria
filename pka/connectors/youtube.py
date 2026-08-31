@@ -3,7 +3,7 @@
 Reads the authenticated user's playlists (including the special *Liked videos*
 playlist) and the videos inside each, returning one :class:`YouTubeVideo` per
 unique video. **Metadata only** — title, channel, description, and the video's
-own tags. Transcript extraction is deferred (see ``BACKLOG.md``).
+own tags. Transcript extraction is deferred (see ``planning/BACKLOG.md``).
 
 Cloud exception: Alexandria is otherwise strictly local-first. This is the one
 sanctioned outbound integration and is **inert** unless YouTube OAuth
