@@ -25,7 +25,7 @@ import sqlalchemy as sa
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import normalize
 
-from pka.clustering.run_progress import raise_if_cancelled
+from pka.clustering.run_progress import ClusterRunCancelled, raise_if_cancelled
 from pka.config import settings as cfg
 from pka.db.queries import (
     get_engine,
@@ -555,7 +555,11 @@ def _label_clusters(
             desc_map[cid] = desc
         return label_map, desc_map
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
+    # Not a context manager: on cancellation we shut down without waiting for
+    # already-dispatched futures, so a stop request isn't stuck behind a
+    # ThreadPoolExecutor.__exit__() that blocks on shutdown(wait=True).
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
         futures = {
             pool.submit(
                 _label_one_cluster,
@@ -573,6 +577,11 @@ def _label_clusters(
             label_map[cid] = label
             desc_map[cid] = desc
             log.debug("Cluster %d → %s", cid, label)
+    except ClusterRunCancelled:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        pool.shutdown(wait=True)
     return label_map, desc_map
 
 

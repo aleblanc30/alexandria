@@ -6,6 +6,7 @@ Chroma is replaced by the mock_chroma fixture from conftest.py.
 
 import json
 import sys
+import threading
 import time
 from unittest.mock import MagicMock
 
@@ -252,6 +253,44 @@ class TestRunClustering:
 
         run_clustering(min_cluster_size=2, skip_labelling=True)
         assert call_count["n"] == 0
+
+    def test_cancel_during_multi_worker_labelling_does_not_block(self, monkeypatch):
+        """
+        A stop request during L2 labelling must not wait for every already-
+        dispatched worker in the batch to finish (regression for the "Stop"
+        button appearing to do nothing while other clusters keep labelling).
+        """
+        from pka.clustering import engine
+        from pka.clustering.run_progress import ClusterRunCancelled, begin, request_cancel
+
+        run_id = 999
+        begin(run_id)
+        monkeypatch.setattr(engine.cfg, "cluster_label_workers", 4)
+        monkeypatch.setattr(
+            engine,
+            "sample_cluster_documents_for_clusters",
+            lambda con, cluster_docs: {cid: [] for cid in cluster_docs},
+        )
+
+        release = threading.Event()
+
+        def fake_label_one_cluster(cid, samples, skip_labelling, chat_model):
+            if cid == 0:
+                request_cancel(run_id)
+            else:
+                release.wait(2.0)
+            return cid, f"label-{cid}", ""
+
+        monkeypatch.setattr(engine, "_label_one_cluster", fake_label_one_cluster)
+        cluster_docs = {cid: [cid] for cid in range(4)}
+
+        start = time.perf_counter()
+        with pytest.raises(ClusterRunCancelled):
+            engine._label_clusters(cluster_docs, skip_labelling=False, chat_model=None, run_id=run_id)
+        elapsed = time.perf_counter() - start
+
+        release.set()  # let the still-running workers finish so no thread leaks
+        assert elapsed < 1.0
 
     def test_umap_2d_shape(self, populated):
         from pka.clustering.engine import run_clustering
