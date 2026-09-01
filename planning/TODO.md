@@ -31,6 +31,7 @@ two when its priority changes; do not duplicate it in both.
 - [x] **amazon ingester** — `is_amazon_host` already matched any TLD (`.fr`, `.co.uk`, `.in`, ...); locked in with a regression test, see `FIREFOX_INGESTERS_PLAN.md` §0.
 - [x] **pubmed ingester** — Firefox fetch handler for pubmed pages saved as bookmarks (`pka/ingestion/pubmed.py`); plan in `FIREFOX_INGESTERS_PLAN.md`.
 - [x] **top domains and top rejected domains** — `GET /ingestion/domains` and a two-table panel on `/ingestion` rank domains by document count and by unfetchable count; plan in `DOMAIN_TOP_LISTS_PLAN.md`.
+- [x] **Search-URL cards** — a bookmarked search-results page (`google.com/search?q=`, `duckduckgo.com/?q=`, `youtube.com/results?search_query=`) is scraped as if it were a document; decode the query from the URL into a title + card summary with **no HTTP request at all**. Plan in `SEARCH_URL_CARDS.md`.
 
 
 ## Active learning
@@ -41,6 +42,7 @@ two when its priority changes; do not duplicate it in both.
 ## UI
 
 - [ ] **Delete tags in the UI** — allow removing tags from the frontend (with appropriate API support and confirmation).
+- [ ] **Cluster run parameter dialog** — `+ New run` on `/runs` fires an unconfigurable run; put a modal behind it exposing the `run_clustering()` knobs the CLI already has (method, min cluster size / samples / neighbours, min dist, PCA or UMAP dims, labelling mode). Plan in `CLUSTER_RUN_DIALOG.md`.
 
 ## CLI & assistant
 
@@ -60,3 +62,6 @@ two when its priority changes; do not duplicate it in both.
 - [ ] Summarization calls fail silently.
 - [ ] **Selective purge & pipeline re-triggers** — buttons to purge specific subsets (summaries, vectors, image text, machine tags, fetched text) and retrigger the matching pipeline step, so swapping an embedding/summarisation backend does not require nuking a whole source; includes provenance stamping so a purge can target "made by the old model". Plan in `PURGE_AND_PROVENANCE_PLAN.md`.
 - [x] **Batch the purge path's IN lists** — `_purge_documents` / `_purge_images` (`pka/cli/purge_source.py`), `purge_vectors` (`pka/storage/vector_store.py`) and `delete_clip_vectors` (`pka/ingestion/image_pipeline.py`) now batch on 5000 the way the clustering read path does, so a source over SQLite's 32766-variable cap no longer fails with `too many SQL variables`. The two Chroma `delete(ids=...)` calls batch per batch, so one bad batch does not strand the rest.
+- [ ] **Use zotero collection names as tags**
+- [ ] **Extend the summarization call to include tag inference**
+- [ ] **Train a classifier for the image gate instead of the vlm**
