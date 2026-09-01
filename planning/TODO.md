@@ -24,7 +24,7 @@ two when its priority changes; do not duplicate it in both.
 
 ## Clustering
 
-- [ ] **Two-level agglomerative clustering algorithm** — `pka/clustering/engine.py` only ever runs HDBSCAN (over PCA or legacy UMAP space); add agglomerative (ward/average-linkage) clustering as a selectable `cluster_space`/algorithm, reusing the existing L1/L2 hierarchy machinery (`_write_hierarchical_clusters`, `clusters.level` / `parent_cluster_id`) rather than rebuilding it.
+- [ ] **Two-level agglomerative clustering algorithm** — `pka/clustering/engine.py` only ever runs HDBSCAN (over PCA or legacy UMAP space); add agglomerative (ward) clustering as a third `cluster_space` mode, reusing the existing L1/L2 hierarchy machinery (`_write_hierarchical_clusters`, `_run_level2_pass_core`'s callback seam) rather than rebuilding it. Partitions every document rather than leaving most as noise, and picks its cluster count by cutting a prebuilt dendrogram. Retune HDBSCAN's `min_cluster_size` first — the 83% noise on run #4 is a tuning artefact, not an HDBSCAN property (see plan §5). Plan in `AGGLOMERATIVE_CLUSTERING.md`.
 
 ## Source connectors
 
@@ -48,7 +48,7 @@ two when its priority changes; do not duplicate it in both.
 - [ ] **Delete tags in the UI** — allow removing tags from the frontend (with appropriate API support and confirmation).
 - [x] **Cluster run parameter dialog** — `+ New run` on `/runs` opens `ClusterRunDialog.vue`, exposing the `run_clustering()` knobs the CLI already had (method, min cluster size / samples / neighbours, min dist, PCA or UMAP dims, labelling mode) via a `TriggerRunRequest` JSON body. Plan in `CLUSTER_RUN_DIALOG.md`.
 - [ ] **Cluster run deletion interface**
-- [ ] **Cluster run stop button is not functional**
+- [x] **Cluster run stop button is not functional** — `_label_clusters`'s `ThreadPoolExecutor` blocked cancellation behind `shutdown(wait=True)` in `__exit__`; it now shuts down with `cancel_futures=True` on `ClusterRunCancelled` instead of waiting for the whole in-flight labelling batch.
 
 ## CLI & assistant
 
