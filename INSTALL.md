@@ -185,10 +185,15 @@ WScript.Quit rc
 The `0` is the window style, meaning hidden. The `True` is `bWaitOnReturn`,
 and it is deliberate: with it, `wscript.exe` remains alive for as long as
 uvicorn runs and exits with uvicorn's exit code. Task Scheduler therefore
-reports the task as running while the server is up, ending the task terminates
-the server, and a restart-on-failure policy fires when the server dies. With
-`False`, the task would complete successfully within a second and none of those
-three behaviours would work.
+reports the task as running while the server is up, and a restart-on-failure
+policy fires when the server dies. With `False`, the task would complete
+successfully within a second and neither behaviour would work.
+
+What it does not give you is a way to stop the server through the scheduler.
+`schtasks /End` ends the `wscript.exe` the task started, but uvicorn survives
+it and goes on holding port 8420. Stopping Alexandria therefore means finding
+the listener on the port and killing that, which is what `stop-server.bat` (§8)
+and the upgrade script (§11) both do.
 
 If Windows Script Host is disabled by policy or by endpoint-protection
 software on the machine, the equivalent is invoking the batch file through
@@ -270,11 +275,11 @@ closing the window leaves the server running, and opening it before the server
 has ever run waits for the file to appear rather than failing.
 
 **Stop Alexandria** runs `scripts\stop-server.bat`, which ends the `Alexandria`
-task if one is registered and then stops whatever still holds port 8420. It
-covers both arrangements for that reason — ending the task is enough under §7,
-while an on-demand server has no task to end. Note that it goes by the port
-rather than by identity, so if a development checkout is serving 8420
-(`alexandria dev`, per §9), that is what it will stop.
+task if one is registered and then stops whatever still holds port 8420. Both
+halves are needed, for the reason in §6: ending the task leaves uvicorn running,
+and an on-demand server has no task to end in the first place. Note that the
+second half goes by the port rather than by identity, so if a development
+checkout is serving 8420 (`alexandria dev`, per §9), that is what it will stop.
 
 Both scripts assume the default port and the `data\` location from §2, as the
 §5 launcher does. The `LOG` line at the top of `console.bat` and the `PORT`
@@ -331,33 +336,71 @@ chunk rows referring to vectors that no longer exist.
 
 ## 11. Upgrading
 
-```bat
-schtasks /End /TN Alexandria
-robocopy "%LOCALAPPDATA%\Alexandria\data" "%LOCALAPPDATA%\Alexandria\data-backup" /E
-cd /d "%LOCALAPPDATA%\Alexandria\app"
-git fetch --tags
-git tag --list
-git checkout <tag>
-.venv\Scripts\activate
-pip install .
-cd frontend && npm ci && npm run build && cd ..
-alexandria init
-schtasks /Run /TN Alexandria
+Upgrading is one script, given the tag to move to. It stops the server, mirrors
+the library to `data-backup`, checks the tag out, reinstalls the package,
+rebuilds the frontend, migrates the database, starts the server again and waits
+until it answers.
+
+The repository ships it at `scripts\upgrade.ps1`, so as with the launcher in §5
+there is nothing to write — use it where it is:
+
+```powershell
+cd $env:LOCALAPPDATA\Alexandria\app
+powershell -ExecutionPolicy Bypass -File .\scripts\upgrade.ps1 v0.0.8
 ```
 
-`git tag --list` prints the releases available; substitute the newest one for
-`<tag>`. Take the backup before anything else. `alexandria init` is idempotent
-and does migrate a populated database in place rather than only creating absent
-tables:
+`-ExecutionPolicy Bypass` is what lets an unsigned script run under the default
+machine policy. With no tag, the script prints the releases available and the
+one currently checked out, then exits without changing anything; `-Yes` skips
+the confirmation.
+
+It upgrades the checkout it is in rather than one named inside it, so neither
+path that could be wrong is written down: the app directory comes from the
+script's own location, and the library from `ALEXANDRIA_DATA_DIR` in `.env` —
+the same setting the server reads (§4) — falling back to that setting's own
+relative `data` default. Both are printed for confirmation before anything is
+stopped, and `$Port` and `$Task` at the top of the file are the only settings
+left to edit.
+
+That the script sits inside the tree it checks out is deliberate rather than
+overlooked. PowerShell parses a script file in full before executing any of it,
+so step 3 rewriting `scripts\upgrade.ps1` underneath the running interpreter
+does not affect the run in progress: it finishes as the version it started as.
+A `.bat` in the same position would not survive it, since cmd.exe reads batch
+files incrementally by byte offset. What follows from this is that an upgrade
+is always carried out by the *outgoing* release's script, so a fix to the
+script itself only takes effect from the upgrade after the one that installs
+it.
+
+Two things it refuses to start on, both of which would otherwise fail after the
+server had been stopped: a tag that does not exist, and a working tree with
+local modifications, which makes the checkout fail halfway.
+
+Stopping the server is the step worth understanding, since the obvious command
+does not do it. `schtasks /End` ends the `wscript.exe` wrapper and leaves
+uvicorn holding port 8420 (§6), so the script ends the task and then locates the
+listener with `netstat -ano`, matches the owning PID from the same row, and
+kills that. It stops rather than continuing if anything still holds the port
+afterwards, because the backup would otherwise be taken while the database was
+being written, which is exactly the inconsistency it exists to prevent.
+
+The backup is a mirror, so `data-backup` ends up matching `data` exactly rather
+than accumulating files from earlier runs — a stale Chroma segment left beside a
+newer database is not a restorable pair. It is one rolling backup, overwritten
+each upgrade; copy it elsewhere first if you want to keep more than the last.
+
+`alexandria init` is idempotent and does migrate a populated database in place
+rather than only creating absent tables:
 `init_db` in `pka/db/queries.py` runs `create_all`, then a sequence of guarded
 `ALTER TABLE` steps for the columns added since the archive was built. What the
 backup covers is the case it cannot — a schema change for which no migration
 step was written.
 
 The same `init_db()` runs from the API's startup hook, so an upgrade that skips
-the explicit `alexandria init` still migrates once the task restarts. Running it
-by hand is worth keeping because it reports the failure in a console you are
-watching rather than into `server.log`. The `npm run build` line is not
+the explicit `alexandria init` still migrates once the task restarts. The script
+runs it as its own step anyway, because that way a failed migration is reported
+in the console you are watching rather than into `server.log`, and before the
+server is started rather than after. The `npm ci && npm run build` step is not
 cosmetic either: `frontend\dist` is not in the repository, so until it is
 rebuilt the server keeps mounting the previous release's interface against the
 new API.
@@ -400,9 +443,14 @@ startup.
 ## 12. Uninstalling
 
 ```bat
+call "%LOCALAPPDATA%\Alexandria\app\scripts\stop-server.bat"
 schtasks /Delete /TN Alexandria /F
 rmdir /s /q "%LOCALAPPDATA%\Alexandria\app"
 ```
+
+Stop the server first. Deleting the task does not stop it any more than ending
+the task does (§6), and `rmdir` cannot remove the virtual environment while a
+running python holds files inside it.
 
 Delete the shortcuts from the Desktop and from
 `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Alexandria\`.
