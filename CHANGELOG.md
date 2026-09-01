@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.0.7
+
+### Source connectors
+
+- **Search-URL cards** — a bookmarked search-results page (`google.com/search?q=…`,
+  `duckduckgo.com/?q=…`, `youtube.com/results?search_query=…`) is recognized by
+  host/path/query shape and turned into a title + card summary decoded straight
+  from the query string, **with no HTTP request at all**: no rate-limit slot
+  spent, no scrape of a JS-rendered results page, no false `unfetchable` from a
+  bot check. Plan in `planning/SEARCH_URL_CARDS.md`.
+
+### Clustering
+
+- **Cluster run parameter dialog** — `+ New run` on `/runs` used to fire an
+  unconfigurable HDBSCAN run; a new `ClusterRunDialog.vue` modal exposes the
+  `run_clustering()` knobs the CLI already had (method, min cluster size /
+  samples / neighbours, min dist, PCA or UMAP dims, labelling mode) via a
+  `TriggerRunRequest` JSON body. Plan in `planning/CLUSTER_RUN_DIALOG.md`.
+- **Cluster run deletion interface** — `DELETE /runs/{run_id}` (`?force=true`
+  for an accepted run) wraps the existing `purge_cluster_run`, which had no
+  API or UI exposure before this; `/runs` gets a per-row Delete button.
+- **Cluster run stop button now actually stops the run.** L2 sub-cluster
+  labelling submitted every cluster to a `ThreadPoolExecutor` used as a `with`
+  block; a cancellation raised inside it still had to wait out
+  `ThreadPoolExecutor.__exit__`'s `shutdown(wait=True)` before it could
+  propagate, so "Stop" did not take effect until every already-dispatched
+  Ollama labelling call in the batch finished. The pool now shuts down with
+  `cancel_futures=True` on cancellation instead.
+- **`min_cluster_size` no longer inflates with archive size.**
+  `adaptive_cluster_params` back-solved it from a `target_clusters` capped at
+  12, so past 144 documents it grew roughly linearly with the corpus — 744 (with
+  `min_samples=372`) at 17.9k documents, dense enough that HDBSCAN called ~83%
+  of one real run noise. That was a tuning artefact, not a property of HDBSCAN,
+  which infers its own cluster count and never took `target_clusters` as an
+  input. It now derives from `sqrt(n_docs)` capped at 50, staying in a
+  browsable absolute range regardless of corpus size.
+
 ## v0.0.6
 
 ### Structured document metadata
