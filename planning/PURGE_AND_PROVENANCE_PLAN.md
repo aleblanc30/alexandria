@@ -272,8 +272,10 @@ Rough shape when picked up:
   and matches the shape `reddit_items` / `images` already use.
 - Written where the text is first available — the fetcher and the extractors,
   next to where chunking happens today.
-- Space is the stated cost and it is modest: this is prose, it compresses well,
-  and it is bounded by what was already fetched once.
+- Stored `zlib`-compressed. Space is the only real objection and compression
+  answers most of it; the table is a near-duplicate kept for regeneration, and
+  `chunks.text` stays plaintext for ad-hoc searching. See the `BACKLOG.md`
+  entry for why that argument does not extend to `chunks.text` itself.
 
 What it unlocks, beyond retiring §5.2.1's compromise: re-chunking with a
 different chunk size or splitter without re-fetching (today that is as

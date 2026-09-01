@@ -201,10 +201,25 @@ impossible without re-fetching every URL over the network:
   nothing reads. Same 1:1 sidecar shape as `reddit_items` and `images`.
 - Written where the text first exists: the fetcher and the extractors, next to
   today's chunking call.
-- Decide whether to store compressed. Prose compresses well and SQLite will not
-  do it for you; a `zlib`-compressed BLOB is a small amount of code for a large
-  fraction of the disk cost, at the price of not being greppable with the
-  sqlite3 CLI.
+- **Store it compressed** (`zlib` BLOB). Prose compresses well, SQLite will not
+  do it for you, and it is a small amount of code for a large fraction of the
+  disk cost — which is the only real objection to the feature.
+
+  The usual counter-argument, that a compressed BLOB cannot be grepped with the
+  `sqlite3` CLI, does not apply here: `chunks.text` stays plaintext and holds
+  substantially the same content, so ad-hoc exact-string searching over the
+  corpus is unaffected. This table is a near-duplicate kept for *regeneration*,
+  not for reading.
+
+  **That reasoning stops at this table.** It must not be reused to justify
+  compressing `chunks.text` later. Despite the name, `mode="fulltext"` in
+  `api/routers/search.py:64` matches `documents.title` with `ILIKE` and nothing
+  else — there is **no keyword or FTS index over body text anywhere**. Chunk
+  text is therefore the only plaintext copy of the corpus, and grepping it is
+  currently the only way to answer "which document contains this exact string",
+  a question semantic search is poor at. Compress that and the capability
+  disappears with no replacement. (Giving the corpus a real FTS index is its own
+  backlog-worthy idea, and the thing that would actually change this calculus.)
 - Backfill is impossible by definition — existing documents keep `NULL` until
   something re-fetches them. Nullable from the start, and no guessing.
 - Purge target: this is Tier 3 (source-derived) in the purge taxonomy, and
