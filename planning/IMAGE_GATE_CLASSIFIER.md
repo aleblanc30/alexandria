@@ -81,17 +81,18 @@ Retraining after adding a folder then only embeds the new files. This is what
 makes "trained or retrained from CLI" a fast loop rather than a full re-encode
 every time — the encode is the entire cost of training.
 
-### 2.2 Optional bootstrap from the archive
+### 2.2 Rejected: bootstrapping from already-ingested images
 
-Images already ingested carry a VLM-assigned `images.image_type` *and* a stored
-CLIP vector (`images.clip_vector_id` → the `alexandria_clip` collection). That is
-a labelled training set at zero labelling cost and zero re-encoding cost —
-offer it as `--from-archive` to merge in.
+Ingested images carry a VLM-assigned `images.image_type` and a stored CLIP
+vector, which looks like a free labelled set. **It is not available here:**
+`GET /ingestion/status` reports `image: 0` ingested (`registered: 0`,
+`embedded: 0`) against 728 discovered-but-pending files. There is nothing to
+bootstrap from.
 
-Be honest about what it is: **distillation of `moondream`.** It inherits the
-VLM's mistakes and its ceiling is the VLM's accuracy. It is the fast route to a
-working v1; the hand-curated folders are the route to something that *beats* the
-VLM. Keep folders as the primary source and archive rows as an additive option.
+Recorded so it is not re-proposed. Even with a populated archive it would be
+*distillation of `moondream`* — inheriting its mistakes, with its accuracy as
+the ceiling — which is the opposite of the goal in §9. Hand-labelled folders are
+the only training source.
 
 ## 3. Model
 
@@ -120,7 +121,6 @@ VLM. Keep folders as the primary source and archive rows as an additive option.
 |---|---|
 | *(none)* | Embed (cached) → train → evaluate → write the model |
 | `--dry-run` | Train and print the report, write nothing |
-| `--from-archive` | Merge in already-ingested images and their stored CLIP vectors (§2.2) |
 | `--test-size` | Held-out fraction, default 0.2, stratified |
 | `--no-cache` | Ignore `.embeddings.json` and re-encode |
 | `--report-only` | Load the existing model and evaluate it against the folders |
@@ -168,23 +168,46 @@ reason. A local classifier has no outage mode, which removes that failure — bu
 introduces a new one: a *quietly bad model* mislabelling at full speed. The
 confidence threshold and the default-off flag are the answer to it.
 
-## 6. Does the coverage step still run first?
+## 6. The EasyOCR coverage step is expected to go
 
 `gate_image` runs EasyOCR text-coverage first as "the cheap local pass", then the
-VLM. With a CLIP head that ordering is worth re-checking rather than inheriting:
-EasyOCR runs CRAFT detection over the image, while CLIP ViT-B/32 is a single
-forward pass — plausibly the *cheaper* of the two, which would invert the
-rationale for the current order.
+VLM. **The intended end state is that the classifier replaces both steps** and
+the gate becomes a single CLIP forward pass, provided §9's numbers hold.
 
-**Measure before reordering.** Time both on ~50 real images from the library and
-put the numbers in this file. Note that torch is CPU-only on this machine
-(Pascal `sm_61`), so both run on CPU and the gap may be smaller than GPU
-benchmarks suggest.
+The current ordering rests on an assumption worth checking: EasyOCR runs CRAFT
+text detection over the image, while CLIP ViT-B/32 is one forward pass — so the
+"cheap pass" may well be the *expensive* one. Both run on CPU here (torch is
+CPU-only, Pascal `sm_61`), so measure both on ~50 real library images and record
+the numbers in this file.
 
-Keep the coverage gate in place either way for v1: it is an orthogonal filter
-(*is there text at all*) and cheap insurance while the classifier is unproven.
-Dropping or reordering it is a follow-up justified by measurements, not part of
-this change.
+Keep coverage only as scaffolding through phases 1–2 (§10), so the classifier
+can be compared against today's behaviour with one variable changed at a time.
+Drop it in phase 3 once the classifier is carrying the decision. Note that the
+coverage step is not redundant *in principle* — it asks a different question
+(*is there text at all*) — but a head trained on `notes` / `slide` / `whiteboard`
+versus `unknown` is learning that distinction from labels anyway, which is the
+stronger version of the same filter.
+
+### 6.1 What removing it drags along
+
+Dropping the coverage step is not just deleting a call — it retires a chunk of
+the gate's vocabulary and storage, and those must go in the same commit:
+
+- **`REASON_LOW_COVERAGE`** stops being produced. It is a documented reason code
+  stored in `image_rejections.reason`.
+- **`image_rejections.text_coverage`** becomes a column nothing writes
+  meaningfully. `CLAUDE.md`'s persisted-fields rule is explicit that retiring a
+  dead column means *deleting* it and its documentation, not leaving a note
+  warning about code that no longer exists.
+- **`GateResult.text_coverage`** loses its meaning, and `reset_gate()` /
+  `_get_easyocr()` / the module docstring's "EasyOCR is required whenever the
+  gate is enabled" all become stale.
+- The gate's **hard dependency on the `easyocr` wheel** relaxes. EasyOCR remains
+  a dependency for the main OCR pass (`ocr_image`, Pass 3), which is separate and
+  unaffected — so this removes a coupling, not the package.
+
+Existing rows keep historical `low_text_coverage` rejections; `alexandria images
+--reset-rejections` is the way to re-evaluate them under the new gate.
 
 ## 7. Config
 
@@ -219,14 +242,15 @@ real images or a real encoder.
 
 ## 9. Success criteria
 
-The VLM is the incumbent and this must be measured against it, on a **hand-labelled
-held-out set** — not against the VLM's own labels, which is what `--from-archive`
-trains on and would make the comparison circular.
+The VLM is the incumbent and this must be measured against it, on a
+**hand-labelled held-out set** — never against the VLM's own labels, which would
+make the comparison circular and cap the result at moondream's accuracy (§2.2).
 
 - **Agreement with hand labels ≥ moondream's** on the same held-out set.
 - **`unknown` recall specifically** — the reject decision, weighted by §5.1's
   asymmetry.
-- **Latency per image** vs the VLM call it replaces (the actual point of this).
+- **Latency per image** vs the VLM call it replaces (the actual point of this),
+  measured both with and without the coverage step, since §6 expects to drop it.
 - If it loses on accuracy but wins hugely on latency, the abstain threshold is
   the dial: keep it high, let the classifier handle the confident majority, and
   let the VLM handle the rest. That hybrid is a legitimate end state, not a
@@ -235,11 +259,15 @@ trains on and would make the comparison circular.
 ## 10. Phasing
 
 1. Embedding cache + folder loader + train/eval CLI. **No pipeline change.**
-   Prove the numbers first (§9).
+   Prove the numbers first (§9), and time EasyOCR vs CLIP while here (§6).
 2. Classifier branch in `gate_image` behind the default-off flag, with VLM
-   fallback on abstain.
-3. Measure on a real ingest run, tune the threshold, then consider flipping the
-   default and revisiting §6.
+   fallback on abstain. Coverage step still in front, so exactly one variable
+   changes versus today.
+3. Flip the default, then **drop the coverage step and its vestigial storage**
+   (§6.1) — the gate becomes one CLIP forward pass with a VLM fallback.
+
+Step 3 is the point of the exercise, not an optional extra; steps 1–2 exist so
+it can be taken on evidence.
 
 ## 11. Docs
 
@@ -249,6 +277,8 @@ trains on and would make the comparison circular.
   gate node is a purple/red outbound-ish VLM call today and becomes a local one.
   The `CLAUDE.md` sync rule names exactly this (re-gating a call, shared vs.
   source-specific).
-- `docs/persisted-fields.md`: check whether the provenance of `images.image_type`
-  needs a note — the column's writer changes, even though no column is added.
+- `docs/persisted-fields.md`: the writer of `images.image_type` changes even
+  though no column is added — and at phase 3, `image_rejections.text_coverage`
+  is *removed* along with the `low_text_coverage` reason code (§6.1), which is
+  squarely the column-retirement case that file exists to catch.
 - `README.md` / `INSTALL.md`: the new CLI command and the training folder layout.
