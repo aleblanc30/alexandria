@@ -63,7 +63,7 @@ a 404 — `fetch_wayback_fallback`, which unlike the other flags defaults **on**
 | `date_added` | `dateAdded` | bookmark date (µs→s) | `timestamp` | item creation ¹ | earliest playlist add | EXIF `DateTimeOriginal` → mtime |
 | `fetch_status` | `available` (PDF on disk) / `pending` | `pending` / `unfetchable` → `fetched` | `available` / `missing` → `no_text_layer` | `available` (self-post, comment), `pending` / `unfetchable` (link post) | `fetched` (no fetch phase) | `available` |
 | `item_type` | Zotero `itemType` | — | — | `post` \| `comment` | — | — |
-| `card_summary` | abstract, or the highlight for an annotation | `body_excerpt` of the fetched text | — | `body_excerpt` of the body | video description | vision description |
+| `card_summary` | abstract, or the highlight for an annotation | `body_excerpt` of the fetched text; `Saved <engine> search for "<query>"` for a search URL | — | `body_excerpt` of the body | video description | vision description |
 | `note` | — | — | over-long Calibre tags, newline-joined | — | — | — |
 
 ¹ Reddit exposes no "saved at" timestamp, so this is when the post or comment

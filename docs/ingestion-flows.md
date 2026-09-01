@@ -275,6 +275,7 @@ flowchart TD
 
     subgraph handlers["_fetch_one_impl dispatch — shared fetcher"]
         DISPATCH{"URL shape?"}
+        SRCH["search_url_result()<br/>query decoded from the URL — no request"]
         WIKI["fetch_wikipedia_with_retries()<br/>MediaWiki Action API"]
         YT["fetch_youtube_video()<br/>oEmbed — title + channel, no key"]
         RDT["fetch_reddit_thread()<br/>.json listing; url-derived fallback if blocked"]
@@ -287,6 +288,7 @@ flowchart TD
         PDF["_fetch_pdf_result()<br/>extract_pdf_report() → text,<br/>or no_text_layer for a scan"]
         AMZ["extract_amazon_book()<br/>title + editorial summary"]
         HTML["_extract_text()<br/>trafilatura → readability-lxml"]
+        DISPATCH --> SRCH
         DISPATCH --> WIKI
         DISPATCH --> YT
         DISPATCH --> RDT
@@ -538,7 +540,7 @@ flowchart TD
         SKIPF["sp.skip_phase('reddit','fetching')"]
         SETF["sp.set_phase('reddit','fetching', n)"]
         FAE["fetch_and_embed_pending(source=REDDIT,<br/>embed_fn=embed_fetched_text)"]
-        POOL["_run_fetch_workers → _fetch_one_impl<br/>wikipedia / youtube / reddit / arxiv / biorxiv / pubmed /<br/>PDF / amazon / wayback / trafilatura — identical to Firefox"]
+        POOL["_run_fetch_workers → _fetch_one_impl<br/>search / wikipedia / youtube / reddit / arxiv / biorxiv / pubmed /<br/>PDF / amazon / wayback / trafilatura — identical to Firefox"]
         PERSIST["_persist_fetch_result() + fetch_log"]
         EMBEDF["embed_fetched_text()<br/>runners/reddit.py"]
         COMPOSE["body_excerpt() →<br/>fetched_embed_text(title, card, text)"]

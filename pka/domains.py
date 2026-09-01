@@ -44,6 +44,7 @@ def domain_has_fetch_handler(domain: str) -> bool:
     from pka.ingestion.biorxiv import is_biorxiv_url
     from pka.ingestion.pubmed import is_pubmed_url
     from pka.ingestion.reddit_bookmark import is_reddit_host
+    from pka.ingestion.search_url import is_search_engine_host
     from pka.ingestion.wikipedia import is_wikipedia_url
     from pka.ingestion.youtube_bookmark import is_youtube_url
 
@@ -56,6 +57,10 @@ def domain_has_fetch_handler(domain: str) -> bool:
         or is_pubmed_url(probe)
         or is_youtube_url(probe)
         or is_reddit_host(probe)
+        # Host-only match: every path on a known search-engine domain counts
+        # as "handled" here, including non-search pages on the same host
+        # (e.g. google.com/maps/...) — acceptable imprecision for a report.
+        or is_search_engine_host(probe)
     )
 
 

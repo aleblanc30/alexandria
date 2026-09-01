@@ -141,6 +141,11 @@ async def _fetch_one_impl(
     if reason := bookmark_url_unfetchable_reason(url):
         return FetchResult(doc_id, url, "unfetchable", None, None, reason)
 
+    from pka.ingestion.search_url import search_url_result
+
+    if (result := search_url_result(doc_id, url)) is not None:
+        return result
+
     if is_wikipedia_special(url):
         return FetchResult(doc_id, url, "skipped", None, None, "wikipedia special page")
     if parse_wikipedia_url(url) is not None:

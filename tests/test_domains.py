@@ -55,6 +55,10 @@ class TestDomainHasFetchHandler:
         assert domain_has_fetch_handler("www.reddit.com") is True
         assert domain_has_fetch_handler("redd.it") is True
 
+    def test_search_engine_has_handler(self):
+        assert domain_has_fetch_handler("google.com") is True
+        assert domain_has_fetch_handler("www.bing.com") is True
+
 
 class TestBuildDomainFrequencyReport:
     def test_sorts_by_count_and_aggregates_status(self):
