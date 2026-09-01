@@ -174,9 +174,9 @@ Initial targets:
 
 | Key | Clears | Re-trigger |
 |---|---|---|
-| `summaries` | `documents.generated_summary = NULL` + `chunks WHERE chunk_pass='summary'` (and their vectors) | re-run source ingest — the cache miss re-summarises |
+| `summaries` | `documents.generated_summary = NULL` + `chunks WHERE chunk_pass='summary'` (and their vectors) | **`POST /ingestion/enrich?kind=summary`** — see §5.2.1 |
 | `vectors` | Chroma chunk collection + `chunks.vector_id = NULL` + `doc_embedding = NULL` | `POST /ingestion/rebuild-vectors` (exists) |
-| `image_text` | `images.description`, `ocr_text`, `books_json` | re-run image sync |
+| `image_text` | `images.description`, `ocr_text`, `books_json`, **and `indexed_at = NULL`** | re-run image sync — see §5.2.1 |
 | `clip_vectors` | `alexandria_clip` collection + `images.clip_vector_id` | re-run image sync with `clip_enabled` |
 | `machine_tags` | `overlay_tags WHERE origin IN (llm, cluster_l1, cluster_l2, inferred)` | re-run clustering / tag passes |
 | `fetched_text` | `chunks WHERE chunk_pass='fulltext'` + `fetch_status → pending` | re-run source ingest (re-fetches) |
@@ -186,13 +186,103 @@ Initial targets:
 Each takes an optional `source` filter, so "purge Firefox summaries" and
 "purge all summaries" are the same code path.
 
-**The key simplification: re-trigger is mostly just purge + the existing sync
-entry point.** The pipeline already skips work that exists (`skip_existing`,
+**Re-trigger is mostly just purge + the existing sync entry point.** The
+pipeline already skips work that exists (`skip_existing`,
 `document_ids_with_chunks`, `existing_chunk_count`, the `generated_summary`
-cache), so clearing the thing that causes the skip *is* the re-trigger. Only
-`vectors` needs a dedicated re-trigger, and it already has one. This is why
-the feature is much smaller than it sounds — resist adding a parallel set of
-"regenerate X" pipelines.
+cache), so clearing the thing that causes the skip *is* the re-trigger. That
+holds for `fetched_text`, `fetch_failures`, `machine_tags` and `vectors`, and
+it is why the feature is much smaller than it sounds — resist adding a
+parallel set of "regenerate X" pipelines.
+
+It does **not** hold for the two Tier-2 targets this feature exists for. See
+§5.2.1 before implementing either.
+
+### 5.2.1 The skip gates are keyed on the wrong thing
+
+Verified against the code, not assumed. Both expensive-model-output targets
+purge cleanly and then never regenerate, because the gate that decides whether
+to skip a document is keyed on a *different* artifact than the one purged:
+
+- **`summaries`** — `_ingest_fetched_document` (`runners/firefox.py:99-103`)
+  returns early when `doc_id in document_ids_with_chunks(...)`, i.e. "has any
+  chunk at all". `attach_summary_chunk` is called at line 122, *after* that
+  gate. Purging `generated_summary` and the `pass='summary'` chunk leaves the
+  document's `pass='fulltext'` chunks in place, so the next sync skips it
+  entirely and the summary never comes back. The `generated_summary` cache
+  miss described in §2.1(a) is real but unreachable — control flow never gets
+  there.
+- **`image_text`** — same shape. `_image_already_embedded`
+  (`image_pipeline.py:149`) gates on `images.indexed_at IS NOT NULL`, which a
+  `description` / `ocr_text` / `books_json` purge does not touch.
+
+Without a fix, both buttons are traps: they delete expensive artifacts and
+offer no way back short of `skip_existing=False` or a full source purge —
+precisely the workflow this TODO exists to eliminate.
+
+The two cases need different fixes, and only one needs new machinery:
+
+**`image_text` — no new pipeline.** The image file is still on disk, so
+regeneration costs VLM time and nothing else. Have the purge also set
+`images.indexed_at = NULL` (noted in the table above). The existing image sync
+then picks the image up on its own and "purge is the trigger" genuinely holds.
+
+**`summaries` — needs a pass, and a decision about text.** There is no
+sentinel to clear: the skip gate is "has chunks", and the whole point is *not*
+to delete the fulltext chunks. So this target needs a real entry point:
+
+```
+POST /ingestion/enrich?kind=summary[&source=]
+alexandria enrich summary [--source] [--dry-run]
+```
+
+iterating documents where `generated_summary IS NULL` and chunks exist, calling
+`attach_summary_chunk` directly. Parameterise it by `kind` from the start
+(`summary` today, `image_text` if the `indexed_at` trick ever proves
+insufficient) so this stays *one* endpoint rather than the parallel set warned
+against above.
+
+**The wrinkle: the fetched body text is not retained anywhere verbatim.**
+After ingestion it survives only as `chunks.text` — overlapped and
+whitespace-normalised. So the enrich pass must either re-fetch every URL
+(defeats the purpose entirely: the expensive network work is destroyed to
+redo the cheap inference) or summarise text reassembled from the fulltext
+chunks.
+
+**Decision: summarise reassembled chunks.** The overlap is deterministic and
+strippable, and a summariser is robust to imperfect joins — this is not
+extraction, it is gisting. Re-fetching is the option that makes the whole
+feature pointless, so the lossiness is worth it. Calibre and Zotero are
+unaffected either way, since the book/PDF is still on disk and re-extractable.
+
+This decision has a shelf life: see §5.2.2.
+
+### 5.2.2 Retaining raw text (future, and it retires the wrinkle)
+
+The reassembly compromise above exists only because the raw extracted text is
+thrown away once chunked. **The intended direction is to keep it** — a little
+disk in exchange for never facing this trade-off again.
+
+Rough shape when picked up:
+
+- A separate `document_texts` table (`document_id`, `text`, `extracted_at`,
+  maybe `content_hash`), **not** a `documents.raw_text` column. `documents` is
+  scanned constantly by browse, tags, progress counts and the clustering read
+  path; hanging a multi-hundred-KB blob off every row would slow all of them
+  for a value almost nothing reads. A sidecar table keeps the hot table narrow
+  and matches the shape `reddit_items` / `images` already use.
+- Written where the text is first available — the fetcher and the extractors,
+  next to where chunking happens today.
+- Space is the stated cost and it is modest: this is prose, it compresses well,
+  and it is bounded by what was already fetched once.
+
+What it unlocks, beyond retiring §5.2.1's compromise: re-chunking with a
+different chunk size or splitter without re-fetching (today that is as
+impossible as re-summarising was), re-running extraction-quality changes over
+the existing corpus, and a genuine "what did the fetcher actually get" audit
+when a page ingests badly.
+
+Tracked in `BACKLOG.md`; not a prerequisite for Phase 1 — the enrich pass ships
+against reassembled chunks and simply gets more accurate when this lands.
 
 ### 5.3 Surface
 
@@ -310,7 +400,13 @@ for the source path):
 - `--include-user-data` still removes them when explicitly asked;
 - purging `summaries` clears the `pass='summary'` chunk *and* its vector, and
   leaves `pass='fulltext'` chunks intact;
-- purge is refused while a sync is running (409).
+- purge is refused while a sync is running (409);
+- **the §5.2.1 round trip, per target: purge → re-trigger → the artifact is
+  actually back.** This is the test that would have caught the wrong-skip-gate
+  bug, and it is worth writing before the purge targets themselves. For
+  `summaries`, assert the enrich pass regenerates a summary for a document
+  whose fulltext chunks were left in place; for `image_text`, assert the purge
+  nulls `indexed_at` so the next sync re-describes the image.
 
 **Phase 2** (`tests/test_enrichment_runs.py`):
 - a summarisation pass opens a run, stamps `documents.summary_run_id`, and
@@ -355,6 +451,12 @@ external boundary — no new fixture needed.
   output. But for a plain fetched page it *is* derived (`body_excerpt`). Tier
   boundary is genuinely blurry here; recommendation is to leave `card_summary`
   alone and revisit if it proves confusing.
+- **Chunk reassembly quality (§5.2.1).** The enrich pass joins overlapped
+  chunks back into summarisable text. The overlap is deterministic, so the
+  join is mechanical — but verify against a real multi-chunk document that the
+  result reads as prose and not as duplicated sentence fragments, since that is
+  what the summariser will be handed. Retiring this entirely is what §5.2.2 is
+  for.
 - **Deleting vectors is not free in Chroma.** `drop_document_collection` +
   `rebuild_from_chunks` is the well-trodden path; per-id `purge_vectors` on a
   large id list is slower and is already the source purge's approach. Prefer

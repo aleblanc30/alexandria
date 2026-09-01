@@ -169,6 +169,47 @@ does not — `ChatProvider` in `pka/providers/base.py` is only `resolve_model` +
   large budget and assert the single-call path, alongside the existing map-reduce
   cases.
 
+## Ingestion
+
+### Retain the raw extracted text alongside the chunks
+
+**What:** Keep the extracted document text verbatim, instead of discarding it
+once it has been chunked. Today `chunks.text` is the only copy, and it is
+overlapped and whitespace-normalised — so the original is unrecoverable.
+
+**Why:** It costs a little disk and buys back several things that are currently
+impossible without re-fetching every URL over the network:
+
+- **Re-summarising** without a re-fetch. This is the live one: the enrich pass
+  in `PURGE_AND_PROVENANCE_PLAN.md` §5.2.1 has to summarise text reassembled
+  from overlapped chunks precisely because the original is gone. Retaining raw
+  text retires that compromise (§5.2.2).
+- **Re-chunking** with a different chunk size or splitter — as impossible today
+  as re-summarising was, and the obvious thing to want after any embedding-model
+  swap changes the useful context window.
+- **Re-running extraction improvements** over the existing corpus.
+- **Auditing what the fetcher actually got** when a page ingests badly, which
+  currently can only be guessed at from the chunks it produced.
+
+**Rough shape when picked up:**
+
+- A sidecar `document_texts` table (`document_id`, `text`, `extracted_at`, and
+  probably `content_hash` so a re-fetch can tell "changed" from "same"), **not**
+  a `documents.raw_text` column. `documents` is scanned constantly — browse,
+  tags, progress counts, the clustering read path — and hanging a
+  multi-hundred-KB blob off every row would slow all of them for a value almost
+  nothing reads. Same 1:1 sidecar shape as `reddit_items` and `images`.
+- Written where the text first exists: the fetcher and the extractors, next to
+  today's chunking call.
+- Decide whether to store compressed. Prose compresses well and SQLite will not
+  do it for you; a `zlib`-compressed BLOB is a small amount of code for a large
+  fraction of the disk cost, at the price of not being greppable with the
+  sqlite3 CLI.
+- Backfill is impossible by definition — existing documents keep `NULL` until
+  something re-fetches them. Nullable from the start, and no guessing.
+- Purge target: this is Tier 3 (source-derived) in the purge taxonomy, and
+  wants an entry in that registry once both ship.
+
 ## PDF ingestion
 
 ### OCR the documents that have no text layer
