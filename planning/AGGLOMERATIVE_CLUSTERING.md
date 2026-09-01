@@ -200,29 +200,19 @@ agglomerative × legacy_umap cross-product nobody wants.
 
 ## 5. Success criteria
 
-**First, fix the baseline.** The 83%-noise figure that motivates this plan is
-not an inherent property of HDBSCAN — it is a consequence of the same
-`adaptive_cluster_params` heuristic dismantled in §2.2. HDBSCAN does not take a
-cluster count; it infers one. But this repo back-solves `min_cluster_size` from a
-`target_clusters` that is pinned at 12, yielding `min_cluster_size=744` and
-`min_samples=372` on this archive. Both are extremely conservative: the first
-means "refuse to call anything a cluster under 744 documents", the second means
-"a point needs 372 near neighbours to count as core". Together, with
-`cluster_selection_method="leaf"`, they manufacture the noise.
+**The baseline is fixed.** `adaptive_cluster_params` used to back-solve
+`min_cluster_size` from a `target_clusters` pinned at 12, which made it scale
+~linearly with corpus size — 744 (with `min_samples=372`) on this archive, dense
+enough that HDBSCAN called ~83% of it noise. It now derives `min_cluster_size`
+from `sqrt(n_docs)` capped at 50, so the default HDBSCAN run itself assigns far
+more of the corpus without any manual tuning. Run a fresh clustering run and use
+*that* as the baseline for comparison, not run #3/#4, which predate the fix.
 
-So a like-for-like comparison against run #3 would be rigged. **Retune HDBSCAN
-first** — a hand-set `min_cluster_size` in the tens, which the shipped dialog now
-makes a one-off UI action requiring no code — and use *that* as the baseline. It
-is entirely possible this recovers most of the coverage and weakens the case for
-a second algorithm; that is a cheap experiment and worth running before any of
-§2 is built. Agglomerative would still be justified by determinism and a direct
-cluster-count knob, but on honest grounds.
-
-With a fair baseline in hand, compare via `/runs` diagnostics plus a scratch
-script:
+Compare via `/runs` diagnostics plus a scratch script:
 
 - **Coverage**: agglomerative assigns 100% by construction; record what fraction
-  a *retuned* HDBSCAN assigns on the same corpus (run #4, untuned: ~17%).
+  HDBSCAN assigns on the same corpus under the corrected default (run #4, under
+  the pre-fix heuristic: ~17% — not a fair comparison point any more).
 - **Cohesion**: mean intra-cluster cosine similarity, and silhouette score on the
   PCA matrix — computed for both methods over *assigned* documents only, so
   HDBSCAN is not penalised for the documents it declined.

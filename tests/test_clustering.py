@@ -286,7 +286,9 @@ class TestRunClustering:
 
         start = time.perf_counter()
         with pytest.raises(ClusterRunCancelled):
-            engine._label_clusters(cluster_docs, skip_labelling=False, chat_model=None, run_id=run_id)
+            engine._label_clusters(
+                cluster_docs, skip_labelling=False, chat_model=None, run_id=run_id
+            )
         elapsed = time.perf_counter() - start
 
         release.set()  # let the still-running workers finish so no thread leaks
@@ -606,6 +608,24 @@ class TestAdaptiveClusterParams:
         assert mcs >= 2
         assert ms >= 2
         assert nn >= 2
+
+    def test_min_cluster_size_stays_bounded_at_archive_scale(self):
+        """Regression: a target-cluster-count capped at 12 used to make
+        min_cluster_size scale ~linearly with n_docs (744 at 17.9k documents,
+        with min_samples=372) instead of staying in a browsable absolute range.
+        """
+        from pka.clustering.engine import adaptive_cluster_params
+
+        mcs, ms, _nn = adaptive_cluster_params(17_879)
+        assert mcs <= 50
+        assert ms <= 25
+
+    def test_min_cluster_size_does_not_grow_past_the_cap(self):
+        from pka.clustering.engine import adaptive_cluster_params
+
+        mcs_18k, _ms, _nn = adaptive_cluster_params(18_000)
+        mcs_180k, _ms, _nn = adaptive_cluster_params(180_000)
+        assert mcs_18k == mcs_180k
 
 
 class TestParseLlmJson:

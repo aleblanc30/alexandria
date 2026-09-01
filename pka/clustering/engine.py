@@ -286,13 +286,27 @@ def _run_umap_legacy(
 # ── Step 4: HDBSCAN clustering ────────────────────────────────────────────────
 
 
+_ADAPTIVE_MIN_CLUSTER_SIZE = 3
+_ADAPTIVE_MAX_CLUSTER_SIZE = 50
+
+
 def adaptive_cluster_params(n_docs: int) -> tuple[int, int, int]:
-    """Derive HDBSCAN/UMAP params that target moderately sized clusters."""
+    """Derive HDBSCAN/UMAP params that target moderately sized clusters.
+
+    ``min_cluster_size`` scales with ``sqrt(n_docs)`` but is capped at
+    ``_ADAPTIVE_MAX_CLUSTER_SIZE`` rather than left to grow with the corpus. An
+    earlier version derived it from a *target cluster count* capped at 12, which
+    made ``min_cluster_size`` scale roughly linearly with ``n_docs`` instead —
+    744 (with ``min_samples=372``) on an 18k-document archive, dense enough that
+    HDBSCAN called ~83% of it noise. See planning/TODO.md's
+    "adaptive_cluster_params manufactures the clustering noise" entry.
+    """
     if n_docs < 8:
         return max(2, n_docs // 3), 2, max(2, n_docs - 1)
 
-    target_clusters = max(4, min(12, round(n_docs**0.5)))
-    min_cluster_size = max(3, n_docs // (target_clusters * 2))
+    min_cluster_size = min(
+        _ADAPTIVE_MAX_CLUSTER_SIZE, max(_ADAPTIVE_MIN_CLUSTER_SIZE, round(n_docs**0.5 / 2))
+    )
     min_samples = max(2, min_cluster_size // 2)
     n_neighbors = max(5, min(30, n_docs // 4))
     return min_cluster_size, min_samples, n_neighbors
