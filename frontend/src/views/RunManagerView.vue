@@ -23,12 +23,15 @@
               <template v-if="r.status === 'running'">
                 <button class="btn-xs btn-xs--danger" @click="store.cancel(r.run_id)">Stop</button>
               </template>
-              <template v-else-if="r.status === 'finished'">
-                <button class="btn-xs" @click="showDiag(r.run_id)">Diagnostics</button>
-                <button class="btn-xs btn-xs--ok ml-1" @click="store.accept(r.run_id)">Accept</button>
-                <button class="btn-xs btn-xs--danger ml-1" @click="store.reject(r.run_id, '')">Reject</button>
+              <template v-else>
+                <template v-if="r.status === 'finished'">
+                  <button class="btn-xs" @click="showDiag(r.run_id)">Diagnostics</button>
+                  <button class="btn-xs btn-xs--ok ml-1" @click="store.accept(r.run_id)">Accept</button>
+                  <button class="btn-xs btn-xs--danger ml-1" @click="store.reject(r.run_id, '')">Reject</button>
+                </template>
+                <span v-else-if="r.status === 'failed'" class="hint">{{ r.notes ?? 'Failed' }}</span>
+                <button class="btn-xs btn-xs--danger ml-1" @click="deleteRun(r)">Delete</button>
               </template>
-              <span v-else-if="r.status === 'failed'" class="hint">{{ r.notes ?? 'Failed' }}</span>
             </td>
           </tr>
         </tbody>
@@ -89,6 +92,14 @@ function statusClass(r: RunOut): string {
 }
 
 async function showDiag(id: number) { await store.loadDiagnostics(id) }
+
+function deleteRun(r: RunOut) {
+  const msg = r.accepted
+    ? `Run #${r.run_id} is the active run. Delete it anyway? This cannot be undone.`
+    : `Delete run #${r.run_id} and its clusters? This cannot be undone.`
+  if (!window.confirm(msg)) return
+  store.remove(r.run_id, r.accepted)
+}
 
 async function trigger(params: ClusterRunParams) {
   triggering.value = true

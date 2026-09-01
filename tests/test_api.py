@@ -1389,6 +1389,59 @@ class TestRuns:
         r = client.post("/runs/trigger")
         assert r.status_code == 400
 
+    def test_delete_run(self, client):
+        from pka.db.queries import get_engine
+
+        ids = _seed_docs(4)
+        run_id = _seed_run(ids, n_clusters=2, with_l2=True)
+        with get_engine().begin() as con:
+            con.execute(
+                cluster_runs.update().where(cluster_runs.c.run_id == run_id).values(accepted=False)
+            )
+
+        r = client.delete(f"/runs/{run_id}")
+        assert r.status_code == 204
+
+        assert client.get(f"/runs/{run_id}/diagnostics").status_code == 404
+        with get_engine().connect() as con:
+            n_assign = con.execute(
+                sa.select(sa.func.count())
+                .select_from(cluster_assignments)
+                .where(cluster_assignments.c.run_id == run_id)
+            ).scalar()
+            n_clusters = con.execute(
+                sa.select(sa.func.count()).select_from(clusters).where(clusters.c.run_id == run_id)
+            ).scalar()
+        assert n_assign == 0
+        assert n_clusters == 0
+
+    def test_delete_run_404(self, client):
+        assert client.delete("/runs/99999").status_code == 404
+
+    def test_delete_run_running_409(self, client):
+        from pka.db.queries import get_engine
+
+        ids = _seed_docs(2)
+        run_id = _seed_run(ids)
+        with get_engine().begin() as con:
+            con.execute(
+                cluster_runs.update()
+                .where(cluster_runs.c.run_id == run_id)
+                .values(status="running", accepted=False)
+            )
+        r = client.delete(f"/runs/{run_id}")
+        assert r.status_code == 409
+
+    def test_delete_run_accepted_requires_force(self, client):
+        ids = _seed_docs(2)
+        run_id = _seed_run(ids)  # _seed_run always creates accepted=True
+
+        r = client.delete(f"/runs/{run_id}")
+        assert r.status_code == 409
+
+        r = client.delete(f"/runs/{run_id}?force=true")
+        assert r.status_code == 204
+
 
 # ── Trends ────────────────────────────────────────────────────────────────────
 

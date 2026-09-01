@@ -176,6 +176,20 @@ def cancel_run(run_id: int, engine=Depends(get_engine)):
     return {"status": "cancel_requested", "run_id": run_id}
 
 
+@router.delete("/{run_id}", status_code=204)
+def delete_run(run_id: int, force: bool = False):
+    """Delete a run and its clusters/assignments. Refuses a running or (unless
+    ``force``) accepted run — mirrors ``alexandria purge-cluster-runs``."""
+    from pka.cli.purge_cluster_runs import purge_cluster_run
+
+    try:
+        purge_cluster_run(run_id, force=force)
+    except ValueError as exc:
+        msg = str(exc)
+        status_code = 404 if "not found" in msg else 409
+        raise HTTPException(status_code, msg) from exc
+
+
 @router.post("/trigger", status_code=202)
 def trigger_run(
     bg: BackgroundTasks,

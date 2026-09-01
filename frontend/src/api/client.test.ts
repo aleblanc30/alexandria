@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, domainTopLists, search, triggerRun } from './client'
+import { ApiError, deleteRun, domainTopLists, search, triggerRun } from './client'
 
 describe('api client', () => {
   beforeEach(() => {
@@ -97,6 +97,31 @@ describe('api client', () => {
         method: 'POST',
         body: JSON.stringify({ cluster_space: 'legacy_umap', min_cluster_size: null, min_dist: 0.2 }),
       }),
+    )
+  })
+
+  it('deleteRun omits the force flag by default', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 204,
+      statusText: 'No Content',
+      json: async () => undefined,
+    } as Response)
+    await deleteRun(7)
+    expect(fetch).toHaveBeenCalledWith('/runs/7', expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('deleteRun appends force=true when forced', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 204,
+      statusText: 'No Content',
+      json: async () => undefined,
+    } as Response)
+    await deleteRun(7, true)
+    expect(fetch).toHaveBeenCalledWith(
+      '/runs/7?force=true',
+      expect.objectContaining({ method: 'DELETE' }),
     )
   })
 })

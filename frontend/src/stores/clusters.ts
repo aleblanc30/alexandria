@@ -112,6 +112,14 @@ export const useClustersStore = defineStore('clusters', () => {
     } catch (e) { notifyError(e) }
   }
 
+  async function remove(runId: number, force = false) {
+    try {
+      await api.deleteRun(runId, force)
+      useToastStore().push(`Run #${runId} deleted`, 'info')
+      await loadRuns()
+    } catch (e) { notifyError(e) }
+  }
+
   async function applyTag(clusterId: number, tag: string) {
     try {
       const res = await api.applyClusterTag(clusterId, tag)
@@ -169,7 +177,7 @@ export const useClustersStore = defineStore('clusters', () => {
   return {
     list, scatter, runs, diagnostics, loading,
     loadClusters, loadScatter, loadRuns, loadDiagnostics,
-    accept, reject, trigger, cancel,
+    accept, reject, trigger, cancel, remove,
     applyTag, applyAllTags, patchClusterLabel, regenerateLabel,
     stopPolling, hasRunningRun,
   }

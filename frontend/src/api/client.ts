@@ -294,6 +294,8 @@ export const triggerRun      = (params?: ClusterRunParams) =>
   req<{ status: string; run_id: number }>('/runs/trigger', { method: 'POST', body: JSON.stringify(params ?? {}) })
 export const cancelRun       = (id: number) =>
   req<{ status: string; run_id: number }>(`/runs/${id}/cancel`, { method: 'POST' })
+export const deleteRun       = (id: number, force = false) =>
+  req<void>(`/runs/${id}${force ? '?force=true' : ''}`, { method: 'DELETE' })
 
 // ── Tags ──────────────────────────────────────────────────────────────────────
 

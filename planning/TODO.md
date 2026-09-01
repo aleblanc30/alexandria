@@ -48,7 +48,7 @@ two when its priority changes; do not duplicate it in both.
 
 - [ ] **Delete tags in the UI** — allow removing tags from the frontend (with appropriate API support and confirmation).
 - [x] **Cluster run parameter dialog** — `+ New run` on `/runs` opens `ClusterRunDialog.vue`, exposing the `run_clustering()` knobs the CLI already had (method, min cluster size / samples / neighbours, min dist, PCA or UMAP dims, labelling mode) via a `TriggerRunRequest` JSON body. Plan in `CLUSTER_RUN_DIALOG.md`.
-- [ ] **Cluster run deletion interface**
+- [x] **Cluster run deletion interface** — `DELETE /runs/{run_id}` (optional `?force=true` for an accepted run) wraps the already-existing `purge_cluster_run` from `pka/cli/purge_cluster_runs.py`; `/runs` gets a per-row Delete button (window.confirm, force-confirm wording when deleting the active run).
 - [x] **Cluster run stop button is not functional** — `_label_clusters`'s `ThreadPoolExecutor` blocked cancellation behind `shutdown(wait=True)` in `__exit__`; it now shuts down with `cancel_futures=True` on `ClusterRunCancelled` instead of waiting for the whole in-flight labelling batch.
 
 ## CLI & assistant
