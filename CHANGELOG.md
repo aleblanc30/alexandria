@@ -73,8 +73,19 @@
   and batch on 5000 records; the clustering engine's opening scan, the
   per-document chunk fetch and the centroid/drift/assignment fetch go through
   them, and `load_cached_embeddings` batches its `IN` list because python's
-  `sqlite3` has the same ceiling. The purge path has the same defect and is a
-  `planning/TODO.md` entry.
+  `sqlite3` has the same ceiling. The purge path is fixed below.
+- **The purge path is batched under the same ceiling.** `purge-source` bound every
+  document, image, or vector id of a source into one statement, so purging a
+  source past 32766 rows failed with `too many SQL variables` — the CLI's six
+  `IN (...)` lists (`_purge_documents`' chunk-vector lookup, dry-run counts and
+  child-table deletes; `_purge_images`' `image_tags` count and delete), the
+  `chunks` delete in `purge_vectors`, and — the likeliest to trip, since Chroma
+  binds one variable per id too — the raw `delete(ids=…)` in `purge_vectors` and
+  `delete_clip_vectors`. All of them now batch on 5000 the way the clustering read
+  path does. The two Chroma deletes batch *per batch* rather than all-or-nothing:
+  one unreadable batch no longer strands the rest of a source's vectors, so
+  `delete_clip_vectors` returns the count Chroma accepted instead of 0 on a
+  partial failure.
 - **Blocking DB handlers moved off the event loop.** Every route in ten routers
   ran synchronous SQLAlchemy calls inside `async def`, so a slow query during
   ingestion froze the whole server — frontend network errors and empty pages on

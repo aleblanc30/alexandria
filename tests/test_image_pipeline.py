@@ -540,6 +540,51 @@ class TestClipCollectionCache:
         ip.reset_clip_collection()
 
 
+class TestDeleteClipVectors:
+    def test_batches_under_sql_variable_cap(self, mock_chroma_clip):
+        """A library larger than SQLITE_MAX_VARIABLE_NUMBER must still purge.
+
+        ``delete(ids=…)`` binds one variable per id, so one call with 40k ids
+        fails with "too many SQL variables".
+        """
+        import pka.ingestion.image_pipeline as ip
+
+        ids = [f"clip-{i}" for i in range(40_000)]
+
+        assert ip.delete_clip_vectors(ids) == 40_000
+
+        sizes = [len(c.kwargs["ids"]) for c in mock_chroma_clip.delete.call_args_list]
+        assert sum(sizes) == 40_000
+        assert max(sizes) <= ip._DELETE_BATCH_SIZE
+        # Every id reaches Chroma exactly once, in order.
+        sent = [vid for c in mock_chroma_clip.delete.call_args_list for vid in c.kwargs["ids"]]
+        assert sent == ids
+
+    def test_failing_batch_does_not_strand_the_rest(self, mock_chroma_clip):
+        """One bad batch costs its own ids, not the whole purge."""
+        import pka.ingestion.image_pipeline as ip
+
+        calls = {"n": 0}
+
+        def _delete(ids):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("chroma is unhappy")
+
+        mock_chroma_clip.delete.side_effect = _delete
+        ids = [f"clip-{i}" for i in range(12_000)]
+
+        # 3 batches of 5000/5000/2000; the first one fails.
+        assert ip.delete_clip_vectors(ids) == 7_000
+
+    def test_empty_and_blank_ids(self, mock_chroma_clip):
+        import pka.ingestion.image_pipeline as ip
+
+        assert ip.delete_clip_vectors([]) == 0
+        assert ip.delete_clip_vectors(["", None]) == 0
+        mock_chroma_clip.delete.assert_not_called()
+
+
 class TestIngestImagesStop:
     def test_stops_on_cancel(self, tmp_path, all_mocks):
         from pka.connectors.images import ImageFile

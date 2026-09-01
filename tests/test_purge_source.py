@@ -93,6 +93,55 @@ def test_purge_source_removes_only_that_source(empty_vector_store):
         assert con.execute(sa.select(sa.func.count()).select_from(overlay_tags)).scalar() == 1
 
 
+def test_purge_documents_batches_id_lists(empty_vector_store, monkeypatch):
+    """Counts stay correct when the id list spans several batches.
+
+    Unbatched, a source with more rows than SQLITE_MAX_VARIABLE_NUMBER (32766)
+    fails with "too many SQL variables"; shrinking the batch size exercises the
+    same seam without seeding 33k documents.
+    """
+    import pka.cli.purge_source as ps
+
+    monkeypatch.setattr(ps, "_ID_BATCH_SIZE", 2)
+    init_db()
+    for i in range(5):
+        _seed_document("firefox", f"F{i}")
+    _seed_document("zotero", "Z1", with_chunk=False)
+
+    counts = ps.purge_source("firefox")
+
+    assert counts["documents"] == 5
+    # Every batch's vectors and child rows are summed, not just the last one.
+    assert counts["vectors"] == 5
+    assert counts["vectors_purged"] == 5
+    assert counts["source_tags"] == 5
+    assert counts["overlay_tags"] == 5
+    # chunks is 0 here, not 5: purge_vectors already deleted those rows by
+    # vector_id before the child-table loop reached the table.
+    assert counts["chunks"] == 0
+    assert _remaining_sources() == ["zotero"]
+    with get_engine().connect() as con:
+        assert con.execute(sa.select(sa.func.count()).select_from(chunks)).scalar() == 0
+
+
+def test_purge_documents_dry_run_batches_id_lists(empty_vector_store, monkeypatch):
+    """The dry-run counts are summed across batches too, and delete nothing."""
+    import pka.cli.purge_source as ps
+
+    monkeypatch.setattr(ps, "_ID_BATCH_SIZE", 2)
+    init_db()
+    for i in range(5):
+        _seed_document("firefox", f"F{i}")
+
+    counts = ps.purge_source("firefox", dry_run=True)
+
+    assert counts["documents"] == 5
+    assert counts["source_tags"] == 5
+    assert counts["overlay_tags"] == 5
+    assert counts["chunks"] == 5
+    assert len(_remaining_sources()) == 5
+
+
 def test_purge_unknown_source_raises(empty_vector_store):
     init_db()
     with pytest.raises(ValueError):

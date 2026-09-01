@@ -46,6 +46,11 @@ log = logging.getLogger(__name__)
 
 CLIP_COLLECTION = "alexandria_clip"
 
+# ``delete(ids=…)`` binds one variable per id and SQLITE_MAX_VARIABLE_NUMBER is
+# 32766, so a purge of a large image library must batch. Same ceiling and same
+# size as ``vector_store``'s read paging.
+_DELETE_BATCH_SIZE = 5_000
+
 # Cached Chroma client/collection — recreating these per call is expensive.
 # Creation is serialized, and the client itself comes from vector_store so the
 # process holds exactly one Chroma client.
@@ -86,17 +91,24 @@ def reset_clip_collection() -> None:
 def delete_clip_vectors(vector_ids: list[str]) -> int:
     """Remove CLIP vectors from the ``alexandria_clip`` collection.
 
-    Returns the number of ids handed to Chroma (0 if none or on failure).
+    Returns the number of ids Chroma accepted (0 if none). Batched under the
+    SQL variable ceiling, so a failing batch costs only its own ids rather than
+    the whole call.
     """
     ids = [vid for vid in vector_ids if vid]
     if not ids:
         return 0
-    try:
-        _get_clip_collection().delete(ids=ids)
-    except Exception as exc:
-        log.warning("CLIP Chroma delete failed: %s", exc)
-        return 0
-    return len(ids)
+    col = _get_clip_collection()
+    deleted = 0
+    for i in range(0, len(ids), _DELETE_BATCH_SIZE):
+        batch = ids[i : i + _DELETE_BATCH_SIZE]
+        try:
+            col.delete(ids=batch)
+        except Exception as exc:
+            log.warning("CLIP Chroma delete failed: %s", exc)
+            continue
+        deleted += len(batch)
+    return deleted
 
 
 def _ensure_image_document(img: ImageFile) -> int:

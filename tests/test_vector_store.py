@@ -94,6 +94,43 @@ class TestVectorStore:
             ).scalar()
         assert count == 0
 
+    def test_purge_vectors_over_sql_variable_cap(self, real_chroma):
+        """An id list longer than SQLITE_MAX_VARIABLE_NUMBER must not blow up.
+
+        Unbatched, both the Chroma ``delete(ids=…)`` and the ``chunks`` delete
+        bind one variable per id and fail with "too many SQL variables".
+        """
+        from pka.db.queries import get_engine, init_db, insert_chunks
+        from pka.db.schema import chunks
+
+        init_db()
+        # One real row, so the SQL delete is exercised, plus enough ids past the
+        # 32766 ceiling to fail the unbatched statement.
+        insert_chunks(
+            [
+                {
+                    "document_id": 9,
+                    "chunk_index": 0,
+                    "text": "gone",
+                    "token_count": 1,
+                    "vector_id": "dead-0",
+                }
+            ]
+        )
+        vector_ids = [f"dead-{i}" for i in range(40_000)]
+
+        assert real_chroma.purge_vectors(vector_ids) == 40_000
+
+        with get_engine().connect() as con:
+            assert (
+                con.execute(
+                    sa.select(sa.func.count())
+                    .select_from(chunks)
+                    .where(chunks.c.vector_id == "dead-0")
+                ).scalar()
+                == 0
+            )
+
     def test_vector_count_from_collection(self, real_chroma):
         real_chroma.upsert_chunks(
             ids=["v1"],

@@ -52,7 +52,10 @@ _FETCH_BATCH_SIZE = 200
 # 32766 — so a ``get`` matching more than that (or filtering on a longer id or
 # ``$in`` list) fails with "Error executing plan: … too many SQL variables".
 # Every read goes through the paging helpers below, well under the ceiling.
+# A ``delete(ids=…)`` binds one variable per id the same way, as does the
+# matching SQLite ``IN (...)``, so deletes are batched at the same size.
 _GET_PAGE_SIZE = 5_000
+_DELETE_BATCH_SIZE = _GET_PAGE_SIZE
 
 
 def _get_embedding_function() -> DefaultEmbeddingFunction:
@@ -311,12 +314,19 @@ def purge_vectors(vector_ids: list[str]) -> int:
     from pka.db.queries import get_engine
     from pka.db.schema import chunks
 
-    try:
-        get_collection().delete(ids=vector_ids)
-    except Exception as exc:
-        log.warning("Chroma delete failed (%s); removing chunk rows only", exc)
+    col = get_collection()
+    for i in range(0, len(vector_ids), _DELETE_BATCH_SIZE):
+        batch = vector_ids[i : i + _DELETE_BATCH_SIZE]
+        try:
+            col.delete(ids=batch)
+        except Exception as exc:
+            # Per batch rather than all-or-nothing: one unreadable batch should
+            # not strand the rest of the source's vectors in Chroma.
+            log.warning("Chroma delete failed (%s); removing chunk rows only", exc)
     with get_engine().begin() as con:
-        con.execute(chunks.delete().where(chunks.c.vector_id.in_(vector_ids)))
+        for i in range(0, len(vector_ids), _DELETE_BATCH_SIZE):
+            batch = vector_ids[i : i + _DELETE_BATCH_SIZE]
+            con.execute(chunks.delete().where(chunks.c.vector_id.in_(batch)))
     log.info("Purged %d corrupt chunk rows", len(vector_ids))
     return len(vector_ids)
 

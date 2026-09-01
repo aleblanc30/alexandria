@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections.abc import Iterator
 
 import sqlalchemy as sa
 
@@ -43,6 +44,17 @@ _CHILD_TABLES = (
     source_collections,
 )
 
+# SQLite binds one variable per id in an ``IN (...)`` list and
+# SQLITE_MAX_VARIABLE_NUMBER is 32766, so a source with more documents (or
+# images) than that fails outright with "too many SQL variables". Every id list
+# below goes through _batches, well under the ceiling.
+_ID_BATCH_SIZE = 5_000
+
+
+def _batches(ids: list) -> Iterator[list]:
+    for i in range(0, len(ids), _ID_BATCH_SIZE):
+        yield ids[i : i + _ID_BATCH_SIZE]
+
 
 def purge_source(source: str, *, dry_run: bool = False) -> dict[str, int]:
     """Delete all archive rows (and vectors) for ``source``."""
@@ -64,18 +76,16 @@ def _purge_documents(source: str, *, dry_run: bool = False) -> dict[str, int]:
                 sa.select(documents.c.id).where(documents.c.source == source)
             ).fetchall()
         ]
-        vector_ids = (
-            [
+        vector_ids: list[str] = []
+        for batch in _batches(doc_ids):
+            vector_ids.extend(
                 r[0]
                 for r in con.execute(
                     sa.select(chunks.c.vector_id)
-                    .where(chunks.c.document_id.in_(doc_ids))
+                    .where(chunks.c.document_id.in_(batch))
                     .where(chunks.c.vector_id.isnot(None))
                 ).fetchall()
-            ]
-            if doc_ids
-            else []
-        )
+            )
 
     counts: dict[str, int] = {"documents": len(doc_ids), "vectors": len(vector_ids)}
     if not doc_ids:
@@ -84,13 +94,14 @@ def _purge_documents(source: str, *, dry_run: bool = False) -> dict[str, int]:
     if dry_run:
         with eng.connect() as con:
             for tbl in _CHILD_TABLES:
-                counts[tbl.name] = (
+                counts[tbl.name] = sum(
                     con.execute(
                         sa.select(sa.func.count())
                         .select_from(tbl)
-                        .where(tbl.c.document_id.in_(doc_ids))
+                        .where(tbl.c.document_id.in_(batch))
                     ).scalar()
                     or 0
+                    for batch in _batches(doc_ids)
                 )
         return counts
 
@@ -99,8 +110,10 @@ def _purge_documents(source: str, *, dry_run: bool = False) -> dict[str, int]:
 
     with eng.begin() as con:
         for tbl in _CHILD_TABLES:
-            result = con.execute(tbl.delete().where(tbl.c.document_id.in_(doc_ids)))
-            counts[tbl.name] = result.rowcount
+            counts[tbl.name] = sum(
+                con.execute(tbl.delete().where(tbl.c.document_id.in_(batch))).rowcount
+                for batch in _batches(doc_ids)
+            )
         result = con.execute(documents.delete().where(documents.c.source == source))
         counts["documents"] = result.rowcount
 
@@ -149,13 +162,14 @@ def _purge_images(*, dry_run: bool = False) -> dict[str, int]:
 
     if dry_run:
         with eng.connect() as con:
-            counts["image_tags"] = (
+            counts["image_tags"] = sum(
                 con.execute(
                     sa.select(sa.func.count())
                     .select_from(image_tags)
-                    .where(image_tags.c.image_id.in_(image_ids))
+                    .where(image_tags.c.image_id.in_(batch))
                 ).scalar()
                 or 0
+                for batch in _batches(image_ids)
             )
         return counts
 
@@ -163,8 +177,10 @@ def _purge_images(*, dry_run: bool = False) -> dict[str, int]:
         counts["clip_vectors_purged"] = image_pipeline.delete_clip_vectors(clip_vector_ids)
 
     with eng.begin() as con:
-        result = con.execute(image_tags.delete().where(image_tags.c.image_id.in_(image_ids)))
-        counts["image_tags"] = result.rowcount
+        counts["image_tags"] = sum(
+            con.execute(image_tags.delete().where(image_tags.c.image_id.in_(batch))).rowcount
+            for batch in _batches(image_ids)
+        )
         result = con.execute(images.delete())
         counts["images"] = result.rowcount
 
