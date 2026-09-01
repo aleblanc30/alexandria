@@ -18,6 +18,9 @@ SQLite + ChromaDB archive. Backend is Python (`pka/`), frontend is Vue 3
    is a drawing of what the code does, so where it disagrees with `pka/`, the
    code is right and the graph is stale — fix the graph, and see the sync rule
    under *Pitfalls*.
+5. **`docs/persisted-fields.md`** — what each source writes, per table and
+   column. **Derived, not authoritative** for the same reason: `pka/db/schema.py`
+   and the runners are what it reads from, so the code wins.
 
 `docs/archive/initial_design.pdf` is **historical**: it records the March 2026
 intent and is superseded wherever it disagrees with the above — notably, it
@@ -108,6 +111,34 @@ Two configuration facts that otherwise read as bugs:
   Redrawing is cheap; read the source of truth in this order: `registry.py` for
   the handler map, `<source>_sync.py` for phases, `runners/<source>.py` for the
   text handed to `ingest_text_block`, `connectors/<source>.py` for the read.
+- **`docs/persisted-fields.md` must be updated in the same commit** as any change
+  to *what* a source writes. Same silent-staleness problem as the flow graphs,
+  and a worse failure mode: its whole value is that a reader can trust a `—` to
+  mean "nothing writes this". Update it when you:
+  - add, remove, or rename a **column or table** in `pka/db/schema.py` (a new
+    `documents` column is a new row in the §1 matrix, and usually a line in the
+    per-source meaning table under it);
+  - change **which sources write a column** — a `DocumentWrite` field in a
+    runner, an `update_card_summary` / `set_fetch_status` call, a new field on
+    `FetchResult` that `_persist_fetch_result` writes. A cell flipping between
+    ✅/⬛/🟪/— is exactly the edit this file exists to catch;
+  - add or remove a **source** (a column in all four matrices, alongside the
+    flow-graph work above);
+  - change the **chunk provenance mirror** in `ingest_text_block`, or the
+    `extra_metadata` a runner passes — §3 lists both the SQLite `chunks` columns
+    and the Chroma keys per `pass=`, so they move together;
+  - change **what text is embedded** or its fallback (the §4 table), or add,
+    remove, or re-gate a **flag-gated write** — `generated_summary`, the
+    external synopsis, `archive_url` — whose flags must match `DESIGN.md` §1.1;
+  - retire a **dead column or table** the file currently calls out (today
+    `images.text_vector_id` and `image_tags`) — deleting it means deleting the
+    note, not leaving a warning about code that no longer exists.
+
+  Read the source of truth in this order: `db/schema.py` for columns,
+  `db/queries.py::DocumentWrite` for what an ingestion upsert may touch,
+  `runners/<source>.py` and `image_pipeline.py` for who writes what,
+  `ingestion/core.py` for the chunk tail, `ingestion/fetcher.py` for the
+  fetch-time writes.
 - Keep diffs minimal; do not refactor unrelated code.
 
 ## Where things live
@@ -116,6 +147,7 @@ Two configuration facts that otherwise read as bugs:
 |------|------------|
 | Ingestion / connectors | `pka/ingestion/core.py`, `pka/ingestion/runners/`, `pka/connectors/`, `DESIGN.md` §2–3 |
 | Which pipeline does what (visual) | `docs/ingestion-flows.md` — one flow graph per source, shared spine vs. source-specific |
+| What each source persists (tables) | `docs/persisted-fields.md` — column-by-source matrices for `documents`, the side tables, and the chunk/Chroma payload |
 | Model backends (local + hosted) | `pka/providers/`, `DESIGN.md` §1.1 |
 | Search / vectors | `pka/storage/vector_store.py`, `pka/api/routers/search.py` |
 | Clustering | `pka/clustering/engine.py`, `pka/clustering/lifecycle.py` |
