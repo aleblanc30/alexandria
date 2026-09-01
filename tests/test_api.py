@@ -1284,6 +1284,52 @@ class TestRuns:
         assert data["status"] == "queued"
         assert isinstance(data["run_id"], int)
 
+    def test_trigger_run_body_reaches_run_clustering(self, client, monkeypatch):
+        mock_col = MagicMock()
+        mock_col.count.return_value = 10
+        monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
+        calls = []
+        monkeypatch.setattr(
+            "pka.clustering.engine.run_clustering",
+            lambda **kw: (calls.append(kw), MagicMock(run_id=99, n_clusters=3, n_noise=1))[1],
+        )
+        body = {
+            "cluster_space": "legacy_umap",
+            "min_cluster_size": 10,
+            "min_samples": 5,
+            "n_neighbors": 20,
+            "min_dist": 0.2,
+            "n_components": 8,
+            "skip_labelling": True,
+            "async_labelling": True,
+        }
+        r = client.post("/runs/trigger", json=body)
+        assert r.status_code == 202
+        assert len(calls) == 1
+        kw = calls[0]
+        assert kw["cluster_space"] == "legacy_umap"
+        assert kw["min_cluster_size"] == 10
+        assert kw["min_samples"] == 5
+        assert kw["n_neighbors"] == 20
+        assert kw["min_dist"] == 0.2
+        assert kw["n_components"] == 8
+        assert kw["skip_labelling"] is True
+        assert kw["async_labelling"] is True
+
+        run_row = next(x for x in client.get("/runs").json() if x["run_id"] == kw["run_id"])
+        assert run_row["algorithm"] == "HDBSCAN-hierarchical"
+
+    def test_trigger_run_rejects_out_of_range_params(self, client, monkeypatch):
+        mock_col = MagicMock()
+        mock_col.count.return_value = 10
+        monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
+        r = client.post("/runs/trigger", json={"min_cluster_size": 1})
+        assert r.status_code == 422
+        r = client.post("/runs/trigger", json={"min_dist": 1.5})
+        assert r.status_code == 422
+        r = client.post("/runs/trigger", json={"cluster_space": "kmeans"})
+        assert r.status_code == 422
+
     def test_list_runs_includes_status(self, client):
         ids = _seed_docs(2)
         run_id = _seed_run(ids)

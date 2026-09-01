@@ -150,6 +150,17 @@ export interface ApplyTagResult { cluster_id: number; tag: string; applied: numb
 export interface ApplyAllTagsResult { clusters: ApplyTagResult[]; total_applied: number; total_skipped: number }
 export interface UmapPoint     { doc_id: number; x: number; y: number; cluster_id: number | null; title: string }
 export interface RunOut        { run_id: number; timestamp: number; algorithm: string; parameters: Record<string,unknown>; accepted: boolean; status: string; n_clusters: number; n_noise: number; notes: string | null }
+export interface ClusterRunParams {
+  cluster_space?: 'pca' | 'legacy_umap' | null
+  min_cluster_size?: number | null
+  min_samples?: number | null
+  n_neighbors?: number | null
+  min_dist?: number
+  pca_components?: number | null
+  n_components?: number
+  skip_labelling?: boolean
+  async_labelling?: boolean
+}
 export interface DiagnosticsOut { run_id: number; n_clusters: number; n_noise: number; cluster_sizes: Record<string,number>; drift_flags: DriftFlag[]; merge_suggestions: MergeSuggestion[] }
 export interface DriftFlag     { cluster_id: number; label: string; drift_score: number; n_recent: number; flagged: boolean }
 export interface MergeSuggestion { cluster_id_a: number; label_a: string; cluster_id_b: number; label_b: string; similarity: number }
@@ -279,7 +290,8 @@ export const getDiagnostics  = (id: number) => req<DiagnosticsOut>(`/runs/${id}/
 export const acceptRun       = (id: number) => req<void>(`/runs/${id}/accept`, { method: 'POST' })
 export const rejectRun       = (id: number, notes = '') =>
   req<void>(`/runs/${id}/reject?notes=${encodeURIComponent(notes)}`, { method: 'POST' })
-export const triggerRun      = ()  => req<{ status: string; run_id: number }>('/runs/trigger', { method: 'POST' })
+export const triggerRun      = (params?: ClusterRunParams) =>
+  req<{ status: string; run_id: number }>('/runs/trigger', { method: 'POST', body: JSON.stringify(params ?? {}) })
 export const cancelRun       = (id: number) =>
   req<{ status: string; run_id: number }>(`/runs/${id}/cancel`, { method: 'POST' })
 

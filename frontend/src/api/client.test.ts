@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, domainTopLists, search } from './client'
+import { ApiError, domainTopLists, search, triggerRun } from './client'
 
 describe('api client', () => {
   beforeEach(() => {
@@ -66,6 +66,37 @@ describe('api client', () => {
     expect(fetch).toHaveBeenCalledWith(
       '/ingestion/domains?limit=5&source=firefox',
       expect.anything(),
+    )
+  })
+
+  it('triggerRun sends an empty body when called bare', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 202,
+      statusText: 'Accepted',
+      json: async () => ({ status: 'queued', run_id: 1 }),
+    } as Response)
+    await triggerRun()
+    expect(fetch).toHaveBeenCalledWith(
+      '/runs/trigger',
+      expect.objectContaining({ method: 'POST', body: '{}' }),
+    )
+  })
+
+  it('triggerRun serialises the given params', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 202,
+      statusText: 'Accepted',
+      json: async () => ({ status: 'queued', run_id: 1 }),
+    } as Response)
+    await triggerRun({ cluster_space: 'legacy_umap', min_cluster_size: null, min_dist: 0.2 })
+    expect(fetch).toHaveBeenCalledWith(
+      '/runs/trigger',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ cluster_space: 'legacy_umap', min_cluster_size: null, min_dist: 0.2 }),
+      }),
     )
   })
 })

@@ -49,6 +49,24 @@ input:focus { border-color: rgba(0,0,0,.3) }
 .btn-xs--ok  { background: #EAF3DE; color: #3B6D11; border-color: #C0DD97 }
 .btn-xs--danger { background: #FCEBEB; color: #A32D2D; border-color: #F09595 }
 
+/* ── Modal ──────────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.modal {
+  width: 100%; max-width: 420px; max-height: calc(100vh - 48px); overflow-y: auto;
+  background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg);
+  padding: 20px; box-shadow: 0 8px 32px rgba(0,0,0,.12);
+}
+.modal-title   { font-size: 16px; font-weight: 600; margin-bottom: 16px }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px }
+
+.form-field { margin-bottom: 12px }
+.form-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px }
+.form-field select, .form-field input[type="number"] { width: 100% }
+.form-field--checkbox label { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px }
+
 /* ── Tables ─────────────────────────────────────────────────────────────────── */
 .table-wrap  { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); overflow: hidden }
 .tag-table   { width: 100%; border-collapse: collapse; font-size: 13px }

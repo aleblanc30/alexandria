@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from pka.api.db_rows import fetchall_mappings
 from pka.api.dependencies import get_engine
-from pka.api.schemas.clusters import DiagnosticsOut, RunOut
+from pka.api.schemas.clusters import DiagnosticsOut, RunOut, TriggerRunRequest
 from pka.db.schema import chunks, cluster_assignments, cluster_runs, clusters
 
 log = logging.getLogger(__name__)
@@ -179,29 +179,43 @@ def cancel_run(run_id: int, engine=Depends(get_engine)):
 @router.post("/trigger", status_code=202)
 def trigger_run(
     bg: BackgroundTasks,
+    body: TriggerRunRequest | None = None,
     engine=Depends(get_engine),
-    skip_labelling: bool = False,
-    async_labelling: bool = False,
-    cluster_space: str | None = None,
 ):
     """Kick off a new clustering run in the background."""
     _clustering_preflight()
     if _running_run_id(engine) is not None:
         raise HTTPException(409, "A clustering run is already in progress")
 
-    from pka.clustering.engine import create_run_placeholder, run_clustering, set_run_status
+    from pka.clustering.engine import (
+        ALGORITHM_LEGACY,
+        ALGORITHM_PCA,
+        create_run_placeholder,
+        run_clustering,
+        set_run_status,
+    )
     from pka.clustering.run_progress import ClusterRunCancelled, begin, finish
 
-    run_id = create_run_placeholder()
+    req = body or TriggerRunRequest()
+    algorithm = ALGORITHM_LEGACY if req.cluster_space == "legacy_umap" else ALGORITHM_PCA
+    run_id = create_run_placeholder(
+        algorithm=algorithm, parameters=req.model_dump(exclude_none=True)
+    )
     begin(run_id)
 
     def _run() -> None:
         try:
             result = run_clustering(
                 run_id=run_id,
-                skip_labelling=skip_labelling,
-                async_labelling=async_labelling or None,
-                cluster_space=cluster_space,
+                min_cluster_size=req.min_cluster_size,
+                min_samples=req.min_samples,
+                n_neighbors=req.n_neighbors,
+                min_dist=req.min_dist,
+                n_components=req.n_components,
+                pca_components=req.pca_components,
+                skip_labelling=req.skip_labelling,
+                async_labelling=req.async_labelling or None,
+                cluster_space=req.cluster_space,
             )
             log.info(
                 "Clustering run #%d finished (%d clusters, %d noise)",

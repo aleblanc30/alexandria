@@ -40,6 +40,18 @@ class ApplyAllTagsResult(BaseModel):
     total_skipped: int
 
 
+class TriggerRunRequest(BaseModel):
+    cluster_space: str | None = Field(None, pattern="^(pca|legacy_umap)$")
+    min_cluster_size: int | None = Field(None, ge=2, le=1000)
+    min_samples: int | None = Field(None, ge=1, le=1000)
+    n_neighbors: int | None = Field(None, ge=2, le=200)
+    min_dist: float = Field(0.1, ge=0.0, le=1.0)
+    pca_components: int | None = Field(None, ge=2, le=500)
+    n_components: int = Field(5, ge=2, le=50)
+    skip_labelling: bool = False
+    async_labelling: bool = False
+
+
 class RunOut(BaseModel):
     run_id: int
     timestamp: int

@@ -1,6 +1,6 @@
 # Cluster run parameter dialog
 
-**Status:** proposed — not implemented.
+**Status:** implemented.
 
 `+ New run` on `/runs` fires a clustering run with zero configuration. Everything
 the pipeline can be tuned with is reachable from the CLI (`alexandria clustering

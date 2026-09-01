@@ -2,10 +2,12 @@
   <div>
     <div class="page-header">
       <div><h1 class="page-title">Cluster run manager</h1><p class="page-sub">Run history, diagnostics, and lifecycle suggestions</p></div>
-      <button class="btn btn--primary" :disabled="store.hasRunningRun()" @click="trigger">
+      <button class="btn btn--primary" :disabled="store.hasRunningRun()" @click="dialogOpen = true">
         {{ store.hasRunningRun() ? 'Running…' : '+ New run' }}
       </button>
     </div>
+
+    <ClusterRunDialog v-model:open="dialogOpen" :busy="triggering" @submit="trigger" />
 
     <div class="table-wrap mb-4">
       <table class="tag-table">
@@ -56,12 +58,15 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import ClusterRunDialog from '@/components/ClusterRunDialog.vue'
 import { useClustersStore } from '@/stores/clusters'
-import type { RunOut } from '@/api/client'
+import type { ClusterRunParams, RunOut } from '@/api/client'
 
 const store = useClustersStore()
 const diag  = computed(() => store.diagnostics)
+const dialogOpen  = ref(false)
+const triggering  = ref(false)
 
 onMounted(() => store.loadRuns())
 onUnmounted(() => store.stopPolling())
@@ -84,5 +89,14 @@ function statusClass(r: RunOut): string {
 }
 
 async function showDiag(id: number) { await store.loadDiagnostics(id) }
-async function trigger() { await store.trigger() }
+
+async function trigger(params: ClusterRunParams) {
+  triggering.value = true
+  try {
+    await store.trigger(params)
+    dialogOpen.value = false
+  } finally {
+    triggering.value = false
+  }
+}
 </script>

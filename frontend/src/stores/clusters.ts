@@ -94,9 +94,9 @@ export const useClustersStore = defineStore('clusters', () => {
     } catch (e) { notifyError(e) }
   }
 
-  async function trigger() {
+  async function trigger(params?: api.ClusterRunParams) {
     try {
-      const res = await api.triggerRun()
+      const res = await api.triggerRun(params)
       useToastStore().push(`Clustering run #${res.run_id} started…`, 'info', 4000)
       await loadRuns()
       startPolling()

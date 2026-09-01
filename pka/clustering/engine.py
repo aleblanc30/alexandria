@@ -818,16 +818,20 @@ def relabel_run_clusters(
 # ── Step 6: persist to DB ─────────────────────────────────────────────────────
 
 
-def create_run_placeholder() -> int:
-    """Insert a run row immediately so the UI can show status=running."""
+def create_run_placeholder(algorithm: str = ALGORITHM_PCA, parameters: dict | None = None) -> int:
+    """Insert a run row immediately so the UI can show status=running.
+
+    ``_finalize_run`` overwrites both fields once the run completes, so these
+    only matter for what the "running" row displays in the meantime.
+    """
     eng = get_engine()
     now = int(time.time())
     with eng.begin() as con:
         res = con.execute(
             cluster_runs.insert().values(
                 timestamp=now,
-                algorithm=ALGORITHM_PCA,
-                parameters=json.dumps({}),
+                algorithm=algorithm,
+                parameters=json.dumps(parameters or {}),
                 accepted=False,
                 status="running",
             )

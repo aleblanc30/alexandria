@@ -569,6 +569,10 @@ subclusters exist, otherwise the same title+content sampling. The cluster explor
 lets you edit labels inline, regenerate via LLM, and apply the stored label as
 an overlay tag (`cluster_l1` / `cluster_l2` origins) for browse filtering.
 
+`run_clustering()`'s parameters (method, min cluster size / samples /
+neighbours, min distance, PCA/UMAP dims, labelling mode) are settable from the
+UI via a dialog in front of `/runs`' `+ New run`, not just from the CLI.
+
 ## 5. Active learning tag training
 
 **Status:** implemented on branch `active-learning-tags` (backend + v1 UI).

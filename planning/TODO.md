@@ -22,6 +22,10 @@ two when its priority changes; do not duplicate it in both.
 
 - [ ] **Evaluate a different text embedding model** — Chroma's `DefaultEmbeddingFunction` (`all-MiniLM-L6-v2`) is used as-is in `pka/storage/vector_store.py`; benchmark retrieval quality against something like `bge-small-en-v1.5` or `gte-small` before committing, since swapping models forces a full reindex via `rebuild_from_chunks` (Chroma collections are dimension-locked).
 
+## Clustering
+
+- [ ] **Two-level agglomerative clustering algorithm** — `pka/clustering/engine.py` only ever runs HDBSCAN (over PCA or legacy UMAP space); add agglomerative (ward/average-linkage) clustering as a selectable `cluster_space`/algorithm, reusing the existing L1/L2 hierarchy machinery (`_write_hierarchical_clusters`, `clusters.level` / `parent_cluster_id`) rather than rebuilding it.
+
 ## Source connectors
 
 - [x] **arXiv ingester** — Firefox fetch handler for arxiv.org (`pka/ingestion/arxiv.py`): export.arxiv.org API metadata + PDF; title and abstract on browse cards.
@@ -42,7 +46,9 @@ two when its priority changes; do not duplicate it in both.
 ## UI
 
 - [ ] **Delete tags in the UI** — allow removing tags from the frontend (with appropriate API support and confirmation).
-- [ ] **Cluster run parameter dialog** — `+ New run` on `/runs` fires an unconfigurable run; put a modal behind it exposing the `run_clustering()` knobs the CLI already has (method, min cluster size / samples / neighbours, min dist, PCA or UMAP dims, labelling mode). Plan in `CLUSTER_RUN_DIALOG.md`.
+- [x] **Cluster run parameter dialog** — `+ New run` on `/runs` opens `ClusterRunDialog.vue`, exposing the `run_clustering()` knobs the CLI already had (method, min cluster size / samples / neighbours, min dist, PCA or UMAP dims, labelling mode) via a `TriggerRunRequest` JSON body. Plan in `CLUSTER_RUN_DIALOG.md`.
+- [ ] **Cluster run deletion interface**
+- [ ] **Cluster run stop button is not functional**
 
 ## CLI & assistant
 
