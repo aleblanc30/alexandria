@@ -181,6 +181,46 @@ def init_db() -> None:
         )
         con.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_documents_isbn ON documents(isbn)"))
 
+        # Migration: indexes for the previously-unindexed foreign keys behind
+        # correlated EXISTS filters and browse/search joins (audit
+        # planning/MAINTAINABILITY_PERFORMANCE_AUDIT.md P-1).
+        con.execute(
+            sa.text(
+                "CREATE INDEX IF NOT EXISTS ix_source_tags_document_id_tag_string "
+                "ON source_tags(document_id, tag_string)"
+            )
+        )
+        con.execute(
+            sa.text(
+                "CREATE INDEX IF NOT EXISTS ix_source_collections_document_id "
+                "ON source_collections(document_id)"
+            )
+        )
+        con.execute(
+            sa.text(
+                "CREATE INDEX IF NOT EXISTS ix_cluster_assignments_run_id_document_id "
+                "ON cluster_assignments(run_id, document_id)"
+            )
+        )
+        con.execute(
+            sa.text("CREATE INDEX IF NOT EXISTS ix_images_document_id ON images(document_id)")
+        )
+        con.execute(
+            sa.text("CREATE INDEX IF NOT EXISTS ix_fetch_log_document_id ON fetch_log(document_id)")
+        )
+        con.execute(
+            sa.text(
+                "CREATE INDEX IF NOT EXISTS ix_reading_list_items_list_id_document_id "
+                "ON reading_list_items(list_id, document_id)"
+            )
+        )
+        con.execute(
+            sa.text(
+                "CREATE INDEX IF NOT EXISTS ix_chunks_document_id_chunk_index "
+                "ON chunks(document_id, chunk_index)"
+            )
+        )
+
 
 # ── Documents ────────────────────────────────────────────────────────────────
 

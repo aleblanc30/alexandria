@@ -192,11 +192,18 @@ _MIGRATED_COLUMNS = [
 
 _MIGRATED_INDEXES = [
     ("chunks", "ix_chunks_document_id"),
+    ("chunks", "ix_chunks_document_id_chunk_index"),
     ("documents", "ix_documents_source"),
     ("documents", "ix_documents_doi"),
     ("documents", "ix_documents_arxiv_id"),
     ("documents", "ix_documents_isbn"),
     ("overlay_tags", "uq_overlay_doc_tag_origin"),
+    ("source_tags", "ix_source_tags_document_id_tag_string"),
+    ("source_collections", "ix_source_collections_document_id"),
+    ("cluster_assignments", "ix_cluster_assignments_run_id_document_id"),
+    ("images", "ix_images_document_id"),
+    ("fetch_log", "ix_fetch_log_document_id"),
+    ("reading_list_items", "ix_reading_list_items_list_id_document_id"),
 ]
 
 

@@ -6,6 +6,15 @@ Nice-to-haves live in `BACKLOG.md` instead. Neither file requires a detailed pla
 the split is priority, not how well an idea is worked out. Move an entry between the
 two when its priority changes; do not duplicate it in both.
 
+## Maintainability & performance
+
+Quick wins from `MAINTAINABILITY_PERFORMANCE_AUDIT.md` §6 (items 1-2, 4-5 of the prioritised plan):
+
+- [x] **P-1: index unindexed foreign keys** — added `sa.Index(...)` to `pka/db/schema.py` for `source_tags(document_id, tag_string)`, `source_collections.document_id`, `cluster_assignments(run_id, document_id)`, `images.document_id`, `fetch_log.document_id`, `reading_list_items(list_id, document_id)`, `chunks(document_id, chunk_index)`, plus matching `CREATE INDEX IF NOT EXISTS` migrations in `init_db` and new `_MIGRATED_INDEXES` cases in `tests/test_schema_migration.py`. Verified with `EXPLAIN QUERY PLAN` that the source-tag `EXISTS` and cluster-assignment filters now `SEARCH ... USING COVERING INDEX` instead of scanning. `docs/persisted-fields.md` does not track indexes, so no change needed there.
+- [ ] **P-2: lazy sklearn/chroma imports at API startup** — `pka.api.routers.clusters` → `pka.clustering.engine` → `sklearn.decomposition` costs 3.0s of the 4.7s cold `import pka.api.main`; move sklearn imports inside the functions that use them and make `routers/clusters.py` import the engine lazily like `runs.py` already does.
+- [ ] **M-12 + M-7: add an automated check script and mypy config** — no CI/pre-commit/Makefile exists; add `scripts/check.ps1` + `scripts/check.sh` running `ruff check`, `ruff format --check`, `mypy pka`, `pytest --cov`, and the two `npm` commands. Add a `[tool.mypy]` section (pydantic plugin, baseline-ratcheted, not strict) and add it to the CLAUDE.md verify table. Also fix the `ruff format` drift in `tests/test_connector_reddit.py` and the two deprecation warnings from M-11 (`routers/trends.py:62` `utcfromtimestamp`, pydantic's inner `class Config`).
+- [ ] **M-13: hygiene batch** — delete `pka/pipeline.py` (deprecated shim, zero importers) and its `coverage.omit` line; remove vulture-flagged unused `all_runs` (`cli/purge_cluster_runs.py:25`) and `base_netloc` (`connectors/reddit.py:447`); hoist the 8420/8421 port split into one shared constant in `pka/constants.py` read by `cli/dev.py`.
+
 ## Ingestion & deduplication
 
 - [ ] **Deduplication of tags** — merge or collapse duplicate tag names (case, spacing, synonyms) so the tag index stays clean.

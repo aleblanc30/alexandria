@@ -56,6 +56,9 @@ source_tags = sa.Table(
     sa.Column("document_id", sa.Integer, sa.ForeignKey("documents.id"), nullable=False),
     sa.Column("tag_string", sa.Text, nullable=False),
     sa.Column("source", sa.Text, nullable=False),
+    # `_where_source_tag`'s correlated EXISTS and `_browse_tag_maps` both filter
+    # by document_id and/or tag_string on every browse/tag-filtered query.
+    sa.Index("ix_source_tags_document_id_tag_string", "document_id", "tag_string"),
 )
 
 source_collections = sa.Table(
@@ -65,6 +68,7 @@ source_collections = sa.Table(
     sa.Column("document_id", sa.Integer, sa.ForeignKey("documents.id"), nullable=False),
     sa.Column("collection", sa.Text, nullable=False),
     sa.Column("source", sa.Text, nullable=False),
+    sa.Index("ix_source_collections_document_id", "document_id"),
 )
 
 chunks = sa.Table(
@@ -91,6 +95,9 @@ chunks = sa.Table(
     sa.Column("page_end", sa.Integer),
     # Without this, "how many documents are embedded?" full-scans chunks.
     sa.Index("ix_chunks_document_id", "document_id"),
+    # Lets `_batch_first_chunk_map`'s per-document MIN(chunk_index) run as an
+    # index seek instead of sorting each document's chunks.
+    sa.Index("ix_chunks_document_id_chunk_index", "document_id", "chunk_index"),
 )
 
 fetch_log = sa.Table(
@@ -101,6 +108,7 @@ fetch_log = sa.Table(
     sa.Column("timestamp", sa.Integer, nullable=False),
     sa.Column("http_status", sa.Integer),
     sa.Column("error_msg", sa.Text),
+    sa.Index("ix_fetch_log_document_id", "document_id"),
 )
 
 # Reddit-specific fields for a saved post or comment, keyed 1:1 to its document
@@ -181,6 +189,9 @@ cluster_assignments = sa.Table(
     sa.Column("score", sa.Float),
     sa.Column("assigned_at", sa.Integer),
     sa.Column("level", sa.Integer, nullable=False, server_default="1"),
+    # Every browse page and search join filters by run_id, often combined with
+    # a document_id IN (...) list (`documents_out_batch`, `search.py`).
+    sa.Index("ix_cluster_assignments_run_id_document_id", "run_id", "document_id"),
 )
 
 reading_lists = sa.Table(
@@ -200,6 +211,7 @@ reading_list_items = sa.Table(
     sa.Column("document_id", sa.Integer, sa.ForeignKey("documents.id"), nullable=False),
     sa.Column("position", sa.Integer, default=0),
     sa.Column("note", sa.Text),
+    sa.Index("ix_reading_list_items_list_id_document_id", "list_id", "document_id"),
 )
 
 # ── Images ───────────────────────────────────────────────────────────────────
@@ -225,6 +237,9 @@ images = sa.Table(
     sa.Column("clip_vector_id", sa.Text),  # Chroma vector id for CLIP embedding
     sa.Column("text_vector_id", sa.Text),  # Chroma vector id for text embedding
     sa.Column("indexed_at", sa.Integer),
+    # `_exclude_pending_images` runs a correlated EXISTS on this column for
+    # every browse list and count query.
+    sa.Index("ix_images_document_id", "document_id"),
 )
 
 image_tags = sa.Table(
