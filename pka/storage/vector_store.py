@@ -57,6 +57,12 @@ _FETCH_BATCH_SIZE = 200
 _GET_PAGE_SIZE = 5_000
 _DELETE_BATCH_SIZE = _GET_PAGE_SIZE
 
+# Chroma's own per-call ``upsert`` ceiling (``max_batch_size``, observed at
+# 5461) raises ``chromadb.errors.InternalError`` for anything larger — seen in
+# practice on a single large Firefox fetch (14584 chunks), which dropped the
+# whole document's embedding. Batch below the observed ceiling with headroom.
+_UPSERT_BATCH_SIZE = 5_000
+
 
 def _get_embedding_function() -> DefaultEmbeddingFunction:
     global _embedding_fn
@@ -199,11 +205,13 @@ def upsert_chunks(
     """Upsert chunk documents; Chroma computes embeddings from ``texts``."""
     if not ids:
         return
-    get_collection().upsert(
-        ids=ids,
-        documents=texts,
-        metadatas=metadatas,
-    )
+    col = get_collection()
+    for i in range(0, len(ids), _UPSERT_BATCH_SIZE):
+        col.upsert(
+            ids=ids[i : i + _UPSERT_BATCH_SIZE],
+            documents=texts[i : i + _UPSERT_BATCH_SIZE],
+            metadatas=metadatas[i : i + _UPSERT_BATCH_SIZE],
+        )
     log.debug("Upserted %d chunks to Chroma", len(ids))
 
 

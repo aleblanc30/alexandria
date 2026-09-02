@@ -30,6 +30,42 @@ class TestVectorStore:
     def test_upsert_empty_batch_is_noop(self, real_chroma):
         real_chroma.upsert_chunks([], [], [])
 
+    def test_upsert_splits_calls_under_batch_ceiling(self, real_chroma, monkeypatch):
+        """Regression: a document with more chunks than Chroma's max_batch_size
+        must not be dropped by chromadb.errors.InternalError."""
+        monkeypatch.setattr(real_chroma, "_UPSERT_BATCH_SIZE", 3)
+        n = 8
+        real_chroma.upsert_chunks(
+            ids=[f"vec-{i}" for i in range(n)],
+            texts=[f"document number {i}" for i in range(n)],
+            metadatas=[{"document_id": i, "source": "firefox", "chunk_index": 0} for i in range(n)],
+        )
+        assert real_chroma.get_collection().count() == n
+
+    def test_upsert_batching_never_exceeds_ceiling(self, monkeypatch):
+        """Unit-level check of the batching loop itself, independent of Chroma."""
+        import pka.storage.vector_store as vs
+
+        monkeypatch.setattr(vs, "_UPSERT_BATCH_SIZE", 3)
+        call_sizes: list[int] = []
+
+        class FakeCollection:
+            def upsert(self, ids, documents, metadatas):
+                assert len(ids) == len(documents) == len(metadatas)
+                assert len(ids) <= 3
+                call_sizes.append(len(ids))
+
+        monkeypatch.setattr(vs, "get_collection", lambda: FakeCollection())
+
+        n = 7
+        vs.upsert_chunks(
+            ids=[f"id{i}" for i in range(n)],
+            texts=[f"text{i}" for i in range(n)],
+            metadatas=[{"document_id": 1, "source": "firefox", "chunk_index": i} for i in range(n)],
+        )
+
+        assert call_sizes == [3, 3, 1]
+
     def test_query_with_where_filter(self, real_chroma):
         real_chroma.upsert_chunks(
             ids=["a", "b"],
