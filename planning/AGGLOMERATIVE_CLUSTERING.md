@@ -182,7 +182,7 @@ benign, but each should be *checked* rather than assumed:
 
 `cluster_space` becomes a three-valued **pipeline mode** rather than strictly a
 "feature space" — agglomerative also runs on PCA output, so the name is a little
-off. Accept the naming debt: `CLUSTER_RUN_DIALOG.md` §1 deliberately shaped the
+off. Accept the naming debt: `archive/CLUSTER_RUN_DIALOG.md` §1 deliberately shaped the
 "Method" dropdown so a new algorithm lands as a data change, the UI already says
 *Method*, and a separate orthogonal `cluster_algorithm` param would create an
 agglomerative × legacy_umap cross-product nobody wants.
@@ -295,6 +295,6 @@ real `PCA` on real fake embeddings today. Running the real clusterer over the
   agglomerative, noting the noise-vs-full-partition trade-off.
 - **`docs/ingestion-flows.md` and `docs/persisted-fields.md` are unaffected** —
   clustering is not an ingestion flow, and no column changes meaning or
-  ownership. (`CLUSTER_RUN_DIALOG.md` §5 reached the same conclusion for the same
+  ownership. (`archive/CLUSTER_RUN_DIALOG.md` §5 reached the same conclusion for the same
   reason; the `CLAUDE.md` sync rule is about ingestion writes.)
 - Mark the `planning/TODO.md` Clustering entry done and set this file's status.

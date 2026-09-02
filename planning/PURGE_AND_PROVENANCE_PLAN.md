@@ -295,7 +295,7 @@ against reassembled chunks and simply gets more accurate when this lands.
 - **CLI**: `alexandria purge <target> [--source] [--dry-run]`, mirroring
   `purge-source`'s flags. Keep `purge-source` as-is; it is the Tier-3 nuke.
 - **Frontend**: a *Maintenance* panel on `/ingestion` (below the domain
-  tables from `DOMAIN_TOP_LISTS_PLAN.md`), one row per target: label, current
+  tables from `archive/DOMAIN_TOP_LISTS_PLAN.md`), one row per target: label, current
   count, Purge button, and a Re-trigger button where `retrigger` is set.
   Destructive, so each needs a confirm step showing the dry-run count; reuse
   the pattern already in `IngestionSourcePanel.vue:270`.

@@ -477,7 +477,7 @@ one source and leave the others stranded, and a cross-source dedup pass would
 have to union across sidecars that do not all exist. `doi`/`arxiv_id`/`isbn` are
 indexed as join keys for `planning/TODO.md`'s *Deduplication of items*; an arXiv
 document with no source DOI derives one (`10.48550/arXiv.<id>`) so preprints are
-not a hole in that join. See `planning/DOCUMENT_METADATA_PLAN.md`.
+not a hole in that join. See `planning/archive/DOCUMENT_METADATA_PLAN.md`.
 
 **Resolution ladder.** Covers and no-ISBN Calibre books share one cascade:
 checksum-validated ISBN → Open Library by title+author with the canonical result

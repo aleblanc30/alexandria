@@ -167,7 +167,7 @@ to nothing is a dead bookmark and should read as one.
 `docs/persisted-fields.md` that column has two writers today (Zotero, Reddit)
 with their own vocabularies; adding a third is a change to the column's
 meaning, not a handler detail. If wanted, it spans all five DOI handlers at
-once and belongs in `DOCUMENT_METADATA_PLAN.md`.
+once and belongs in `archive/DOCUMENT_METADATA_PLAN.md`.
 
 ## 3. Config and the DESIGN.md §1.1 question
 
@@ -394,7 +394,7 @@ Three reasons it is separate:
 - **Fidelity.** The arXiv version is not the version of record. Storing it under
   the journal DOI is a provenance claim the archive cannot qualify —
   `documents` has no manuscript-version column, and adding one is a
-  `DOCUMENT_METADATA_PLAN.md` change.
+  `archive/DOCUMENT_METADATA_PLAN.md` change.
 - **Scope.** The cross-walk is not APS-specific; building it inside `aps.py`
   guarantees it gets copy-pasted four times. If it ships it belongs in
   `doi_meta.py` behind `doi_arxiv_crosswalk: bool = False`, with each handler
