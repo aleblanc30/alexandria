@@ -287,8 +287,36 @@ def _seed_baselines(src: str) -> None:
     seed_progress_from_db(get_engine(), src)
 
 
+def _assign_new_documents(src: str) -> None:
+    """File freshly ingested documents into the active cluster run.
+
+    Deliberately calls ``assign_new_docs`` rather than
+    ``run_incremental_clustering``: the latter starts a *full* clustering run
+    when no run is accepted, and an ingest finishing must never kick off a
+    minutes-long re-cluster on its own. Best-effort — clustering is a view over
+    the archive, so a failure here must not make a completed sync look failed.
+    """
+    from pka.clustering.lifecycle import assign_new_docs, get_active_run_id
+
+    try:
+        if get_active_run_id() is None:
+            log.debug("No accepted cluster run — nothing to assign after %s ingest", src)
+            return
+        assigned = assign_new_docs().get("assigned", 0)
+        if assigned:
+            log.info("Assigned %d newly ingested doc(s) to the active cluster run", assigned)
+    except Exception:
+        log.exception("Assigning new documents after %s ingest failed", src)
+
+
 def _run_ingestion_job(
-    src: str, *, begin_job: sp.JobKind, error_label: str, run, pre_begin=None
+    src: str,
+    *,
+    begin_job: sp.JobKind,
+    error_label: str,
+    run,
+    pre_begin=None,
+    assign_after: bool = False,
 ) -> None:
     """Shared metadata/ingest/full job skeleton: init, begin, run handler, finish."""
     from pka.db.queries import get_engine, init_db
@@ -299,11 +327,17 @@ def _run_ingestion_job(
     if pre_begin is not None:
         pre_begin(src)
     try:
-        _finish_job(src, run())
+        stats = run()
+        _finish_job(src, stats)
     except Exception as exc:
         log.exception("%s failed for %s", error_label, src)
         sp.finish(src, error=str(exc))
         seed_progress_from_db(get_engine(), src)
+        return
+    # Only after a clean finish: a cancelled or paused job leaves the archive
+    # mid-update, and its new documents can wait for the next complete run.
+    if assign_after and not _extract_stopped(stats):
+        _assign_new_documents(src)
 
 
 def _ingest_pre_begin(src: str) -> None:
@@ -345,6 +379,7 @@ def _sync_ingest(src: str) -> None:
         error_label="Ingest",
         run=lambda: require_handlers(src).sync_ingest(progress_key=src),
         pre_begin=_ingest_pre_begin,
+        assign_after=True,
     )
 
 
@@ -358,6 +393,7 @@ def _sync(src: str, backfill: bool = False) -> None:
             progress_key=src,
             **_backfill_kwargs(src, backfill),
         ),
+        assign_after=True,
     )
 
 

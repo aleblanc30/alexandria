@@ -571,6 +571,13 @@ run. Drift detection (`compute_drift`) and merge suggestions
 (`compute_merge_suggestions`) operate against the active run and flag
 clusters that may need to be split or merged, but never act automatically.
 
+When an ingest or full sync finishes cleanly and a run is accepted,
+`assign_new_docs` files the newly chunked documents into that run's existing
+clusters by nearest centroid, so the archive stays browsable between runs. That
+assignment is the only automatic clustering step: it adds documents to clusters
+that already exist and never creates, relabels, or re-clusters a run. Producing
+a new run stays an explicit action (`/runs/trigger`).
+
 Clustering uses **hierarchical HDBSCAN** (PCA space by default): level-2
 subclusters are labelled via LLM from document titles plus content excerpts
 (`card_summary` or first chunk); level-1 labels summarize L2 child labels when

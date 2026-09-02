@@ -1814,6 +1814,100 @@ class TestIngestion:
         assert snap["status"] == "done"
         assert snap["active_job"] is None
 
+    def _stub_ingest(self, monkeypatch, result: dict):
+        monkeypatch.setattr(
+            "pka.ingestion.firefox_sync.sync_firefox_ingest",
+            lambda progress_key=None, **kw: result,
+        )
+
+    def _spy_assignment(self, monkeypatch, *, active_run: int | None = 1, boom: bool = False):
+        """Record assign_new_docs calls; returns the (mutable) call list."""
+        calls: list[int] = []
+
+        def fake_assign(run_id=None):
+            calls.append(run_id)
+            if boom:
+                raise RuntimeError("chroma exploded")
+            return {"assigned": 3}
+
+        monkeypatch.setattr("pka.clustering.lifecycle.assign_new_docs", fake_assign)
+        monkeypatch.setattr(
+            "pka.clustering.lifecycle.get_active_run_id",
+            lambda: active_run,
+        )
+        return calls
+
+    def test_ingest_assigns_new_docs_to_active_run(self, monkeypatch):
+        """New documents are filed into the accepted run as soon as they land."""
+        from pka.api.routers import ingestion as ing
+        from pka.ingestion import progress as sp
+
+        self._stub_ingest(monkeypatch, {"embed": {}})
+        calls = self._spy_assignment(monkeypatch)
+
+        sp.reset("firefox")
+        ing._sync_ingest("firefox")
+
+        assert len(calls) == 1
+        assert sp.snapshot("firefox")["firefox"]["status"] == "done"
+
+    def test_metadata_sync_does_not_assign(self, monkeypatch):
+        """Metadata writes no chunks, so there is nothing to assign."""
+        from pka.api.routers import ingestion as ing
+        from pka.ingestion import progress as sp
+
+        monkeypatch.setattr(
+            "pka.ingestion.firefox_sync.sync_firefox_metadata",
+            lambda progress_key=None, **kw: {},
+        )
+        calls = self._spy_assignment(monkeypatch)
+
+        sp.reset("firefox")
+        ing._sync_metadata("firefox")
+
+        assert calls == []
+
+    def test_cancelled_ingest_does_not_assign(self, monkeypatch):
+        """A stopped job leaves the archive mid-update; assignment waits."""
+        from pka.api.routers import ingestion as ing
+        from pka.ingestion import progress as sp
+
+        self._stub_ingest(monkeypatch, {"embed": {"stopped": "cancelled"}})
+        calls = self._spy_assignment(monkeypatch)
+
+        sp.reset("firefox")
+        ing._sync_ingest("firefox")
+
+        assert calls == []
+
+    def test_no_active_run_skips_assignment(self, monkeypatch):
+        """Nothing to assign into, and an ingest must never start a full run."""
+        from pka.api.routers import ingestion as ing
+        from pka.ingestion import progress as sp
+
+        self._stub_ingest(monkeypatch, {"embed": {}})
+        calls = self._spy_assignment(monkeypatch, active_run=None)
+
+        sp.reset("firefox")
+        ing._sync_ingest("firefox")
+
+        assert calls == []
+
+    def test_assignment_failure_leaves_sync_successful(self, monkeypatch):
+        """Clustering is a view over the archive: its failure is not the sync's."""
+        from pka.api.routers import ingestion as ing
+        from pka.ingestion import progress as sp
+
+        self._stub_ingest(monkeypatch, {"embed": {}})
+        self._spy_assignment(monkeypatch, boom=True)
+
+        sp.reset("firefox")
+        ing._sync_ingest("firefox")
+
+        snap = sp.snapshot("firefox")["firefox"]
+        assert snap["status"] == "done"
+        assert snap.get("error") is None
+
     def test_sync_progress_unknown_source_400(self, client):
         r = client.get("/ingestion/sync/progress?source=invalid")
         assert r.status_code == 400
