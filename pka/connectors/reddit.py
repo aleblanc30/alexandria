@@ -225,13 +225,65 @@ def _save_failed_body(response, base: str) -> Path | None:
     return path
 
 
+class _VisibleText(HTMLParser):
+    """Text a browser would render, dropping ``<script>``/``<style>``/``<head>``.
+
+    A block page's actual explanation ("You've been blocked by network
+    security.") sits behind a wall of inlined CSS custom properties that can
+    run to hundreds of KB — the first 200 characters of the raw body are all
+    stylesheet, never the sentence a person would read. Distinct from
+    ``_HtmlText`` above, which parses Reddit's own atom content and never
+    meets those tags.
+    """
+
+    _SKIP_TAGS = {"script", "style", "head"}
+    _BLOCK_TAGS = {"div", "p", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self._SKIP_TAGS:
+            self._skip_depth += 1
+        elif tag in self._BLOCK_TAGS and not self._skip_depth:
+            # Adjacent <div>s carry no whitespace between them in the markup;
+            # without this, sentences from separate block elements fuse into one.
+            self.parts.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag in self._SKIP_TAGS and self._skip_depth:
+            self._skip_depth -= 1
+
+    def handle_data(self, data):
+        if not self._skip_depth:
+            self.parts.append(data)
+
+    @property
+    def text(self) -> str:
+        return " ".join("".join(self.parts).split())
+
+
+def _html_to_text(html: str) -> str:
+    parser = _VisibleText()
+    try:
+        parser.feed(html)
+        parser.close()
+    except Exception:  # pragma: no cover - malformed block-page markup
+        return ""
+    return parser.text
+
+
 def _body_excerpt(response, limit: int = 200) -> str:
     """First bytes of a failed response — the only way to tell the cases apart.
 
     Reddit's bot protection answers with the bare word "Blocked" while a
     rejected token answers with a JSON error document, and the status code is
-    403 either way. Truncated because an HTML block page is long and says
-    nothing more after its first line.
+    403 either way. An HTML body is reduced to its visible text first, since
+    the raw markup opens on styling, not the message. Truncated either way
+    because an HTML block page's rendered text is still long and says nothing
+    more after its first line.
     """
     try:
         body = (response.text or "").strip()
@@ -239,7 +291,11 @@ def _body_excerpt(response, limit: int = 200) -> str:
         return "<unreadable>"
     if not body:
         return "<empty body>"
+    if body[:1] == "<" or "<html" in body[:200].lower():
+        body = _html_to_text(body) or body
     body = " ".join(body.split())
+    if not body:
+        return "<empty body>"
     return f"{body[:limit]}…" if len(body) > limit else body
 
 

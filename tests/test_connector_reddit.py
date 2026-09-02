@@ -158,6 +158,30 @@ class TestFeedBlockMitigations:
         )
         assert '"error": 403' in message
 
+    def test_403_with_html_body_quotes_visible_text_not_markup(self, feed_http):
+        """The real message sits behind a wall of inlined CSS; quote the text, not the wall."""
+        calls, pages = feed_http
+        page = (
+            "<html><head><style>"
+            + ("--rem360:22.5rem;" * 200)
+            + "</style></head><body>"
+            "<div>You've been blocked by network security.</div>"
+            "<div>File a ticket.</div>"
+            "</body></html>"
+        )
+        pages.append(_FakeResponse(page, status_code=403))
+
+        message = str(
+            pytest.raises(
+                RedditConnectorError,
+                load_saved,
+                url=FEED_URL,
+                limit=None,
+            ).value
+        )
+        assert "You've been blocked by network security. File a ticket." in message
+        assert "--rem360" not in message  # the stylesheet, not the sentence
+
     def test_long_block_page_is_truncated(self, feed_http):
         calls, pages = feed_http
         pages.append(_FakeResponse("x" * 5000, status_code=403))
