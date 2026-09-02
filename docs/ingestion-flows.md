@@ -490,7 +490,10 @@ The hybrid. Metadata comes from the private Atom feed; the ingest phase then
 **forks on `external_url`** — link posts go through the shared Firefox fetcher,
 self-posts and comments are embedded from their inline body. It is the only
 source that archives every upstream response before parsing it, and the only one
-that passes `material` / `context` to the summariser.
+that passes `material` / `context` to the summariser. That archive also feeds
+ingestion: every metadata sync replays the items `saved.jsonl` holds but the
+database does not *before* the walk, and those ids stop the walk too, so the
+feed is asked only for what neither store has.
 
 ```mermaid
 flowchart TD
@@ -499,7 +502,9 @@ flowchart TD
     KNOWN["document_index(REDDIT) → known ids"]
     MODE{"from_archive?"}
     ARCH["load_saved_from_archive()<br/>data/reddit/saved.jsonl — no network"]
-    FEED["load_saved(known_ids, stop_on_known=not backfill)<br/>connectors/reddit.py"]
+    BACK["_archive_backlog(known)<br/>archived items with no document row — no network"]
+    FEED["load_saved(known_ids ∪ backlog ids, stop_on_known=not backfill)<br/>connectors/reddit.py"]
+    MERGE["polled + backlog not repolled<br/>(polled copy wins on overlap)"]
     ATOM["saved.rss Atom feed<br/>paged: last entry fullname becomes the cursor"]
     NET(["reddit.com"])
     THROT["_throttle_poll() between pages"]
@@ -509,10 +514,11 @@ flowchart TD
 
     START --> INIT --> KNOWN --> MODE
     MODE -->|yes| ARCH --> TAKE
-    MODE -->|no| FEED --> ATOM --> NET
+    MODE -->|no| BACK --> FEED --> ATOM --> NET
     ATOM --> THROT
     ATOM --> POLLA
-    ATOM --> PARSE --> TAKE
+    ATOM --> PARSE --> MERGE --> TAKE
+    BACK --> MERGE
 
     PEND["_pending_count(saved, known)<br/>computed locally — status polls never hit the API"]
     BEGIN["sp.begin_metadata_sync('reddit', …)"]
@@ -592,7 +598,7 @@ flowchart TD
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
     class START,INIT,KNOWN,TAKE,BEGIN,MLOOP,INSDOC,COLL,FULL,ING,CORPUS,Q,NQ,SKIPF,SETF,FAE,POOL,PERSIST,COMPOSE,BF,SETE,ELOOP,CARD,BI,TAIL shared
-    class MODE,ARCH,FEED,THROT,POLLA,PARSE,PEND,MRUN,FSTAT,RITEM,RELOAD,FORK,EMBEDF,ERUN,RFIELDS specific
+    class MODE,ARCH,BACK,FEED,MERGE,THROT,POLLA,PARSE,PEND,MRUN,FSTAT,RITEM,RELOAD,FORK,EMBEDF,ERUN,RFIELDS specific
     class ATOM,NET,NETX external
     class SUMF,SUMI,LLM gated
     class SQLITE,CHROMA,JSONL store

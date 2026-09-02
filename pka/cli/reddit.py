@@ -13,6 +13,10 @@ Requires the saved-links feed URL from https://www.reddit.com/prefs/feeds/ in
 Every poll is written to ``data/reddit/<timestamp>/`` (raw Atom pages plus a
 manifest) and merged into ``data/reddit/saved.jsonl``; ``--from-archive`` reads
 that log back when the feed is no longer reachable.
+
+An ordinary run reads it too: anything the log holds that the database does not
+is ingested off disk before the walk, and counts as already-seen for it, so the
+feed is polled only for what neither store has.
 """
 
 from __future__ import annotations

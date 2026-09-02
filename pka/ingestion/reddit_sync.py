@@ -3,6 +3,10 @@
 Unlike file-based sources, ``count_pending_metadata`` / ``source_corpus_size``
 do not probe Reddit on status polls (that would hit the API). The metadata job
 computes its own pending count from the freshly loaded saved list instead.
+
+For the same reason the local poll archive is an ingestion route, not only a
+backup: the metadata job replays ``data/reddit/saved.jsonl``'s backlog before it
+walks the feed, so nothing already on disk has to be asked for again.
 """
 
 import asyncio
@@ -30,6 +34,21 @@ _EMPTY_FETCH = {"fetched": 0, "skipped": 0, "unfetchable": 0}
 
 def _pending_count(saved: list[RedditSaved], known: set[str]) -> int:
     return sum(1 for s in saved if s.source_id not in known)
+
+
+def _archive_backlog(known: set[str]) -> list[RedditSaved]:
+    """Archived items that no document row covers yet.
+
+    Every poll already writes what it saw to ``data/reddit/saved.jsonl``, so a
+    gap between the archive and the database — a run that died between the poll
+    and the write, or a rebuilt database — can be closed off disk. Replaying it
+    before the walk also lets those ids act as the walk's stop signal, so the
+    feed is asked only for what neither the database nor the archive holds.
+    """
+    backlog = [s for s in load_saved_from_archive(limit=None) if s.source_id not in known]
+    if backlog:
+        log.info("Reddit archive backlog: %d item(s) replayed from saved.jsonl", len(backlog))
+    return backlog
 
 
 def _load_saved_from_db() -> list[RedditSaved]:
@@ -71,16 +90,28 @@ def sync_reddit_metadata(
 
     ``from_archive=True`` replays ``data/reddit/saved.jsonl`` instead of polling,
     which is how a rebuilt database is refilled once the feed is unreachable.
+    Even without it, anything the archive holds that the database does not is
+    replayed first and counts as already-seen for the walk — see
+    :func:`_archive_backlog`.
     """
     init_db()
     key = progress_key or "reddit"
     known = set(document_index(Source.REDDIT))
-    saved = take(
-        load_saved_from_archive()
-        if from_archive
-        else load_saved(known_ids=known, stop_on_known=not backfill),
-        Source.REDDIT,
-    )
+    if from_archive:
+        saved = take(load_saved_from_archive(), Source.REDDIT)
+    else:
+        backlog = _archive_backlog(known)
+        polled = load_saved(
+            known_ids=known | {s.source_id for s in backlog},
+            stop_on_known=not backfill,
+        )
+        # A backfill walk ignores the stop signal, so the feed can hand back an
+        # item the backlog also holds; the polled copy is the fresher one.
+        polled_ids = {s.source_id for s in polled}
+        saved = take(
+            polled + [s for s in backlog if s.source_id not in polled_ids],
+            Source.REDDIT,
+        )
     baseline = archive_document_count(Source.REDDIT)
     pending = _pending_count(saved, known)
     sp.begin_metadata_sync(key, pending, baseline)

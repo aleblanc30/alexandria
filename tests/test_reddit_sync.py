@@ -381,3 +381,59 @@ def test_metadata_can_be_replayed_from_the_archive(monkeypatch, reddit_saved_ite
         "t3_linkpost",
         "t1_comment1",
     }
+
+
+def test_metadata_replays_the_archive_backlog_before_polling(
+    monkeypatch, reddit_saved_items, mock_chroma
+):
+    """Items the archive holds but the database does not are ingested off disk."""
+    from dataclasses import asdict
+
+    from pka.connectors import reddit_archive
+
+    reddit_archive.record_items([asdict(item) for item in reddit_saved_items])
+
+    stop_sets: list[set[str]] = []
+
+    def _empty_feed(*a, **k):
+        stop_sets.append(set(k.get("known_ids") or ()))
+        return []
+
+    monkeypatch.setattr(rs, "load_saved", _empty_feed)
+
+    stats = rs.sync_reddit_metadata()
+
+    assert stats["metadata"]["processed"] == 3
+    assert set(document_index(Source.REDDIT)) == {
+        "t3_selfpost",
+        "t3_linkpost",
+        "t1_comment1",
+    }
+    # The backlog ids stop the walk too, so the feed is not asked for them.
+    assert stop_sets == [{"t3_selfpost", "t3_linkpost", "t1_comment1"}]
+
+
+def test_backfill_prefers_the_polled_copy_over_the_archived_one(
+    monkeypatch, reddit_saved_items, mock_chroma
+):
+    """A backfill walk ignores the stop signal, so the two lists can overlap."""
+    from dataclasses import asdict, replace
+
+    from pka.connectors import reddit_archive
+
+    reddit_archive.record_items([asdict(item) for item in reddit_saved_items])
+    fresh = [replace(item, title=f"{item.title} (edited)") for item in reddit_saved_items]
+    monkeypatch.setattr(rs, "load_saved", lambda *a, **k: list(fresh))
+
+    stats = rs.sync_reddit_metadata(backfill=True)
+
+    assert stats["metadata"]["processed"] == 3
+    with get_engine().connect() as con:
+        titles = set(
+            con.execute(
+                sa.select(documents.c.title).where(documents.c.source == str(Source.REDDIT))
+            )
+            .scalars()
+            .all()
+        )
+    assert all(t.endswith("(edited)") for t in titles)
