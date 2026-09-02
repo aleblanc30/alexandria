@@ -315,6 +315,49 @@ class TestOpenAICompatChat:
         assert data == {}
         assert "boom" in err
 
+    def test_missing_choices_key_returns_diagnosable_error(self, monkeypatch, caplog):
+        """OpenRouter can return 200 OK with no ``choices`` key (seen for a free
+        model); this must surface the response's own error detail, not a bare
+        KeyError('choices')."""
+
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"error": {"message": "model temporarily unavailable"}}
+
+        monkeypatch.setattr("pka.providers.openai_compat.httpx.post", lambda *a, **k: FakeResp())
+        p = OpenAICompatChatProvider(
+            base_url="https://host/v1", api_key="k", model="m1", label="openrouter"
+        )
+
+        with caplog.at_level("WARNING"):
+            data, err = p.chat_json("prompt")
+
+        assert data == {}
+        assert "model temporarily unavailable" in err
+        assert "model temporarily unavailable" in caplog.text
+
+    def test_missing_choices_key_with_no_error_field_still_diagnosable(self, monkeypatch):
+        """Even with no ``error`` field, the raw body must appear in the error
+        so an unexpected response shape is still debuggable."""
+
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"id": "gen-123", "choices": []}
+
+        monkeypatch.setattr("pka.providers.openai_compat.httpx.post", lambda *a, **k: FakeResp())
+        p = OpenAICompatChatProvider(base_url="https://host/v1", api_key="k", model="m1")
+
+        data, err = p.chat_json("prompt")
+
+        assert data == {}
+        assert "gen-123" in err
+
 
 # ── OpenAI-compatible vision ──────────────────────────────────────────────────
 

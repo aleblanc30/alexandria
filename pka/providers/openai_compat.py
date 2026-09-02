@@ -66,7 +66,19 @@ class OpenAICompatChatProvider:
             )
             resp.raise_for_status()
             body = resp.json()
-            content = body["choices"][0]["message"]["content"]
+            choices = body.get("choices")
+            if not choices:
+                # Some OpenAI-compatible backends (seen on OpenRouter's free
+                # models) return 200 OK with no ``choices`` — an embedded error
+                # or an empty list — instead of an HTTP error status. Surface
+                # the body itself rather than let a bare KeyError('choices')
+                # reach the caller with no way to tell what actually happened.
+                detail = body.get("error", body)
+                log.warning(
+                    "%s chat returned no choices (model=%s): %s", self.label, chosen, detail
+                )
+                return {}, f"No choices returned by model {chosen}: {detail}"
+            content = choices[0]["message"]["content"]
             if not content or not content.strip():
                 return {}, f"Empty response from model {chosen}"
             return parse_llm_json(content), None
