@@ -25,6 +25,7 @@ import sqlalchemy as sa
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import normalize
 
+from pka.clustering.doc_embeddings import embedding_to_blob
 from pka.clustering.run_progress import ClusterRunCancelled, raise_if_cancelled
 from pka.config import settings as cfg
 from pka.db.queries import (
@@ -870,6 +871,21 @@ def set_run_status(run_id: int, status: str, *, notes: str | None = None) -> Non
         con.execute(cluster_runs.update().where(cluster_runs.c.run_id == run_id).values(**values))
 
 
+def _cluster_centroid_blob(
+    matrix: np.ndarray | None,
+    doc_index: dict[int, int] | None,
+    member_doc_ids: list[int],
+) -> bytes | None:
+    """Mean-pooled embedding of ``member_doc_ids``, or ``None`` when unavailable."""
+    if matrix is None or doc_index is None:
+        return None
+    rows = [doc_index[d] for d in member_doc_ids if d in doc_index]
+    if not rows:
+        return None
+    mean_vec = matrix[rows].mean(axis=0)
+    return embedding_to_blob(mean_vec)
+
+
 def _write_hierarchical_clusters(
     con,
     run_id: int,
@@ -879,10 +895,13 @@ def _write_hierarchical_clusters(
     l1_desc_map: dict[int, str],
     l2_batches: list[L2ClusterBatch],
     now: int,
+    *,
+    matrix: np.ndarray | None = None,
+    doc_index: dict[int, int] | None = None,
 ) -> tuple[int, int, int]:
     """Persist L1/L2 clusters and assignments. Returns (n_l1, n_l2, n_assignments)."""
 
-    def _insert_cluster(label, description, level, parent_cluster_id):
+    def _insert_cluster(label, description, level, parent_cluster_id, centroid):
         res = con.execute(
             clusters.insert().values(
                 label=label,
@@ -891,6 +910,7 @@ def _write_hierarchical_clusters(
                 run_id=run_id,
                 level=level,
                 parent_cluster_id=parent_cluster_id,
+                centroid=centroid,
             )
         )
         return res.inserted_primary_key[0]
@@ -912,12 +932,14 @@ def _write_hierarchical_clusters(
             )
 
     l1_unique = sorted(set(l1_labels.tolist()) - {-1})
+    l1_cluster_docs = _build_cluster_docs(doc_ids, l1_labels)
     l1_db_ids: dict[int, int] = {
         cid: _insert_cluster(
             l1_label_map.get(cid, f"Cluster {cid}"),
             l1_desc_map.get(cid, ""),
             1,
             None,
+            _cluster_centroid_blob(matrix, doc_index, l1_cluster_docs.get(cid, [])),
         )
         for cid in l1_unique
     }
@@ -931,6 +953,7 @@ def _write_hierarchical_clusters(
         if parent_db_id is None:
             continue
         l2_unique = sorted(set(batch.labels.tolist()) - {-1})
+        l2_cluster_docs = _build_cluster_docs(batch.doc_ids, batch.labels)
         l2_db_ids: dict[int, int] = {}
         for l2_cid in l2_unique:
             l2_db_ids[l2_cid] = _insert_cluster(
@@ -938,6 +961,7 @@ def _write_hierarchical_clusters(
                 batch.desc_map.get(l2_cid, ""),
                 2,
                 parent_db_id,
+                _cluster_centroid_blob(matrix, doc_index, l2_cluster_docs.get(l2_cid, [])),
             )
             n_l2 += 1
 
@@ -1101,11 +1125,13 @@ def _commit_run(
     umap_2d: np.ndarray,
     *,
     verb: str,
+    matrix: np.ndarray | None = None,
 ) -> int:
     """Insert/update the run row (via ``write_run_row``) and write its clusters."""
     eng = get_engine()
     now = int(time.time())
     umap_records = _build_umap_records(doc_ids, l1_labels, umap_2d)
+    doc_index = {did: i for i, did in enumerate(doc_ids)} if matrix is not None else None
 
     with eng.begin() as con:
         run_id = write_run_row(con, now, umap_records)
@@ -1118,6 +1144,8 @@ def _commit_run(
             l1_desc_map,
             l2_batches,
             now,
+            matrix=matrix,
+            doc_index=doc_index,
         )
 
     log.info(
@@ -1142,6 +1170,8 @@ def _finalize_run(
     algorithm: str,
     params: dict,
     umap_2d: np.ndarray,
+    *,
+    matrix: np.ndarray | None = None,
 ) -> None:
     """Fill in a placeholder run row created at trigger time."""
 
@@ -1169,6 +1199,7 @@ def _finalize_run(
         l2_batches,
         umap_2d,
         verb="Finalized",
+        matrix=matrix,
     )
 
 
@@ -1181,6 +1212,8 @@ def _persist_run(
     algorithm: str,
     params: dict,
     umap_2d: np.ndarray,
+    *,
+    matrix: np.ndarray | None = None,
 ) -> int:
     """Write ``cluster_runs``, ``clusters``, and ``cluster_assignments``."""
 
@@ -1206,6 +1239,7 @@ def _persist_run(
         l2_batches,
         umap_2d,
         verb="Persisted",
+        matrix=matrix,
     )
 
 
@@ -1537,6 +1571,7 @@ def run_clustering(
             algorithm=algorithm,
             params=params,
             umap_2d=reduced_2d,
+            matrix=matrix,
         )
         persisted_id = run_id
     else:
@@ -1549,6 +1584,7 @@ def run_clustering(
             algorithm=algorithm,
             params=params,
             umap_2d=reduced_2d,
+            matrix=matrix,
         )
 
     if defer_llm:

@@ -122,7 +122,11 @@ def list_runs(engine=Depends(get_engine)):
 
 @router.get("/{run_id}/diagnostics", response_model=DiagnosticsOut)
 def run_diagnostics(run_id: int, engine=Depends(get_engine)):
-    from pka.clustering.lifecycle import compute_drift, compute_merge_suggestions
+    from pka.clustering.lifecycle import (
+        _get_cluster_centroids,
+        compute_drift,
+        compute_merge_suggestions,
+    )
 
     with engine.connect() as con:
         _require_run(con, run_id)
@@ -134,13 +138,14 @@ def run_diagnostics(run_id: int, engine=Depends(get_engine)):
         ).fetchall()
         sizes = {str(r[0]): r[1] for r in cluster_rows}
         n_noise = _n_noise(con, run_id)
+    centroids = _get_cluster_centroids(run_id, level=1)
     return DiagnosticsOut(
         run_id=run_id,
         n_clusters=len(sizes),
         n_noise=n_noise,
         cluster_sizes=sizes,
-        drift_flags=compute_drift(run_id),
-        merge_suggestions=compute_merge_suggestions(run_id),
+        drift_flags=compute_drift(run_id, centroids=centroids),
+        merge_suggestions=compute_merge_suggestions(run_id, centroids=centroids),
     )
 
 

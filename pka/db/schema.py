@@ -155,6 +155,7 @@ clusters = sa.Table(
         sa.Integer,
         sa.ForeignKey("clusters.cluster_id"),
     ),
+    sa.Column("centroid", sa.LargeBinary),  # mean-pooled 384-d float32 blob
 )
 
 cluster_runs = sa.Table(

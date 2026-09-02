@@ -413,6 +413,104 @@ class TestAcceptRejectRun:
         assert get_active_run_id() is None
 
 
+# ── persisted cluster centroids ───────────────────────────────────────────────
+
+
+class TestClusterCentroids:
+    def test_l1_and_l2_centroids_written(self, populated):
+        from pka.clustering.engine import run_clustering
+
+        result = run_clustering(min_cluster_size=2)
+        with get_engine().connect() as con:
+            rows = con.execute(
+                sa.select(clusters.c.centroid).where(clusters.c.run_id == result.run_id)
+            ).fetchall()
+        assert rows
+        assert all(r[0] is not None for r in rows)
+
+    def test_centroid_matches_mean_of_member_embeddings(self, monkeypatch):
+        from pka.clustering.doc_embeddings import blob_to_embedding
+        from pka.clustering.engine import run_clustering
+
+        doc_ids = _seed_documents(N_DOCS)
+        store, _col = _mock_chroma_with_docs(monkeypatch, doc_ids)
+        _mock_umap(monkeypatch)
+        _mock_hdbscan(monkeypatch, N_DOCS, n_clusters=4)
+        _mock_llm(monkeypatch)
+        emb_by_doc = {v["meta"]["document_id"]: np.array(v["embedding"]) for v in store.values()}
+
+        result = run_clustering(min_cluster_size=2)
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(clusters.c.cluster_id, clusters.c.centroid).where(
+                    (clusters.c.run_id == result.run_id) & (clusters.c.level == 1)
+                )
+            ).fetchone()
+            cluster_id, blob = row
+            member_ids = [
+                r[0]
+                for r in con.execute(
+                    sa.select(cluster_assignments.c.document_id).where(
+                        (cluster_assignments.c.cluster_id == cluster_id)
+                        & (cluster_assignments.c.level == 1)
+                    )
+                ).fetchall()
+            ]
+
+        expected = np.mean([emb_by_doc[d] for d in member_ids], axis=0).astype(np.float32)
+        np.testing.assert_allclose(blob_to_embedding(blob), expected, rtol=1e-5, atol=1e-6)
+
+    def test_get_cluster_centroids_uses_persisted_value_without_chroma_call(self, populated):
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.lifecycle import _get_cluster_centroids
+
+        result = run_clustering(min_cluster_size=2)
+
+        from pka.storage import vector_store as vs
+
+        col = vs.get_collection()
+        call_count_before = col.get.call_count
+        centroids = _get_cluster_centroids(result.run_id, level=1)
+        assert col.get.call_count == call_count_before
+        assert centroids
+
+    def test_legacy_run_without_centroids_falls_back_and_backfills(self, populated):
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.lifecycle import _get_cluster_centroids
+
+        result = run_clustering(min_cluster_size=2)
+        # Simulate a pre-migration run: no persisted centroids.
+        with get_engine().begin() as con:
+            con.execute(
+                clusters.update().where(clusters.c.run_id == result.run_id).values(centroid=None)
+            )
+
+        centroids = _get_cluster_centroids(result.run_id, level=1)
+        assert centroids
+
+        with get_engine().connect() as con:
+            rows = con.execute(
+                sa.select(clusters.c.centroid).where(
+                    (clusters.c.run_id == result.run_id) & (clusters.c.level == 1)
+                )
+            ).fetchall()
+        assert all(r[0] is not None for r in rows)
+
+    def test_purge_leaves_no_centroid_rows(self, populated):
+        from pka.cli.purge_cluster_runs import purge_cluster_run
+        from pka.clustering.engine import run_clustering
+
+        result = run_clustering(min_cluster_size=2)
+        purge_cluster_run(result.run_id)
+        with get_engine().connect() as con:
+            count = con.execute(
+                sa.select(sa.func.count())
+                .select_from(clusters)
+                .where(clusters.c.run_id == result.run_id)
+            ).scalar()
+        assert count == 0
+
+
 # ── lifecycle.compute_drift ───────────────────────────────────────────────────
 
 

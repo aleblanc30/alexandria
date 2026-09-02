@@ -140,6 +140,8 @@ def init_db() -> None:
                     "REFERENCES clusters(cluster_id)"
                 )
             )
+        if cl_cols and "centroid" not in cl_cols:
+            con.execute(sa.text("ALTER TABLE clusters ADD COLUMN centroid BLOB"))
 
         ca_cols = [
             r[1] for r in con.execute(sa.text("PRAGMA table_info(cluster_assignments)")).fetchall()

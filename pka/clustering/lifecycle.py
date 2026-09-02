@@ -105,14 +105,41 @@ def _doc_mean_embeddings(doc_ids: list[int]) -> dict[int, np.ndarray]:
     return {did: np.mean(v, axis=0).astype(np.float32) for did, v in doc_vecs.items()}
 
 
-def _get_cluster_centroids(
+def load_persisted_centroids(run_id: int, level: int = 1) -> dict[int, np.ndarray]:
+    """{db_cluster_id: centroid} from ``clusters.centroid``; null rows omitted."""
+    from pka.clustering.doc_embeddings import blob_to_embedding
+
+    eng = get_engine()
+    with eng.connect() as con:
+        rows = con.execute(
+            sa.select(clusters.c.cluster_id, clusters.c.centroid).where(
+                (clusters.c.run_id == run_id) & (clusters.c.level == level)
+            )
+        ).fetchall()
+    return {cid: blob_to_embedding(blob) for cid, blob in rows if blob is not None}
+
+
+def _backfill_centroids(centroids: dict[int, np.ndarray]) -> None:
+    """Persist recomputed centroids for a legacy (pre-migration) run."""
+    from pka.clustering.doc_embeddings import embedding_to_blob
+
+    if not centroids:
+        return
+    eng = get_engine()
+    with eng.begin() as con:
+        for cid, vec in centroids.items():
+            con.execute(
+                clusters.update()
+                .where(clusters.c.cluster_id == cid)
+                .values(centroid=embedding_to_blob(vec))
+            )
+
+
+def _compute_cluster_centroids(
     run_id: int,
     level: int | None = None,
 ) -> dict[int, np.ndarray]:
-    """
-    Compute mean embedding per cluster for the given run.
-    Returns {db_cluster_id: centroid_vector}.
-    """
+    """Recompute mean embedding per cluster from Chroma (the pre-persistence path)."""
     eng = get_engine()
     with eng.connect() as con:
         q = sa.select(
@@ -139,6 +166,42 @@ def _get_cluster_centroids(
         if vecs:
             centroids[cid] = np.mean(vecs, axis=0).astype(np.float32)
 
+    return centroids
+
+
+def _doc_mean_embeddings_cached(doc_ids: list[int]) -> dict[int, np.ndarray]:
+    """Mean-pooled document embeddings, preferring ``documents.doc_embedding``.
+
+    Falls back to Chroma (:func:`_doc_mean_embeddings`) only for the ids the
+    SQLite cache doesn't have.
+    """
+    from pka.clustering.doc_embeddings import load_cached_embeddings
+
+    if not doc_ids:
+        return {}
+    found, missing = load_cached_embeddings(doc_ids)
+    if missing:
+        found.update(_doc_mean_embeddings(missing))
+    return found
+
+
+def _get_cluster_centroids(
+    run_id: int,
+    level: int = 1,
+) -> dict[int, np.ndarray]:
+    """
+    Mean embedding per cluster for the given run and level.
+
+    Prefers ``clusters.centroid`` (persisted at run time); falls back to
+    recomputing from Chroma only for a run with no persisted centroids at
+    all (pre-migration), backfilling the column so the cost is paid once.
+    Returns {db_cluster_id: centroid_vector}.
+    """
+    persisted = load_persisted_centroids(run_id, level=level)
+    if persisted:
+        return persisted
+    centroids = _compute_cluster_centroids(run_id, level=level)
+    _backfill_centroids(centroids)
     return centroids
 
 
@@ -215,7 +278,7 @@ def assign_new_docs(run_id: int | None = None) -> dict:
     now = int(time.time())
     assignment_rows = []
 
-    doc_means = _doc_mean_embeddings(unassigned)
+    doc_means = _doc_mean_embeddings_cached(unassigned)
     for doc_id in unassigned:
         doc_vec = doc_means.get(doc_id)
         if doc_vec is None:
@@ -263,11 +326,18 @@ def assign_new_docs(run_id: int | None = None) -> dict:
 # ── Drift detection ───────────────────────────────────────────────────────────
 
 
-def compute_drift(run_id: int | None = None) -> list[dict]:
+def compute_drift(
+    run_id: int | None = None,
+    *,
+    centroids: dict[int, np.ndarray] | None = None,
+) -> list[dict]:
     """
     For each cluster in the active run, compute a drift score:
     mean cosine distance of documents added *after* the run timestamp
     from the cluster centroid.
+
+    ``centroids`` lets a caller that already loaded them (e.g. alongside
+    :func:`compute_merge_suggestions`) skip a second load.
 
     Returns a list of dicts sorted by drift score descending:
       [{cluster_id, label, drift_score, n_recent, flagged}, ...]
@@ -293,7 +363,8 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
         ).fetchall()
         label_map = {r[0]: r[1] for r in label_rows}
 
-    centroids = _get_cluster_centroids(active_run, level=1)
+    if centroids is None:
+        centroids = _get_cluster_centroids(active_run, level=1)
     results = []
 
     # One query for all recent level-1 assignments, then one batched
@@ -315,7 +386,7 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
             recent_by_cluster.setdefault(cid, []).append(did)
 
     all_recent = [d for ids in recent_by_cluster.values() for d in ids]
-    doc_means = _doc_mean_embeddings(all_recent) if all_recent else {}
+    doc_means = _doc_mean_embeddings_cached(all_recent) if all_recent else {}
 
     for cid, centroid in centroids.items():
         recent_ids = recent_by_cluster.get(cid, [])
@@ -364,9 +435,17 @@ def compute_drift(run_id: int | None = None) -> list[dict]:
 # ── Merge detection ───────────────────────────────────────────────────────────
 
 
-def compute_merge_suggestions(run_id: int | None = None) -> list[dict]:
+def compute_merge_suggestions(
+    run_id: int | None = None,
+    *,
+    centroids: dict[int, np.ndarray] | None = None,
+) -> list[dict]:
     """
     Compute pairwise cosine similarity between cluster centroids.
+
+    ``centroids`` lets a caller that already loaded them (e.g. alongside
+    :func:`compute_drift`) skip a second load.
+
     Returns pairs above MERGE_THRESHOLD, sorted by similarity descending:
       [{cluster_id_a, label_a, cluster_id_b, label_b, similarity}, ...]
     """
@@ -374,7 +453,8 @@ def compute_merge_suggestions(run_id: int | None = None) -> list[dict]:
     if active_run is None:
         return []
 
-    centroids = _get_cluster_centroids(active_run, level=1)
+    if centroids is None:
+        centroids = _get_cluster_centroids(active_run, level=1)
     if len(centroids) < 2:
         return []
 
