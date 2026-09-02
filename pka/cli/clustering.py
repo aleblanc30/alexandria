@@ -8,6 +8,8 @@ Usage::
     alexandria clustering --async-labelling # TF-IDF first, LLM in background
     alexandria clustering --incremental     # assign new docs to the active run
     alexandria clustering --cluster-space legacy_umap
+    alexandria clustering --cluster-space agglomerative --linkage ward
+    alexandria clustering --cluster-space agglomerative --n-clusters 12
     alexandria clustering --min-cluster-size 10 --n-neighbors 20
     alexandria clustering --assign-new      # assign unassigned docs only
     alexandria clustering --drift           # print drift report
@@ -48,7 +50,32 @@ def main(argv: list[str] | None = None) -> int:
         help="Legacy UMAP clustering dims (cluster-space=legacy_umap)",
     )
     parser.add_argument("--pca-components", type=int, default=None)
-    parser.add_argument("--cluster-space", type=str, default=None, choices=["pca", "legacy_umap"])
+    parser.add_argument(
+        "--cluster-space",
+        type=str,
+        default=None,
+        choices=["pca", "legacy_umap", "agglomerative"],
+    )
+    parser.add_argument(
+        "--linkage",
+        type=str,
+        default=None,
+        choices=["ward", "average", "complete", "single"],
+        help="Agglomerative linkage method (cluster-space=agglomerative)",
+    )
+    k_group = parser.add_mutually_exclusive_group()
+    k_group.add_argument(
+        "--n-clusters",
+        type=int,
+        default=None,
+        help="Explicit L1 cluster count (agglomerative); default is an auto silhouette sweep",
+    )
+    k_group.add_argument(
+        "--distance-threshold",
+        type=float,
+        default=None,
+        help="Cut the agglomerative tree at this distance instead of a fixed count",
+    )
     parser.add_argument("--label-model", type=str, default=None)
     parser.add_argument("--skip-labelling", action="store_true")
     parser.add_argument(
@@ -119,6 +146,9 @@ def main(argv: list[str] | None = None) -> int:
         n_components=args.n_components,
         pca_components=args.pca_components,
         cluster_space=args.cluster_space,
+        linkage=args.linkage,
+        n_clusters=args.n_clusters,
+        distance_threshold=args.distance_threshold,
         label_model=args.label_model,
         skip_labelling=args.skip_labelling,
         async_labelling=args.async_labelling or None,

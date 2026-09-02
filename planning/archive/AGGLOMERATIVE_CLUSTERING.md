@@ -1,6 +1,11 @@
 # Two-level agglomerative clustering
 
-**Status:** revised — not implemented.
+**Status:** implemented (2026-09-02). `cluster_space="agglomerative"` in
+`pka/clustering/engine.py`, wired through `TriggerRunRequest`, the CLI, and
+`ClusterRunDialog.vue`. Tests in `tests/test_clustering.py`
+(`TestRunClusteringAgglomerative`, `TestSplitSubtreeMatchesRebuild`,
+`TestAutoKAgglomerative`, `TestAgglomerativeKCandidates`) and
+`tests/test_api.py`. Archived here per `CLAUDE.md`'s planning-file convention.
 
 **Revision (2026-09-02).** The question raised against the first draft: *does the
 two-level pass re-run agglomerative clustering per L1 group? If so that is wasted

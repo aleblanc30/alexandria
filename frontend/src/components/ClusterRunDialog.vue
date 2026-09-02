@@ -16,6 +16,7 @@
           <select id="crd-method" ref="firstFieldRef" v-model="method">
             <option value="pca">PCA → HDBSCAN</option>
             <option value="legacy_umap">UMAP → HDBSCAN (legacy)</option>
+            <option value="agglomerative">PCA → Agglomerative</option>
           </select>
         </div>
 
@@ -23,7 +24,7 @@
           <label><input type="checkbox" v-model="autoTune" /> Auto-tune parameters</label>
         </div>
 
-        <template v-if="!autoTune">
+        <template v-if="!autoTune && method !== 'agglomerative'">
           <div class="form-field">
             <label for="crd-mcs">Min cluster size</label>
             <input id="crd-mcs" v-model.number="minClusterSize" type="number" min="2" max="1000" />
@@ -38,18 +39,47 @@
           </div>
         </template>
 
+        <template v-if="method === 'agglomerative'">
+          <div class="form-field">
+            <label for="crd-linkage">Linkage</label>
+            <select id="crd-linkage" v-model="linkage">
+              <option value="ward">Ward</option>
+              <option value="average">Average</option>
+              <option value="complete">Complete</option>
+              <option value="single">Single</option>
+            </select>
+          </div>
+          <template v-if="!autoTune">
+            <div class="form-field">
+              <label for="crd-kmode">Cluster count</label>
+              <select id="crd-kmode" v-model="kMode">
+                <option value="count">Fixed count</option>
+                <option value="distance">Distance threshold</option>
+              </select>
+            </div>
+            <div v-if="kMode === 'count'" class="form-field">
+              <label for="crd-nclusters">Number of clusters</label>
+              <input id="crd-nclusters" v-model.number="nClusters" type="number" min="2" max="1000" />
+            </div>
+            <div v-else class="form-field">
+              <label for="crd-distthresh">Distance threshold</label>
+              <input id="crd-distthresh" v-model.number="distanceThreshold" type="number" step="0.01" min="0.001" />
+            </div>
+          </template>
+        </template>
+
         <div class="form-field">
           <label for="crd-mindist">Min distance</label>
           <input id="crd-mindist" v-model.number="minDist" type="number" step="0.01" min="0" max="1" />
         </div>
 
-        <div v-if="method === 'pca'" class="form-field">
-          <label for="crd-pca">PCA components</label>
-          <input id="crd-pca" v-model.number="pcaComponents" type="number" min="2" max="500" placeholder="50 (default)" />
-        </div>
-        <div v-else class="form-field">
+        <div v-if="method === 'legacy_umap'" class="form-field">
           <label for="crd-umapdim">UMAP dims</label>
           <input id="crd-umapdim" v-model.number="nComponents" type="number" min="2" max="50" />
+        </div>
+        <div v-else class="form-field">
+          <label for="crd-pca">PCA components</label>
+          <input id="crd-pca" v-model.number="pcaComponents" type="number" min="2" max="500" placeholder="50 (default)" />
         </div>
 
         <div class="form-field form-field--checkbox">
@@ -89,16 +119,20 @@ const emit = defineEmits<{
   submit: [params: ClusterRunParams]
 }>()
 
-const method          = ref<'pca' | 'legacy_umap'>('pca')
-const autoTune        = ref(true)
-const minClusterSize  = ref<number | undefined>(undefined)
-const minSamples      = ref<number | undefined>(undefined)
-const nNeighbors      = ref<number | undefined>(undefined)
-const minDist         = ref(0.1)
-const pcaComponents   = ref<number | undefined>(undefined)
-const nComponents     = ref(5)
-const skipLabelling   = ref(false)
-const asyncLabelling  = ref(false)
+const method            = ref<'pca' | 'legacy_umap' | 'agglomerative'>('pca')
+const autoTune          = ref(true)
+const minClusterSize    = ref<number | undefined>(undefined)
+const minSamples        = ref<number | undefined>(undefined)
+const nNeighbors        = ref<number | undefined>(undefined)
+const minDist           = ref(0.1)
+const pcaComponents     = ref<number | undefined>(undefined)
+const nComponents       = ref(5)
+const linkage           = ref<'ward' | 'average' | 'complete' | 'single'>('ward')
+const kMode             = ref<'count' | 'distance'>('count')
+const nClusters         = ref<number | undefined>(undefined)
+const distanceThreshold = ref<number | undefined>(undefined)
+const skipLabelling     = ref(false)
+const asyncLabelling    = ref(false)
 
 const panelRef      = ref<HTMLElement | null>(null)
 const firstFieldRef = ref<HTMLSelectElement | null>(null)
@@ -113,6 +147,10 @@ watch(() => props.open, async (isOpen) => {
   minDist.value = 0.1
   pcaComponents.value = undefined
   nComponents.value = 5
+  linkage.value = 'ward'
+  kMode.value = 'count'
+  nClusters.value = undefined
+  distanceThreshold.value = undefined
   skipLabelling.value = false
   asyncLabelling.value = false
   await nextTick()
@@ -140,14 +178,26 @@ function submit() {
     min_dist: minDist.value,
     skip_labelling: skipLabelling.value,
     async_labelling: asyncLabelling.value,
-    min_cluster_size: autoTune.value ? null : (minClusterSize.value ?? null),
-    min_samples: autoTune.value ? null : (minSamples.value ?? null),
-    n_neighbors: autoTune.value ? null : (nNeighbors.value ?? null),
   }
-  if (method.value === 'pca') {
+  if (method.value === 'agglomerative') {
+    params.linkage = linkage.value
+    if (!autoTune.value) {
+      if (kMode.value === 'count') {
+        params.n_clusters = nClusters.value ?? null
+      } else {
+        params.distance_threshold = distanceThreshold.value ?? null
+      }
+    }
     if (pcaComponents.value != null) params.pca_components = pcaComponents.value
   } else {
-    params.n_components = nComponents.value
+    params.min_cluster_size = autoTune.value ? null : (minClusterSize.value ?? null)
+    params.min_samples = autoTune.value ? null : (minSamples.value ?? null)
+    params.n_neighbors = autoTune.value ? null : (nNeighbors.value ?? null)
+    if (method.value === 'pca') {
+      if (pcaComponents.value != null) params.pca_components = pcaComponents.value
+    } else {
+      params.n_components = nComponents.value
+    }
   }
   emit('submit', params)
 }
