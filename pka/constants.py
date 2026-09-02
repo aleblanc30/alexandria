@@ -53,3 +53,18 @@ class TagOrigin(StrEnum):
 
 
 ALL_SOURCES = [s.value for s in Source]
+
+# ── Ports ────────────────────────────────────────────────────────────────────
+# Deliberately different per environment, so a source checkout's dev server
+# never collides with (or, worse, proxies into) a real running production
+# instance:
+#   - PROD_PORT (8420): the installed/production app — README's production
+#     section, scripts/start-server.bat, scripts/stop-server.bat,
+#     scripts/upgrade.ps1. Nothing in `pka` reads this; only the launchers do.
+#   - DEV_PORT (8421): ``alexandria dev`` (read from here by pka/cli/dev.py).
+#     Also hardcoded, because they cannot import this module, in
+#     frontend/vite.config.ts's proxy targets and the uvicorn tasks in
+#     .vscode/tasks.json / .claude/launch.json.
+#   - .vscode/launch.json's debug configs use yet another port, 8000.
+PROD_PORT = 8420
+DEV_PORT = 8421

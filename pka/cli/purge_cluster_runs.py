@@ -22,7 +22,7 @@ from pka.db.schema import cluster_assignments, cluster_runs, clusters
 log = logging.getLogger("purge_cluster_runs")
 
 
-def _run_ids(engine, *, run_id: int | None, all_runs: bool) -> list[dict]:
+def _run_ids(engine, *, run_id: int | None) -> list[dict]:
     with engine.connect() as con:
         q = sa.select(cluster_runs.c.run_id, cluster_runs.c.status, cluster_runs.c.accepted)
         if run_id is not None:
@@ -34,7 +34,7 @@ def _run_ids(engine, *, run_id: int | None, all_runs: bool) -> list[dict]:
 def purge_cluster_run(run_id: int, *, dry_run: bool = False, force: bool = False) -> dict[str, int]:
     """Delete one run and its clusters / assignments."""
     eng = get_engine()
-    rows = _run_ids(eng, run_id=run_id, all_runs=False)
+    rows = _run_ids(eng, run_id=run_id)
     if not rows:
         raise ValueError(f"Run #{run_id} not found")
 
@@ -70,7 +70,7 @@ def purge_cluster_run(run_id: int, *, dry_run: bool = False, force: bool = False
 def purge_all_cluster_runs(*, dry_run: bool = False, force: bool = False) -> dict[str, int]:
     """Delete stored clustering runs; skip accepted and running ones unless ``force``."""
     eng = get_engine()
-    rows = _run_ids(eng, run_id=None, all_runs=True)
+    rows = _run_ids(eng, run_id=None)
     totals: dict[str, int] = {
         "runs": 0,
         "cluster_assignments": 0,

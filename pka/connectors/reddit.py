@@ -444,7 +444,7 @@ def _parse_atom_content(html: str) -> tuple[str, str | None]:
     return parser.text, external
 
 
-def _atom_entry_to_saved(entry, base_netloc: str) -> RedditSaved | None:
+def _atom_entry_to_saved(entry) -> RedditSaved | None:
     """Map one Atom entry to :class:`RedditSaved`.
 
     Atom carries less than the JSON listing: there is no ``is_self`` flag and no
@@ -579,7 +579,6 @@ def load_saved(
         limit = cfg.reddit_saved_limit
 
     base, params = _feed_url(url if url is not None else cfg.reddit_feed_url)
-    netloc = urlsplit(base).netloc
 
     saved: list[RedditSaved] = []
     seen: set[str] = set()
@@ -615,7 +614,7 @@ def load_saved(
             fresh = 0
             reached_known = False
             for entry in entries:
-                item = _atom_entry_to_saved(entry, netloc)
+                item = _atom_entry_to_saved(entry)
                 if item is None or item.source_id in seen:
                     continue
                 if stop_on_known and known_ids and item.source_id in known_ids:

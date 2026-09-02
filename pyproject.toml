@@ -82,7 +82,6 @@ omit   = [
     "pka/db/alembic/*",
     "scripts/*",
     "pka/cli/*",           # thin CLI wrappers around library code (like scripts/)
-    "pka/pipeline.py",
     "pka/db/init_db.py",
 ]
 

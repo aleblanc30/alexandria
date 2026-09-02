@@ -30,9 +30,11 @@ import time
 import webbrowser
 from pathlib import Path
 
+from pka.constants import DEV_PORT
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = REPO_ROOT / "frontend"
-BACKEND_PORT = 8421
+BACKEND_PORT = DEV_PORT
 FRONTEND_URL = "http://localhost:5173"
 STARTUP_TIMEOUT_S = 15.0
 
