@@ -1,7 +1,30 @@
 # Two-level agglomerative clustering
 
-**Status:** needs revision — not implemented.
-**Moivation for revision:** does the 2 level clustering iteratively rerun agglomerative clustering? If so, we are wasting a lot of time, since l2 clustering only requires a cut in an already built tree. We need to evaluate the tradeoff here.
+**Status:** revised — not implemented.
+
+**Revision (2026-09-02).** The question raised against the first draft: *does the
+two-level pass re-run agglomerative clustering per L1 group? If so that is wasted
+work, since L2 is only a cut in a tree we already built.*
+
+Answer: yes, §2.4 as first written re-ran `linkage()` on each group's slice, and
+that is redundant — but not for the reason assumed, and the fix carries a
+consequence worth more than the saved time. §2.4 is rewritten; §6's cost table
+is corrected against a measurement at real corpus size instead of an
+extrapolation. In short:
+
+- Re-running linkage on a group's slice returns the **identical partition** to
+  cutting that group's subtree — verified, ARI = 1.0000 across ward, average and
+  complete linkage. It is not an approximation of the tree cut; it is the same
+  answer computed twice.
+- The time saved is **small**: ~1.7 s of a ~20 s run at 17.9k docs, because L2
+  cost is `Σ nᵢ²` ≈ 8% of `n²`. "Wasting a lot of time" overstates it. Reuse the
+  tree for correctness and simplicity, not for speed.
+- The consequence that actually matters: under one global tree, **L2 is by
+  definition a deeper cut of L1**, so it cannot surface structure the L1 tree
+  did not already contain. That is a real difference from HDBSCAN's L2 (local
+  density re-estimation) and legacy's L2 (local UMAP), both of which recompute
+  something. §5 has to compare like with like, and §2.4 names the one rebuild
+  that would be justified if L2 turns out to be uninformative.
 
 `pka/clustering/engine.py` only ever runs HDBSCAN. `cluster_space` picks the
 *feature space* it runs in (`pca` → PCA 50d, cosine; `legacy_umap` → UMAP → HDBSCAN,
@@ -64,6 +87,15 @@ follows from keeping that tree.
   edge (§4) so a bad combination is a 422, not a `failed` run row with a
   stringified exception in `notes`.
 - **Emits no `-1`.** See §3.
+- **`Z` must escape.** Keeping `_run_hdbscan`'s labels-only return would force
+  §2.4 to rebuild the tree it needs, which is the whole thing the revision
+  removes. Either return `(labels, Z)` and let `_run_agglomerative_pipeline`
+  carry `Z` to the L2 pass, or split the build (`_build_linkage`) from the cut
+  (`_cut_linkage`) and have the pipeline hold `Z` between them. The second is
+  cleaner: §2.2(c)'s sweep is then just repeated `_cut_linkage` calls, and the
+  "build once, cut many times" structure is visible in the function names rather
+  than implied by a comment. Downstream consumers still only ever see a label
+  array, so §1's reuse table is unaffected.
 
 Both scipy and sklearn are already hard dependencies, unlike the `hdbscan` /
 `umap-learn` optional imports.
@@ -100,12 +132,20 @@ The sweep is affordable precisely because of §2.1. Measured on 8,000 synthetic
 50-d points with 14 planted clusters:
 
 ```
-tree built once (ward)                  2.06 s
-sweep of 9 candidate k, silhouette      1.14 s   → picked k=14 (true: 14)
+tree built once (ward)                  3.20 s
+8 candidate cuts (fcluster only)        0.04 s
+silhouette scoring of those 8 cuts      2.23 s   → picked k=16 (true: 14)
 ```
 
-Auto-selection therefore costs roughly one extra tree-build's worth of time and
-recovered the planted count exactly. Notes on making it robust:
+Auto-selection therefore costs a little under one extra tree-build's worth of
+time, and essentially all of it is the *scoring*, not the cutting — the cuts
+themselves are 40 ms of the 2.27 s. (An earlier draft recorded 2.06 s / 1.14 s
+and an exact recovery of k=14. Re-measuring gave the numbers above: slower on
+both counts, and k=16 because the geometric grid `[8,10,12,16,20,25,32,40]` does
+not contain 14 — silhouette picked the nearest candidate above the truth, which
+is the grid's limitation, not a scoring failure. Worth knowing before §7 asserts
+"recovers the planted count": that test only means anything if the planted count
+is *on* the candidate grid.) Notes on making it robust:
 
 - Score with `sklearn.metrics.silhouette_score(..., sample_size=3000,
   random_state=…)`. Silhouette is O(n²) at full size; the `sample_size` argument
@@ -133,8 +173,10 @@ Same shape and return tuple as `_run_pca_pipeline`, so `run_clustering`'s
 if/elif needs one more branch and nothing else:
 
 1. `_run_pca(matrix, pca_components)` — reused verbatim.
-2. `_run_agglomerative(pca_matrix, n_clusters=k, linkage=…)` → L1 labels.
-3. `_run_level2_pass_agglomerative(...)` → L2 batches (§2.4).
+2. Build the tree **once** and cut it → L1 labels; hold `Z` (§2.1).
+3. `_run_level2_pass_agglomerative(..., Z=Z)` → L2 batches by cutting `Z`
+   deeper inside each group (§2.4). `Z` is the only new value threaded through
+   the pipeline.
 4. `_label_l1_clusters(...)` — reused verbatim.
 5. `_run_supervised_umap(pca_matrix, l1_labels, nn, min_dist)` — reused verbatim.
 
@@ -146,19 +188,67 @@ the viz UMAP, and that is still true here.
 `cluster_metric`, and `adaptive` — mirroring `_run_pca_pipeline`'s dict so
 `/runs`' parameters column stays comparable across methods.
 
-### 2.4 L2 via the existing callback seam
+### 2.4 L2 by cutting the tree we already have
 
 `_run_level2_pass_core` takes `compute_l2_labels(member_doc_ids, sub_mcs, sub_ms,
-sub_nn)`. A new `_run_level2_pass_agglomerative` supplies a callback that slices
-the PCA matrix and calls `_run_agglomerative` with a per-group cluster count
-derived from `len(member_doc_ids)`, **ignoring** `sub_ms`/`sub_nn`. The callback
+sub_nn)`. A new `_run_level2_pass_agglomerative` supplies a callback that
+**cuts the L1 tree deeper inside the group**, ignoring `sub_ms`/`sub_nn` and
+using only `len(member_doc_ids)` to pick the per-group count. The callback
 signature does not change — this is precisely the seam
-`_run_level2_pass_legacy` already uses to do something different.
+`_run_level2_pass_legacy` already uses to do something different. The two
+HDBSCAN-flavoured guards in the core still read correctly and should be left
+alone: `n_sub < sub_mcs` skips groups too small to subdivide, and
+`len(l2_unique) < 2` drops a subdivision that produced only one cluster.
 
-Two guards in the core are HDBSCAN-flavoured but read correctly for
-agglomerative too, and should be left alone: `n_sub < sub_mcs` skips groups too
-small to subdivide, and `len(l2_unique) < 2` drops a subdivision that produced
-only one cluster.
+**Why not rebuild.** The first draft sliced the PCA matrix and called
+`_run_agglomerative` again per group. That returns the *same partition* the tree
+cut does, because an `fcluster` flat cluster is a contiguous dendrogram node, and
+ward/average/complete cluster distances are functions only of the merged members
+— so the standalone sub-dendrogram over a group **is** the induced subtree.
+Measured on 3,000 points cut into 12 L1 groups, then each split to `k=4`:
+
+| linkage | L1 build | L2 by rebuild | L2 by tree cut | ARI(rebuild, cut) |
+|---|---|---|---|---|
+| ward | 0.88 s | 68.1 ms | 12.2 ms | **1.0000** |
+| average | 0.81 s | 65.6 ms | 14.0 ms | **1.0000** |
+| complete | 0.69 s | 66.1 ms | 14.0 ms | **1.0000** |
+
+Rebuilding with identical parameters is therefore strictly dominated: same
+answer, more code, more time. But note the size of the win — L2 cost is
+`Σ nᵢ²`, roughly 8% of `n²` for a dozen balanced groups, so at 17.9k docs this
+saves ~1.7 s out of ~20 s (§6). Reuse the tree because it removes a redundant
+code path and makes L1/L2 nesting exact by construction, not because it is fast.
+
+**Implementation.** scipy has no "extract subtree as a linkage matrix" API, and
+none is needed:
+
+1. `leaders(Z, l1_labels)` returns the dendrogram node id backing each flat L1
+   cluster — verified to match the group's member set exactly.
+2. Split that node into `kᵢ` parts with a max-heap on merge height: push the
+   node, repeatedly pop the highest-distance node and push its two children until
+   `kᵢ` pieces remain. That is `fcluster(..., "maxclust")` restricted to the
+   subtree, in ~20 lines and O(kᵢ) per group.
+
+The auto-`k` sweep of §2.2(c) applies per group unchanged, and gets cheaper: the
+candidate cuts are now ~1 ms each, so per-group sweep cost is entirely the
+silhouette scoring.
+
+**Constraint this introduces.** Cutting by height is only meaningful on a
+**monotone** linkage. `ward`, `average`, `complete` and `single` are monotone;
+`centroid` and `median` admit inversions, which break both `fcluster`'s maxclust
+criterion and the heap split. Restrict the `--linkage` / API choices to the
+monotone four (§4) rather than passing scipy's full method list through.
+
+**The one rebuild that would be justified.** Because L2 is now definitionally a
+deeper cut, it cannot find structure the global tree missed. The global 50 PCs
+are chosen to explain *between*-cluster variance; within one L1 cluster, the
+distinctions that matter may live in directions PCA discarded. If §5's
+evaluation shows L2 labels are uninformative, the fix is not "rebuild the tree
+on the same slice" (that changes nothing) but **re-run PCA within the group and
+build a fresh tree in that local space** — the agglomerative analogue of what
+`_run_level2_pass_legacy` does with local UMAP. That costs `Σ nᵢ²` linkage plus a
+small PCA per group and is the only version where the word "re-run" earns its
+keep. Do not build it now; note it as the escape hatch.
 
 ## 3. The one real semantic difference: no noise
 
@@ -192,9 +282,9 @@ agglomerative × legacy_umap cross-product nobody wants.
 | `engine.py` ~44 | `ALGORITHM_AGGLOMERATIVE = "agglomerative-hierarchical"` |
 | `engine.py` `run_clustering` ~1457 | Third branch on `space`; new `linkage` / `n_clusters` / `distance_threshold` kwargs (all `None`-defaulted, so every existing caller is unaffected) |
 | `engine.py` module docstring | It documents the pipeline step-by-step and currently names only two paths |
-| `pka/api/schemas/clusters.py` | `TriggerRunRequest.cluster_space` pattern `^(pca\|legacy_umap\|agglomerative)$`; add `linkage`, `n_clusters` (`ge=2`), `distance_threshold` (`gt=0`); reject *both* being set with a model validator (neither set is legal — that is the §2.2(c) auto sweep) |
+| `pka/api/schemas/clusters.py` | `TriggerRunRequest.cluster_space` pattern `^(pca\|legacy_umap\|agglomerative)$`; add `linkage` (`^(ward\|average\|complete\|single)$` — monotone only, per §2.4), `n_clusters` (`ge=2`), `distance_threshold` (`gt=0`); reject *both* being set with a model validator (neither set is legal — that is the §2.2(c) auto sweep) |
 | `pka/api/routers/runs.py` ~200 | `algorithm = ALGORITHM_LEGACY if … else ALGORITHM_PCA` is a two-way ternary — replace with a `{cluster_space: algorithm}` dict lookup before it grows a third arm |
-| `pka/cli/clustering.py` ~51 | `--cluster-space` `choices` gains `agglomerative`; add `--linkage`, `--n-clusters`, `--distance-threshold`; add a usage line to the docstring |
+| `pka/cli/clustering.py` ~51 | `--cluster-space` `choices` gains `agglomerative`; add `--linkage` (`choices=["ward","average","complete","single"]`), `--n-clusters`, `--distance-threshold`; add a usage line to the docstring |
 | `pka/config.py` ~423 | The `cluster_space` comment lists valid values; add `cluster_linkage: str = "ward"` if a config-level default is wanted |
 | `frontend/src/api/client.ts` | `ClusterRunParams`: widen `cluster_space`, add the three fields |
 | `frontend/src/components/ClusterRunDialog.vue` | Third `<option>`; the PCA-components / UMAP-dims block is currently a binary `v-if`/`v-else` on `method === 'pca'` and needs restructuring into per-method field groups |
@@ -221,6 +311,13 @@ Compare via `/runs` diagnostics plus a scratch script:
   that assigns everything but produces incoherent grab-bag clusters has bought
   coverage with meaninglessness, which the numeric scores above will partly but
   not fully catch.
+- **L2 informativeness — new, and specific to this method.** Per §2.4, L2 here
+  is a deeper cut of the L1 tree, whereas HDBSCAN's L2 re-estimates density
+  locally and legacy's re-runs UMAP locally. So judge agglomerative L2 on its
+  own terms: do the sub-labels name real distinctions, or do they read as
+  arbitrary slices of a coherent parent? If the latter, that is the signal to
+  reach for §2.4's local-PCA escape hatch — not a reason to reject the method at
+  L1, where the coverage argument stands independently.
 - **Runtime**: wall-clock via the existing `_StepTimer` entries.
 
 If agglomerative loses on cohesion at equal cluster counts, the method stays in
@@ -229,17 +326,28 @@ valid outcome, not a failed task.
 
 ## 6. Risk: O(n²) at this corpus size
 
-~17.9k chunked documents. Measured on this machine (scipy 1.17.1, random 50-d
-points, `method="ward"`):
+~17.9k chunked documents. Measured on this machine (random 50-d float32,
+`method="ward"`), **including a direct run at corpus size** rather than the
+earlier extrapolation:
 
-| n | linkage time | condensed `pdist` |
-|---|---|---|
-| 2,000 | 0.10 s | 0.016 GB |
-| 4,000 | 0.46 s | 0.064 GB |
-| 8,000 | 2.19 s | 0.256 GB |
-| **17,879** (extrapolated, n^2.2) | **~11–15 s** | **~1.28 GB** |
+| n | linkage time | `fcluster` cut | condensed `pdist` |
+|---|---|---|---|
+| 4,000 | 0.70 s | 1.0 ms | 0.064 GB |
+| 8,000 | 3.20 s | 1.7 ms | 0.256 GB |
+| **17,879** (measured) | **20–22 s** | **3–4 ms** | **1.28 GB** |
 
-Time is a non-issue — 15 seconds sits well inside a pipeline that already spends
+The first draft extrapolated ~11–15 s at 17.9k from an 8k data point; the real
+figure is ~20 s, so the extrapolation was optimistic by roughly 1.5×. The run
+completed without OOM, which answers the headroom question §6 originally
+deferred — 1.28 GB (`n(n-1)/2` float64, since `pdist` always returns float64) is
+a survivable transient on this machine.
+
+Note the cut column: once `Z` exists, every L1 candidate cut and every L2
+subdivision is milliseconds. That is what makes both the §2.2(c) sweep and
+§2.4's tree reuse essentially free, and it means the whole method costs one
+`linkage()` call.
+
+Time is a non-issue — 20 seconds sits well inside a pipeline that already spends
 minutes on LLM labelling. **Memory is the real constraint**, and it applies to
 *every* linkage method, not just the expensive ones: `scipy.cluster.hierarchy.
 linkage` starts with `y = distance.pdist(y, metric)`, materialising the full
@@ -250,19 +358,22 @@ observation matrix. That is wrong — checked against the scipy source.)
 1.28 GB is a transient allocation on top of the PCA matrix and is survivable, but
 it is the number that decides whether this scales. Consequences:
 
-- **Verify headroom before building anything else.** Run one `linkage()` on the
-  real PCA matrix in a scratch script and watch RSS. The table above is measured
-  at 8k and extrapolated to 17.9k; the extrapolation is the part to confirm.
+- ~~Verify headroom before building anything else.~~ Done — the 17,879-row
+  `linkage()` above ran to completion. Re-check on the real PCA matrix only if
+  the corpus grows materially.
 - It grows quadratically, so a 2× larger archive is ~5 GB and stops fitting.
   That is the point at which this needs a kNN `connectivity` graph (sklearn's
   `AgglomerativeClustering` supports it and makes the problem sparse) — at the
-  cost of giving up the reusable scipy tree that §2.2's auto-`k` depends on.
-  Note the tension now; do not pre-build the mitigation.
+  cost of giving up the reusable scipy tree that §2.2's auto-`k` **and now
+  §2.4's L2** both depend on. That tension is sharper after the revision: the
+  sparse fallback would force L2 back to per-group rebuilds. Note it; do not
+  pre-build the mitigation.
 - A corpus-size guard that refuses with a clear message beats an OOM mid-run.
 
-L2 is cheap regardless: it runs per L1 group, so cost is `Σ nᵢ²` over groups —
-for 12 groups of ~1,500 that is ~2% of the L1 matrix, which is what makes a
-per-group `k` sweep affordable.
+L2 costs nothing at all after the §2.4 revision: it is a heap walk over an
+existing tree, milliseconds per group. (Had it rebuilt per group, cost would be
+`Σ nᵢ²` — ~8% of the L1 matrix for a dozen balanced groups, so ~1.7 s here, not
+the ~2% the first draft claimed.)
 
 ## 7. Tests — `tests/test_clustering.py`
 
@@ -281,9 +392,22 @@ real `PCA` on real fake embeddings today. Running the real clusterer over the
 - `n_clusters=k` yields exactly `k` L1 clusters (given `k` ≤ fixture size).
 - The §2.2(c) auto sweep picks the planted count on a fixture built from a known
   number of well-separated centres — the property that actually matters, and one
-  a synthetic fixture can assert honestly (the 8k benchmark above recovered 14/14).
+  a synthetic fixture can assert honestly. **Put the planted count on the
+  candidate grid**, or the test measures grid spacing rather than the sweep (see
+  the k=16/k=14 note in §2.2).
 - The sweep's candidate range is clamped to the corpus: a 40-doc fixture must not
   propose `k=40`.
+- **L2 is an exact refinement of L1** (§2.4): every L2 cluster's members share
+  one `parent_cluster_id`, and the union of a parent's L2 clusters is exactly its
+  L1 membership. Free to assert under tree reuse, and the assertion is what
+  catches a regression back to a rebuild that drifts.
+- **Tree cut ≡ rebuild**, as a unit test on the split helper alone: for a small
+  matrix, `leaders`-plus-heap-split of a group must equal
+  `fcluster(linkage(slice), k, "maxclust")` up to label permutation. This is the
+  claim the whole §2.4 revision rests on; measured at ARI 1.0 for ward/average/
+  complete, so it should be pinned rather than trusted.
+- A non-monotone linkage (`centroid`, `median`) is rejected at the edge with a
+  422 rather than silently producing an inverted tree.
 - `tests/test_api.py` — `cluster_space="agglomerative"` reaches `run_clustering`;
   `n_clusters=1` and the both-set/neither-set combinations return 422.
 
