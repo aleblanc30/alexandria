@@ -26,6 +26,8 @@ two when its priority changes; do not duplicate it in both.
 
 - [x] **`adaptive_cluster_params` manufactures the clustering noise** — HDBSCAN infers its own cluster count, but `pka/clustering/engine.py:289` back-solved `min_cluster_size` from a `target_clusters` that `min(12, …)` pinned at 12 for any corpus over 144 docs, so `min_cluster_size` scaled with the archive instead of staying fixed (744, with `min_samples=372`, at 17.9k docs) — the actual cause of run #4's ~83% noise, not an HDBSCAN property. Now derives `min_cluster_size` from `sqrt(n_docs)` capped at 50 (`_ADAPTIVE_MAX_CLUSTER_SIZE`), so it stays in a browsable absolute range regardless of corpus size.
 - [ ] **Two-level agglomerative clustering algorithm** — `pka/clustering/engine.py` only ever runs HDBSCAN (over PCA or legacy UMAP space); add agglomerative (ward) clustering as a third `cluster_space` mode, reusing the existing L1/L2 hierarchy machinery (`_write_hierarchical_clusters`, `_run_level2_pass_core`'s callback seam) rather than rebuilding it. Partitions every document rather than leaving most as noise, and picks its cluster count by cutting a prebuilt dendrogram. Plan in `AGGLOMERATIVE_CLUSTERING.md`.
+- [ ] **Suggested merges in cluster diagnostics cannot be performed** There is no backend or UI surface to actually perform the merge
+- [ ] **Clustering diagnostics are too slow** — `/runs/{id}/diagnostics` pulls every chunk vector of the whole archive out of Chroma twice per request (`compute_drift` and `compute_merge_suggestions` each call `_get_cluster_centroids`), recomputing what the run already held in memory; persist per-cluster centroids at run end and serve merges/drift from them. Plan in `CLUSTER_DIAGNOSTICS.md`.
 
 ## Source connectors
 
@@ -37,6 +39,13 @@ two when its priority changes; do not duplicate it in both.
 - [x] **pubmed ingester** — Firefox fetch handler for pubmed pages saved as bookmarks (`pka/ingestion/pubmed.py`); plan in `FIREFOX_INGESTERS_PLAN.md`.
 - [x] **top domains and top rejected domains** — `GET /ingestion/domains` and a two-table panel on `/ingestion` rank domains by document count and by unfetchable count; plan in `DOMAIN_TOP_LISTS_PLAN.md`.
 - [x] **Search-URL cards** — a bookmarked search-results page (`google.com/search?q=`, `duckduckgo.com/?q=`, `youtube.com/results?search_query=`) is scraped as if it were a document; decode the query from the URL into a title + card summary with **no HTTP request at all**. Plan in `SEARCH_URL_CARDS.md`.
+- [ ] **nature.com fetch handler** — needs a dedicated Firefox fetch handler (paywall/anti-bot page currently scraped as-is).
+- [ ] **doi.org fetch handler** — DOI redirect target isn't resolved/handled, so the landing page is scraped as-is.
+- [ ] **sciencedirect.com fetch handler** — top unfetchable domain; needs a dedicated Firefox fetch handler (paywall/anti-bot page currently scraped as-is).
+- [ ] **link.springer.com fetch handler** — needs a dedicated Firefox fetch handler alongside the other publisher domains above.
+- [ ] **mitpress.mit.edu fetch handler** — top unfetchable domain; needs a dedicated Firefox fetch handler.
+- [ ] **journals.aps.org fetch handler** — top unfetchable domain; needs a dedicated Firefox fetch handler.
+- [ ] **researchgate.net fetch handler** — top unfetchable domain; needs a dedicated Firefox fetch handler.
 
 
 ## Active learning
@@ -46,6 +55,8 @@ two when its priority changes; do not duplicate it in both.
 
 ## UI
 
+- [ ] **Make top unfetchable domains list collapsible** — `DomainTopLists.vue` displays the "Top unfetchable domains" section with a full table; add a collapse/expand toggle so it doesn't take up space when closed.
+- [ ] **Settings panel (read-only environment report)** — nothing in the UI reflects any of `config.py`'s 81 settings and there is no health endpoint anywhere, so a misrouted provider or an unreachable Ollama is invisible (the direct diagnostic for *Summarization calls fail silently* above); `GET /settings` + a `/settings` view showing resolved provider/model per capability, credential presence, the §1.1 outbound flags and every non-default value. Writes are deliberately a separate, later slice — plan in `SETTINGS_PANEL.md`.
 - [ ] **Delete tags in the UI** — allow removing tags from the frontend (with appropriate API support and confirmation).
 - [x] **Cluster run parameter dialog** — `+ New run` on `/runs` opens `ClusterRunDialog.vue`, exposing the `run_clustering()` knobs the CLI already had (method, min cluster size / samples / neighbours, min dist, PCA or UMAP dims, labelling mode) via a `TriggerRunRequest` JSON body. Plan in `CLUSTER_RUN_DIALOG.md`.
 - [x] **Cluster run deletion interface** — `DELETE /runs/{run_id}` (optional `?force=true` for an accepted run) wraps the already-existing `purge_cluster_run` from `pka/cli/purge_cluster_runs.py`; `/runs` gets a per-row Delete button (window.confirm, force-confirm wording when deleting the active run).
