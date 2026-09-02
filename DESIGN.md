@@ -578,16 +578,44 @@ assignment is the only automatic clustering step: it adds documents to clusters
 that already exist and never creates, relabels, or re-clusters a run. Producing
 a new run stays an explicit action (`/runs/trigger`).
 
-Clustering uses **hierarchical HDBSCAN** (PCA space by default): level-2
-subclusters are labelled via LLM from document titles plus content excerpts
-(`card_summary` or first chunk); level-1 labels summarize L2 child labels when
-subclusters exist, otherwise the same title+content sampling. The cluster explorer
-lets you edit labels inline, regenerate via LLM, and apply the stored label as
-an overlay tag (`cluster_l1` / `cluster_l2` origins) for browse filtering.
+Clustering is two-level hierarchical, over a selectable clusterer. The default
+is **HDBSCAN** (PCA space): density-based, so it leaves low-density documents as
+noise (label `-1`) rather than forcing them into a cluster. A run that produces
+any noise gets exactly one **noise bucket** — a real `clusters` row
+(`is_noise=True`, no centroid, label "Unclustered") that every noise document is
+assigned to, instead of being left with no `cluster_assignments` row at all.
+This matters for `assign_new_docs`: without a row, a noise document reads as
+merely "unassigned" and gets forced into the nearest real cluster on the very
+next ingest — exactly what HDBSCAN's noise call was avoiding. With the bucket,
+`assign_new_docs` leaves it alone (it already has an assignment), and a
+`cluster_assign_min_similarity` floor (default `0.0`, off) applies the same
+rule going forward to newly-ingested documents that don't clear it either. The
+bucket is excluded from centroid computation, LLM labelling, tagging, and the
+cluster explorer's size ordering — it is a holding pen, not a topic.
+**Agglomerative** (ward/average/complete/single, `pka/clustering/engine.py`'s
+`cluster_space=agglomerative`) is the alternative: it partitions every document
+— no noise, so no bucket — and picks its L1 cluster count either explicitly, by
+a distance cut, or by an automatic silhouette sweep over one prebuilt
+dendrogram; L2 then cuts that same tree deeper inside each L1 group rather than
+reclustering, so an L2 agglomerative cluster is by construction a subset of
+exactly one L1 cluster. Neither is a strict improvement over the other —
+HDBSCAN's noise is an honest signal that a document has no good neighbourhood,
+while agglomerative's forced full coverage can dilute a cluster with documents
+that do not really belong. Both are run options to compare via `/runs`
+acceptance, not a default and a deprecated path. See
+`planning/archive/AGGLOMERATIVE_CLUSTERING.md` for the design.
+
+Level-2 subclusters are labelled via LLM from document titles plus content
+excerpts (`card_summary` or first chunk); level-1 labels summarize L2 child
+labels when subclusters exist, otherwise the same title+content sampling. The
+cluster explorer lets you edit labels inline, regenerate via LLM, and apply the
+stored label as an overlay tag (`cluster_l1` / `cluster_l2` origins) for browse
+filtering.
 
 `run_clustering()`'s parameters (method, min cluster size / samples /
-neighbours, min distance, PCA/UMAP dims, labelling mode) are settable from the
-UI via a dialog in front of `/runs`' `+ New run`, not just from the CLI.
+neighbours, min distance, PCA/UMAP dims, linkage, cluster count or distance
+threshold, labelling mode) are settable from the UI via a dialog in front of
+`/runs`' `+ New run`, not just from the CLI.
 
 ## 5. Active learning tag training
 

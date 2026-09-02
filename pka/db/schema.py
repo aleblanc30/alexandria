@@ -164,6 +164,10 @@ clusters = sa.Table(
         sa.ForeignKey("clusters.cluster_id"),
     ),
     sa.Column("centroid", sa.LargeBinary),  # mean-pooled 384-d float32 blob
+    # The run's single noise bucket (HDBSCAN label -1). It holds documents that
+    # have no good neighbourhood, so it is never a centroid target, never
+    # labelled, and never tagged — see DESIGN.md §4.
+    sa.Column("is_noise", sa.Boolean, nullable=False, server_default="0"),
 )
 
 cluster_runs = sa.Table(

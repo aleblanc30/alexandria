@@ -1,5 +1,5 @@
 """
-Clustering engine: PCA-reduced embeddings → HDBSCAN → supervised UMAP viz → LLM labels.
+Clustering engine: PCA-reduced embeddings → clusterer → supervised UMAP viz → LLM labels.
 
 Default pipeline (``cluster_space=pca``):
   1. Aggregate chunk embeddings per document (mean pooling; SQLite cache when available).
@@ -8,11 +8,18 @@ Default pipeline (``cluster_space=pca``):
   4. L1 labels from L2 child labels when subclusters exist, else title + content.
   5. Supervised UMAP → 2d scatter (``y`` = L1 labels; noise = -1).
 
+``cluster_space=agglomerative`` swaps step 2's clusterer for scipy hierarchical
+(ward/average/complete/single) on the same PCA matrix: one linkage tree per run,
+cut once for L1 and cut deeper (not rebuilt) inside each L1 group for L2. See
+``planning/archive/AGGLOMERATIVE_CLUSTERING.md``. Unlike HDBSCAN it partitions every
+document — no noise label.
+
 Legacy ``cluster_space=legacy_umap`` retains the old UMAP→HDBSCAN path for comparison.
 """
 
 from __future__ import annotations
 
+import heapq
 import json
 import logging
 import re
@@ -22,7 +29,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import sqlalchemy as sa
+from scipy.cluster.hierarchy import fcluster, leaders
+from scipy.cluster.hierarchy import linkage as scipy_linkage
 from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import normalize
 
 from pka.clustering.doc_embeddings import embedding_to_blob
@@ -44,6 +54,19 @@ log = logging.getLogger(__name__)
 
 ALGORITHM_PCA = "HDBSCAN-hierarchical-pca"
 ALGORITHM_LEGACY = "HDBSCAN-hierarchical"
+ALGORITHM_AGGLOMERATIVE = "agglomerative-hierarchical"
+
+# The per-run noise bucket (``clusters.is_noise``). Documents HDBSCAN could not
+# place land here instead of being left without a row; the label is shown in the
+# UI, so it says what the bucket means rather than naming an algorithm.
+NOISE_CLUSTER_LABEL = "Unclustered"
+NOISE_CLUSTER_DESCRIPTION = (
+    "Documents with no dense neighbourhood in this run. They are held here "
+    "rather than filed into the nearest cluster, and are never tagged or "
+    "relabelled. Re-cluster to give them another chance at a home."
+)
+
+_MONOTONE_LINKAGES = ("ward", "average", "complete", "single")
 
 
 # ── Data structures ───────────────────────────────────────────────────────────
@@ -368,6 +391,226 @@ def _run_hdbscan(
         (labels == -1).sum(),
     )
     return labels
+
+
+# ── Step 4b: agglomerative clustering (alternative to HDBSCAN) ────────────────
+
+
+def _build_linkage(
+    reduced: np.ndarray,
+    *,
+    linkage_method: str = "ward",
+    metric: str = "cosine",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build a scipy dendrogram once. Returns ``(Z, data)``.
+
+    ``data`` is what ``Z`` was built on (L2-normalized when ``metric="cosine"``)
+    and is reused for silhouette scoring — see ``_auto_k_agglomerative``.
+    Restricted to monotone linkages: cutting by height (``_split_subtree``, the
+    L2 tree-cut in ``_run_level2_pass_agglomerative``) is only valid when merge
+    distances never decrease going up the tree, which ``centroid``/``median``
+    do not guarantee.
+    """
+    if linkage_method not in _MONOTONE_LINKAGES:
+        raise ValueError(f"linkage must be one of {_MONOTONE_LINKAGES}, got {linkage_method!r}")
+    data = (
+        _normalize_for_cosine(reduced)
+        if metric == "cosine"
+        else reduced.astype(np.float32, copy=False)
+    )
+    log.info("Building %s linkage tree (%d points)…", linkage_method, len(data))
+    Z = scipy_linkage(data, method=linkage_method)
+    return Z, data
+
+
+def _cut_linkage(
+    Z: np.ndarray,
+    *,
+    n_clusters: int | None = None,
+    distance_threshold: float | None = None,
+) -> np.ndarray:
+    """Cut a prebuilt tree. Exactly one of the two stopping rules must be set.
+
+    Returns 0-based labels (never -1) — ``fcluster`` is 1-based.
+    """
+    if (n_clusters is None) == (distance_threshold is None):
+        raise ValueError("Exactly one of n_clusters or distance_threshold must be set.")
+    if n_clusters is not None:
+        return fcluster(Z, n_clusters, criterion="maxclust") - 1
+    return fcluster(Z, distance_threshold, criterion="distance") - 1
+
+
+def _run_agglomerative(
+    reduced: np.ndarray,
+    n_clusters: int | None = None,
+    distance_threshold: float | None = None,
+    *,
+    linkage_method: str = "ward",
+    metric: str = "cosine",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Agglomerative clustering. Returns ``(labels, Z, data)``.
+
+    ``Z`` and ``data`` escape (unlike ``_run_hdbscan``'s labels-only contract)
+    so the caller can cut the same tree again — for the auto-k sweep
+    (``_auto_k_agglomerative``) and for L2 (``_run_level2_pass_agglomerative``)
+    — instead of rebuilding it. Emits no ``-1``: every point is assigned.
+    """
+    Z, data = _build_linkage(reduced, linkage_method=linkage_method, metric=metric)
+    labels = _cut_linkage(Z, n_clusters=n_clusters, distance_threshold=distance_threshold)
+    log.info(
+        "Agglomerative (%s, %s): %d clusters",
+        linkage_method,
+        metric,
+        len(set(labels.tolist())),
+    )
+    return labels, Z, data
+
+
+def _agglomerative_k_candidates(n_docs: int, k_min: int = 8, k_max: int = 40) -> list[int]:
+    """Geometrically spaced candidate cluster counts, clamped to the corpus."""
+    hi = min(k_max, max(k_min, n_docs - 1))
+    if hi <= k_min:
+        return [max(2, min(hi, n_docs - 1))]
+    raw = np.geomspace(k_min, hi, num=8)
+    candidates = sorted({int(round(x)) for x in raw})
+    return [c for c in candidates if 2 <= c <= n_docs - 1] or [max(2, hi)]
+
+
+def _pick_best_k(candidates: list[int], scores: dict[int, float]) -> int:
+    """Highest silhouette score wins; a near-tie (within ``tol``) prefers the
+    smaller, more browsable ``k`` (candidates are iterated ascending)."""
+    best_k = candidates[0]
+    best_score = float("-inf")
+    tol = 1e-3
+    for k in candidates:
+        score = scores.get(k)
+        if score is not None and score > best_score + tol:
+            best_score = score
+            best_k = k
+    return best_k
+
+
+def _auto_k_agglomerative(
+    Z: np.ndarray,
+    data: np.ndarray,
+    *,
+    k_min: int = 8,
+    k_max: int = 40,
+    sample_size: int = 3000,
+    random_state: int = 42,
+) -> tuple[int, dict[int, float]]:
+    """Silhouette sweep over cuts of a prebuilt tree — cheap because cutting is
+    ~ms once ``Z`` exists (see planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.2c).
+    Returns ``(best_k, {k: silhouette_score})`` — the sweep is recorded in
+    ``params`` so a bad auto-pick is diagnosable rather than invisible.
+    """
+    n_docs = len(data)
+    candidates = _agglomerative_k_candidates(n_docs, k_min, k_max)
+    scores: dict[int, float] = {}
+    for k in candidates:
+        labels = _cut_linkage(Z, n_clusters=k)
+        if len(set(labels.tolist())) < 2:
+            continue
+        try:
+            scores[k] = float(
+                silhouette_score(
+                    data, labels, sample_size=min(sample_size, n_docs), random_state=random_state
+                )
+            )
+        except ValueError:
+            continue
+    best_k = _pick_best_k(candidates, scores) if scores else candidates[0]
+    return best_k, scores
+
+
+def _subtree_leaves(Z: np.ndarray, n: int, node: int) -> list[int]:
+    """Leaf (original observation) indices under dendrogram node id ``node``."""
+    out: list[int] = []
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        if cur < n:
+            out.append(cur)
+        else:
+            row = Z[cur - n]
+            stack.append(int(row[0]))
+            stack.append(int(row[1]))
+    return out
+
+
+def _split_subtree(Z: np.ndarray, n: int, node: int, k: int) -> list[list[int]]:
+    """Split dendrogram ``node`` into ``k`` parts, by repeatedly opening the
+    highest remaining merge — equivalent to ``fcluster(Z, k, "maxclust")``
+    restricted to the subtree under ``node``, verified at ARI 1.0 against an
+    independent rebuild (planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.4). Each
+    returned group is a list of leaf indices into the matrix ``Z`` was built on.
+    """
+    if node < n:
+        return [[node]]
+    heap: list[tuple[float, int]] = [(-Z[node - n, 2], node)]
+    leaves: list[int] = []
+    while heap and len(heap) + len(leaves) < k:
+        _, cur = heapq.heappop(heap)
+        row = Z[cur - n]
+        for child in (int(row[0]), int(row[1])):
+            if child < n:
+                leaves.append(child)
+            else:
+                heapq.heappush(heap, (-Z[child - n, 2], child))
+    groups = [_subtree_leaves(Z, n, c) for _, c in heap]
+    groups.extend([leaf] for leaf in leaves)
+    return groups
+
+
+def _split_node_auto(
+    Z: np.ndarray,
+    n_leaves: int,
+    node: int,
+    member_doc_ids: list[int],
+    doc_id_to_idx: dict[int, int],
+    data: np.ndarray,
+    *,
+    k_min: int = 2,
+    k_max: int = 12,
+    sample_size: int = 3000,
+    random_state: int = 42,
+) -> np.ndarray:
+    """L2 for one L1 group: cut ``node``'s subtree at the silhouette-best ``k``.
+
+    Returns 0-based labels aligned to ``member_doc_ids``. No tree rebuild — see
+    ``_split_subtree`` and planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.4.
+    """
+    n_sub = len(member_doc_ids)
+    candidates = _agglomerative_k_candidates(n_sub, k_min, k_max)
+    global_idx_to_pos = {doc_id_to_idx[d]: i for i, d in enumerate(member_doc_ids)}
+    sub_data = data[[doc_id_to_idx[d] for d in member_doc_ids]]
+
+    labels_by_k: dict[int, np.ndarray] = {}
+    for k in candidates:
+        groups = _split_subtree(Z, n_leaves, node, k)
+        labels = np.full(n_sub, -1, dtype=int)
+        for gi, leaf_group in enumerate(groups):
+            for leaf in leaf_group:
+                pos = global_idx_to_pos.get(leaf)
+                if pos is not None:
+                    labels[pos] = gi
+        labels_by_k[k] = labels
+
+    scores: dict[int, float] = {}
+    for k, labels in labels_by_k.items():
+        if len(set(labels.tolist())) < 2:
+            continue
+        try:
+            scores[k] = float(
+                silhouette_score(
+                    sub_data, labels, sample_size=min(sample_size, n_sub), random_state=random_state
+                )
+            )
+        except ValueError:
+            continue
+
+    best_k = _pick_best_k(candidates, scores) if scores else candidates[0]
+    return labels_by_k[best_k]
 
 
 # ── Step 5: LLM cluster labelling ─────────────────────────────────────────────
@@ -716,12 +959,14 @@ def relabel_single_cluster(
 
     with eng.connect() as con:
         row = con.execute(
-            sa.select(clusters.c.level, clusters.c.label).where(
+            sa.select(clusters.c.level, clusters.c.label, clusters.c.is_noise).where(
                 (clusters.c.cluster_id == cluster_id) & (clusters.c.run_id == run_id)
             )
         ).fetchone()
         if not row:
             raise ValueError(f"Cluster {cluster_id} not found in run {run_id}")
+        if row[2]:
+            raise ValueError(f"Cluster {cluster_id} is the noise bucket and is not labelled")
 
         level = int(row[0] or 1)
         previous_label = row[1] or ""
@@ -809,7 +1054,12 @@ def relabel_run_clusters(
 
         l1_rows = con.execute(
             sa.select(clusters.c.cluster_id).where(
-                (clusters.c.run_id == run_id) & (clusters.c.level == 1)
+                (clusters.c.run_id == run_id)
+                & (clusters.c.level == 1)
+                # The noise bucket keeps its fixed label: it is not a topic, so
+                # there is nothing for the LLM to summarise (and it is typically
+                # the largest member set in the run).
+                & (clusters.c.is_noise == False)  # noqa: E712 — SQLA expression
             )
         ).fetchall()
         for (cid,) in l1_rows:
@@ -901,7 +1151,7 @@ def _write_hierarchical_clusters(
 ) -> tuple[int, int, int]:
     """Persist L1/L2 clusters and assignments. Returns (n_l1, n_l2, n_assignments)."""
 
-    def _insert_cluster(label, description, level, parent_cluster_id, centroid):
+    def _insert_cluster(label, description, level, parent_cluster_id, centroid, is_noise=False):
         res = con.execute(
             clusters.insert().values(
                 label=label,
@@ -911,14 +1161,15 @@ def _write_hierarchical_clusters(
                 level=level,
                 parent_cluster_id=parent_cluster_id,
                 centroid=centroid,
+                is_noise=is_noise,
             )
         )
         return res.inserted_primary_key[0]
 
     def _collect_assignments(rows, doc_ids_iter, raw_labels, db_ids, level):
         for doc_id, raw_label in zip(doc_ids_iter, raw_labels, strict=False):
-            db_cid = db_ids.get(raw_label, -1)
-            if db_cid == -1:
+            db_cid = db_ids.get(raw_label)
+            if db_cid is None:
                 continue
             rows.append(
                 {
@@ -943,6 +1194,23 @@ def _write_hierarchical_clusters(
         )
         for cid in l1_unique
     }
+
+    # Noise (label -1) gets its own bucket rather than no row at all. Without
+    # it those documents look "unassigned" to ``assign_new_docs``, which files
+    # every one of them into the nearest real cluster on the next ingest — the
+    # exact forcing DESIGN.md §4 says HDBSCAN exists to avoid. The bucket
+    # carries no centroid, so it can never attract a document in turn.
+    n_noise = int((l1_labels == -1).sum())
+    if n_noise:
+        l1_db_ids[-1] = _insert_cluster(
+            NOISE_CLUSTER_LABEL,
+            NOISE_CLUSTER_DESCRIPTION,
+            1,
+            None,
+            None,
+            is_noise=True,
+        )
+        log.info("Run #%d: %d noise document(s) held in the noise cluster", run_id, n_noise)
 
     assignment_rows: list[dict] = []
     _collect_assignments(assignment_rows, doc_ids, l1_labels.tolist(), l1_db_ids, 1)
@@ -1088,6 +1356,48 @@ def _run_level2_pass_legacy(
             compute_2d=False,
         )
         return _run_hdbscan(sub_reduced_nd, sub_mcs, sub_ms, metric="euclidean")
+
+    return _run_level2_pass_core(
+        doc_ids,
+        l1_labels,
+        compute_l2_labels=_compute,
+        skip_labelling=skip_labelling,
+        chat_model=chat_model,
+        run_id=run_id,
+    )
+
+
+def _run_level2_pass_agglomerative(
+    Z: np.ndarray,
+    data: np.ndarray,
+    doc_ids: list[int],
+    l1_labels: np.ndarray,
+    *,
+    skip_labelling: bool,
+    chat_model: str | None,
+    run_id: int | None,
+) -> tuple[list[L2ClusterBatch], int, int]:
+    """L2 by cutting the L1 tree deeper inside each group — no rebuild.
+
+    An ``fcluster`` flat cluster is a contiguous dendrogram node, so splitting
+    that node (``_split_node_auto``) reproduces exactly what re-running linkage
+    on the group's slice would return — verified at ARI 1.0 across ward/average/
+    complete. See planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.4 for why this replaced
+    the rebuild-per-group first draft, and for the one case (L2 reading as
+    arbitrary slices of a coherent parent) where a local rebuild would still earn
+    its cost.
+    """
+    n_leaves = len(doc_ids)
+    doc_id_to_idx = {d: i for i, d in enumerate(doc_ids)}
+    leader_nodes, leader_cids = leaders(Z, l1_labels)
+    node_by_l1cid = dict(zip(leader_cids.tolist(), leader_nodes.tolist(), strict=False))
+
+    def _compute(member_doc_ids, sub_mcs, sub_ms, sub_nn):
+        # sub_ms / sub_nn are HDBSCAN-shaped knobs; agglomerative ignores them
+        # and derives k from group size alone (§2.2c).
+        l1_cid = int(l1_labels[doc_id_to_idx[member_doc_ids[0]]])
+        node = node_by_l1cid[l1_cid]
+        return _split_node_auto(Z, n_leaves, node, member_doc_ids, doc_id_to_idx, data)
 
     return _run_level2_pass_core(
         doc_ids,
@@ -1450,6 +1760,118 @@ def _run_legacy_pipeline(
     )
 
 
+def _run_agglomerative_pipeline(
+    doc_ids: list[int],
+    matrix: np.ndarray,
+    *,
+    n_clusters: int | None,
+    distance_threshold: float | None,
+    linkage_method: str,
+    pca_components: int,
+    nn: int,
+    min_dist: float,
+    skip_labelling: bool,
+    chat_model: str | None,
+    run_id: int | None,
+    timer: _StepTimer,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    dict[int, str],
+    dict[int, str],
+    list[L2ClusterBatch],
+    int,
+    int,
+    int,
+    float,
+    dict,
+]:
+    """PCA → one linkage tree → cut for L1, cut deeper for L2 → labels → viz UMAP.
+
+    See planning/archive/AGGLOMERATIVE_CLUSTERING.md. Mirrors ``_run_pca_pipeline``'s
+    return shape so ``run_clustering`` needs only one more branch.
+    """
+    t0 = time.perf_counter()
+    pca_matrix, var_sum = _run_pca(matrix, pca_components)
+    timer.record("pca_ms", t0)
+
+    if run_id is not None:
+        raise_if_cancelled(run_id)
+
+    t0 = time.perf_counter()
+    Z, data = _build_linkage(pca_matrix, linkage_method=linkage_method, metric="cosine")
+    sweep: dict[int, float] | None = None
+    if n_clusters is None and distance_threshold is None:
+        chosen_n_clusters, sweep = _auto_k_agglomerative(Z, data)
+        l1_labels = _cut_linkage(Z, n_clusters=chosen_n_clusters)
+    else:
+        l1_labels = _cut_linkage(Z, n_clusters=n_clusters, distance_threshold=distance_threshold)
+        chosen_n_clusters = n_clusters
+    timer.record("agglomerative_l1_ms", t0)
+
+    n_l1 = len(set(l1_labels.tolist()))
+    n_noise = 0  # agglomerative partitions everything — see §3
+    l1_cluster_docs = _build_cluster_docs(doc_ids, l1_labels)
+
+    if run_id is not None:
+        raise_if_cancelled(run_id)
+
+    t0 = time.perf_counter()
+    l2_batches, l2_noise, l2_skipped = _run_level2_pass_agglomerative(
+        Z,
+        data,
+        doc_ids,
+        l1_labels,
+        skip_labelling=skip_labelling,
+        chat_model=chat_model,
+        run_id=run_id,
+    )
+    timer.record("agglomerative_l2_ms", t0)
+
+    t0 = time.perf_counter()
+    l1_label_map, l1_desc_map = _label_l1_clusters(
+        l1_cluster_docs,
+        l2_batches,
+        skip_labelling,
+        chat_model,
+        run_id,
+    )
+    timer.record("label_l1_ms", t0)
+
+    t0 = time.perf_counter()
+    reduced_2d = _run_supervised_umap(pca_matrix, l1_labels, nn, min_dist)
+    timer.record("umap_viz_ms", t0)
+
+    params = dict(
+        cluster_space="agglomerative",
+        linkage=linkage_method,
+        n_clusters=chosen_n_clusters,
+        distance_threshold=distance_threshold,
+        pca_components=pca_components,
+        pca_variance=round(var_sum, 4),
+        cluster_metric="cosine",
+        viz="supervised_umap",
+        n_neighbors=nn,
+        min_dist=min_dist,
+        hierarchical=True,
+        l2_skipped_parents=l2_skipped,
+    )
+    if sweep is not None:
+        params["k_sweep"] = {str(k): round(v, 4) for k, v in sweep.items()}
+    return (
+        l1_labels,
+        reduced_2d,
+        l1_label_map,
+        l1_desc_map,
+        l2_batches,
+        n_l1,
+        n_noise,
+        l2_noise,
+        var_sum,
+        params,
+    )
+
+
 def _spawn_async_relabel(run_id: int, label_model: str | None) -> None:
     import threading
 
@@ -1476,6 +1898,9 @@ def run_clustering(
     skip_labelling: bool = False,
     async_labelling: bool | None = None,
     cluster_space: str | None = None,
+    linkage: str | None = None,
+    n_clusters: int | None = None,
+    distance_threshold: float | None = None,
     source_filter: list[str] | None = None,
     run_id: int | None = None,
 ) -> ClusterRunResult:
@@ -1528,6 +1953,34 @@ def run_clustering(
             timer=timer,
         )
         params["adaptive"] = min_cluster_size is None
+    elif space == "agglomerative":
+        algorithm = ALGORITHM_AGGLOMERATIVE
+        (
+            l1_labels,
+            reduced_2d,
+            l1_label_map,
+            l1_desc_map,
+            l2_batches,
+            n_l1,
+            n_noise,
+            l2_noise,
+            _var,
+            params,
+        ) = _run_agglomerative_pipeline(
+            doc_ids,
+            matrix,
+            n_clusters=n_clusters,
+            distance_threshold=distance_threshold,
+            linkage_method=linkage or cfg.cluster_linkage,
+            pca_components=pca_comp,
+            nn=nn,
+            min_dist=min_dist,
+            skip_labelling=skip_labelling or defer_llm,
+            chat_model=chat_model,
+            run_id=run_id,
+            timer=timer,
+        )
+        params["adaptive"] = n_clusters is None and distance_threshold is None
     else:
         algorithm = ALGORITHM_PCA
         (

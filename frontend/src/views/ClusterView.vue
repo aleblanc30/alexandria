@@ -3,7 +3,11 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">Cluster explorer</h1>
-        <p class="page-sub">{{ l1Count }} level-1 · {{ l2Count }} level-2 clusters · UMAP 2D projection</p>
+        <p class="page-sub">
+          {{ l1Count }} level-1 · {{ l2Count }} level-2 clusters
+          <template v-if="noiseCluster"> · {{ noiseCluster.doc_count }} unclustered</template>
+          · UMAP 2D projection
+        </p>
       </div>
       <button
         v-if="store.list.length"
@@ -32,13 +36,19 @@
         >
           <div
             class="cluster-level-badge"
-            :class="{ 'cluster-level-badge--l2': c.level === 2 }"
+            :class="{
+              'cluster-level-badge--l2': c.level === 2,
+              'cluster-level-badge--noise': c.is_noise,
+            }"
           >
-            {{ c.level === 2 ? 'Level 2' : 'Level 1' }}
+            {{ c.is_noise ? 'Noise' : c.level === 2 ? 'Level 2' : 'Level 1' }}
           </div>
           <div v-if="c.level === 2 && c.parent_label" class="cluster-parent">{{ c.parent_label }}</div>
 
-          <div class="cluster-label-row">
+          <!-- The noise bucket is a holding pen, not a topic: no label to edit,
+               regenerate, or apply as a tag. -->
+          <div v-if="c.is_noise" class="cluster-noise-label">{{ c.label }}</div>
+          <div v-else class="cluster-label-row">
             <input
               v-model="labelEdits[c.cluster_id]"
               class="cluster-label-input"
@@ -91,11 +101,16 @@ const applyingId      = ref<number | null>(null)
 const applyingAll     = ref(false)
 const regeneratingId  = ref<number | null>(null)
 const colorFor        = colorForIndex
-const maxCount        = computed(() => Math.max(1, ...store.list.map(c => c.doc_count)))
+// Noise is excluded from the bar scale: it is routinely the biggest bucket in a
+// run, and scaling to it flattens every real cluster's bar to nothing.
+const maxCount        = computed(
+  () => Math.max(1, ...store.list.filter(c => !c.is_noise).map(c => c.doc_count)),
+)
 
-const l1Clusters = computed(() => store.list.filter(c => (c.level ?? 1) === 1))
+const l1Clusters = computed(() => store.list.filter(c => (c.level ?? 1) === 1 && !c.is_noise))
 const l2Count = computed(() => store.list.filter(c => c.level === 2).length)
 const l1Count = computed(() => l1Clusters.value.length)
+const noiseCluster = computed(() => store.list.find(c => c.is_noise) ?? null)
 
 const groupedClusters = computed(() => {
   const l1 = store.list.filter(c => (c.level ?? 1) === 1)
@@ -203,6 +218,15 @@ onMounted(async () => {
 }
 .cluster-level-badge--l2 {
   color: #5A2D82;
+}
+.cluster-level-badge--noise {
+  color: var(--hint);
+}
+.cluster-noise-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hint);
+  margin-bottom: 4px;
 }
 .cluster-parent {
   font-size: 11px;

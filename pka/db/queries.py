@@ -142,6 +142,12 @@ def init_db() -> None:
             )
         if cl_cols and "centroid" not in cl_cols:
             con.execute(sa.text("ALTER TABLE clusters ADD COLUMN centroid BLOB"))
+        # Migration: per-run noise bucket. Existing runs have no noise cluster,
+        # so every pre-existing row is a real cluster (default 0).
+        if cl_cols and "is_noise" not in cl_cols:
+            con.execute(
+                sa.text("ALTER TABLE clusters ADD COLUMN is_noise BOOLEAN NOT NULL DEFAULT 0")
+            )
 
         ca_cols = [
             r[1] for r in con.execute(sa.text("PRAGMA table_info(cluster_assignments)")).fetchall()

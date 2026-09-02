@@ -187,6 +187,7 @@ _MIGRATED_COLUMNS = [
     ("cluster_runs", "status"),
     ("clusters", "level"),
     ("clusters", "parent_cluster_id"),
+    ("clusters", "is_noise"),
     ("cluster_assignments", "level"),
 ]
 

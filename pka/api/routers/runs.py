@@ -70,7 +70,32 @@ def _running_run_id(engine) -> int | None:
 
 
 def _n_noise(con, run_id: int, *, total_chunked: int | None = None) -> int:
-    """Chunked documents without a level-1 assignment in this run."""
+    """Documents held in this run's noise bucket.
+
+    A run created after the noise bucket landed has one; its noise documents
+    hold a real level-1 assignment there, so they no longer read as
+    "unassigned". A legacy run (or one with zero noise) has none — fall back to
+    counting chunked documents with no level-1 assignment at all, the old
+    definition, so runs from before this change keep reporting correctly.
+    """
+    noise_cid = con.execute(
+        sa.select(clusters.c.cluster_id).where(
+            (clusters.c.run_id == run_id) & (clusters.c.is_noise == True)  # noqa: E712
+        )
+    ).scalar()
+    if noise_cid is not None:
+        return (
+            con.execute(
+                sa.select(sa.func.count())
+                .select_from(cluster_assignments)
+                .where(
+                    (cluster_assignments.c.run_id == run_id)
+                    & (cluster_assignments.c.cluster_id == noise_cid)
+                )
+            ).scalar()
+            or 0
+        )
+
     if total_chunked is None:
         total_chunked = (
             con.execute(sa.select(sa.func.count(sa.distinct(chunks.c.document_id)))).scalar() or 0
@@ -91,7 +116,9 @@ def _run_out(con, row, *, total_chunked: int | None = None) -> RunOut:
         con.execute(
             sa.select(sa.func.count())
             .select_from(clusters)
-            .where(clusters.c.run_id == row["run_id"])
+            .where(
+                (clusters.c.run_id == row["run_id"]) & (clusters.c.is_noise == False)  # noqa: E712 — SQLA expression
+            )
         ).scalar()
         or 0
     )
@@ -133,7 +160,9 @@ def run_diagnostics(run_id: int, engine=Depends(get_engine)):
         cluster_rows = con.execute(
             sa.select(clusters.c.cluster_id, sa.func.count(cluster_assignments.c.id).label("n"))
             .join(cluster_assignments, cluster_assignments.c.cluster_id == clusters.c.cluster_id)
-            .where(clusters.c.run_id == run_id)
+            .where(
+                (clusters.c.run_id == run_id) & (clusters.c.is_noise == False)  # noqa: E712 — SQLA expression
+            )
             .group_by(clusters.c.cluster_id)
         ).fetchall()
         sizes = {str(r[0]): r[1] for r in cluster_rows}
@@ -215,6 +244,7 @@ def trigger_run(
         raise HTTPException(409, "A clustering run is already in progress")
 
     from pka.clustering.engine import (
+        ALGORITHM_AGGLOMERATIVE,
         ALGORITHM_LEGACY,
         ALGORITHM_PCA,
         create_run_placeholder,
@@ -224,7 +254,10 @@ def trigger_run(
     from pka.clustering.run_progress import ClusterRunCancelled, begin, finish
 
     req = body or TriggerRunRequest()
-    algorithm = ALGORITHM_LEGACY if req.cluster_space == "legacy_umap" else ALGORITHM_PCA
+    algorithm = {
+        "legacy_umap": ALGORITHM_LEGACY,
+        "agglomerative": ALGORITHM_AGGLOMERATIVE,
+    }.get(req.cluster_space or "", ALGORITHM_PCA)
     run_id = create_run_placeholder(
         algorithm=algorithm, parameters=req.model_dump(exclude_none=True)
     )
@@ -240,6 +273,9 @@ def trigger_run(
                 min_dist=req.min_dist,
                 n_components=req.n_components,
                 pca_components=req.pca_components,
+                linkage=req.linkage,
+                n_clusters=req.n_clusters,
+                distance_threshold=req.distance_threshold,
                 skip_labelling=req.skip_labelling,
                 async_labelling=req.async_labelling or None,
                 cluster_space=req.cluster_space,

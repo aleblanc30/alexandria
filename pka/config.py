@@ -428,8 +428,14 @@ class Settings(BaseSettings):
         return self.cover_search_fallback and self.external_lookup_enabled
 
     # ── Clustering ──────────────────────────────────────────────────────────
-    cluster_space: str = "pca"  # pca | legacy_umap
+    cluster_space: str = "pca"  # pca | legacy_umap | agglomerative
     cluster_pca_components: int = 50
+    # Cosine-similarity floor for `assign_new_docs`: a document that matches no
+    # centroid this well goes to the run's noise bucket instead of its least-bad
+    # cluster. 0.0 keeps the old behaviour (always file into the nearest one);
+    # documents HDBSCAN itself called noise are held back regardless.
+    cluster_assign_min_similarity: float = 0.0
+    cluster_linkage: str = "ward"  # ward | average | complete | single (agglomerative only)
     cluster_label_workers: int = 4
     cluster_async_labelling: bool = False  # TF-IDF first, LLM relabel in background
     cluster_regenerate_temperature: float = 0.85  # higher on manual Regenerate label (Ollama)

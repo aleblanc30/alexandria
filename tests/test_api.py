@@ -49,7 +49,13 @@ def _seed_docs(n: int = 3) -> list[int]:
     return ids
 
 
-def _seed_run(doc_ids: list[int], n_clusters: int = 2, *, with_l2: bool = False) -> int:
+def _seed_run(
+    doc_ids: list[int],
+    n_clusters: int = 2,
+    *,
+    with_l2: bool = False,
+    noise_doc_ids: list[int] | None = None,
+) -> int:
     from pka.db.queries import get_engine
 
     eng = get_engine()
@@ -116,6 +122,30 @@ def _seed_run(doc_ids: list[int], n_clusters: int = 2, *, with_l2: bool = False)
                             level=2,
                         )
                     )
+        if noise_doc_ids:
+            noise_res = con.execute(
+                clusters.insert().values(
+                    label="Unclustered",
+                    description="",
+                    created_at=now,
+                    run_id=run_id,
+                    level=1,
+                    parent_cluster_id=None,
+                    is_noise=True,
+                )
+            )
+            noise_cid = noise_res.inserted_primary_key[0]
+            for did in noise_doc_ids:
+                con.execute(
+                    cluster_assignments.insert().values(
+                        document_id=did,
+                        cluster_id=noise_cid,
+                        run_id=run_id,
+                        score=0.1,
+                        assigned_at=now,
+                        level=1,
+                    )
+                )
     return run_id
 
 
@@ -1165,6 +1195,36 @@ class TestClusters:
     def test_cluster_404(self, client):
         assert client.get("/clusters/99999").status_code == 404
 
+    def test_noise_bucket_is_flagged_and_sorted_last(self, client):
+        ids = _seed_docs(4)
+        _seed_run(ids[:2], n_clusters=2, noise_doc_ids=ids[2:])
+        data = client.get("/clusters").json()
+        assert [c["is_noise"] for c in data] == [False, False, True]
+        noise = data[-1]
+        assert noise["label"] == "Unclustered"
+        assert noise["doc_count"] == 2
+
+    def test_apply_all_tags_skips_noise_bucket(self, client):
+        ids = _seed_docs(4)
+        _seed_run(ids[:2], n_clusters=2, noise_doc_ids=ids[2:])
+        r = client.post("/clusters/apply-all-tags")
+        assert r.status_code == 200
+        assert len(r.json()["clusters"]) == 2  # the two real clusters only
+
+    def test_apply_tag_refused_on_noise_bucket(self, client):
+        ids = _seed_docs(4)
+        _seed_run(ids[:2], n_clusters=2, noise_doc_ids=ids[2:])
+        noise_cid = next(c for c in client.get("/clusters").json() if c["is_noise"])["cluster_id"]
+        r = client.post(f"/clusters/{noise_cid}/apply-tag", json={})
+        assert r.status_code == 400
+
+    def test_regenerate_label_refused_on_noise_bucket(self, client):
+        ids = _seed_docs(4)
+        _seed_run(ids[:2], n_clusters=2, noise_doc_ids=ids[2:])
+        noise_cid = next(c for c in client.get("/clusters").json() if c["is_noise"])["cluster_id"]
+        r = client.post(f"/clusters/{noise_cid}/regenerate-label")
+        assert r.status_code == 400
+
     def test_cluster_documents(self, client):
         ids = _seed_docs(4)
         _seed_run(ids, n_clusters=2)
@@ -1270,6 +1330,21 @@ class TestRuns:
     def test_diagnostics_404(self, client):
         assert client.get("/runs/99999/diagnostics").status_code == 404
 
+    def test_list_runs_excludes_noise_bucket_from_n_clusters(self, client):
+        ids = _seed_docs(4)
+        run_id = _seed_run(ids[:2], n_clusters=2, noise_doc_ids=ids[2:])
+        row = next(r for r in client.get("/runs").json() if r["run_id"] == run_id)
+        assert row["n_clusters"] == 2  # the two real clusters, not the bucket too
+        assert row["n_noise"] == 2  # the documents held in the bucket
+
+    def test_diagnostics_excludes_noise_bucket_from_cluster_sizes(self, client):
+        ids = _seed_docs(4)
+        run_id = _seed_run(ids[:2], n_clusters=2, noise_doc_ids=ids[2:])
+        data = client.get(f"/runs/{run_id}/diagnostics").json()
+        assert data["n_clusters"] == 2
+        assert data["n_noise"] == 2
+        assert len(data["cluster_sizes"]) == 2  # the noise bucket's size is not one of them
+
     def test_trigger_run_queued(self, client, monkeypatch):
         mock_col = MagicMock()
         mock_col.count.return_value = 10
@@ -1328,6 +1403,60 @@ class TestRuns:
         r = client.post("/runs/trigger", json={"min_dist": 1.5})
         assert r.status_code == 422
         r = client.post("/runs/trigger", json={"cluster_space": "kmeans"})
+        assert r.status_code == 422
+
+    def test_trigger_run_accepts_agglomerative_cluster_space(self, client, monkeypatch):
+        mock_col = MagicMock()
+        mock_col.count.return_value = 10
+        monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
+        calls = []
+        monkeypatch.setattr(
+            "pka.clustering.engine.run_clustering",
+            lambda **kw: (calls.append(kw), MagicMock(run_id=99, n_clusters=3, n_noise=0))[1],
+        )
+        body = {"cluster_space": "agglomerative", "linkage": "average", "n_clusters": 6}
+        r = client.post("/runs/trigger", json=body)
+        assert r.status_code == 202
+        assert len(calls) == 1
+        kw = calls[0]
+        assert kw["cluster_space"] == "agglomerative"
+        assert kw["linkage"] == "average"
+        assert kw["n_clusters"] == 6
+        assert kw["distance_threshold"] is None
+
+        run_row = next(x for x in client.get("/runs").json() if x["run_id"] == kw["run_id"])
+        assert run_row["algorithm"] == "agglomerative-hierarchical"
+
+    def test_trigger_run_rejects_n_clusters_below_two(self, client, monkeypatch):
+        mock_col = MagicMock()
+        mock_col.count.return_value = 10
+        monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
+        r = client.post("/runs/trigger", json={"cluster_space": "agglomerative", "n_clusters": 1})
+        assert r.status_code == 422
+
+    def test_trigger_run_rejects_n_clusters_and_distance_threshold_together(
+        self, client, monkeypatch
+    ):
+        mock_col = MagicMock()
+        mock_col.count.return_value = 10
+        monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
+        r = client.post(
+            "/runs/trigger",
+            json={
+                "cluster_space": "agglomerative",
+                "n_clusters": 6,
+                "distance_threshold": 1.5,
+            },
+        )
+        assert r.status_code == 422
+
+    def test_trigger_run_rejects_bad_linkage(self, client, monkeypatch):
+        mock_col = MagicMock()
+        mock_col.count.return_value = 10
+        monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
+        r = client.post(
+            "/runs/trigger", json={"cluster_space": "agglomerative", "linkage": "centroid"}
+        )
         assert r.status_code == 422
 
     def test_list_runs_includes_status(self, client):
@@ -1502,6 +1631,14 @@ class TestTrends:
         data = r.json()
         assert isinstance(data["timeline"], dict)
         assert isinstance(data["sizes"], dict)
+
+    def test_timeline_excludes_noise_bucket(self, client):
+        """The noise bucket is not a topic; it must not appear as a trend line."""
+        ids = _seed_docs(4)
+        _seed_run(ids[:2], n_clusters=2, noise_doc_ids=ids[2:])
+        data = client.get("/trends/timeline").json()
+        assert "Unclustered" not in data["sizes"]
+        assert "Unclustered" not in data["timeline"]
         assert sum(data["sizes"].values()) >= 1
         assert any(data["timeline"].values())
 

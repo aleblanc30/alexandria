@@ -189,9 +189,11 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Clustering": (
         "cluster_space",
         "cluster_pca_components",
+        "cluster_linkage",
         "cluster_label_workers",
         "cluster_async_labelling",
         "cluster_regenerate_temperature",
+        "cluster_assign_min_similarity",
         "tag_training_llm_chat_timeout_seconds",
     ),
     "Storage": (

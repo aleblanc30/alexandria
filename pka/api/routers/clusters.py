@@ -133,6 +133,7 @@ def _cluster_out(
         level=level,
         parent_cluster_id=parent_id,
         parent_label=parent_label,
+        is_noise=bool(row.get("is_noise")),
     )
 
 
@@ -148,7 +149,12 @@ def list_clusters(engine=Depends(get_engine)):
         parents = _parent_label_map(con, run_id)
         counts = _cluster_counts(con, run_id)
         out = [_cluster_out(r, run_id, parent_labels=parents, doc_counts=counts) for r in rows]
-    return sorted(out, key=lambda x: (x.level, x.parent_cluster_id or 0, -x.doc_count))
+    # Noise last: it is usually the largest member set in a run, and leading the
+    # explorer with the bucket of things that clustered badly buries the topics.
+    return sorted(
+        out,
+        key=lambda x: (x.is_noise, x.level, x.parent_cluster_id or 0, -x.doc_count),
+    )
 
 
 @router.post("/apply-all-tags", response_model=ApplyAllTagsResult)
@@ -166,6 +172,10 @@ def apply_all_tags(engine=Depends(get_engine)):
             con.execute(sa.select(clusters).where(clusters.c.run_id == run_id))
         )
         for row in rows:
+            # The noise bucket is not a topic — tagging its documents would
+            # stamp a meaningless overlay tag on every unclustered document.
+            if row.get("is_noise"):
+                continue
             res = _apply_cluster_label(con, row, run_id)
             if not res:
                 continue
@@ -305,6 +315,8 @@ def regenerate_cluster_label(cluster_id: int, engine=Depends(get_engine)):
         )
         if not row or row["run_id"] != run_id:
             raise HTTPException(404, "Cluster not found")
+        if row.get("is_noise"):
+            raise HTTPException(400, "The noise bucket has no topic to label")
 
     try:
         relabel_single_cluster(cluster_id, run_id)
@@ -332,6 +344,8 @@ def apply_cluster_tag(
         )
         if not row or row["run_id"] != run_id:
             raise HTTPException(404, "Cluster not found")
+        if row.get("is_noise"):
+            raise HTTPException(400, "The noise bucket is not a topic and cannot be tagged")
 
         res = _apply_cluster_label(
             con,

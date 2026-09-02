@@ -143,6 +143,7 @@ export interface SearchResponse { query: string; total: number; documents: Docum
 export interface ClusterOut    {
   cluster_id: number; label: string; description: string | null; run_id: number; doc_count: number
   level: number; parent_cluster_id: number | null; parent_label: string | null
+  is_noise: boolean
 }
 export interface ClusterDetail extends ClusterOut { top_tags: string[] }
 export interface ClusterPatchRequest { label: string; description?: string | null }
@@ -151,13 +152,16 @@ export interface ApplyAllTagsResult { clusters: ApplyTagResult[]; total_applied:
 export interface UmapPoint     { doc_id: number; x: number; y: number; cluster_id: number | null; title: string }
 export interface RunOut        { run_id: number; timestamp: number; algorithm: string; parameters: Record<string,unknown>; accepted: boolean; status: string; n_clusters: number; n_noise: number; notes: string | null }
 export interface ClusterRunParams {
-  cluster_space?: 'pca' | 'legacy_umap' | null
+  cluster_space?: 'pca' | 'legacy_umap' | 'agglomerative' | null
   min_cluster_size?: number | null
   min_samples?: number | null
   n_neighbors?: number | null
   min_dist?: number
   pca_components?: number | null
   n_components?: number
+  linkage?: 'ward' | 'average' | 'complete' | 'single' | null
+  n_clusters?: number | null
+  distance_threshold?: number | null
   skip_labelling?: boolean
   async_labelling?: boolean
 }

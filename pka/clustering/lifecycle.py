@@ -15,6 +15,7 @@ import numpy as np
 import sqlalchemy as sa
 
 from pka.clustering.vectors import l2_normalize_rows
+from pka.config import settings as cfg
 from pka.db.queries import get_engine
 from pka.db.schema import (
     chunks,
@@ -105,15 +106,33 @@ def _doc_mean_embeddings(doc_ids: list[int]) -> dict[int, np.ndarray]:
     return {did: np.mean(v, axis=0).astype(np.float32) for did, v in doc_vecs.items()}
 
 
+def noise_cluster_id(run_id: int) -> int | None:
+    """The run's noise bucket, or ``None`` for a run that has none."""
+    eng = get_engine()
+    with eng.connect() as con:
+        row = con.execute(
+            sa.select(clusters.c.cluster_id).where(
+                (clusters.c.run_id == run_id) & (clusters.c.is_noise == True)  # noqa: E712 — SQLA expression
+            )
+        ).fetchone()
+    return row[0] if row else None
+
+
 def load_persisted_centroids(run_id: int, level: int = 1) -> dict[int, np.ndarray]:
-    """{db_cluster_id: centroid} from ``clusters.centroid``; null rows omitted."""
+    """{db_cluster_id: centroid} from ``clusters.centroid``; null rows omitted.
+
+    The noise bucket is excluded: it is a holding pen, not a topic, so its mean
+    is meaningless and must never attract a document.
+    """
     from pka.clustering.doc_embeddings import blob_to_embedding
 
     eng = get_engine()
     with eng.connect() as con:
         rows = con.execute(
             sa.select(clusters.c.cluster_id, clusters.c.centroid).where(
-                (clusters.c.run_id == run_id) & (clusters.c.level == level)
+                (clusters.c.run_id == run_id)
+                & (clusters.c.level == level)
+                & (clusters.c.is_noise == False)  # noqa: E712 — SQLA expression
             )
         ).fetchall()
     return {cid: blob_to_embedding(blob) for cid, blob in rows if blob is not None}
@@ -139,13 +158,24 @@ def _compute_cluster_centroids(
     run_id: int,
     level: int | None = None,
 ) -> dict[int, np.ndarray]:
-    """Recompute mean embedding per cluster from Chroma (the pre-persistence path)."""
+    """Recompute mean embedding per cluster from Chroma (the pre-persistence path).
+
+    Skips the noise bucket for the same reason :func:`load_persisted_centroids`
+    does — recomputing it here would also let ``_backfill_centroids`` persist
+    one, turning the holding pen into an assignment target.
+    """
     eng = get_engine()
     with eng.connect() as con:
-        q = sa.select(
-            cluster_assignments.c.cluster_id,
-            cluster_assignments.c.document_id,
-        ).where(cluster_assignments.c.run_id == run_id)
+        q = (
+            sa.select(
+                cluster_assignments.c.cluster_id,
+                cluster_assignments.c.document_id,
+            )
+            .join(clusters, clusters.c.cluster_id == cluster_assignments.c.cluster_id)
+            .where(
+                (cluster_assignments.c.run_id == run_id) & (clusters.c.is_noise == False)  # noqa: E712 — SQLA expression
+            )
+        )
         if level is not None:
             q = q.where(cluster_assignments.c.level == level)
         rows = con.execute(q).fetchall()
@@ -278,14 +308,42 @@ def assign_new_docs(run_id: int | None = None) -> dict:
     now = int(time.time())
     assignment_rows = []
 
+    # Documents HDBSCAN already called noise are not in ``unassigned`` at all —
+    # they hold a level-1 row in the run's noise bucket, so this pass leaves
+    # them alone instead of re-filing them into a real cluster on every ingest.
+    # This floor is the same rule for documents ingested *since* the run: below
+    # it, nothing is a good enough match to claim membership.
+    min_sim = cfg.cluster_assign_min_similarity
+    noise_cid = noise_cluster_id(active_run) if min_sim > 0 else None
+    n_to_noise = 0
+    n_no_embedding = 0
+
     doc_means = _doc_mean_embeddings_cached(unassigned)
     for doc_id in unassigned:
         doc_vec = doc_means.get(doc_id)
         if doc_vec is None:
+            # Chunked in SQLite but no vector in Chroma or the embedding cache.
+            # Counted so a stuck pool shows up in the log instead of silently
+            # reappearing as "unassigned" on every later ingest.
+            n_no_embedding += 1
             continue
 
         l1_cid, l1_score = _nearest_centroid(doc_vec, l1_centroids)
         if l1_cid is None:
+            continue
+
+        if noise_cid is not None and l1_score < min_sim:
+            assignment_rows.append(
+                {
+                    "document_id": doc_id,
+                    "cluster_id": noise_cid,
+                    "run_id": active_run,
+                    "score": l1_score,
+                    "assigned_at": now,
+                    "level": 1,
+                }
+            )
+            n_to_noise += 1
             continue
 
         assignment_rows.append(
@@ -319,8 +377,15 @@ def assign_new_docs(run_id: int | None = None) -> dict:
             con.execute(cluster_assignments.insert(), assignment_rows)
 
     n_docs = len({r["document_id"] for r in assignment_rows})
-    log.info("Assigned %d new documents to existing clusters.", n_docs)
-    return {"assigned": n_docs}
+    log.info(
+        "Assigned %d new documents to existing clusters (%d below the %.2f "
+        "similarity floor → noise, %d with no embedding).",
+        n_docs - n_to_noise,
+        n_to_noise,
+        min_sim,
+        n_no_embedding,
+    )
+    return {"assigned": n_docs, "noise": n_to_noise, "no_embedding": n_no_embedding}
 
 
 # ── Drift detection ───────────────────────────────────────────────────────────

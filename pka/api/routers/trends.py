@@ -37,6 +37,10 @@ def timeline(engine=Depends(get_engine)):
                 (cluster_assignments.c.run_id == run_id)
                 & (cluster_assignments.c.level == 1)
                 & (clusters.c.level == 1)
+                # The noise bucket is not a topic of interest — including it
+                # would put the largest line on the chart on documents that
+                # share nothing but having no good neighbourhood.
+                & (clusters.c.is_noise == False)  # noqa: E712 — SQLA expression
                 & (documents.c.date_added.is_not(None))
             )
         ).fetchall()

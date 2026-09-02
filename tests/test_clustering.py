@@ -135,6 +135,40 @@ def populated(monkeypatch):
     return doc_ids
 
 
+def _mock_hdbscan_with_noise(monkeypatch, n_clusters: int = 3) -> None:
+    """Like ``_mock_hdbscan``, but every third document comes back as noise."""
+    state = {"call": 0}
+
+    class FakeHDBSCAN:
+        def __init__(self, **kw):
+            pass
+
+        def fit_predict(self, X):
+            state["call"] += 1
+            n = len(X)
+            if state["call"] == 1:
+                return np.array(
+                    [-1 if i % 3 == 0 else i % n_clusters for i in range(n)],
+                    dtype=int,
+                )
+            return np.array([i % 2 for i in range(n)], dtype=int)
+
+    fake_mod = MagicMock()
+    fake_mod.HDBSCAN = FakeHDBSCAN
+    monkeypatch.setitem(__import__("sys").modules, "hdbscan", fake_mod)
+
+
+@pytest.fixture()
+def populated_with_noise(monkeypatch):
+    """``populated``, but HDBSCAN leaves a third of the documents as noise."""
+    doc_ids = _seed_documents(N_DOCS)
+    _mock_chroma_with_docs(monkeypatch, doc_ids)
+    _mock_umap(monkeypatch)
+    _mock_hdbscan_with_noise(monkeypatch)
+    _mock_llm(monkeypatch)
+    return doc_ids
+
+
 # ── engine.run_clustering ─────────────────────────────────────────────────────
 
 
@@ -351,6 +385,235 @@ class TestRunClustering:
 
         with pytest.raises(ValueError, match="empty"):
             run_clustering()
+
+
+# ── engine.run_clustering(cluster_space="agglomerative") ─────────────────────
+#
+# Unlike HDBSCAN, agglomerative needs no mock: it's sklearn/scipy, already a
+# hard dependency, so these run the real clusterer over the fixture — see
+# planning/archive/AGGLOMERATIVE_CLUSTERING.md §7.
+
+
+@pytest.fixture()
+def populated_agglomerative(monkeypatch):
+    """Seed DB + mock Chroma + mock viz UMAP + LLM. Real scipy clusterer."""
+    doc_ids = _seed_documents(N_DOCS)
+    _mock_chroma_with_docs(monkeypatch, doc_ids)
+    _mock_umap(monkeypatch)
+    _mock_llm(monkeypatch)
+    return doc_ids
+
+
+class TestRunClusteringAgglomerative:
+    def test_run_persisted(self, populated_agglomerative):
+        from pka.clustering.engine import run_clustering
+
+        result = run_clustering(cluster_space="agglomerative", n_clusters=4)
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(cluster_runs.c.run_id).where(cluster_runs.c.run_id == result.run_id)
+            ).fetchone()
+        assert row is not None
+
+    def test_n_clusters_yields_exact_l1_count(self, populated_agglomerative):
+        from pka.clustering.engine import run_clustering
+
+        result = run_clustering(cluster_space="agglomerative", n_clusters=4)
+        assert result.diagnostics["n_l1_clusters"] == 4
+
+        result5 = run_clustering(cluster_space="agglomerative", n_clusters=5)
+        assert result5.diagnostics["n_l1_clusters"] == 5
+
+    def test_cluster_rows_written_with_l2_parents(self, populated_agglomerative):
+        from pka.clustering.engine import run_clustering
+
+        result = run_clustering(cluster_space="agglomerative", n_clusters=4)
+        with get_engine().connect() as con:
+            l1 = con.execute(
+                sa.select(sa.func.count())
+                .select_from(clusters)
+                .where((clusters.c.run_id == result.run_id) & (clusters.c.level == 1))
+            ).scalar()
+            l2_rows = con.execute(
+                sa.select(clusters.c.parent_cluster_id).where(
+                    (clusters.c.run_id == result.run_id) & (clusters.c.level == 2)
+                )
+            ).fetchall()
+        assert l1 == 4
+        assert l2_rows
+        assert all(r[0] is not None for r in l2_rows)
+
+    def test_no_noise_and_full_coverage(self, populated_agglomerative):
+        """§3 invariant: agglomerative assigns every document; n_noise is 0."""
+        from pka.clustering.engine import run_clustering
+
+        result = run_clustering(cluster_space="agglomerative", n_clusters=4)
+        assert result.n_noise == 0
+        assert result.diagnostics["n_noise"] == 0
+        assert -1 not in result.assignments.values()
+        with get_engine().connect() as con:
+            l1_count = con.execute(
+                sa.select(sa.func.count())
+                .select_from(cluster_assignments)
+                .where(
+                    (cluster_assignments.c.run_id == result.run_id)
+                    & (cluster_assignments.c.level == 1)
+                )
+            ).scalar()
+        assert l1_count == N_DOCS
+
+    def test_l2_is_exact_refinement_of_l1(self, populated_agglomerative):
+        """Every L2 cluster's members belong to the one L1 cluster it is
+        recorded as a child of — the tree-cut invariant from §2.4/§7: L2 is a
+        deeper cut of the same tree, not an independently rebuilt clustering.
+        """
+        from pka.clustering.engine import run_clustering
+
+        result = run_clustering(cluster_space="agglomerative", n_clusters=4)
+        with get_engine().connect() as con:
+            l1_rows = con.execute(
+                sa.select(
+                    cluster_assignments.c.cluster_id, cluster_assignments.c.document_id
+                ).where(
+                    (cluster_assignments.c.run_id == result.run_id)
+                    & (cluster_assignments.c.level == 1)
+                )
+            ).fetchall()
+            l2_rows = con.execute(
+                sa.select(
+                    cluster_assignments.c.cluster_id, cluster_assignments.c.document_id
+                ).where(
+                    (cluster_assignments.c.run_id == result.run_id)
+                    & (cluster_assignments.c.level == 2)
+                )
+            ).fetchall()
+            parent_by_l2 = dict(
+                con.execute(
+                    sa.select(clusters.c.cluster_id, clusters.c.parent_cluster_id).where(
+                        (clusters.c.run_id == result.run_id) & (clusters.c.level == 2)
+                    )
+                ).fetchall()
+            )
+
+        l1_by_doc = {doc_id: cid for cid, doc_id in l1_rows}
+        l2_members: dict[int, set[int]] = {}
+        for l2_cid, doc_id in l2_rows:
+            l2_members.setdefault(l2_cid, set()).add(doc_id)
+
+        assert l2_members  # the fixture must actually exercise L2
+        for l2_cid, members in l2_members.items():
+            parent_cid = parent_by_l2[l2_cid]
+            assert {l1_by_doc[d] for d in members} == {parent_cid}
+
+    def test_invalid_linkage_rejected(self, populated_agglomerative):
+        from pka.clustering.engine import run_clustering
+
+        with pytest.raises(ValueError, match="linkage"):
+            run_clustering(cluster_space="agglomerative", linkage="centroid", n_clusters=4)
+
+    def test_n_clusters_and_distance_threshold_conflict(self, populated_agglomerative):
+        from pka.clustering.engine import run_clustering
+
+        with pytest.raises(ValueError, match="Exactly one"):
+            run_clustering(cluster_space="agglomerative", n_clusters=4, distance_threshold=1.0)
+
+    def test_auto_k_sweep_clamped_to_corpus_and_recorded(self, populated_agglomerative):
+        """A 20-doc fixture must not propose a k the corpus can't support, and
+        the winning sweep must be recorded in ``params`` (§2.2c) so a bad
+        auto-pick is diagnosable rather than invisible.
+        """
+        from pka.clustering.engine import run_clustering
+
+        result = run_clustering(cluster_space="agglomerative")
+        assert 2 <= result.diagnostics["n_l1_clusters"] <= N_DOCS - 1
+        with get_engine().connect() as con:
+            row = con.execute(
+                sa.select(cluster_runs.c.parameters).where(cluster_runs.c.run_id == result.run_id)
+            ).fetchone()
+        params = json.loads(row[0])
+        assert "k_sweep" in params
+        assert all(int(k) <= N_DOCS - 1 for k in params["k_sweep"])
+
+
+class TestAgglomerativeKCandidates:
+    def test_clamped_below_corpus_size(self):
+        from pka.clustering.engine import _agglomerative_k_candidates
+
+        candidates = _agglomerative_k_candidates(40, k_min=8, k_max=40)
+        assert max(candidates) <= 39
+        assert min(candidates) >= 2
+
+    def test_tiny_corpus_falls_back_to_two(self):
+        from pka.clustering.engine import _agglomerative_k_candidates
+
+        assert _agglomerative_k_candidates(3, k_min=8, k_max=40) == [2]
+
+
+class TestSplitSubtreeMatchesRebuild:
+    """§2.4's core claim: cutting the induced subtree equals rebuilding linkage
+    on the group's slice. Pinned here since the whole L2 tree-reuse design rests
+    on it (measured ARI 1.0 across ward/average/complete during planning).
+    """
+
+    @pytest.mark.parametrize("linkage_method", ["ward", "average", "complete"])
+    def test_subtree_split_matches_independent_rebuild(self, linkage_method):
+        from scipy.cluster.hierarchy import fcluster, leaders
+        from scipy.cluster.hierarchy import linkage as scipy_linkage
+        from sklearn.metrics import adjusted_rand_score
+
+        from pka.clustering.engine import _build_linkage, _cut_linkage, _split_subtree
+
+        rng = np.random.default_rng(3)
+        n, k_l1, k_l2 = 300, 6, 4
+        X = rng.random((n, 10)).astype(np.float32)
+
+        Z, data = _build_linkage(X, linkage_method=linkage_method, metric="cosine")
+        l1_labels = _cut_linkage(Z, n_clusters=k_l1)
+
+        leader_nodes, leader_cids = leaders(Z, l1_labels)
+        node_by_cid = dict(zip(leader_cids.tolist(), leader_nodes.tolist(), strict=False))
+
+        for cid, node in node_by_cid.items():
+            member_idx = np.where(l1_labels == cid)[0]
+            if len(member_idx) < k_l2 + 1:
+                continue
+            groups = _split_subtree(Z, n, node, k_l2)
+            assert sorted(i for g in groups for i in g) == sorted(member_idx.tolist())
+
+            reused = np.empty(len(member_idx), dtype=int)
+            pos = {idx: i for i, idx in enumerate(member_idx.tolist())}
+            for gi, group in enumerate(groups):
+                for leaf in group:
+                    reused[pos[leaf]] = gi
+
+            sub = data[member_idx]
+            Zs = scipy_linkage(sub, method=linkage_method)
+            rebuilt = fcluster(Zs, k_l2, criterion="maxclust")
+
+            assert adjusted_rand_score(rebuilt, reused) == pytest.approx(1.0)
+
+
+class TestAutoKAgglomerative:
+    def test_recovers_planted_cluster_count_on_grid(self):
+        """Silhouette sweep recovers a planted cluster count that is on the
+        candidate grid — see planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.2c on why
+        the count must be on the grid for this assertion to mean anything.
+        """
+        from pka.clustering.engine import _auto_k_agglomerative, _build_linkage
+
+        rng = np.random.default_rng(7)
+        planted_k = 16
+        n_per = 20
+        dim = 20
+        centres = rng.normal(scale=6.0, size=(planted_k, dim))
+        X = np.concatenate(
+            [centres[i] + rng.normal(scale=0.5, size=(n_per, dim)) for i in range(planted_k)]
+        ).astype(np.float32)
+
+        Z, data = _build_linkage(X, linkage_method="ward", metric="cosine")
+        best_k, sweep = _auto_k_agglomerative(Z, data, k_min=8, k_max=40)
+        assert best_k == planted_k
+        assert sweep  # recorded in params so a bad pick is diagnosable
 
 
 # ── lifecycle.accept_run / reject_run ─────────────────────────────────────────
@@ -659,6 +922,92 @@ class TestComputeMergeSuggestions:
         assert compute_merge_suggestions() == []
 
 
+# ── The per-run noise bucket ──────────────────────────────────────────────────
+
+
+class TestNoiseCluster:
+    def _noise_row(self, run_id):
+        with get_engine().connect() as con:
+            return (
+                con.execute(
+                    sa.select(clusters).where(
+                        (clusters.c.run_id == run_id) & (clusters.c.is_noise == True)  # noqa: E712 — SQLA expression
+                    )
+                )
+                .mappings()
+                .fetchone()
+            )
+
+    def test_run_creates_one_noise_cluster_holding_every_noise_doc(self, populated_with_noise):
+        from pka.clustering.engine import NOISE_CLUSTER_LABEL, run_clustering
+
+        result = run_clustering(min_cluster_size=2)
+        assert result.n_noise > 0
+
+        row = self._noise_row(result.run_id)
+        assert row is not None
+        assert row["label"] == NOISE_CLUSTER_LABEL
+        assert row["level"] == 1
+        assert row["parent_cluster_id"] is None
+        # No centroid: a holding pen must never attract a document.
+        assert row["centroid"] is None
+
+        with get_engine().connect() as con:
+            n = con.execute(
+                sa.select(sa.func.count())
+                .select_from(cluster_assignments)
+                .where(cluster_assignments.c.cluster_id == row["cluster_id"])
+            ).scalar()
+        assert n == result.n_noise
+
+    def test_run_without_noise_creates_no_noise_cluster(self, populated):
+        from pka.clustering.engine import run_clustering
+
+        result = run_clustering(min_cluster_size=2)
+        assert result.n_noise == 0
+        assert self._noise_row(result.run_id) is None
+
+    def test_noise_cluster_is_excluded_from_centroids(self, populated_with_noise):
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.lifecycle import load_persisted_centroids
+
+        result = run_clustering(min_cluster_size=2)
+        noise_cid = self._noise_row(result.run_id)["cluster_id"]
+
+        assert noise_cid not in load_persisted_centroids(result.run_id, level=1)
+
+    def test_noise_cluster_is_not_counted_as_a_cluster(self, populated_with_noise):
+        """``n_l1_clusters`` counts topics; the bucket is not one of them."""
+        from pka.clustering.engine import run_clustering
+
+        result = run_clustering(min_cluster_size=2)
+        with get_engine().connect() as con:
+            n_l1_rows = con.execute(
+                sa.select(sa.func.count())
+                .select_from(clusters)
+                .where((clusters.c.run_id == result.run_id) & (clusters.c.level == 1))
+            ).scalar()
+        n_l1_topics = result.diagnostics["n_l1_clusters"]
+        assert n_l1_rows == n_l1_topics + 1  # the topics, plus the bucket
+
+    def test_relabelling_the_noise_bucket_is_refused(self, populated_with_noise):
+        from pka.clustering.engine import relabel_single_cluster, run_clustering
+
+        result = run_clustering(min_cluster_size=2)
+        noise_cid = self._noise_row(result.run_id)["cluster_id"]
+
+        with pytest.raises(ValueError, match="noise"):
+            relabel_single_cluster(noise_cid, result.run_id)
+
+    def test_run_relabelling_leaves_the_noise_bucket_alone(self, populated_with_noise):
+        from pka.clustering.engine import NOISE_CLUSTER_LABEL, relabel_run_clusters, run_clustering
+
+        result = run_clustering(min_cluster_size=2, skip_labelling=True)
+        relabel_run_clusters(result.run_id)
+
+        assert self._noise_row(result.run_id)["label"] == NOISE_CLUSTER_LABEL
+
+
 # ── lifecycle.assign_new_docs ─────────────────────────────────────────────────
 
 
@@ -719,6 +1068,107 @@ class TestAssignNewDocs:
         from pka.clustering.lifecycle import assign_new_docs
 
         assert assign_new_docs() == {"assigned": 0}
+
+    def test_noise_docs_are_never_refiled_into_real_clusters(
+        self,
+        populated_with_noise,
+        monkeypatch,
+    ):
+        """The whole point of the noise bucket: documents HDBSCAN could not place
+        keep a row of their own, so the incremental pass leaves them alone."""
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.lifecycle import accept_run, assign_new_docs, noise_cluster_id
+
+        result = run_clustering(min_cluster_size=2)
+        accept_run(result.run_id)
+        noise_cid = noise_cluster_id(result.run_id)
+        assert noise_cid is not None
+
+        with get_engine().connect() as con:
+            before = set(
+                r[0]
+                for r in con.execute(
+                    sa.select(cluster_assignments.c.document_id).where(
+                        cluster_assignments.c.cluster_id == noise_cid
+                    )
+                ).fetchall()
+            )
+        assert len(before) == result.n_noise
+
+        store, col = _mock_chroma_with_docs(monkeypatch, populated_with_noise)
+        self._mock_get(store, col)
+        stats = assign_new_docs(result.run_id)
+
+        assert stats["assigned"] == 0  # nothing looks unassigned any more
+        with get_engine().connect() as con:
+            after = set(
+                r[0]
+                for r in con.execute(
+                    sa.select(cluster_assignments.c.document_id).where(
+                        cluster_assignments.c.cluster_id == noise_cid
+                    )
+                ).fetchall()
+            )
+            real = set(
+                r[0]
+                for r in con.execute(
+                    sa.select(cluster_assignments.c.document_id).where(
+                        (cluster_assignments.c.run_id == result.run_id)
+                        & (cluster_assignments.c.level == 1)
+                        & (cluster_assignments.c.cluster_id != noise_cid)
+                    )
+                ).fetchall()
+            )
+        assert after == before
+        assert not (before & real)  # no noise document leaked into a real cluster
+
+    def test_similarity_floor_sends_a_far_new_doc_to_noise(
+        self,
+        populated_with_noise,
+        monkeypatch,
+    ):
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.lifecycle import accept_run, assign_new_docs, noise_cluster_id
+        from pka.config import settings
+        from pka.db.queries import insert_chunks
+
+        result = run_clustering(min_cluster_size=2)
+        accept_run(result.run_id)
+        noise_cid = noise_cluster_id(result.run_id)
+
+        new_id = make_document("zotero", "FAR001", "Far doc", None, int(time.time()))
+        insert_chunks(
+            [
+                {
+                    "document_id": new_id,
+                    "chunk_index": 0,
+                    "text": "unrelated content",
+                    "token_count": 2,
+                    "vector_id": f"vec-far-{new_id}",
+                }
+            ]
+        )
+        store, col = _mock_chroma_with_docs(monkeypatch, populated_with_noise + [new_id])
+        store[f"vec-far-{new_id}"] = {
+            "embedding": [0.5] * FAKE_DIM,
+            "text": "far",
+            "meta": {"document_id": new_id, "source": "zotero", "chunk_index": 0},
+        }
+        self._mock_get(store, col)
+
+        # A floor no cosine similarity can clear: every candidate is "too far".
+        monkeypatch.setattr(settings, "cluster_assign_min_similarity", 1.1)
+        stats = assign_new_docs(result.run_id)
+
+        assert stats["noise"] == 1
+        with get_engine().connect() as con:
+            cid = con.execute(
+                sa.select(cluster_assignments.c.cluster_id).where(
+                    (cluster_assignments.c.document_id == new_id)
+                    & (cluster_assignments.c.level == 1)
+                )
+            ).scalar()
+        assert cid == noise_cid
 
     def test_all_assigned_returns_zero(self, populated, monkeypatch):
         from pka.clustering.engine import run_clustering
