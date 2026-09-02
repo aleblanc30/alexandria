@@ -39,13 +39,13 @@ two when its priority changes; do not duplicate it in both.
 - [x] **pubmed ingester** — Firefox fetch handler for pubmed pages saved as bookmarks (`pka/ingestion/pubmed.py`); plan in `FIREFOX_INGESTERS_PLAN.md`.
 - [x] **top domains and top rejected domains** — `GET /ingestion/domains` and a two-table panel on `/ingestion` rank domains by document count and by unfetchable count; plan in `DOMAIN_TOP_LISTS_PLAN.md`.
 - [x] **Search-URL cards** — a bookmarked search-results page (`google.com/search?q=`, `duckduckgo.com/?q=`, `youtube.com/results?search_query=`) is scraped as if it were a document; decode the query from the URL into a title + card summary with **no HTTP request at all**. Plan in `SEARCH_URL_CARDS.md`.
-- [ ] **nature.com fetch handler** — needs a dedicated Firefox fetch handler (paywall/anti-bot page currently scraped as-is).
-- [ ] **doi.org fetch handler** — DOI redirect target isn't resolved/handled, so the landing page is scraped as-is.
-- [ ] **sciencedirect.com fetch handler** — top unfetchable domain; needs a dedicated Firefox fetch handler (paywall/anti-bot page currently scraped as-is).
-- [ ] **link.springer.com fetch handler** — needs a dedicated Firefox fetch handler alongside the other publisher domains above.
-- [ ] **mitpress.mit.edu fetch handler** — top unfetchable domain; needs a dedicated Firefox fetch handler.
-- [ ] **journals.aps.org fetch handler** — top unfetchable domain; needs a dedicated Firefox fetch handler.
-- [ ] **researchgate.net fetch handler** — top unfetchable domain; needs a dedicated Firefox fetch handler.
+- [ ] **nature.com fetch handler** — needs a dedicated Firefox fetch handler (paywall/anti-bot page currently scraped as-is); article path already carries the `10.1038` DOI suffix. Plan in `PUBLISHER_FETCH_HANDLERS.md` §6.
+- [ ] **doi.org fetch handler** — DOI redirect target isn't resolved/handled, so the landing page is scraped as-is; resolve by content negotiation instead of following the redirect. Plan in `PUBLISHER_FETCH_HANDLERS.md` §5.
+- [ ] **sciencedirect.com fetch handler** — top unfetchable domain; needs a dedicated Firefox fetch handler (paywall/anti-bot page currently scraped as-is). PII → DOI via Crossref `alternative-id`, which misses on older deposits. Plan in `PUBLISHER_FETCH_HANDLERS.md` §8.2.
+- [ ] **link.springer.com fetch handler** — needs a dedicated Firefox fetch handler alongside the other publisher domains above; DOI is already in the path, but Crossref carries no abstract for `10.1007` so the Semantic Scholar rung is mandatory. Plan in `PUBLISHER_FETCH_HANDLERS.md` §8.1.
+- [ ] **mitpress.mit.edu fetch handler** — top unfetchable domain; needs a dedicated Firefox fetch handler. **Not a DOI handler** — it is a bookstore with the ISBN in the URL, so it reuses the Open Library ladder. Plan in `PUBLISHER_FETCH_HANDLERS.md` §9.
+- [ ] **journals.aps.org fetch handler** — top unfetchable domain (hard 403); needs a dedicated Firefox fetch handler. DOI in the path; `link.aps.org` is the same handler. Plan in `PUBLISHER_FETCH_HANDLERS.md` §7.
+- [ ] **researchgate.net fetch handler** — top unfetchable domain; hard-blocked with no public API, so the handler builds a card from the URL slug with **no request at all** (the `search_url.py` pattern). Plan in `PUBLISHER_FETCH_HANDLERS.md` §10.
 
 
 ## Active learning
@@ -56,7 +56,7 @@ two when its priority changes; do not duplicate it in both.
 ## UI
 
 - [ ] **Make top unfetchable domains list collapsible** — `DomainTopLists.vue` displays the "Top unfetchable domains" section with a full table; add a collapse/expand toggle so it doesn't take up space when closed.
-- [ ] **Settings panel (read-only environment report)** — nothing in the UI reflects any of `config.py`'s 81 settings and there is no health endpoint anywhere, so a misrouted provider or an unreachable Ollama is invisible (the direct diagnostic for *Summarization calls fail silently* above); `GET /settings` + a `/settings` view showing resolved provider/model per capability, credential presence, the §1.1 outbound flags and every non-default value. Writes are deliberately a separate, later slice — plan in `SETTINGS_PANEL.md`.
+- [x] **Settings panel (read-only environment report)** — nothing in the UI reflects any of `config.py`'s settings and there was no health endpoint anywhere, so a misrouted provider or an unreachable Ollama was invisible (the direct diagnostic for *Summarization calls fail silently* above); `GET /settings` (`pka/api/settings_view.py` + `routers/settings.py`) plus a `/settings` view show resolved provider/model per capability, credential presence (never the value), the §1.1 outbound flags and every non-default value, grouped and with a per-capability reachability check. Writes are a separate, later slice — see `BACKLOG.md` and `SETTINGS_PANEL.md` §6.
 - [ ] **Delete tags in the UI** — allow removing tags from the frontend (with appropriate API support and confirmation).
 - [x] **Cluster run parameter dialog** — `+ New run` on `/runs` opens `ClusterRunDialog.vue`, exposing the `run_clustering()` knobs the CLI already had (method, min cluster size / samples / neighbours, min dist, PCA or UMAP dims, labelling mode) via a `TriggerRunRequest` JSON body. Plan in `CLUSTER_RUN_DIALOG.md`.
 - [x] **Cluster run deletion interface** — `DELETE /runs/{run_id}` (optional `?force=true` for an accepted run) wraps the already-existing `purge_cluster_run` from `pka/cli/purge_cluster_runs.py`; `/runs` gets a per-row Delete button (window.confirm, force-confirm wording when deleting the active run).

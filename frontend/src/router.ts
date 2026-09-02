@@ -14,5 +14,6 @@ export const router = createRouter({
     { path: '/ingestion',         component: () => import('@/views/IngestionView.vue') },
     { path: '/ingestion/:source', component: () => import('@/views/IngestionSourceView.vue') },
     { path: '/lists',      component: () => import('@/views/ReadingListView.vue') },
+    { path: '/settings',   component: () => import('@/views/SettingsView.vue') },
   ],
 })

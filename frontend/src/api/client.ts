@@ -553,3 +553,28 @@ export const pseudoLabelTagTrainingSession = (
   )
 export const getTagTrainingSessionByTag = (tag: string) =>
   req<TagTrainingSession>(`/tag-training/sessions/by-tag/${encodeURIComponent(tag)}`)
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+export interface SettingField {
+  name: string
+  value: unknown
+  is_secret: boolean
+  is_set: boolean | null
+  is_default: boolean
+  tier: 'install_time' | 'operational' | 'tuning'
+}
+export interface SettingGroup { name: string; fields: SettingField[] }
+export interface CapabilityStatus {
+  capability: string
+  provider: string
+  model: string
+  base_url: string
+  credential_present: boolean
+}
+export interface SettingsReport { groups: SettingGroup[]; capabilities: CapabilityStatus[] }
+export interface ProbeResult { reachable: boolean; detail: string }
+
+export const getSettings = () => req<SettingsReport>('/settings')
+export const probeCapability = (capability: string) =>
+  req<ProbeResult>(`/settings/probe/${capability}`, { method: 'POST' })

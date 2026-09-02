@@ -286,3 +286,29 @@ the acceptance criteria): whether 401/403 URLs are submitted — archiving a pay
 page still records that the URL existed and what it claimed to be — and whether
 coverage is judged against the bookmark date alone or additionally against a maximum
 snapshot age.
+
+## Configuration
+
+### Editable settings panel (the write half)
+
+**What:** Let the `/settings` view *set* the operational tier — provider and model
+selection per capability, base URLs, and the `DESIGN.md` §1.1 outbound flags —
+persisting to `.env` and dropping the cached provider instances so the switch
+takes effect without a restart.
+
+**Why deferred:** The read-only report (`TODO.md`, *UI*) carries most of the value
+and none of the risk, and it is the thing that is missing outright — the write
+machinery already exists in `pka/api/source_paths.py` (`_persist_env_var`, live
+`setattr` on the singleton, tests that redirect `ENV_FILE_PATH`), so this slice is
+generalising a working pattern rather than inventing one. Shipping the report first
+also reveals which fields actually get re-set often enough to deserve a control.
+
+**Rough shape when picked up:** see `SETTINGS_PANEL.md` §6. Key constraints: an
+allowlist of the operational tier only (400 on anything else); credentials stay in
+`.secrets` and are never accepted over HTTP; validate by constructing a throwaway
+`Settings(**{field: value})` so the field's own validators run before persisting;
+call `reset_providers()` after a provider/model/base-URL change; and label the
+fields whose effect is *not* live (the EasyOCR reader caches independently, and the
+Chroma collection is dimension-locked, so an embedding-model change needs
+`rebuild_from_chunks`, not a toggle). Lift `_persist_env_var` and `ENV_FILE_PATH`
+into a shared `pka/api/env_file.py` that `source_paths.py` re-imports.

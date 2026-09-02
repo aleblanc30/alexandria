@@ -115,6 +115,15 @@ Text-chunk embeddings are the one capability with no remote option: they stay
 inside ChromaDB's built-in function, so the embedding of every document is
 computed locally regardless of configuration.
 
+The outbound flags above are surfaced read-only in the UI at `/settings`
+(`pka/api/settings_view.py`), alongside every other config field and a
+per-capability reachability check. That page follows the same policy it
+reports on: the local Ollama backend is probed on mount because
+`ollama_base_url` defaults to `localhost` (reusing the existing
+`OllamaChatProvider.resolve_model` auto-detect probe), while every remote
+backend is probed only when the user clicks *Check* — a page load must not
+itself become a new outbound call.
+
 ## 2. Adding a new source connector
 
 To add a new source (e.g. Pocket, Raindrop, Readwise):

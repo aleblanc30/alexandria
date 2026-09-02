@@ -131,6 +131,11 @@ store — so a `data\` holding only the database at this point is expected.
 Checking now confirms the path configuration took effect, before any expensive
 ingestion depends on it.
 
+Once the server is running, `/settings` shows what actually got picked up —
+resolved provider/model/endpoint per capability, credential presence, and every
+`.env` value alongside its default — so a stale or mistyped key is visible on
+one page instead of a diff against `.env.example`.
+
 ## 5. Server launcher
 
 The repository ships this launcher at `scripts\start-server.bat`, so there is

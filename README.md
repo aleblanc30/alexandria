@@ -200,7 +200,12 @@ cd frontend && npm run test
 ## Configuration
 
 All settings can be overridden via the `ALEXANDRIA_` environment-variable prefix or
-a `.env` file. See `.env.example` for the full list.
+a `.env` file. See `.env.example` for the full list. Once the app is running,
+`/settings` shows what the current process actually resolved — provider,
+model, endpoint and credential presence per capability (with a reachability
+check for local/remote backends), plus every other setting grouped and marked
+where it differs from its default. It is read-only; `.env` / `.secrets` remain
+the way to change anything.
 
 ## Design
 

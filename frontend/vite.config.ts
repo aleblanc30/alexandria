@@ -23,6 +23,7 @@ export default defineConfig({
       '/ingestion':     'http://localhost:8420',
       '/images':        'http://localhost:8420',
       '/reading-lists': 'http://localhost:8420',
+      '/settings':      'http://localhost:8420',
       '/tag-training': {
         target: 'http://localhost:8420',
         // LLM pseudo-label runs many sequential Ollama calls

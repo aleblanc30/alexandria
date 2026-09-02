@@ -26,6 +26,7 @@
       <RouterLink to="/runs" class="nav-item" title="Cluster runs"><IconRun /><span v-if="showFull" class="nav-label">Cluster runs</span></RouterLink>
 
       <RouterLink to="/lists" class="nav-item" title="Reading lists"><IconList /><span v-if="showFull" class="nav-label">Reading lists</span></RouterLink>
+      <RouterLink to="/settings" class="nav-item" title="Settings"><IconSettings /><span v-if="showFull" class="nav-label">Settings</span></RouterLink>
 
       <template v-if="showFull">
         <div class="nav-divider" />
@@ -61,6 +62,7 @@ const IconTag     = { template: `<svg class="icon" viewBox="0 0 16 16" fill="non
 const IconRun     = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="2"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="5" y1="10" x2="8" y2="10"/></svg>` }
 const IconIngestion = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8"/><polyline points="5,7 8,10 11,7"/><path d="M2 11v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2"/></svg>` }
 const IconList    = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="10" height="13" rx="1.5"/><line x1="5" y1="6" x2="10" y2="6"/><line x1="5" y1="9" x2="10" y2="9"/><line x1="5" y1="12" x2="8" y2="12"/></svg>` }
+const IconSettings = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.25"/><path d="M8 2.5v1.4M8 12.1v1.4M13.5 8h-1.4M3.9 8H2.5M11.66 4.34l-.99.99M5.33 10.67l-.99.99M11.66 11.66l-.99-.99M5.33 5.33l-.99-.99"/></svg>` }
 const IconChevronRight = { template: `<svg class="icon icon-chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="6,4 10,8 6,12"/></svg>` }
 
 const ingest = useIngestionStore()
