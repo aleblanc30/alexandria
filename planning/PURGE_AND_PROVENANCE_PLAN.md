@@ -52,7 +52,7 @@ named in the request is **already solved**:
 | Purge cluster runs | `pka/cli/purge_cluster_runs.py`, `alexandria purge-cluster-runs` | Per-run or `--all`, with `--dry-run` and an `--force` guard on the accepted run |
 | **Rebuild all vectors** | `POST /ingestion/rebuild-vectors`, `vector_store.rebuild_from_chunks()` | Drops the collection and re-embeds from `chunks.text`. **This is the embedding-swap button, and it already ships.** |
 | Clear image gate rejections | `clear_image_rejections()`, `alexandria images --reset-rejections` | Keyed by path, else rejected images stay skipped forever |
-| Re-queue unfetchable URLs | `reset_unfetchable_for_fetch()` | Dev-mode only, runs automatically at fetch start |
+| Re-queue unfetchable URLs | `reset_unfetchable_for_fetch()` | Runs automatically at fetch start, once the retry cooldown elapses |
 
 So the embedding-swap workflow is: change the model, hit rebuild-vectors, done.
 **The summarisation-swap workflow has nothing**, and that gap is the real

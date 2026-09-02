@@ -1,4 +1,5 @@
 import asyncio
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -527,8 +528,28 @@ class TestExtractText:
 
 
 class TestResetUnfetchableForFetch:
-    def test_does_not_reset_when_not_dev(self, monkeypatch):
-        monkeypatch.setattr("pka.config.settings.dev", False)
+    @staticmethod
+    def _mark_unfetchable(doc_ids, *, seconds_ago: float):
+        from pka.db.queries import get_engine
+        from pka.db.schema import documents as docs_table
+        from pka.db.schema import fetch_log as log_table
+
+        ts = int(time.time() - seconds_ago)
+        with get_engine().begin() as con:
+            con.execute(
+                docs_table.update()
+                .where(docs_table.c.id.in_(doc_ids))
+                .values(fetch_status=str(FetchStatus.UNFETCHABLE))
+            )
+            for doc_id in doc_ids:
+                con.execute(
+                    log_table.insert().values(
+                        document_id=doc_id, timestamp=ts, http_status=None, error_msg="timeout"
+                    )
+                )
+
+    def test_does_not_reset_before_cooldown_elapses(self, monkeypatch):
+        monkeypatch.setattr("pka.config.settings.fetch_unfetchable_retry_after_seconds", 3600.0)
         wiki_id = make_document(
             "firefox",
             "F-WIKI",
@@ -543,21 +564,16 @@ class TestResetUnfetchableForFetch:
             "https://example.com/blocked",
             None,
         )
+        self._mark_unfetchable([wiki_id, other_id], seconds_ago=60)
+
+        count = reset_unfetchable_for_fetch()
+
+        assert count == 0
         import sqlalchemy as sa
 
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
 
-        with get_engine().begin() as con:
-            con.execute(
-                docs_table.update()
-                .where(docs_table.c.id.in_([wiki_id, other_id]))
-                .values(fetch_status=str(FetchStatus.UNFETCHABLE))
-            )
-
-        count = reset_unfetchable_for_fetch()
-
-        assert count == 0
         with get_engine().connect() as con:
             rows = {
                 r[0]: r[1]
@@ -570,8 +586,8 @@ class TestResetUnfetchableForFetch:
         assert rows[wiki_id] == str(FetchStatus.UNFETCHABLE)
         assert rows[other_id] == str(FetchStatus.UNFETCHABLE)
 
-    def test_resets_all_unfetchable_in_dev(self, monkeypatch):
-        monkeypatch.setattr("pka.config.settings.dev", True)
+    def test_resets_non_structural_unfetchable_after_cooldown(self, monkeypatch):
+        monkeypatch.setattr("pka.config.settings.fetch_unfetchable_retry_after_seconds", 3600.0)
         wiki_id = make_document(
             "firefox",
             "F-WIKI2",
@@ -593,21 +609,16 @@ class TestResetUnfetchableForFetch:
             "file:///C:/Users/foo.pdf",
             None,
         )
+        self._mark_unfetchable([wiki_id, other_id, local_id], seconds_ago=7200)
+
+        count = reset_unfetchable_for_fetch()
+
+        assert count == 2
         import sqlalchemy as sa
 
         from pka.db.queries import get_engine
         from pka.db.schema import documents as docs_table
 
-        with get_engine().begin() as con:
-            con.execute(
-                docs_table.update()
-                .where(docs_table.c.id.in_([wiki_id, other_id, local_id]))
-                .values(fetch_status=str(FetchStatus.UNFETCHABLE))
-            )
-
-        count = reset_unfetchable_for_fetch()
-
-        assert count == 2
         with get_engine().connect() as con:
             rows = {
                 r[0]: r[1]
@@ -620,6 +631,36 @@ class TestResetUnfetchableForFetch:
         assert rows[wiki_id] == str(FetchStatus.PENDING)
         assert rows[other_id] == str(FetchStatus.PENDING)
         assert rows[local_id] == str(FetchStatus.UNFETCHABLE)
+
+    def test_resets_unfetchable_with_no_fetch_log_row(self):
+        """Legacy/manually-set unfetchable rows with no logged attempt are eligible."""
+        import sqlalchemy as sa
+
+        from pka.db.queries import get_engine
+        from pka.db.schema import documents as docs_table
+
+        doc_id = make_document(
+            "firefox",
+            "F-NOLOG",
+            "No log",
+            "https://example.com/nolog",
+            None,
+        )
+        with get_engine().begin() as con:
+            con.execute(
+                docs_table.update()
+                .where(docs_table.c.id == doc_id)
+                .values(fetch_status=str(FetchStatus.UNFETCHABLE))
+            )
+
+        count = reset_unfetchable_for_fetch()
+
+        assert count == 1
+        with get_engine().connect() as con:
+            status = con.execute(
+                sa.select(docs_table.c.fetch_status).where(docs_table.c.id == doc_id)
+            ).scalar()
+        assert status == str(FetchStatus.PENDING)
 
 
 _ARXIV_ATOM = """<?xml version="1.0" encoding="UTF-8"?>

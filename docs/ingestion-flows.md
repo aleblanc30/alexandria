@@ -257,7 +257,7 @@ flowchart TD
     CLS --> FULL{"run_full_sync()"}
     FULL --> ING["sync_firefox_ingest()"]
 
-    RESET["reset_unfetchable_for_fetch()<br/>dev mode only — re-queue"]
+    RESET["reset_unfetchable_for_fetch()<br/>re-queue if last attempt &gt; retry cooldown"]
     QUEUE["firefox_ingest_queue(limit)<br/>pending URLs + fetched docs missing chunks"]
     NW{"work queue empty?"}
     SKIPF["sp.skip_phase('firefox','fetching')"]

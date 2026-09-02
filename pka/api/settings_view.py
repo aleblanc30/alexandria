@@ -171,6 +171,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "fetch_wayback_extra_budget_seconds",
         "fetch_wikipedia_retry_delay_seconds",
         "fetch_wikipedia_max_retries",
+        "fetch_unfetchable_retry_after_seconds",
         "fetch_user_agent",
         "reddit_user_agent",
         "reddit_saved_limit",

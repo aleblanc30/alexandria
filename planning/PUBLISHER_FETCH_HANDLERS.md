@@ -498,9 +498,9 @@ options. Take the third:
 1. **Fall through to the generic GET.** Rejected — that is the silent paywall
    ingest of §1, which is the whole reason for the handler.
 2. **`unfetchable`, reason `"pii not resolvable to a doi"`.** Honest, and
-   `reset_unfetchable_for_fetch` (`fetcher.py:290`) will re-queue it in dev mode
-   so a later Elsevier backfill would pick it up. But it leaves the document
-   with no title at all.
+   `reset_unfetchable_for_fetch` (`fetcher.py:290`) will re-queue it once the
+   retry cooldown elapses, so a later Elsevier backfill would pick it up. But
+   it leaves the document with no title at all.
 3. **A URL-derived card**, precedent `reddit_bookmark._url_fallback_result`
    (`reddit_bookmark.py:188`) and `search_url.py`: `status="fetched"`,
    `http_status=None`, `title` from the bookmark's own title where present,

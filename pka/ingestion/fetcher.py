@@ -298,16 +298,31 @@ def _get_pending(
 
 
 def reset_unfetchable_for_fetch(source: Source | str = Source.FIREFOX) -> int:
-    """Re-queue unfetchable URLs for ``source`` before a fetch run (dev mode only)."""
-    if not cfg.dev:
-        return 0
-
+    """Re-queue unfetchable URLs for ``source`` whose last attempt is old enough
+    that the failure may no longer hold (server back up, network fixed, rate
+    limit expired). Skips URLs with a structural reason to fail (local paths,
+    unsupported schemes), since retrying those can never succeed.
+    """
     eng = get_engine()
+    cutoff = int(time.time()) - cfg.fetch_unfetchable_retry_after_seconds
+    last_attempt = (
+        sa.select(
+            fetch_log.c.document_id,
+            sa.func.max(fetch_log.c.timestamp).label("last_ts"),
+        )
+        .group_by(fetch_log.c.document_id)
+        .subquery()
+    )
     with eng.begin() as con:
         rows = con.execute(
-            sa.select(documents.c.id, documents.c.url_or_path).where(
+            sa.select(documents.c.id, documents.c.url_or_path)
+            .select_from(
+                documents.outerjoin(last_attempt, last_attempt.c.document_id == documents.c.id)
+            )
+            .where(
                 (documents.c.source == str(source))
                 & (documents.c.fetch_status == str(FetchStatus.UNFETCHABLE))
+                & (sa.or_(last_attempt.c.last_ts.is_(None), last_attempt.c.last_ts <= cutoff))
             )
         ).fetchall()
         requeue_ids = [
@@ -322,7 +337,7 @@ def reset_unfetchable_for_fetch(source: Source | str = Source.FIREFOX) -> int:
         )
         count = result.rowcount or 0
     if count > 0:
-        log.info("Re-queued %d previously unfetchable URLs (dev mode)", count)
+        log.info("Re-queued %d previously unfetchable URLs (retry cooldown elapsed)", count)
     return count
 
 

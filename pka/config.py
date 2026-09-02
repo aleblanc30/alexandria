@@ -342,6 +342,9 @@ class Settings(BaseSettings):
     fetch_wayback_extra_budget_seconds: float = 15.0  # extra time for availability + snapshot
     fetch_wikipedia_retry_delay_seconds: float = 2.0  # pause between Wikipedia API retries
     fetch_wikipedia_max_retries: int = 2  # retries after the first Wikipedia API attempt
+    # Re-queue a bookmark marked unfetchable once its last attempt is this old, in
+    # case the failure was transient (server down, network blip, rate limit).
+    fetch_unfetchable_retry_after_seconds: float = 7 * 24 * 3600.0  # 7 days
     fetch_user_agent: str = (
         "Alexandria/0.2 (local research library; +https://www.mediawiki.org/wiki/API:Etiquette)"
     )

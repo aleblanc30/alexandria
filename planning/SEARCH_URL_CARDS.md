@@ -247,9 +247,10 @@ Bookmarks already ingested keep whatever they got. Two populations:
   garbage stays in the index alongside the new card. That is exactly what
   `PURGE_AND_PROVENANCE_PLAN.md` is for; do not hand-roll a second purge path.
 
-`reset_unfetchable_for_fetch` is not the tool — it is dev-only and re-queues
-*everything*. Treat this section as a follow-up, gated on the purge work; the
-handler is useful on its own for everything ingested after it lands.
+`reset_unfetchable_for_fetch` is not the tool — it only re-queues once a retry
+cooldown elapses, and does not purge the stale chunks/vectors above. Treat this
+section as a follow-up, gated on the purge work; the handler is useful on its
+own for everything ingested after it lands.
 
 ## 9. Suggested order
 
