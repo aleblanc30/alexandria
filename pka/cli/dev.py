@@ -5,7 +5,7 @@ Usage::
     alexandria dev
     alexandria dev --no-open
 
-Starts ``uvicorn --reload`` (port 8420) and the Vite dev server (port 5173)
+Starts ``uvicorn --reload`` (port 8421) and the Vite dev server (port 5173)
 as subprocesses, streams both logs into the current terminal, opens the
 browser at http://localhost:5173 once the frontend is ready, and shuts both
 processes down on Ctrl+C.
@@ -32,7 +32,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = REPO_ROOT / "frontend"
-BACKEND_PORT = 8420
+BACKEND_PORT = 8421
 FRONTEND_URL = "http://localhost:5173"
 STARTUP_TIMEOUT_S = 15.0
 

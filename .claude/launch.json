@@ -4,8 +4,8 @@
     {
       "name": "api",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "pka.api.main:app", "--port", "8420"],
-      "port": 8420
+      "runtimeArgs": ["-m", "uvicorn", "pka.api.main:app", "--port", "8421"],
+      "port": 8421
     },
     {
       "name": "frontend",

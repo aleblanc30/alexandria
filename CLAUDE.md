@@ -91,8 +91,12 @@ Two configuration facts that otherwise read as bugs:
   guidance. Deleting drops coverage and hides still-shipping behavior.
 - **Schema changes** must keep `pka/db/init_db.py` idempotent — `alexandria init`
   is safe to re-run against an existing archive.
-- **Ports.** The API default is 8420 (`alexandria dev`, README, `vite.config.ts`
-  proxy), but `.vscode/launch.json` debug configs use 8000.
+- **Ports.** The installed/production app defaults to 8420 (README's production
+  section, `scripts/start-server.bat`). `alexandria dev`, the `vite.config.ts`
+  proxy, and `.vscode/tasks.json`'s dev tasks use **8421** instead — deliberately
+  different, so a source checkout's dev server never collides with (or, worse,
+  proxies into) a real running production instance. `.vscode/launch.json` debug
+  configs use yet another port, 8000.
 - **`docs/ingestion-flows.md` must be updated in the same commit** as any change
   that alters what its graphs show. There is no test for this — a stale graph
   fails silently and misleads the next reader. Update it when you:

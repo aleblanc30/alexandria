@@ -151,7 +151,7 @@ alexandria clustering --assign-new  # assign new docs to existing clusters
 alexandria dev
 ```
 
-This runs `uvicorn --reload` (port 8420) and `npm run dev` (port 5173)
+This runs `uvicorn --reload` (port 8421) and `npm run dev` (port 5173)
 together in one terminal and opens `http://localhost:5173` once the frontend
 is ready. Ctrl+C (or closing the window) stops both, and if either server
 doesn't come up within 15s (e.g. the port is already taken by something
@@ -164,8 +164,8 @@ Equivalent manual two-terminal form, if you want the processes' logs kept
 separate:
 
 ```bash
-# Terminal 1: backend with CORS enabled (frontend on :5173 talks to backend on :8420)
-ALEXANDRIA_DEV=1 uvicorn pka.api.main:app --reload --port 8420
+# Terminal 1: backend with CORS enabled (frontend on :5173 talks to backend on :8421)
+ALEXANDRIA_DEV=1 uvicorn pka.api.main:app --reload --port 8421
 
 # Terminal 2
 cd frontend && npm run dev

@@ -283,8 +283,9 @@ has ever run waits for the file to appear rather than failing.
 task if one is registered and then stops whatever still holds port 8420. Both
 halves are needed, for the reason in §6: ending the task leaves uvicorn running,
 and an on-demand server has no task to end in the first place. Note that the
-second half goes by the port rather than by identity, so if a development
-checkout is serving 8420 (`alexandria dev`, per §9), that is what it will stop.
+second half goes by the port rather than by identity, so it will stop whatever
+is bound to 8420 regardless of what put it there — `alexandria dev` no longer
+defaults to 8420 (see §9), but a manually-repointed dev server still would be.
 
 Both scripts assume the default port and the `data\` location from §2, as the
 §5 launcher does. The `LOG` line at the top of `console.bat` and the `PORT`
@@ -325,8 +326,11 @@ comes back empty. Any one chat model being present is therefore enough to run,
 but which one gets used is whatever Ollama returns first — set the key
 explicitly if that matters.
 
-**Port 8420 already in use.** A development checkout running `alexandria dev`
-uses the same port. Assign one of the two a different port.
+**Port 8420 already in use.** `alexandria dev` on a development checkout
+defaults to 8421 rather than 8420 for exactly this reason, so this should not
+happen with defaults on both sides. It can still happen if either side was
+pointed at a non-default port, or if two installed instances are running —
+assign one of the two a different port.
 
 ## 10. First ingestion
 
