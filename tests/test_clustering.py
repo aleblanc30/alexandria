@@ -511,6 +511,69 @@ class TestClusterCentroids:
         assert count == 0
 
 
+# ── purge_cluster_runs ────────────────────────────────────────────────────────
+
+
+class TestPurgeClusterRuns:
+    """``--force`` is the manual escape hatch for a run wedged at ``running``."""
+
+    def _insert_run(self, status: str = "finished", *, accepted: bool = False) -> int:
+        with get_engine().begin() as con:
+            res = con.execute(
+                cluster_runs.insert().values(
+                    timestamp=int(time.time()),
+                    algorithm="HDBSCAN",
+                    parameters="{}",
+                    accepted=accepted,
+                    status=status,
+                )
+            )
+        return res.inserted_primary_key[0]
+
+    def _run_ids(self) -> list[int]:
+        with get_engine().connect() as con:
+            return [r[0] for r in con.execute(sa.select(cluster_runs.c.run_id)).fetchall()]
+
+    def test_running_run_refused_without_force(self):
+        from pka.cli.purge_cluster_runs import purge_cluster_run
+
+        run_id = self._insert_run("running")
+        with pytest.raises(ValueError, match="still running"):
+            purge_cluster_run(run_id)
+        assert self._run_ids() == [run_id]
+
+    def test_force_deletes_running_run(self):
+        from pka.cli.purge_cluster_runs import purge_cluster_run
+
+        run_id = self._insert_run("running")
+        purge_cluster_run(run_id, force=True)
+        assert self._run_ids() == []
+
+    def test_purge_all_skips_running_without_force(self):
+        from pka.cli.purge_cluster_runs import purge_all_cluster_runs
+
+        stale = self._insert_run("running")
+        done = self._insert_run("finished")
+
+        totals = purge_all_cluster_runs()
+
+        assert totals["skipped_running"] == 1
+        assert self._run_ids() == [stale]
+        assert done not in self._run_ids()
+
+    def test_purge_all_force_clears_running(self):
+        from pka.cli.purge_cluster_runs import purge_all_cluster_runs
+
+        self._insert_run("running")
+        self._insert_run("finished", accepted=True)
+
+        totals = purge_all_cluster_runs(force=True)
+
+        assert totals["skipped_running"] == 0
+        assert totals["runs"] == 2
+        assert self._run_ids() == []
+
+
 # ── lifecycle.compute_drift ───────────────────────────────────────────────────
 
 
@@ -789,6 +852,35 @@ class TestIncrementalClustering:
         out = run_incremental_clustering(min_cluster_size=2)
         assert out["action"] == "assign_only"
         assert out["assigned"] == 0
+
+    def test_drift_is_reported_never_acted_on(self, populated, monkeypatch):
+        """DESIGN.md §4: drift flags clusters for review, but never re-clusters."""
+        from pka.clustering import lifecycle
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.lifecycle import accept_run, run_incremental_clustering
+
+        result = run_clustering(min_cluster_size=2)
+        accept_run(result.run_id)
+
+        monkeypatch.setattr(
+            lifecycle,
+            "compute_drift",
+            lambda *a, **kw: [
+                {"cluster_id": 1, "label": "x", "drift_score": 0.9, "n_recent": 3, "flagged": True}
+            ],
+        )
+        # A full re-cluster would go through here; nothing may call it.
+        monkeypatch.setattr(
+            "pka.clustering.engine.run_clustering",
+            lambda **kw: pytest.fail("drift must not trigger a re-cluster"),
+        )
+
+        out = run_incremental_clustering(min_cluster_size=2)
+
+        assert out["action"] == "assign_only"
+        assert out["run_id"] == result.run_id  # still the accepted run
+        assert out["flagged"] == 1  # surfaced for the operator
+        assert out["result"] is None
 
 
 class TestEmbeddingsAvailable:

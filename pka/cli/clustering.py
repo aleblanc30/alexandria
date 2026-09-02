@@ -6,7 +6,7 @@ Usage::
     alexandria clustering --accept          # auto-accept the run
     alexandria clustering --skip-labelling  # TF-IDF labels only
     alexandria clustering --async-labelling # TF-IDF first, LLM in background
-    alexandria clustering --incremental     # assign new docs; full run on drift
+    alexandria clustering --incremental     # assign new docs to the active run
     alexandria clustering --cluster-space legacy_umap
     alexandria clustering --min-cluster-size 10 --n-neighbors 20
     alexandria clustering --assign-new      # assign unassigned docs only
@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--incremental",
         action="store_true",
-        help="Assign new docs to active run; full re-run if drift flagged",
+        help="Assign new docs to the active run (reports drift, never re-clusters)",
     )
     parser.add_argument(
         "--accept", action="store_true", help="Auto-accept this run without manual review"

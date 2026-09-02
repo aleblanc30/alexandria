@@ -39,8 +39,8 @@ def purge_cluster_run(run_id: int, *, dry_run: bool = False, force: bool = False
         raise ValueError(f"Run #{run_id} not found")
 
     row = rows[0]
-    if row["status"] == "running":
-        raise ValueError(f"Run #{run_id} is still running")
+    if row["status"] == "running" and not force:
+        raise ValueError(f"Run #{run_id} is still running; pass --force to delete it anyway")
     if row["accepted"] and not force:
         raise ValueError(f"Run #{run_id} is accepted; pass --force to delete the active run")
 
@@ -68,7 +68,7 @@ def purge_cluster_run(run_id: int, *, dry_run: bool = False, force: bool = False
 
 
 def purge_all_cluster_runs(*, dry_run: bool = False, force: bool = False) -> dict[str, int]:
-    """Delete every non-running clustering run."""
+    """Delete stored clustering runs; skip accepted and running ones unless ``force``."""
     eng = get_engine()
     rows = _run_ids(eng, run_id=None, all_runs=True)
     totals: dict[str, int] = {
@@ -83,7 +83,7 @@ def purge_all_cluster_runs(*, dry_run: bool = False, force: bool = False) -> dic
 
     for row in rows:
         run_id = row["run_id"]
-        if row["status"] == "running":
+        if row["status"] == "running" and not force:
             totals["skipped_running"] += 1
             continue
         if row["accepted"] and not force:
@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument(
         "--all",
         action="store_true",
-        help="Delete every non-running run (skips accepted unless --force)",
+        help="Delete every run (skips accepted and running ones unless --force)",
     )
     parser.add_argument(
         "--dry-run",
@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Allow deleting accepted (active) runs",
+        help="Allow deleting accepted (active) runs, and runs stuck marked running",
     )
     args = parser.parse_args(argv)
 

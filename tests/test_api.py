@@ -1338,36 +1338,62 @@ class TestRuns:
         row = next(x for x in r.json() if x["run_id"] == run_id)
         assert row["status"] == "finished"
 
-    def test_cancel_run(self, client, monkeypatch):
-        mock_col = MagicMock()
-        mock_col.count.return_value = 10
-        monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
+    def _seed_running_run(self) -> int:
+        """A row in the exact state ``trigger_run`` leaves before its worker starts."""
+        from pka.db.queries import get_engine
 
-        def slow_cluster(**kw):
-            import time
+        with get_engine().begin() as con:
+            res = con.execute(
+                cluster_runs.insert().values(
+                    timestamp=int(time.time()),
+                    algorithm="HDBSCAN",
+                    parameters="{}",
+                    accepted=False,
+                    status="running",
+                )
+            )
+        return res.inserted_primary_key[0]
 
-            from pka.clustering.run_progress import check_cancel
+    def test_cancel_run_flags_live_worker(self, client):
+        """With a worker alive, cancel sets the flag for it to observe."""
+        from pka.clustering.run_progress import begin, check_cancel, finish
 
-            for _ in range(50):
-                if check_cancel(kw["run_id"]):
-                    from pka.clustering.run_progress import ClusterRunCancelled
+        run_id = self._seed_running_run()
+        begin(run_id)
+        try:
+            cancel = client.post(f"/runs/{run_id}/cancel")
+            assert cancel.status_code == 202
+            assert cancel.json()["status"] == "cancel_requested"
+            assert check_cancel(run_id)
+        finally:
+            finish(run_id)
 
-                    raise ClusterRunCancelled()
-                time.sleep(0.05)
-            return MagicMock(run_id=kw["run_id"], n_clusters=1, n_noise=0)
-
-        monkeypatch.setattr("pka.clustering.engine.run_clustering", slow_cluster)
-        trig = client.post("/runs/trigger")
-        assert trig.status_code == 202
-        run_id = trig.json()["run_id"]
-
-        listed = client.get("/runs").json()
-        row = next(x for x in listed if x["run_id"] == run_id)
-        assert row["status"] == "running"
+    def test_cancel_run_reconciles_dead_worker(self, client):
+        """No worker left to observe the flag, so the row is cleared outright."""
+        run_id = self._seed_running_run()
 
         cancel = client.post(f"/runs/{run_id}/cancel")
         assert cancel.status_code == 202
-        assert cancel.json()["status"] == "cancel_requested"
+        assert cancel.json()["status"] == "reconciled"
+
+        row = next(x for x in client.get("/runs").json() if x["run_id"] == run_id)
+        assert row["status"] == "failed"
+
+    def test_cancelled_run_no_longer_blocks_trigger(self, client, monkeypatch):
+        """The payoff: clearing a stranded run unblocks the next one."""
+        mock_col = MagicMock()
+        mock_col.count.return_value = 10
+        monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
+        monkeypatch.setattr(
+            "pka.clustering.engine.run_clustering",
+            lambda **kw: MagicMock(run_id=kw["run_id"], n_clusters=1, n_noise=0),
+        )
+
+        stranded = self._seed_running_run()
+        assert client.post("/runs/trigger").status_code == 409
+
+        client.post(f"/runs/{stranded}/cancel")
+        assert client.post("/runs/trigger").status_code == 202
 
     def test_cancel_run_not_running(self, client):
         ids = _seed_docs(2)

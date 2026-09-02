@@ -173,9 +173,17 @@ def reject_run(run_id: int, notes: str = "", engine=Depends(get_engine)):
 
 @router.post("/{run_id}/cancel", status_code=202)
 def cancel_run(run_id: int, engine=Depends(get_engine)):
+    """Ask a running run to stop, or clear one whose worker is already gone."""
     with engine.connect() as con:
         _require_run(con, run_id, require_running=True)
-    from pka.clustering.run_progress import request_cancel
+    from pka.clustering.run_progress import is_live, reconcile_run, request_cancel
+
+    # `_require_run` only proves the *column* says running. With no worker left
+    # to observe the flag, requesting a cancel would strand the row until the
+    # next restart, so reconcile it here instead.
+    if not is_live(run_id):
+        reconcile_run(run_id)
+        return {"status": "reconciled", "run_id": run_id}
 
     request_cancel(run_id)
     return {"status": "cancel_requested", "run_id": run_id}
@@ -183,8 +191,8 @@ def cancel_run(run_id: int, engine=Depends(get_engine)):
 
 @router.delete("/{run_id}", status_code=204)
 def delete_run(run_id: int, force: bool = False):
-    """Delete a run and its clusters/assignments. Refuses a running or (unless
-    ``force``) accepted run — mirrors ``alexandria purge-cluster-runs``."""
+    """Delete a run and its clusters/assignments. Refuses an accepted or running
+    run unless ``force`` — mirrors ``alexandria purge-cluster-runs``."""
     from pka.cli.purge_cluster_runs import purge_cluster_run
 
     try:
@@ -257,7 +265,7 @@ def trigger_run(
 
 @router.post("/incremental", status_code=202)
 def trigger_incremental(bg: BackgroundTasks, engine=Depends(get_engine)):
-    """Assign new docs to active run, or full re-cluster when drift is flagged."""
+    """Assign new docs to the active run; full run only if there is no active run."""
     _clustering_preflight()
     if _running_run_id(engine) is not None:
         raise HTTPException(409, "A clustering run is already in progress")

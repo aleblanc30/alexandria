@@ -501,8 +501,12 @@ def run_incremental_clustering(
     **run_kwargs,
 ) -> dict:
     """
-    Assign new documents to the active run when possible; full re-cluster when
-    drift is flagged or no active run exists.
+    Assign new documents to the active run; run a full clustering only when
+    there is no active run to assign them to.
+
+    Drift is measured and reported, never acted on: per ``DESIGN.md`` §4 the
+    flags mark clusters an operator may want to split, and re-clustering stays
+    a decision they make deliberately via ``/runs/trigger``.
     """
     from pka.clustering.engine import run_clustering
 
@@ -518,25 +522,18 @@ def run_incremental_clustering(
         }
 
     stats = assign_new_docs(active)
-    drift = compute_drift(active)
-    flagged = [d for d in drift if d["flagged"]]
+    flagged = [d for d in compute_drift(active) if d["flagged"]]
 
     if flagged:
         log.info(
-            "Drift flagged %d L1 cluster(s) — running full re-cluster",
+            "Drift flagged %d L1 cluster(s) in run #%d — review under diagnostics; "
+            "re-cluster manually if the split is wanted",
             len(flagged),
+            active,
         )
-        result = run_clustering(label_model=label_model, **run_kwargs)
-        return {
-            "action": "full_run_drift",
-            "run_id": result.run_id,
-            "assigned": stats["assigned"],
-            "flagged": len(flagged),
-            "result": result,
-        }
 
     log.info(
-        "Incremental update: assigned %d doc(s) to run #%d (no drift)",
+        "Incremental update: assigned %d doc(s) to run #%d",
         stats["assigned"],
         active,
     )
@@ -544,6 +541,6 @@ def run_incremental_clustering(
         "action": "assign_only",
         "run_id": active,
         "assigned": stats["assigned"],
-        "flagged": 0,
+        "flagged": len(flagged),
         "result": None,
     }

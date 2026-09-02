@@ -16,11 +16,13 @@ from pka.api.routers import (
     reading_lists,
     runs,
     search,
+    settings,
     tag_training,
     tags,
     trends,
 )
 from pka.cli._logging import setup_logging
+from pka.clustering.run_progress import reconcile_interrupted_runs
 from pka.db.queries import init_db
 
 # Configure logging as soon as the app is imported. uvicorn configures only its
@@ -38,6 +40,10 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     log.info("Alexandria API starting — initialising database…")
     init_db()
+    # No clustering thread can outlive the process that owned it, so any run
+    # still marked "running" here was interrupted and would otherwise wedge
+    # both deletion and every new run.
+    reconcile_interrupted_runs()
     yield
     log.info("Alexandria API shutting down.")
 
@@ -70,6 +76,7 @@ for router in (
     ingestion,
     reading_lists,
     tag_training,
+    settings,
 ):
     app.include_router(router.router)
 
