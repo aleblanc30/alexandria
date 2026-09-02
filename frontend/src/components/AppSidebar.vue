@@ -22,6 +22,7 @@
       <RouterLink to="/tags"     class="nav-item" title="Tags"><IconTag /><span v-if="showFull" class="nav-label">Tags</span></RouterLink>
 
       <div v-if="showFull" class="nav-section">Manage</div>
+      <RouterLink to="/ingestion" class="nav-item" title="Ingestion"><IconIngestion /><span v-if="showFull" class="nav-label">Ingestion</span></RouterLink>
       <RouterLink to="/runs" class="nav-item" title="Cluster runs"><IconRun /><span v-if="showFull" class="nav-label">Cluster runs</span></RouterLink>
 
       <RouterLink to="/lists" class="nav-item" title="Reading lists"><IconList /><span v-if="showFull" class="nav-label">Reading lists</span></RouterLink>
@@ -58,6 +59,7 @@ const IconCluster = { template: `<svg class="icon" viewBox="0 0 16 16" fill="non
 const IconTrend   = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2,12 6,7 9,9 14,3"/></svg>` }
 const IconTag     = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h7l5 4-5 4H2V4z"/></svg>` }
 const IconRun     = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="2"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="5" y1="10" x2="8" y2="10"/></svg>` }
+const IconIngestion = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8"/><polyline points="5,7 8,10 11,7"/><path d="M2 11v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2"/></svg>` }
 const IconList    = { template: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="10" height="13" rx="1.5"/><line x1="5" y1="6" x2="10" y2="6"/><line x1="5" y1="9" x2="10" y2="9"/><line x1="5" y1="12" x2="8" y2="12"/></svg>` }
 const IconChevronRight = { template: `<svg class="icon icon-chevron-right" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="6,4 10,8 6,12"/></svg>` }
 
