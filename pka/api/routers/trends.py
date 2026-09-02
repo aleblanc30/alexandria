@@ -59,7 +59,7 @@ def sources_over_time(
         ).fetchall()
     result: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for src, ts in rows:
-        dt = datetime.datetime.utcfromtimestamp(ts)
+        dt = datetime.datetime.fromtimestamp(ts, datetime.UTC)
         period = dt.strftime("%Y-%m") if granularity == "month" else str(dt.year)
         result[src][period] += 1
     return {k: dict(v) for k, v in result.items()}

@@ -91,6 +91,44 @@ show_missing = true
 skip_empty   = true
 fail_under   = 85
 
+# ── mypy ──────────────────────────────────────────────────────────────────────
+# Not run in CI yet (planning/TODO.md M-12); `mypy pka` is a manual step in the
+# CLAUDE.md verify table. Baseline-ratcheted, not strict: the modules below had
+# pre-existing errors when this config was added (audit M-7) and are frozen via
+# `ignore_errors` so the gate is "no new errors", not "fix 89 errors first".
+# Shrink this list as a module gets cleaned up; do not add to it.
+[tool.mypy]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pka.api.db_rows",
+    "pka.api.document_serialize",
+    "pka.api.routers.clusters",
+    "pka.api.routers.search",
+    "pka.clustering.engine",
+    "pka.config",
+    "pka.db.queries",
+    "pka.ingestion.firefox_sync",
+    "pka.ingestion.image_extractor",
+    "pka.ingestion.image_pipeline",
+    "pka.ingestion.loops",
+    "pka.ingestion.runners.calibre",
+    "pka.ingestion.runners.firefox",
+    "pka.ingestion.runners.reddit",
+    "pka.ingestion.runners.youtube",
+    "pka.ingestion.runners.zotero",
+    "pka.ingestion.youtube_bookmark",
+    "pka.providers.clip",
+    "pka.storage.vector_store",
+    "pka.tag_training.lifecycle",
+    "pka.tag_training.llm_classifier",
+]
+ignore_errors = true
+
 # ── ruff ──────────────────────────────────────────────────────────────────────
 [tool.ruff]
 line-length = 100

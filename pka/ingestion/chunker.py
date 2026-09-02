@@ -67,7 +67,7 @@ def _get_spacy():
         return None
     if _spacy_nlp is None:
         try:
-            import spacy  # type: ignore
+            import spacy
 
             try:
                 _spacy_nlp = spacy.load(

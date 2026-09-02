@@ -61,11 +61,16 @@ Run from repo root with the venv active.
 | Backend tests | `pytest` |
 | Backend tests + coverage | `pytest --cov=pka --cov-report=term-missing` |
 | Lint / format | `ruff check pka tests scripts` / `ruff format pka tests scripts` |
+| Type check | `mypy pka` |
 | Frontend tests | `cd frontend && npm run test` |
 | Frontend build + typecheck | `cd frontend && npm run build` |
 
 Run `pytest` after backend changes; run **both** `npm run test` and `npm run build`
-after TypeScript/Vue changes.
+after TypeScript/Vue changes. `mypy pka` is baseline-ratcheted (`pyproject.toml`'s
+`[[tool.mypy.overrides]]`): modules with pre-existing errors are listed there with
+`ignore_errors = true`, so the gate is "no new errors" outside that list, not a
+clean `mypy` across the whole tree. None of this runs in CI yet — see
+`planning/TODO.md`'s M-12 item.
 
 Two configuration facts that otherwise read as bugs:
 

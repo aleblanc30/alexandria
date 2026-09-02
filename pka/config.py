@@ -16,7 +16,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings, NoDecode, PydanticBaseSettingsSource
+from pydantic_settings import (
+    BaseSettings,
+    NoDecode,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 log = logging.getLogger(__name__)
 
@@ -488,9 +493,7 @@ class Settings(BaseSettings):
             file_secret_settings,
         )
 
-    class Config:
-        env_file = ".env"
-        env_prefix = "ALEXANDRIA_"
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="ALEXANDRIA_")
 
 
 settings = Settings()

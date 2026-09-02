@@ -162,9 +162,7 @@ class TestFeedBlockMitigations:
         """The real message sits behind a wall of inlined CSS; quote the text, not the wall."""
         calls, pages = feed_http
         page = (
-            "<html><head><style>"
-            + ("--rem360:22.5rem;" * 200)
-            + "</style></head><body>"
+            "<html><head><style>" + ("--rem360:22.5rem;" * 200) + "</style></head><body>"
             "<div>You've been blocked by network security.</div>"
             "<div>File a ticket.</div>"
             "</body></html>"
