@@ -83,3 +83,4 @@ two when its priority changes; do not duplicate it in both.
 - [ ] **Use zotero collection names as tags** — plan in `COLLECTION_TAGS.md`, which extends it to Firefox bookmark folders as the second (arguably higher-value) source.
 - [ ] **Extend the summarization call to include tag inference**
 - [ ] **Train a classifier for the image gate instead of the vlm** — replace the per-image `moondream` call in `pka/ingestion/image_gate.py` with a frozen CLIP backbone (`providers/clip.py`, already wired) plus a trainable linear head, trained from `data/image_gate_training/<label>/` folders via a new `alexandria image-gate-train` CLI. Must be multi-class over `_VALID_TYPES`, not binary — the gate's label feeds `images.image_type`, the inferred tag, and the content prompt. Plan in `IMAGE_GATE_CLASSIFIER.md`.
+- [ ] **Invetigate whether backfill for reddit is actually useful**

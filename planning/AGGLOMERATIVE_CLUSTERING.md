@@ -1,6 +1,7 @@
 # Two-level agglomerative clustering
 
-**Status:** proposed — not implemented.
+**Status:** needs revision — not implemented.
+**Moivation for revision:** does the 2 level clustering iteratively rerun agglomerative clustering? If so, we are wasting a lot of time, since l2 clustering only requires a cut in an already built tree. We need to evaluate the tradeoff here.
 
 `pka/clustering/engine.py` only ever runs HDBSCAN. `cluster_space` picks the
 *feature space* it runs in (`pca` → PCA 50d, cosine; `legacy_umap` → UMAP → HDBSCAN,
