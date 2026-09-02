@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from typing import Any
 
 import sqlalchemy as sa
 
@@ -21,11 +22,16 @@ from pka.ingestion.source_access import try_load_calibre_books, try_scan_images
 # status/progress endpoints poll them ~2×/sec while a sync runs, so results are
 # cached for ``settings.ingestion_probe_cache_ttl_seconds`` and invalidated at
 # job start/finish/purge via ``invalidate_source_probes``.
-_probe_cache: dict[tuple[str, str], tuple[float, int]] = {}
+#
+# The same cache also backs ``load_firefox_bookmarks`` / ``load_calibre_books`` /
+# ``load_scanned_images`` below (kind ``"raw"``): pending + corpus each used to
+# re-read the connector independently, and the sync job itself read it again for
+# real, so one job start could parse Firefox's ``places.sqlite`` three times.
+_probe_cache: dict[tuple[str, str], tuple[float, Any]] = {}
 _probe_lock = threading.Lock()
 
 
-def _cached_probe(kind: str, src: str, compute: Callable[[], int]) -> int:
+def _cached_probe(kind: str, src: str, compute: Callable[[], Any]) -> Any:
     ttl = settings.ingestion_probe_cache_ttl_seconds
     if ttl <= 0:
         return compute()
@@ -56,6 +62,32 @@ def invalidate_source_probes(source: Source | str | None = None) -> None:
         src = str(source)
         for key in [k for k in _probe_cache if k[1] == src]:
             del _probe_cache[key]
+
+
+def load_firefox_bookmarks() -> list:
+    """Firefox bookmarks connector read, cached like the probes above.
+
+    ``count_pending_metadata``, ``source_corpus_size`` and the Firefox sync job
+    itself all need this within one run; sharing the cache means only the first
+    of those actually re-parses ``places.sqlite``.
+    """
+
+    def compute() -> list:
+        from pka.connectors.firefox import load_bookmarks
+
+        return load_bookmarks()
+
+    return _cached_probe("raw", str(Source.FIREFOX), compute)
+
+
+def load_calibre_books() -> tuple[list, str | None]:
+    """Calibre library read, cached like ``load_firefox_bookmarks`` above."""
+    return _cached_probe("raw", str(Source.CALIBRE), try_load_calibre_books)
+
+
+def load_scanned_images() -> tuple[list, str | None]:
+    """Image-folder scan, cached like ``load_firefox_bookmarks`` above."""
+    return _cached_probe("raw", str(Source.IMAGE), try_scan_images)
 
 
 def archive_document_count(source: Source | str) -> int:
@@ -90,10 +122,10 @@ def _compute_pending_metadata(src: str) -> int:
         return 0
 
     if src == Source.FIREFOX:
-        from pka.connectors.firefox import load_bookmarks
-
         known = set(document_index(Source.FIREFOX))
-        return sum(1 for bm in take(load_bookmarks(), Source.FIREFOX) if bm.source_id not in known)
+        return sum(
+            1 for bm in take(load_firefox_bookmarks(), Source.FIREFOX) if bm.source_id not in known
+        )
 
     if src == Source.ZOTERO:
         from pka.connectors.zotero import ensure_zotero_copy, load_item_keys
@@ -104,7 +136,7 @@ def _compute_pending_metadata(src: str) -> int:
         return sum(1 for key in keys if key not in known)
 
     if src == Source.CALIBRE:
-        books, unavailable = try_load_calibre_books()
+        books, unavailable = load_calibre_books()
         if unavailable:
             return 0
         known = set(document_index(Source.CALIBRE))
@@ -113,7 +145,7 @@ def _compute_pending_metadata(src: str) -> int:
     if src == Source.IMAGE:
         from pka.ingestion.image_pipeline import admitted_images, indexed_image_paths
 
-        scanned, unavailable = try_scan_images()
+        scanned, unavailable = load_scanned_images()
         if unavailable:
             return 0
         # ``admitted_images`` mirrors what ``register_images`` will actually
@@ -154,9 +186,7 @@ def _compute_source_corpus_size(src: str) -> int:
         return 0
 
     if src == Source.FIREFOX:
-        from pka.connectors.firefox import load_bookmarks
-
-        return len(take(load_bookmarks(), Source.FIREFOX))
+        return len(take(load_firefox_bookmarks(), Source.FIREFOX))
 
     if src == Source.ZOTERO:
         from pka.connectors.zotero import ensure_zotero_copy, load_item_keys
@@ -165,7 +195,7 @@ def _compute_source_corpus_size(src: str) -> int:
         return len(take(sorted(load_item_keys(copy_path=dst, skip_copy=True)), Source.ZOTERO))
 
     if src == Source.CALIBRE:
-        books, unavailable = try_load_calibre_books()
+        books, unavailable = load_calibre_books()
         if unavailable:
             return 0
         books = take(books, Source.CALIBRE)
@@ -175,7 +205,7 @@ def _compute_source_corpus_size(src: str) -> int:
     if src == Source.IMAGE:
         from pka.ingestion.image_pipeline import admitted_images
 
-        scanned, unavailable = try_scan_images()
+        scanned, unavailable = load_scanned_images()
         if unavailable:
             return 0
         # Gate-rejected paths are skipped by both passes; leaving them in the

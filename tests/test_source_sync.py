@@ -81,7 +81,7 @@ class TestFirefoxSync:
             lambda: 0,
         )
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.load_bookmarks",
+            "pka.ingestion.firefox_sync.load_firefox_bookmarks",
             lambda: [_firefox_bm()],
         )
         monkeypatch.setattr("pka.ingestion.firefox_sync.firefox_ingest_queue", lambda limit: [])
@@ -111,7 +111,7 @@ class TestFirefoxSync:
             lambda: 0,
         )
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.load_bookmarks",
+            "pka.ingestion.firefox_sync.load_firefox_bookmarks",
             lambda: [_firefox_bm()],
         )
         monkeypatch.setattr(
@@ -151,7 +151,7 @@ class TestFirefoxSync:
             lambda: order.append("reset") or 2,
         )
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.load_bookmarks",
+            "pka.ingestion.firefox_sync.load_firefox_bookmarks",
             lambda: [_firefox_bm()],
         )
         monkeypatch.setattr(
@@ -188,7 +188,7 @@ class TestFirefoxSync:
             lambda: 0,
         )
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.load_bookmarks",
+            "pka.ingestion.firefox_sync.load_firefox_bookmarks",
             lambda: [_firefox_bm()],
         )
         monkeypatch.setattr(
@@ -227,7 +227,7 @@ class TestFirefoxSync:
             lambda: 0,
         )
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.load_bookmarks",
+            "pka.ingestion.firefox_sync.load_firefox_bookmarks",
             lambda: [_firefox_bm()],
         )
         monkeypatch.setattr(
@@ -264,7 +264,7 @@ class TestFirefoxSync:
     def test_stops_after_metadata_when_cancelled(self, monkeypatch):
         _mock_pending_counts(monkeypatch, "pka.ingestion.firefox_sync", pending=1)
         monkeypatch.setattr(
-            "pka.ingestion.firefox_sync.load_bookmarks",
+            "pka.ingestion.firefox_sync.load_firefox_bookmarks",
             lambda: [_firefox_bm()],
         )
         monkeypatch.setattr(
@@ -316,7 +316,7 @@ class TestCalibreSync:
         _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=1)
         books = [_calibre_book(tmp_path, with_file=True)]
         monkeypatch.setattr(
-            "pka.ingestion.calibre_sync.try_load_calibre_books",
+            "pka.ingestion.calibre_sync.load_calibre_books",
             lambda: (books, None),
         )
         reg = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0})
@@ -340,7 +340,7 @@ class TestCalibreSync:
     def test_skips_fulltext_when_no_files(self, monkeypatch, tmp_path):
         _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=1)
         monkeypatch.setattr(
-            "pka.ingestion.calibre_sync.try_load_calibre_books",
+            "pka.ingestion.calibre_sync.load_calibre_books",
             lambda: ([_calibre_book(tmp_path, with_file=False)], None),
         )
         monkeypatch.setattr(
@@ -365,7 +365,7 @@ class TestCalibreSync:
     def test_stops_after_metadata_when_cancelled(self, monkeypatch, tmp_path):
         _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=1)
         monkeypatch.setattr(
-            "pka.ingestion.calibre_sync.try_load_calibre_books",
+            "pka.ingestion.calibre_sync.load_calibre_books",
             lambda: ([_calibre_book(tmp_path, with_file=True)], None),
         )
         reg = MagicMock(return_value={"processed": 0, "stopped": "cancel"})
@@ -389,7 +389,7 @@ class TestImageSync:
         _mock_pending_counts(monkeypatch, "pka.ingestion.image_sync", pending=1)
         img = _image_file(tmp_path)
         monkeypatch.setattr(
-            "pka.ingestion.image_sync.try_scan_images",
+            "pka.ingestion.image_sync.load_scanned_images",
             lambda: ([img], None),
         )
         reg = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0})
@@ -412,7 +412,7 @@ class TestUnavailableSources:
         _mock_pending_counts(monkeypatch, "pka.ingestion.calibre_sync", pending=0)
         reason = "Calibre metadata.db not found at /missing/metadata.db"
         monkeypatch.setattr(
-            "pka.ingestion.calibre_sync.try_load_calibre_books",
+            "pka.ingestion.calibre_sync.load_calibre_books",
             lambda: ([], reason),
         )
         reg = MagicMock()
@@ -429,7 +429,7 @@ class TestUnavailableSources:
     def test_image_ingest_unavailable(self, monkeypatch):
         reason = "Image folder not found: /missing"
         monkeypatch.setattr(
-            "pka.ingestion.image_sync.try_scan_images",
+            "pka.ingestion.image_sync.load_scanned_images",
             lambda: ([], reason),
         )
         ingest = MagicMock()

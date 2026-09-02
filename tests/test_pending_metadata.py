@@ -7,6 +7,7 @@ from PIL import Image as PILImage
 
 import pka.ingestion.pending_metadata as pm
 from pka.config import settings
+from pka.connectors.calibre import CalibreBook
 from pka.connectors.images import ImageFile
 from pka.constants import Source
 from pka.db.queries import DocumentWrite, init_db, insert_document_if_new, record_image_rejection
@@ -18,6 +19,25 @@ from pka.ingestion.pending_metadata import (
 )
 from pka.ingestion.runners.firefox import ingest_firefox_bookmarks
 from tests.test_pipeline import _make_firefox_bookmark
+
+
+def _calibre_book(source_id: str = "1") -> CalibreBook:
+    return CalibreBook(
+        source_id=source_id,
+        title="Book",
+        authors=["Author"],
+        description="Desc",
+        publisher=None,
+        series=None,
+        series_index=None,
+        year=2020,
+        isbn=None,
+        tags=[],
+        formats=[],
+        preferred_path=None,
+        date_added=1700000000,
+        rating=None,
+    )
 
 
 def test_archive_document_count():
@@ -56,6 +76,70 @@ def test_probe_result_is_cached_within_ttl(monkeypatch):
     invalidate_source_probes(Source.FIREFOX)
     assert source_corpus_size(Source.FIREFOX) == 1  # recomputed after invalidation
     assert calls["n"] == 2
+
+
+def test_pending_and_corpus_share_one_firefox_read(monkeypatch):
+    """Regression: a job computing both pending and corpus for the same source
+    must hit the connector once, not once per probe (was 2-3x per sync cycle).
+    """
+    init_db()
+    calls = {"n": 0}
+
+    def _one_bookmark():
+        calls["n"] += 1
+        return [_make_firefox_bookmark(source_id="bm-1", url="http://a")]
+
+    monkeypatch.setattr("pka.connectors.firefox.load_bookmarks", _one_bookmark)
+
+    assert count_pending_metadata(Source.FIREFOX) == 1
+    assert source_corpus_size(Source.FIREFOX) == 1
+    assert calls["n"] == 1
+
+
+def test_load_firefox_bookmarks_is_cached(monkeypatch):
+    calls = {"n": 0}
+
+    def _one_bookmark():
+        calls["n"] += 1
+        return [_make_firefox_bookmark(source_id="bm-1", url="http://a")]
+
+    monkeypatch.setattr("pka.connectors.firefox.load_bookmarks", _one_bookmark)
+
+    assert len(pm.load_firefox_bookmarks()) == 1
+    assert len(pm.load_firefox_bookmarks()) == 1
+    assert calls["n"] == 1
+
+
+def test_pending_and_corpus_share_one_calibre_read(monkeypatch):
+    init_db()
+    calls = {"n": 0}
+    book = _calibre_book()
+
+    def _one_book():
+        calls["n"] += 1
+        return [book], None
+
+    monkeypatch.setattr(pm, "try_load_calibre_books", _one_book)
+
+    assert count_pending_metadata(Source.CALIBRE) == 1
+    assert source_corpus_size(Source.CALIBRE) == 1  # falls back to len(books) with no file
+    assert calls["n"] == 1
+
+
+def test_pending_and_corpus_share_one_image_scan(three_scanned_images, monkeypatch):
+    monkeypatch.setattr(settings, "image_gate_enabled", False)
+    calls = {"n": 0}
+    scan = pm.try_scan_images  # the fixture's stub, returning three_scanned_images
+
+    def _counted():
+        calls["n"] += 1
+        return scan()
+
+    monkeypatch.setattr(pm, "try_scan_images", _counted)
+
+    assert count_pending_metadata(Source.IMAGE) == 3
+    assert source_corpus_size(Source.IMAGE) == 3
+    assert calls["n"] == 1
 
 
 def test_probe_cache_disabled_when_ttl_zero(monkeypatch):

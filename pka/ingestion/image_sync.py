@@ -7,8 +7,11 @@ from pka.constants import Source
 from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.image_pipeline import admitted_images, ingest_images, register_images
-from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
-from pka.ingestion.source_access import try_scan_images
+from pka.ingestion.pending_metadata import (
+    archive_document_count,
+    count_pending_metadata,
+    load_scanned_images,
+)
 from pka.ingestion.sync_shared import EMPTY_STATS, run_full_sync, unavailable_metadata
 
 log = logging.getLogger(__name__)
@@ -34,7 +37,7 @@ def sync_images_metadata(
     init_db()
     key = progress_key or "image"
     baseline = archive_document_count(Source.IMAGE)
-    images, unavailable = try_scan_images()
+    images, unavailable = load_scanned_images()
     if unavailable:
         return unavailable_metadata(key, baseline, unavailable)
     pending = count_pending_metadata(Source.IMAGE)
@@ -50,7 +53,7 @@ def sync_images_ingest(
     dry_run: bool = False,
 ) -> dict:
     key = progress_key or "image"
-    images, unavailable = try_scan_images()
+    images, unavailable = load_scanned_images()
     if unavailable:
         return _unavailable_ingest(key, unavailable)
     images = take(images, Source.IMAGE)

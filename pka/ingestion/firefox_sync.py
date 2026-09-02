@@ -4,13 +4,16 @@ import asyncio
 import logging
 from functools import partial
 
-from pka.connectors.firefox import load_bookmarks
 from pka.constants import Source
 from pka.db.queries import firefox_ingest_queue
 from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.fetcher import fetch_and_embed_pending, reset_unfetchable_for_fetch
-from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
+from pka.ingestion.pending_metadata import (
+    archive_document_count,
+    count_pending_metadata,
+    load_firefox_bookmarks,
+)
 from pka.ingestion.progress import should_stop
 from pka.ingestion.runners.firefox import embed_fetched_text, ingest_firefox_bookmarks
 from pka.ingestion.sync_shared import run_full_sync
@@ -34,7 +37,7 @@ def sync_firefox_metadata(
 
     init_db()
     key = progress_key or "firefox"
-    bookmarks = take(load_bookmarks(), Source.FIREFOX)
+    bookmarks = take(load_firefox_bookmarks(), Source.FIREFOX)
     baseline = archive_document_count(Source.FIREFOX)
     pending = count_pending_metadata(Source.FIREFOX)
     sp.begin_metadata_sync(key, pending, baseline)
@@ -60,7 +63,7 @@ def sync_firefox_ingest(
 
     work = firefox_ingest_queue(fetch_limit)
     n_work = len(work)
-    n_bm = len(take(load_bookmarks(), Source.FIREFOX))
+    n_bm = len(take(load_firefox_bookmarks(), Source.FIREFOX))
     _plan_counts(n_bm)
 
     if n_work == 0:

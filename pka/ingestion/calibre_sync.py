@@ -5,14 +5,17 @@ import logging
 from pka.constants import Source
 from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
-from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
+from pka.ingestion.pending_metadata import (
+    archive_document_count,
+    count_pending_metadata,
+    load_calibre_books,
+)
 from pka.ingestion.progress import should_stop
 from pka.ingestion.runners.calibre import (
     ingest_calibre_books,
     ingest_calibre_fulltext,
     ingest_calibre_metadata,
 )
-from pka.ingestion.source_access import try_load_calibre_books
 from pka.ingestion.sync_shared import EMPTY_STATS, run_full_sync, unavailable_metadata
 
 log = logging.getLogger(__name__)
@@ -44,7 +47,7 @@ def sync_calibre_metadata(
     init_db()
     key = progress_key or "calibre"
     baseline = archive_document_count(Source.CALIBRE)
-    books, unavailable = try_load_calibre_books()
+    books, unavailable = load_calibre_books()
     if unavailable:
         return unavailable_metadata(key, baseline, unavailable)
     pending = count_pending_metadata(Source.CALIBRE)
@@ -61,7 +64,7 @@ def sync_calibre_ingest(
     max_pages: int | None = None,
 ) -> dict:
     key = progress_key or "calibre"
-    books, unavailable = try_load_calibre_books()
+    books, unavailable = load_calibre_books()
     if unavailable:
         return _unavailable_ingest(key, unavailable)
     books = take(books, Source.CALIBRE)
