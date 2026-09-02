@@ -1,5 +1,58 @@
 # Changelog
 
+## v0.0.8
+
+### Ingestion
+
+- **Unfetchable Firefox bookmarks now retry automatically, not just in dev.**
+  `reset_unfetchable_for_fetch()` used to re-queue unfetchable URLs only when
+  `ALEXANDRIA_DEV=1`; a transient failure (server down, rate limit, network
+  blip) stayed `unfetchable` forever in a production archive. It now re-queues
+  a URL once its last logged attempt is older than the new
+  `fetch_unfetchable_retry_after_seconds` setting (default 7 days), still
+  skipping URLs with a structural reason to fail (local paths, unsupported
+  schemes) since retrying those can never succeed.
+- **Ingestion link in the sidebar Manage section** — the ingestion overview
+  page (top domains, unfetchable domains, source summary) was previously only
+  reachable by typing the URL directly.
+
+### Clustering
+
+- **Newly ingested documents now join the active cluster run automatically.**
+  `assign_new_docs` was only reachable through `alexandria clustering
+  --incremental` or `POST /runs/incremental`, neither exposed in the UI, so
+  anything ingested after a run stayed unassigned until someone triggered a
+  full re-cluster by hand. It now runs, best-effort, whenever an ingest or full
+  sync finishes and has written new chunks.
+- **A crashed clustering run no longer wedges the feature.** A run interrupted
+  mid-flight left its status row stuck on `"running"` forever, closing every
+  exit — delete, purge, cancel, and both trigger endpoints all refused it.
+  Startup now reconciles any surviving `"running"` row (no clustering thread
+  can be alive that early), and `purge --all --force` actually forces.
+- **Cluster diagnostics are cheap again.** `/runs/{id}/diagnostics` recomputed
+  every cluster's mean embedding from scratch, twice, on every request — a
+  full pass over every chunk vector in the archive. Centroids are now
+  persisted at run-commit time and diagnostics read from them; legacy runs
+  without one fall back once and backfill it.
+
+### Settings
+
+- **Read-only environment report** — `GET /settings` and a new `/settings`
+  view group every config field for display, mark secrets as set/not-set only
+  (never the value), flag non-default values, and probe per-capability
+  provider/model/endpoint reachability on demand. Writes are deferred to a
+  later phase.
+
+### Install
+
+- **Upgrading is one script**, not eleven pasted commands. The old `schtasks
+  /End /TN Alexandria` step did not actually stop the server — the task runs a
+  wrapper batch file that launches uvicorn, so ending the task left uvicorn
+  holding port 8420 while the backup and `git checkout` ran against a tree the
+  live server was still importing from. `scripts/upgrade.ps1 <tag>` finds and
+  kills the real listening process, and refuses to proceed on a missing tag or
+  a dirty working tree.
+
 ## v0.0.7
 
 ### Source connectors
