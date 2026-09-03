@@ -31,9 +31,6 @@ import numpy as np
 import sqlalchemy as sa
 from scipy.cluster.hierarchy import fcluster, leaders
 from scipy.cluster.hierarchy import linkage as scipy_linkage
-from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import normalize
 
 from pka.clustering.doc_embeddings import embedding_to_blob
 from pka.clustering.run_progress import ClusterRunCancelled, raise_if_cancelled
@@ -221,6 +218,10 @@ def _run_pca(
     n_docs, n_features = matrix.shape
     n_comp = min(n_components, n_docs - 1, n_features)
     n_comp = max(2, n_comp)
+    # Imported here, not at module scope: sklearn costs ~1s to import and the API
+    # only ever reaches it through a clustering run (see planning audit P-2).
+    from sklearn.decomposition import PCA
+
     log.info("Running PCA (n_components=%d)…", n_comp)
     reducer = PCA(n_components=n_comp, random_state=42)
     pca_matrix = reducer.fit_transform(matrix).astype(np.float32)
@@ -337,6 +338,8 @@ def adaptive_cluster_params(n_docs: int) -> tuple[int, int, int]:
 
 
 def _normalize_for_cosine(matrix: np.ndarray) -> np.ndarray:
+    from sklearn.preprocessing import normalize
+
     return normalize(matrix, norm="l2", axis=1).astype(np.float32)
 
 
@@ -504,6 +507,8 @@ def _auto_k_agglomerative(
     Returns ``(best_k, {k: silhouette_score})`` — the sweep is recorded in
     ``params`` so a bad auto-pick is diagnosable rather than invisible.
     """
+    from sklearn.metrics import silhouette_score
+
     n_docs = len(data)
     candidates = _agglomerative_k_candidates(n_docs, k_min, k_max)
     scores: dict[int, float] = {}
@@ -595,6 +600,8 @@ def _split_node_auto(
                 if pos is not None:
                     labels[pos] = gi
         labels_by_k[k] = labels
+
+    from sklearn.metrics import silhouette_score
 
     scores: dict[int, float] = {}
     for k, labels in labels_by_k.items():

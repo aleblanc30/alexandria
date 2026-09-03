@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import sqlalchemy as sa
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import normalize
 
 from pka.clustering.doc_embeddings import (
     embedding_to_blob,
@@ -17,6 +15,9 @@ from pka.clustering.doc_embeddings import (
 )
 from pka.db.queries import get_engine
 from pka.db.schema import documents, tag_training_labels
+
+if TYPE_CHECKING:
+    from sklearn.linear_model import LogisticRegression
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,10 @@ def serialize_model(model: LogisticRegression) -> str:
 
 
 def deserialize_model(blob: str) -> LogisticRegression:
+    # Imported here, not at module scope: sklearn costs ~1s to import and the API
+    # only ever reaches it through a training session (see planning audit P-2).
+    from sklearn.linear_model import LogisticRegression
+
     data = json.loads(blob)
     model = LogisticRegression(max_iter=1000)
     model.classes_ = np.array(data["classes"], dtype=np.int64)
@@ -144,6 +149,8 @@ def load_label_matrix(
         return np.empty((0, 0)), np.array([]), [], missing
 
     y = np.array([labels[doc_ids.index(did)] for did in used_ids], dtype=np.int64)
+    from sklearn.preprocessing import normalize
+
     X = np.stack([found[did] for did in used_ids], axis=0)
     X = normalize(X, norm="l2", axis=1)
     skipped = [did for did in doc_ids if did in missing]
@@ -165,6 +172,8 @@ def train_classifier(session_id: int) -> tuple[str | None, dict[str, Any]]:
         stats["error"] = "Need at least one positive and one negative with embeddings"
         return None, stats
 
+    from sklearn.linear_model import LogisticRegression
+
     model = LogisticRegression(max_iter=1000)
     model.fit(X, y)
     stats["accuracy"] = float(model.score(X, y))
@@ -179,6 +188,8 @@ def predict_proba(model_blob: str, doc_ids: list[int]) -> dict[int, float]:
     found, _ = load_cached_embeddings(doc_ids)
     if not found:
         return {}
+    from sklearn.preprocessing import normalize
+
     ids = list(found.keys())
     X = normalize(np.stack([found[did] for did in ids], axis=0), norm="l2", axis=1)
     probs = model.predict_proba(X)

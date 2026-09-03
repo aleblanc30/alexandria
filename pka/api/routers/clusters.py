@@ -24,7 +24,6 @@ from pka.clustering.cluster_tags import (
     label_to_tag,
     top_tags_for_cluster,
 )
-from pka.clustering.engine import relabel_single_cluster
 from pka.constants import TagOrigin
 from pka.db.schema import (
     cluster_assignments,
@@ -317,6 +316,10 @@ def regenerate_cluster_label(cluster_id: int, engine=Depends(get_engine)):
             raise HTTPException(404, "Cluster not found")
         if row.get("is_noise"):
             raise HTTPException(400, "The noise bucket has no topic to label")
+
+    # Imported here, not at module scope: the engine pulls in sklearn/scipy, which
+    # would otherwise cost ~1.7s on every API start (see planning audit P-2).
+    from pka.clustering.engine import relabel_single_cluster
 
     try:
         relabel_single_cluster(cluster_id, run_id)
