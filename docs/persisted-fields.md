@@ -37,6 +37,7 @@ Every source, images included, gets a row here. `(source, source_id)` is unique.
 | `note` | — | — | ⬛ | — | — | — |
 | `doc_embedding` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `generated_summary` | — | 🟪 | 🟪 | 🟪 | — | — |
+| `summary_run_id` | — | 🟪 ⁵ | 🟪 ⁵ | 🟪 ⁵ | — | — |
 | `doi` | ⬛ | ⬛ ³ | — | ⬛ ³ | — | — |
 | `arxiv_id` | ⬛ | ⬛ ³ | — | ⬛ ³ | — | — |
 | `isbn` | — | ⬛ ⁴ ⁶ | ⬛ ⁴ | — | — | — |
@@ -58,6 +59,10 @@ scraping the page (arXiv, bioRxiv, PubMed, and the DOI publisher handlers:
 members is deliberate: the list grew twice already without this footnote being
 updated.
 ⁴ Rejected rather than stored when the checksum fails — it is a join key.
+⁵ Written with `generated_summary`, by the same flag and the same writer
+(`set_generated_summary`): the `enrichment_runs.run_id` whose backend produced
+it. A summary written before provenance shipped keeps `NULL`, which means
+*unknown* and is deliberately never backfilled — see §5.
 ⁶ From an `mitpress.mit.edu` book URL, whose path carries the ISBN-13
 (`pka/ingestion/mitpress.py`). Validated with `openlibrary.normalize_isbn` /
 `isbn_checksum_valid` before it reaches the column, per footnote ⁴.
@@ -190,3 +195,30 @@ Plus, when the flag is on:
 
 Summaries are cached in `documents.generated_summary`, so a purge-and-reingest
 replays them without paying for inference twice. See `DESIGN.md` §3.2.
+
+---
+
+## 5. `enrichment_runs` — who made the enrichment
+
+One row per *pass* (a source sync, or an `alexandria purge`-driven re-summarise),
+not per document. Written by `pka/enrichment_runs.py`, which opens a run lazily
+at the moment inference is about to happen and closes it when the pass ends — so
+a sync that summarises nothing writes no row at all.
+
+| Column | Written | Meaning |
+|--------|:-------:|---------|
+| `run_id` | ✅ | what `documents.summary_run_id` points at |
+| `kind` | ✅ | `summary` today; `image_description` / `ocr` / `book_extract` are reserved for when those artifacts are stamped |
+| `provider` | ⬛ | the configured backend (`ollama`, `openrouter`, …) |
+| `model` | ⬛ | the **resolved** model name, never the config default — `chat_model` is normally `""`, meaning "auto-detect", so the config value would record nothing useful |
+| `parameters` | ⬛ | JSON: temperature and the chunking bounds the pass ran with |
+| `started_at` | ✅ | |
+| `finished_at` | ⬛ | NULL while running |
+| `status` | ✅ | `running` → `finished` \| `failed`; a row left `running` for 24 h is reaped as `failed` |
+| `notes` | ⬛ | set on failure, and by the reaper |
+| `calls` / `chars_sent` | ✅ | provider traffic, counted at the call site — a map-reduced book costs many calls for one summary |
+| `artifacts` | ✅ | artifacts actually produced |
+
+**Only `summary` is stamped so far.** Image descriptions, OCR text and book
+extraction carry no `*_run_id` column yet: those columns land when their wiring
+does, so that a `—` here keeps meaning "nothing writes this".

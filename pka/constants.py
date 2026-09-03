@@ -42,6 +42,27 @@ class PdfTextLayer(StrEnum):
     UNREADABLE = "unreadable"  # neither pdfplumber nor pypdf could open it
 
 
+class EnrichmentKind(StrEnum):
+    """What an ``enrichment_runs`` row produced (PURGE_AND_PROVENANCE_PLAN.md §6).
+
+    One kind per artifact, not per backend: swapping the chat provider does not
+    change that a summary is a summary, and the run row records which backend
+    made it.
+    """
+
+    SUMMARY = "summary"
+    IMAGE_DESCRIPTION = "image_description"
+    OCR = "ocr"
+    BOOK_EXTRACT = "book_extract"
+
+
+class RunStatus(StrEnum):
+    RUNNING = "running"
+    FINISHED = "finished"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class TagOrigin(StrEnum):
     SOURCE = "source"
     INFERRED = "inferred"

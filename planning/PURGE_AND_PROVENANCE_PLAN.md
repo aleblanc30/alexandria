@@ -1,5 +1,68 @@
 # Selective purge, pipeline re-triggers, and enrichment provenance
 
+> **Status (2026-09-03).** Phases 1 and 2 ship, bar image stamping.
+>
+> **Phase 1.** §5.1's Tier-1 leak is fixed, the §5.2 registry is `pka/purge.py`
+> (eight targets), §5.2.1's enrich pass is `pka/ingestion/enrich.py`, and §5.3's
+> API, `alexandria purge` CLI and *Maintenance* panel
+> (`frontend/src/components/MaintenancePanel.vue`, on `/ingestion` below the
+> domain tables) are wired. Tests: `tests/test_purge.py`,
+> `frontend/src/api/client.test.ts`.
+>
+> The panel shows a Re-trigger button only for `summaries` and `vectors`. The
+> other targets' re-triggers start a full source sync — thousands of outbound
+> fetches, for `fetched_text` — which belongs on the page that shows sync
+> progress, so those render the backend's `retrigger` string as a hint instead.
+>
+> **Phase 2.** `enrichment_runs` (§6.1) and `documents.summary_run_id` (§6.2)
+> exist; `pka/enrichment_runs.py` owns the lifecycle; §6.3's `run_id` /
+> `provider` / `model` / `unknown` filters reach the purge registry, the CLI and
+> the API, alongside `GET /ingestion/enrichment-runs` and `alexandria purge
+> --runs`. Tests: `tests/test_enrichment_runs.py`.
+>
+> Decisions made while implementing, beyond the plan's text:
+> - **Runs open lazily, on the first document that actually infers**, and close
+>   with the pass. A sync whose summaries are all cached writes no run row, and
+>   the model recorded is the one resolved for the call rather than whatever
+>   config said at startup.
+> - **The ambient run is keyed by kind**, module-level, the way
+>   `pka/ingestion/progress/` carries per-source job state — rather than threading
+>   a `run_id` through all seven runners. Two concurrent syncs share one summary
+>   run, which is correct provenance: same model, same settings.
+> - **§10's stale-`running` question:** a 24-hour reaper that skips runs the
+>   process still holds. Generous on purpose — a long image pass on this hardware
+>   genuinely runs for hours, and wrongly failing a live run is worse than reaping
+>   late. CLI passes also close their runs through an `atexit` hook.
+> - **A target with no stamp refuses a provenance filter** (400 / `ValueError`)
+>   rather than ignoring it. Not in the plan, but silently widening "purge what
+>   the old model made" into "purge everything" is the failure this feature is for.
+> - **`calls` / `chars_sent` are counted at summarize.py's single `chat_json`
+>   site**, not per document: a map-reduced book is many calls for one summary, so
+>   counting documents would understate spend — and the run opens *before*
+>   inference so a failed call is still counted.
+>
+> **Still open:** image stamping — `images.description_run_id` / `ocr_run_id` /
+> `books_run_id` (§6.2) are deliberately *not* added yet. They need `resolve_model`
+> on the vision and OCR providers (neither Protocol has it today), and adding the
+> columns before their wiring would put three rows in `docs/persisted-fields.md`
+> that nothing writes, breaking the one property that file exists to guarantee.
+> Then Phase 3 (retention), which §7 says to decide only once Phase 2 has been
+> lived with.
+>
+> Two decisions made while implementing, both narrower than the plan's text:
+> - **`fetched_text` re-queues only `fetch_status='fetched'` documents.** A
+>   Calibre book rests at `available` and is re-read from disk; moving it to
+>   `pending` would misdescribe it to the fetch dispatcher.
+> - **`image_text` deletes the image's chunks too**, not just the sidecar
+>   columns. The image pipeline appends at `existing_chunk_count` without
+>   deduplicating, so leaving them would double every image's searchable text
+>   on the next run.
+>
+> §10's `chunk_pass` concern turned out to be broader than "older rows": only
+> Calibre ever writes `chunk_pass='fulltext'`, so a body chunk is NULL for every
+> other source. `pka.purge.body_chunk_predicate()` treats NULL as body text and
+> is shared with the enrich pass so the two cannot drift.
+
 Plan for the `planning/TODO.md` item under *Ingestion*:
 
 > - [ ] Add buttons to purge specific subsets of the data and to retrigger

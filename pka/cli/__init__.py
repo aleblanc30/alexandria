@@ -10,6 +10,7 @@ Installed as the ``alexandria`` console script::
     alexandria youtube --metadata-only
     alexandria clustering --accept
     alexandria domain-report --json
+    alexandria purge summaries --source firefox --dry-run
     alexandria purge-source firefox --dry-run
     alexandria purge-cluster-runs --all --dry-run
     alexandria backfill-classification
@@ -35,6 +36,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "youtube": ("youtube", "Ingest saved YouTube videos (metadata + embed)"),
     "clustering": ("clustering", "Run the clustering pipeline"),
     "domain-report": ("domain_report", "Domain frequency report over ingested URLs"),
+    "purge": ("purge", "Remove one kind of artifact (summaries, vectors, image text, …)"),
     "purge-source": ("purge_source", "Remove archived data for a source"),
     "purge-cluster-runs": ("purge_cluster_runs", "Delete stored clustering runs"),
     "backfill-classification": (

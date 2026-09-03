@@ -473,7 +473,7 @@ Three mechanisms close these, in ascending cost:
 | Document type | Enrichment | Default |
 |---|---|---|
 | Firefox bookmark, Reddit link post | Title + `card_summary` embedded | **on** |
-| " | Local LLM summary chunk, `pass="summary"`, cached in `documents.generated_summary` | off (`bookmark_summary_enabled`) |
+| " | Local LLM summary chunk, `pass="summary"`, cached in `documents.generated_summary` and stamped with the run that made it | off (`bookmark_summary_enabled`) |
 | Reddit self-post, Reddit comment | Same summary chunk over the inline body. Framed per `material` (`_MATERIALS` in `summarize.py`) so a comment is not summarised as a document, with the thread title passed as `context` — a comment lifted out of its thread often names none of its own subject | off (`bookmark_summary_enabled`) |
 | Image `book_cover` | ISBN → Open Library → second catalogue; one chunk per visible book | off (`external_lookup_enabled`, `cover_search_fallback`) |
 | Image `poster` | VLM content summary | **on** |
@@ -537,6 +537,37 @@ cached in a column so purge-and-reingest does not re-run inference, and are kept
 to 2–4 sentences because MiniLM truncates in the low hundreds of word-pieces.
 A multi-book cover attaches one chunk per book; note that a shelf photo with a
 dozen synopses will dominate that document's mean-pooled `doc_embedding`.
+
+**Provenance.** An enrichment artifact records what made it. `enrichment_runs`
+(`pka/enrichment_runs.py`) holds one row per *pass* — a source sync, or an
+explicit re-summarise — carrying the provider, the **resolved** model name, the
+parameters the pass ran with, and what it cost in provider calls and characters
+sent. `documents.summary_run_id` points at it.
+
+This is what makes a backend swap survivable. Purging is otherwise all-or-
+nothing: "clear the summaries the old model made and keep the ones I still
+want" is not merely awkward without a stamp, it is unexpressible, so the only
+available button throws away the work you are keeping along with the work you
+are replacing. With the stamp, a purge takes a `run_id`, a `provider`/`model`,
+or `unknown`.
+
+Three properties are load-bearing:
+
+- **The model recorded is the resolved one**, not the configured one. `chat_model`
+  defaults to `""`, meaning "auto-detect the first non-embedding model from
+  `/api/tags`", so the config value would record nothing useful on the most
+  common local setup.
+- **`NULL` means genuinely unknown**, and is never backfilled. Every artifact made
+  before stamping shipped has unknown provenance; "made by whatever is configured
+  now" is exactly the guess a provenance-filtered purge would then act on.
+- **A target with no stamp refuses a provenance filter** rather than ignoring it.
+  Answering "purge what the old model made" by purging everything is the failure
+  mode this exists to prevent.
+
+Only summaries are stamped today. The same shape extends to image descriptions,
+OCR and book extraction when those are wired (`planning/PURGE_AND_PROVENANCE_PLAN.md`
+§6.2). This deliberately generalises `cluster_runs`, which already worked this
+way, and it is not a job history: live job state stays in `pka/ingestion/progress/`.
 
 ### 3.3 Image search paths (CLIP is opt-in)
 

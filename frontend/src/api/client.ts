@@ -424,6 +424,54 @@ export const purgeSource        = (source: string) =>
     INGESTION_TIMEOUT_MS,
   )
 
+// ── Maintenance: selective purge and enrichment re-triggers ───────────────────
+// One row per registered target in pka/purge.py; `counts` is the dry run, so a
+// button can say what it will delete before it is pressed.
+
+export interface PurgeTargetRow {
+  key: string
+  label: string
+  /** 2 = model-derived (re-runnable at a cost in inference), 3 = source-derived. */
+  tier: number
+  /** Endpoint or command that regenerates it, for display; null if nothing does. */
+  retrigger: string | null
+  counts: Record<string, number>
+}
+export interface PurgeTargetResult {
+  status: 'counted' | 'purged'
+  target: string
+  source: string | null
+  counts: Record<string, number>
+}
+
+const purgeQuery = (source?: string, dryRun = false) => {
+  const q = new URLSearchParams()
+  if (source) q.set('source', source)
+  if (dryRun) q.set('dry_run', 'true')
+  return q.toString() ? `?${q}` : ''
+}
+
+export const purgeTargets = (source?: string) =>
+  req<{ source: string | null; targets: PurgeTargetRow[] }>(
+    `/ingestion/purge-targets${purgeQuery(source)}`,
+    {},
+    INGESTION_TIMEOUT_MS,
+  )
+export const purgeTarget = (key: string, opts: { source?: string; dryRun?: boolean } = {}) =>
+  req<PurgeTargetResult>(
+    `/ingestion/purge/${key}${purgeQuery(opts.source, opts.dryRun)}`,
+    { method: 'POST' },
+    INGESTION_TIMEOUT_MS,
+  )
+export const enrich = (kind = 'summary', source?: string) =>
+  req<{ status: string; kind: string; source: string | null }>(
+    `/ingestion/enrich?kind=${encodeURIComponent(kind)}${source ? `&source=${encodeURIComponent(source)}` : ''}`,
+    { method: 'POST' },
+    10000,
+  )
+export const rebuildVectors = () =>
+  req<{ status: string }>('/ingestion/rebuild-vectors', { method: 'POST' }, 10000)
+
 export interface SourcePathInfo { source: string; path: string; kind: 'file' | 'dir'; exists: boolean }
 
 export const getSourcePath = (source: string) =>

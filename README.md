@@ -134,6 +134,44 @@ alexandria domain-report --source firefox --limit 50
 alexandria domain-report --rejected # sorted by unfetchable count instead
 ```
 
+### Purge and re-run parts of the pipeline
+
+Swapping an embedding or summarisation backend does not mean re-ingesting
+everything. `alexandria purge` clears one kind of artifact — leaving the
+expensive fetched text, and your own tags and reading lists, in place.
+
+```bash
+alexandria purge --list                       # targets, and what regenerates each
+alexandria purge summaries --dry-run          # counts first; nothing is deleted
+alexandria purge summaries --source firefox   # or scope it to one connector
+alexandria purge vectors                      # then POST /ingestion/rebuild-vectors
+```
+
+Summaries record which model made them, so swapping a backend does not mean
+discarding the work you are keeping:
+
+```bash
+alexandria purge --runs                              # what ran, when, at what cost
+alexandria purge summaries --model qwen2.5:3b        # only the old model's work
+alexandria purge summaries --unknown                 # only the unstamped backlog
+```
+
+A target whose artifact carries no stamp rejects those filters rather than
+quietly purging everything.
+
+Clearing an artifact is usually the whole re-trigger: the next sync regenerates
+whatever is missing. Summaries are the exception — their skip gate is "does this
+document have chunks", which stays true — so they get an explicit pass:
+
+```bash
+curl -X POST 'localhost:8420/ingestion/enrich?kind=summary'
+```
+
+`alexandria purge-source <source>` remains the blunt instrument: it removes a
+whole connector's documents. It now keeps manually-applied and learned tags plus
+reading-list entries, since re-ingesting cannot recreate those; pass
+`--include-user-data` to delete them too.
+
 ### Cluster and review
 
 ```bash

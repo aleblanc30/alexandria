@@ -13,6 +13,8 @@ from pka.db.schema import (
     documents,
     images,
     overlay_tags,
+    reading_list_items,
+    reading_lists,
     source_tags,
 )
 from tests.conftest import make_document
@@ -91,6 +93,62 @@ def test_purge_source_removes_only_that_source(empty_vector_store):
             con.execute(sa.select(sa.func.count()).select_from(source_tags)).scalar() == 1
         )  # zotero tag survives
         assert con.execute(sa.select(sa.func.count()).select_from(overlay_tags)).scalar() == 1
+
+
+def test_purge_source_preserves_manual_and_learned_tags(empty_vector_store):
+    """Tier-1 user data must survive a default purge (PURGE_AND_PROVENANCE_PLAN §5.1)."""
+    init_db()
+    doc_id = _seed_document("firefox", "F1")
+    eng = get_engine()
+    now = int(time.time())
+    with eng.begin() as con:
+        con.execute(
+            overlay_tags.insert().values(
+                document_id=doc_id, tag="my-tag", origin="manual", created_at=now
+            )
+        )
+        con.execute(
+            overlay_tags.insert().values(
+                document_id=doc_id, tag="learned-tag", origin="learned", created_at=now
+            )
+        )
+        list_id = con.execute(
+            reading_lists.insert().values(name="Reading", created_at=now)
+        ).inserted_primary_key[0]
+        con.execute(reading_list_items.insert().values(list_id=list_id, document_id=doc_id))
+
+    counts = purge_source("firefox")
+
+    assert counts["documents"] == 1
+    with eng.connect() as con:
+        remaining_tags = {r[0] for r in con.execute(sa.select(overlay_tags.c.origin)).fetchall()}
+        assert remaining_tags == {"manual", "learned"}
+        assert con.execute(sa.select(sa.func.count()).select_from(reading_list_items)).scalar() == 1
+
+
+def test_purge_source_include_user_data_removes_everything(empty_vector_store):
+    init_db()
+    doc_id = _seed_document("firefox", "F1")
+    eng = get_engine()
+    now = int(time.time())
+    with eng.begin() as con:
+        con.execute(
+            overlay_tags.insert().values(
+                document_id=doc_id, tag="my-tag", origin="manual", created_at=now
+            )
+        )
+        list_id = con.execute(
+            reading_lists.insert().values(name="Reading", created_at=now)
+        ).inserted_primary_key[0]
+        con.execute(reading_list_items.insert().values(list_id=list_id, document_id=doc_id))
+
+    counts = purge_source("firefox", include_user_data=True)
+
+    assert counts["overlay_tags"] == 2  # the seeded "inferred" tag plus "manual"
+    assert counts["reading_list_items"] == 1
+    with eng.connect() as con:
+        assert con.execute(sa.select(sa.func.count()).select_from(overlay_tags)).scalar() == 0
+        assert con.execute(sa.select(sa.func.count()).select_from(reading_list_items)).scalar() == 0
 
 
 def test_purge_documents_batches_id_lists(empty_vector_store, monkeypatch):

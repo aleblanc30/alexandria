@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, deleteRun, domainTopLists, search, triggerRun } from './client'
+import {
+  ApiError,
+  deleteRun,
+  domainTopLists,
+  enrich,
+  purgeTarget,
+  purgeTargets,
+  search,
+  triggerRun,
+} from './client'
 
 describe('api client', () => {
   beforeEach(() => {
@@ -123,5 +132,55 @@ describe('api client', () => {
       '/runs/7?force=true',
       expect.objectContaining({ method: 'DELETE' }),
     )
+  })
+
+  describe('maintenance purge', () => {
+    function ok(json: unknown) {
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true, status: 200, statusText: 'OK', json: async () => json,
+      } as Response)
+    }
+
+    it('purgeTargets omits the source filter when archive-wide', async () => {
+      ok({ source: null, targets: [] })
+      await purgeTargets()
+      expect(fetch).toHaveBeenCalledWith('/ingestion/purge-targets', expect.anything())
+    })
+
+    it('purgeTargets scopes to a source when given', async () => {
+      ok({ source: 'firefox', targets: [] })
+      await purgeTargets('firefox')
+      expect(fetch).toHaveBeenCalledWith(
+        '/ingestion/purge-targets?source=firefox',
+        expect.anything(),
+      )
+    })
+
+    it('purgeTarget defaults to a real purge, not a dry run', async () => {
+      ok({ status: 'purged', target: 'summaries', source: null, counts: {} })
+      await purgeTarget('summaries')
+      expect(fetch).toHaveBeenCalledWith(
+        '/ingestion/purge/summaries',
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+
+    it('purgeTarget asks for a dry run explicitly', async () => {
+      ok({ status: 'counted', target: 'summaries', source: 'firefox', counts: {} })
+      await purgeTarget('summaries', { source: 'firefox', dryRun: true })
+      expect(fetch).toHaveBeenCalledWith(
+        '/ingestion/purge/summaries?source=firefox&dry_run=true',
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+
+    it('enrich defaults to the summary kind', async () => {
+      ok({ status: 'queued', kind: 'summary', source: null })
+      await enrich()
+      expect(fetch).toHaveBeenCalledWith(
+        '/ingestion/enrich?kind=summary',
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
   })
 })

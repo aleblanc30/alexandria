@@ -117,11 +117,17 @@ flowchart TD
     PROC --> TAIL
 
     SUM["attach_summary_chunk()<br/>gate: _SUMMARY_FLAGS per source"]
-    SUMLLM["summarize_text() → LLM"]
-    SUMCACHE[("documents.generated_summary")]
+    SUMHIT{"generated_summary cached?"}
+    SUMRUN["current_run_id(SUMMARY)<br/>enrichment_runs.py — opens lazily,<br/>records provider + resolved model"]
+    SUMLLM["summarize_text() → LLM<br/>record_call() per provider call"]
+    SUMCACHE[("documents.generated_summary<br/>+ summary_run_id stamp")]
+    RUNS[("SQLite<br/>enrichment_runs")]
     PROC -.optional.-> SUM
-    SUM --> SUMCACHE
-    SUM --> SUMLLM --> TAIL
+    SUM --> SUMHIT
+    SUMHIT -->|yes, no inference| TAIL
+    SUMHIT -->|no| SUMRUN --> SUMLLM --> SUMCACHE --> TAIL
+    SUMRUN --> RUNS
+    SUMLLM --> RUNS
 
     CHROMA[("ChromaDB<br/>alexandria_chunks")]
     SQLITE[("SQLite<br/>documents, chunks, tags")]
@@ -135,10 +141,10 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class API,CLI,REG,SPEC,META,BASE,BEGIN,TAKE,MLOOP,TICK1,INS,FULL,END1,INGEST,CORPUS,FETCHQ,SKIPF,FETCH,SETE,ELOOP,TAIL,CHUNK,FB,FBUSE,UPS,SQL,DOCEMB shared
+    class API,CLI,REG,SPEC,META,BASE,BEGIN,TAKE,MLOOP,TICK1,INS,FULL,END1,INGEST,CORPUS,FETCHQ,SKIPF,FETCH,SETE,ELOOP,TAIL,CHUNK,FB,FBUSE,UPS,SQL,DOCEMB,SUMHIT,SUMRUN shared
     class LOAD,PERSIST,PROC specific
     class SUM,SUMLLM gated
-    class CHROMA,SQLITE,SUMCACHE store
+    class CHROMA,SQLITE,SUMCACHE,RUNS store
 ```
 
 ---
@@ -866,6 +872,7 @@ Reading the six graphs together, the shared surface is:
 | `fetcher.fetch_and_embed_pending` (async pool, per-domain limiter, handler dispatch) | — | ✅ | — | ✅ ³ | — | — |
 | `core.fetched_embed_text` + `card_summary.body_excerpt` | — | ✅ | — | ✅ ³ | — | — |
 | `core.attach_summary_chunk` (`_SUMMARY_FLAGS`) | — | ✅ | ✅ | ✅ | — | — |
+| `enrichment_runs` provenance around the summary call ⁴ | — | ✅ | ✅ | ✅ | — | — |
 | `openlibrary.lookup_book` ladder | — | — | ✅ | — | — | ✅ |
 
 ¹ Firefox embeds inline inside the fetch worker (`tracks_embedding=False`). It
@@ -875,6 +882,11 @@ uses `run_embed_loop` only on the batch path `ingest_fetched_texts`, which
 instead of using the rule-based classifier.
 ³ Reddit reuses the Firefox fetcher wholesale for link posts; only `embed_fn`
 differs.
+⁴ Drawn in the shared spine graph above rather than repeated in each source's
+graph: it wraps `attach_summary_chunk`'s cache-miss branch, which is already
+shared. The run opens on the first document that actually infers, stamps
+`documents.summary_run_id`, and is closed by the job skeleton when the sync
+ends — so a sync whose summaries are all cached opens no run at all.
 
 The genuinely source-specific surface is always the same two things: **how the
 corpus is read** (`pka/connectors/<source>.py`) and **what text is handed to

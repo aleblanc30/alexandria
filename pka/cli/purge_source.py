@@ -15,7 +15,7 @@ from collections.abc import Iterator
 import sqlalchemy as sa
 
 from pka.cli._logging import setup_logging
-from pka.constants import ALL_SOURCES, Source
+from pka.constants import ALL_SOURCES, Source, TagOrigin
 from pka.db.queries import get_engine
 from pka.db.schema import (
     chunks,
@@ -34,10 +34,16 @@ from pka.storage import vector_store
 
 log = logging.getLogger("purge_source")
 
+# overlay_tags is handled separately (see _delete_overlay_tags): by default a
+# purge must not destroy user-authored data (Tier 1 — CLAUDE.md /
+# PURGE_AND_PROVENANCE_PLAN.md §5.1), so it is filtered to machine origins
+# unless include_user_data is set. reading_list_items is Tier 1 outright and is
+# never touched here — a purged document simply leaves a dangling id that
+# survives a later re-ingest.
+_USER_TAG_ORIGINS = (str(TagOrigin.MANUAL), str(TagOrigin.LEARNED))
+
 _CHILD_TABLES = (
-    reading_list_items,
     cluster_assignments,
-    overlay_tags,
     fetch_log,
     chunks,
     source_tags,
@@ -56,18 +62,35 @@ def _batches(ids: list) -> Iterator[list]:
         yield ids[i : i + _ID_BATCH_SIZE]
 
 
-def purge_source(source: str, *, dry_run: bool = False) -> dict[str, int]:
-    """Delete all archive rows (and vectors) for ``source``."""
+def purge_source(
+    source: str, *, dry_run: bool = False, include_user_data: bool = False
+) -> dict[str, int]:
+    """Delete all archive rows (and vectors) for ``source``.
+
+    By default, user-authored data survives: ``overlay_tags`` with
+    ``origin in (manual, learned)`` and ``reading_list_items`` are left in
+    place, since nothing about re-ingesting the source can recreate them. Pass
+    ``include_user_data=True`` to delete those too.
+    """
     src = str(source)
     if src not in ALL_SOURCES:
         raise ValueError(f"Unknown source {src!r}; expected one of {ALL_SOURCES}")
 
     if src == Source.IMAGE:
-        return _purge_images(dry_run=dry_run)
-    return _purge_documents(src, dry_run=dry_run)
+        return _purge_images(dry_run=dry_run, include_user_data=include_user_data)
+    return _purge_documents(src, dry_run=dry_run, include_user_data=include_user_data)
 
 
-def _purge_documents(source: str, *, dry_run: bool = False) -> dict[str, int]:
+def _overlay_tags_where(doc_ids: list, *, include_user_data: bool):
+    in_batch = overlay_tags.c.document_id.in_(doc_ids)
+    if include_user_data:
+        return in_batch
+    return sa.and_(in_batch, overlay_tags.c.origin.notin_(_USER_TAG_ORIGINS))
+
+
+def _purge_documents(
+    source: str, *, dry_run: bool = False, include_user_data: bool = False
+) -> dict[str, int]:
     eng = get_engine()
     with eng.connect() as con:
         doc_ids = [
@@ -103,6 +126,25 @@ def _purge_documents(source: str, *, dry_run: bool = False) -> dict[str, int]:
                     or 0
                     for batch in _batches(doc_ids)
                 )
+            counts["overlay_tags"] = sum(
+                con.execute(
+                    sa.select(sa.func.count())
+                    .select_from(overlay_tags)
+                    .where(_overlay_tags_where(batch, include_user_data=include_user_data))
+                ).scalar()
+                or 0
+                for batch in _batches(doc_ids)
+            )
+            if include_user_data:
+                counts["reading_list_items"] = sum(
+                    con.execute(
+                        sa.select(sa.func.count())
+                        .select_from(reading_list_items)
+                        .where(reading_list_items.c.document_id.in_(batch))
+                    ).scalar()
+                    or 0
+                    for batch in _batches(doc_ids)
+                )
         return counts
 
     if vector_ids:
@@ -114,13 +156,28 @@ def _purge_documents(source: str, *, dry_run: bool = False) -> dict[str, int]:
                 con.execute(tbl.delete().where(tbl.c.document_id.in_(batch))).rowcount
                 for batch in _batches(doc_ids)
             )
+        counts["overlay_tags"] = sum(
+            con.execute(
+                overlay_tags.delete().where(
+                    _overlay_tags_where(batch, include_user_data=include_user_data)
+                )
+            ).rowcount
+            for batch in _batches(doc_ids)
+        )
+        if include_user_data:
+            counts["reading_list_items"] = sum(
+                con.execute(
+                    reading_list_items.delete().where(reading_list_items.c.document_id.in_(batch))
+                ).rowcount
+                for batch in _batches(doc_ids)
+            )
         result = con.execute(documents.delete().where(documents.c.source == source))
         counts["documents"] = result.rowcount
 
     return counts
 
 
-def _purge_images(*, dry_run: bool = False) -> dict[str, int]:
+def _purge_images(*, dry_run: bool = False, include_user_data: bool = False) -> dict[str, int]:
     """Purge image data.
 
     Images are first-class documents (``source=image``): their ``documents``,
@@ -146,7 +203,9 @@ def _purge_images(*, dry_run: bool = False) -> dict[str, int]:
         ]
 
     # documents / chunks / chunk vectors / overlay tags / etc.
-    counts = _purge_documents(str(Source.IMAGE), dry_run=dry_run)
+    counts = _purge_documents(
+        str(Source.IMAGE), dry_run=dry_run, include_user_data=include_user_data
+    )
     counts["images"] = len(image_ids)
     counts["clip_vectors"] = len(clip_vector_ids)
     counts["image_rejections"] = rejection_count
@@ -202,11 +261,21 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Report row counts without deleting",
     )
+    parser.add_argument(
+        "--include-user-data",
+        action="store_true",
+        help=(
+            "Also delete manually-applied/learned tags and reading-list entries "
+            "for this source (by default those survive the purge)"
+        ),
+    )
     args = parser.parse_args(argv)
 
     setup_logging()
 
-    counts = purge_source(args.source, dry_run=args.dry_run)
+    counts = purge_source(
+        args.source, dry_run=args.dry_run, include_user_data=args.include_user_data
+    )
     prefix = "Would delete" if args.dry_run else "Deleted"
     for name, count in counts.items():
         log.info("%s %s: %d", prefix, name, count)

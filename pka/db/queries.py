@@ -94,6 +94,13 @@ def init_db() -> None:
         if "zotero_path" not in cols:
             con.execute(sa.text("ALTER TABLE documents ADD COLUMN zotero_path TEXT"))
 
+        # Migration: model provenance for the cached summary
+        # (PURGE_AND_PROVENANCE_PLAN.md §6.2). Left NULL on existing rows — a
+        # summary made before this shipped has genuinely unknown provenance,
+        # and "whatever is configured now" would be a lie a purge would act on.
+        if "summary_run_id" not in cols:
+            con.execute(sa.text("ALTER TABLE documents ADD COLUMN summary_run_id INTEGER"))
+
         # Migration: persist enrichment provenance alongside each chunk so the
         # API can report which rung of the ladder produced it (DESIGN.md §3.2).
         # Pre-existing chunks keep NULLs — there is no Chroma backfill.
@@ -529,13 +536,22 @@ def get_generated_summary(doc_id: int) -> str | None:
     return (row[0] or None) if row else None
 
 
-def set_generated_summary(doc_id: int, summary: str | None) -> None:
-    """Persist (or clear) the cached LLM summary for a document."""
+def set_generated_summary(doc_id: int, summary: str | None, *, run_id: int | None = None) -> None:
+    """Persist (or clear) the cached LLM summary for a document.
+
+    ``run_id`` stamps which enrichment run produced it. The stamp moves with the
+    summary in both directions: clearing the text clears the provenance, since a
+    run id pointing at an absent summary would make a provenance-filtered purge
+    count rows it cannot delete.
+    """
     with get_engine().begin() as con:
         con.execute(
             documents.update()
             .where(documents.c.id == doc_id)
-            .values(generated_summary=summary or None)
+            .values(
+                generated_summary=summary or None,
+                summary_run_id=run_id if summary else None,
+            )
         )
 
 

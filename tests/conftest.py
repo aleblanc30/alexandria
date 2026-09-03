@@ -41,6 +41,17 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "ocr_provider", "vlm")
     monkeypatch.setattr(s, "image_embed_provider", "clip")
 
+    # Pin the chat model too, and drop the auto-detect cache. Left empty,
+    # ``OllamaChatProvider.resolve_model`` probes ``/api/tags`` over HTTP to pick
+    # one — a real call to a developer's running Ollama from any code path that
+    # resolves a model without going through a mocked ``chat_json`` (recording
+    # enrichment provenance is one). Tests that exercise auto-detection set this
+    # back to "" and stub ``httpx.get`` themselves.
+    monkeypatch.setattr(s, "chat_model", "test-chat-model")
+    import pka.providers.ollama as _ollama
+
+    monkeypatch.setattr(_ollama, "_cached_chat_model", None)
+
     # CLIP is off by default in production; pin that here too so a developer's
     # ALEXANDRIA_CLIP_ENABLED=1 cannot leak in. Tests that exercise the visual
     # index turn it on explicitly.
@@ -113,10 +124,19 @@ def isolated_settings(tmp_path, monkeypatch):
 
     invalidate_source_probes()
 
+    # Drop the ambient enrichment run: a run id opened against one test's DB
+    # would otherwise be stamped onto the next test's rows, pointing at a row
+    # that does not exist there.
+    from pka.enrichment_runs import reset_for_tests as reset_enrichment_runs
+
+    reset_enrichment_runs()
+
     yield
 
     for src in ALL_SOURCES:
         sp.reset(src)
+
+    reset_enrichment_runs()
 
 
 # ── Document factory ──────────────────────────────────────────────────────────

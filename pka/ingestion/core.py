@@ -164,12 +164,19 @@ def attach_summary_chunk(
     try:
         summary = get_generated_summary(doc_id)
         if not summary:
+            from pka.constants import EnrichmentKind
+            from pka.enrichment_runs import count_artifact, current_run_id
             from pka.ingestion.summarize import summarize_text
 
+            # Open the run *before* inferring, not after: a call that fails
+            # still cost the provider, and a spend surface that only counts
+            # successes is worse than none (PURGE_AND_PROVENANCE_PLAN.md §6.3).
+            run_id = current_run_id(EnrichmentKind.SUMMARY)
             summary = summarize_text(text, material=material, context=context)
             if not summary:
                 return 0
-            set_generated_summary(doc_id, summary)
+            set_generated_summary(doc_id, summary, run_id=run_id)
+            count_artifact(EnrichmentKind.SUMMARY)
 
         result = ingest_text_block(
             doc_id,

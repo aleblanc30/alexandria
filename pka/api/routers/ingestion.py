@@ -187,10 +187,13 @@ def browse_path(source: str):
 
 
 @router.post("/sources/{source}/purge")
-def purge_source_endpoint(source: str):
+def purge_source_endpoint(source: str, include_user_data: bool = False):
     """Delete every archived row (and vectors) for ``source``.
 
-    Refuses while a sync is running so a purge can't race a live worker.
+    By default, manually-applied/learned tags and reading-list entries survive
+    (see ``PURGE_AND_PROVENANCE_PLAN.md`` §5.1); pass ``include_user_data=true``
+    to remove those too. Refuses while a sync is running so a purge can't race
+    a live worker.
     """
     require_source(source)
     if sp.is_running(source):
@@ -200,10 +203,144 @@ def purge_source_endpoint(source: str):
     from pka.db.queries import init_db
 
     init_db()
-    counts = purge_source(source)
+    counts = purge_source(source, include_user_data=include_user_data)
     sp.reset(source)
     _seed_baselines(source)
     return {"status": "purged", "source": source, "counts": counts}
+
+
+def _require_nothing_running(source: str | None) -> None:
+    """Refuse a purge that could race a live worker.
+
+    A source-scoped purge only has to wait for that source; an archive-wide one
+    touches rows every sync writes, so it waits for all of them.
+    """
+    busy = [s for s in ([source] if source else ALL_SOURCES) if sp.is_running(s)]
+    if busy:
+        raise HTTPException(409, f"Stop the running sync for {', '.join(busy)} before purging")
+
+
+@router.get("/purge-targets")
+def purge_targets(source: str | None = None):
+    """The purge registry with live dry-run counts — one row per button."""
+    if source:
+        require_source(source)
+    from pka.db.queries import init_db
+    from pka.purge import describe_targets
+
+    init_db()
+    return {"source": source, "targets": describe_targets(source)}
+
+
+@router.get("/enrichment-runs")
+def enrichment_runs_list(kind: str | None = None, limit: int = 100):
+    """What ran, when, with which model, and at what cost in provider traffic.
+
+    The provenance surface behind the purge filters below: a run listed here is
+    a `run_id` a purge can target.
+    """
+    from pka.db.queries import init_db
+    from pka.enrichment_runs import list_runs
+
+    if not 1 <= limit <= 500:
+        raise HTTPException(400, "limit must be between 1 and 500")
+    init_db()
+    return {"runs": list_runs(kind=kind, limit=limit)}
+
+
+@router.post("/purge/{key}")
+def purge_target_endpoint(
+    key: str,
+    source: str | None = None,
+    dry_run: bool = False,
+    run_id: int | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    unknown: bool = False,
+):
+    """Purge one registered target, optionally scoped by source and provenance.
+
+    ``run_id`` / ``provider`` / ``model`` narrow to what a particular backend
+    produced; ``unknown=true`` selects the pre-provenance backlog. Targets whose
+    artifact carries no run stamp reject those filters with a 400 rather than
+    silently widening the purge.
+    """
+    if source:
+        require_source(source)
+    from pka.db.queries import init_db
+    from pka.purge import purge_target
+
+    if not dry_run:
+        _require_nothing_running(source)
+
+    init_db()
+    try:
+        counts = purge_target(
+            key,
+            source=source,
+            dry_run=dry_run,
+            run_id=run_id,
+            provider=provider,
+            model=model,
+            unknown=unknown,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    if not dry_run:
+        # Counts the status view reports just changed under it.
+        for src in [source] if source else ALL_SOURCES:
+            _seed_baselines(src)
+    return {
+        "status": "counted" if dry_run else "purged",
+        "target": key,
+        "source": source,
+        "counts": counts,
+    }
+
+
+_enrich_lock = threading.Lock()
+_enrich_running = False
+
+
+@router.post("/enrich", status_code=202)
+def enrich_endpoint(kind: str = "summary", source: str | None = None):
+    """Re-run an enrichment pass over documents missing that artifact.
+
+    The retrigger for ``purge summaries``: its skip gate is "has any chunk",
+    which a summary purge leaves true, so re-syncing would not regenerate it
+    (PURGE_AND_PROVENANCE_PLAN.md §5.2.1).
+    """
+    global _enrich_running
+    if source:
+        require_source(source)
+    from pka.ingestion.enrich import KINDS
+
+    if kind not in KINDS:
+        raise HTTPException(400, f"Unknown enrichment kind: {kind}")
+
+    with _enrich_lock:
+        if _enrich_running:
+            raise HTTPException(409, "An enrichment pass is already in progress")
+        _enrich_running = True
+
+    def _run() -> None:
+        global _enrich_running
+        from pka.db.queries import init_db
+        from pka.ingestion.enrich import enrich
+
+        try:
+            init_db()
+            stats = enrich(kind, source=source)
+            log.info("Enrichment pass %s finished: %s", kind, stats)
+        except Exception:
+            log.exception("Enrichment pass %s failed", kind)
+        finally:
+            with _enrich_lock:
+                _enrich_running = False
+
+    threading.Thread(target=_run, daemon=True, name=f"alexandria-enrich-{kind}").start()
+    return {"status": "queued", "kind": kind, "source": source}
 
 
 @router.get("/domains", response_model=DomainTopLists)
@@ -320,6 +457,7 @@ def _run_ingestion_job(
 ) -> None:
     """Shared metadata/ingest/full job skeleton: init, begin, run handler, finish."""
     from pka.db.queries import get_engine, init_db
+    from pka.enrichment_runs import close_all
 
     init_db()
     _seed_baselines(src)
@@ -333,7 +471,12 @@ def _run_ingestion_job(
         log.exception("%s failed for %s", error_label, src)
         sp.finish(src, error=str(exc))
         seed_progress_from_db(get_engine(), src)
+        # The enrichment run this job opened (if any) died with it — close it
+        # as failed rather than leaving a `running` row for the reaper.
+        close_all(status="failed")
         return
+    finally:
+        close_all()
     # Only after a clean finish: a cancelled or paused job leaves the archive
     # mid-update, and its new documents can wait for the next complete run.
     if assign_after and not _extract_stopped(stats):

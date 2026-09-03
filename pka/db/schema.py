@@ -30,6 +30,10 @@ documents = sa.Table(
     sa.Column("note", sa.Text),  # free-text notes (e.g. long Calibre tags)
     sa.Column("doc_embedding", sa.LargeBinary),  # mean-pooled float32 vector (384-d)
     sa.Column("generated_summary", sa.Text),  # cached LLM summary (DESIGN.md §3.2)
+    # Which enrichment run produced generated_summary. NULL means genuinely
+    # unknown — every summary written before provenance shipped — and is never
+    # backfilled with a guess (PURGE_AND_PROVENANCE_PLAN.md §6.2).
+    sa.Column("summary_run_id", sa.Integer, sa.ForeignKey("enrichment_runs.run_id")),
     # Structured bibliographic fields, cross-source (see DESIGN.md §3.2 and
     # planning/DOCUMENT_METADATA_PLAN.md). Nullable, populated by whoever has
     # the data — no per-source sidecar table.
@@ -181,6 +185,33 @@ cluster_runs = sa.Table(
     sa.Column("status", sa.Text, default="finished"),  # running|finished|failed|cancelled
     sa.Column("notes", sa.Text),
     sa.Column("umap_points", sa.Text),  # JSON: [{doc_id,x,y,cluster_id}]
+)
+
+# Model provenance for enrichment artifacts: which backend, which model, and
+# with which settings produced a given summary / description / OCR pass
+# (PURGE_AND_PROVENANCE_PLAN.md §6.1). Deliberately the same shape as
+# cluster_runs — this is its generalisation, not a new invention.
+#
+# It is NOT a job history: live job state belongs to pka/ingestion/progress/,
+# and nothing here should grow into a task queue.
+enrichment_runs = sa.Table(
+    "enrichment_runs",
+    meta,
+    sa.Column("run_id", sa.Integer, primary_key=True),
+    sa.Column("kind", sa.Text, nullable=False),  # see pka.constants.EnrichmentKind
+    sa.Column("provider", sa.Text),  # ollama|ollama_cloud|openrouter|ovh|scaleway|vlm|easyocr|clip
+    sa.Column("model", sa.Text),  # resolved model name, never the config default
+    sa.Column("parameters", sa.Text),  # JSON blob
+    sa.Column("started_at", sa.Integer, nullable=False),
+    sa.Column("finished_at", sa.Integer),
+    sa.Column("status", sa.Text, default="running"),  # running|finished|failed|cancelled
+    sa.Column("notes", sa.Text),
+    # Spend visibility: what this run actually cost in provider traffic, which
+    # matters once a billable chat provider is configured (see BACKLOG.md).
+    sa.Column("calls", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("chars_sent", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("artifacts", sa.Integer, nullable=False, server_default="0"),
+    sa.Index("ix_enrichment_runs_kind", "kind"),
 )
 
 cluster_assignments = sa.Table(

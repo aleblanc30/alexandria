@@ -33,6 +33,8 @@ from __future__ import annotations
 import logging
 
 from pka.config import settings as cfg
+from pka.constants import EnrichmentKind
+from pka.enrichment_runs import record_call
 from pka.ingestion.chunker import _split_sentences, clean_text, trim_to_sentences
 from pka.ollama_chat import chat_json
 
@@ -181,6 +183,9 @@ def _summarize_once(
         material=material,
         context=context,
     )
+    # Counted here rather than at the caller: a map-reduced book costs many
+    # calls for one summary, so counting documents would understate the spend.
+    record_call(EnrichmentKind.SUMMARY, len(prompt))
     parsed, err = chat_json(prompt, model=model, temperature=_TEMPERATURE)
     if err:
         log.warning("Summarisation call failed: %s", err)

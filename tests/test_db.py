@@ -429,6 +429,9 @@ _NON_WRITE_COLUMNS = {
     "card_summary",
     "doc_embedding",
     "generated_summary",
+    # Provenance for generated_summary; set_generated_summary writes both
+    # together so the stamp can never outlive the summary it describes.
+    "summary_run_id",
     "ingested_at",
 }
 
