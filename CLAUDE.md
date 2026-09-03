@@ -51,6 +51,9 @@ work, not what the code does. Once a `planning/<NAME>.md` plan's corresponding
 - **Do not create git commits or PRs** unless asked. When asked, commit directly
   to `trunk` — no feature branch; this is a single-maintainer local repo.
 - **Do not edit** `.venv/`, `frontend/dist/`, `pka.egg-info/`, or generated caches.
+- **Never stop, restart, or otherwise touch a process bound to port 8420.** It is
+  the user's real production Alexandria instance with real ingested data, not a
+  throwaway dev server — see *Ports* under Pitfalls.
 
 ## Verifying a change
 
@@ -64,6 +67,10 @@ Run from repo root with the venv active.
 | Type check | `mypy pka` |
 | Frontend tests | `cd frontend && npm run test` |
 | Frontend build + typecheck | `cd frontend && npm run build` |
+| All backend checks at once | `scripts/check.sh` (Bash/WSL) or `scripts/check.ps1` (PowerShell) |
+
+`scripts/check.sh`/`check.ps1` run mypy, ruff, and pytest together as one manual
+gate — use it in place of chaining the three commands by hand.
 
 Run `pytest` after backend changes; run **both** `npm run test` and `npm run build`
 after TypeScript/Vue changes. `mypy pka` is baseline-ratcheted (`pyproject.toml`'s
@@ -102,6 +109,12 @@ Two configuration facts that otherwise read as bugs:
   different, so a source checkout's dev server never collides with (or, worse,
   proxies into) a real running production instance. `.vscode/launch.json` debug
   configs use yet another port, 8000.
+- **Worktree venv shadowing.** `.venv` is an editable install (`pip install -e`)
+  pointing at the **main** checkout's `pka/`. From a worktree (e.g. under
+  `.claude/worktrees/<name>/`), `import pka` still resolves to the main repo, so
+  the worktree's edits go untested unless you set `PYTHONPATH` to the worktree
+  root when invoking that venv's python, e.g.
+  `PYTHONPATH="$(pwd)" ../../../.venv/Scripts/python.exe -m pytest`.
 - **`docs/ingestion-flows.md` must be updated in the same commit** as any change
   that alters what its graphs show. There is no test for this — a stale graph
   fails silently and misleads the next reader. Update it when you:
