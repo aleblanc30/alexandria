@@ -63,9 +63,7 @@ The problems are concentrated, which makes them tractable:
    are correlated `EXISTS` sub-queries over exactly those columns. (P-1)
 3. **The API imports scikit-learn at startup** through the clusters router:
    3 of the 4.7 s cold start. (P-2)
-4. **The progress stream re-reads the source database every second** while a
-   sync runs. (P-6)
-5. **Verification is entirely manual**: no CI, no pre-commit hook, mypy
+4. **Verification is entirely manual**: no CI, no pre-commit hook, mypy
    installed but unconfigured and never run, coverage currently under the gate,
    one file out of format. (M-12, M-7)
 
@@ -414,23 +412,48 @@ Recommendations, independently adoptable:
 - The semantic over-fetch `n_results=(offset+limit)*3` grows linearly with
   page depth; acceptable at current sizes, worth a ceiling.
 
-### P-6: the SSE progress stream re-reads the source every second (S)
+### P-6: **withdrawn** — the SSE progress stream's source probes are already cached (none)
 
-`_progress_events` (`routers/ingestion.py:70`) calls `source_counts` every
-`_COUNTS_INTERVAL_SECONDS = 1.0`. `source_counts` (`baselines.py:186`) calls
-`count_pending_metadata(src)`, which for Firefox **opens and iterates the whole
-`places.db`** (`pending_metadata.py:93-96`), for Calibre loads the full
-library (`:107`), for images scans the configured directories, once per
-second, per open stream, for the entire duration of a sync, on top of the
-sync's own reads of the same files. BACKLOG line "Source probes redundantly
-reload the same connector data" notes the duplication between
-`count_pending_metadata` and `source_corpus_size`; this is the multiplier on
-it.
+*Corrected 2026-09-03. As originally written this finding was wrong: it read
+the call chain without reading the cache sitting in the middle of it, and its
+line citations have since shifted. Kept rather than deleted so the numbering
+stays stable for `TODO.md` / `BACKLOG.md` back-references.*
 
-Recommendation: memoise `count_pending_metadata` per source with a short TTL
-(10–30 s) or recompute it only when the tracker's phase changes (the metadata
-phase is the only one that moves it); keep the cheap SQLite counts at 1 Hz.
-`_COUNTS_INTERVAL_SECONDS` should then document which counts it governs.
+The call chain is real. `_progress_events`
+(`pka/api/routers/ingestion.py:77`) does call `source_counts` every
+`_COUNTS_INTERVAL_SECONDS = 1.0`, and `source_counts`
+(`pka/ingestion/progress/baselines.py:186`) does call
+`count_pending_metadata(src)`, whose per-source probes are genuinely
+expensive — Firefox iterates the whole bookmark set
+(`pka/ingestion/pending_metadata.py:124-127`), Calibre loads the full library
+(`:138-143`), images walk the configured directories (`:145-157`).
+
+But none of that runs at 1 Hz. `count_pending_metadata`
+(`pending_metadata.py:108`) routes through `_cached_probe` (`:34`), which
+memoises per `(kind, source)` for
+`settings.ingestion_probe_cache_ttl_seconds` — **default 30.0**
+(`pka/config.py:326`), the top of the range this finding went on to recommend
+— and `invalidate_source_probes` (`:52`) clears it at job start, finish, and
+purge. The same cache also backs the `load_firefox_bookmarks` /
+`load_calibre_books` / `load_scanned_images` raw probes, which is exactly the
+BACKLOG "source probes redundantly reload the same connector data"
+duplication this finding cited as still open. It landed in `3180299`
+(2026-08-17), a fortnight *before* the audited commit.
+
+So the recommendation was already implemented when it was written, down to the
+TTL value. Nothing to do. The one residual nit is cosmetic and belongs with
+M-13: the comment above `_COUNTS_INTERVAL_SECONDS`
+(`routers/ingestion.py:62-64`) says the counts "cost queries" without noting
+that the expensive half is TTL-cached elsewhere, which is part of what made the
+chain read as hot from the router end.
+
+**Method note for the next audit.** This is the characteristic failure of
+arguing from code shape alone: following a call chain top-down finds the
+expensive leaf and stops, but reaching an expensive leaf does not prove it
+*executes* at the caller's frequency. When a finding's premise is "X happens N
+times per second", read X itself for memoisation before writing it up, and
+`git log -S` the fix you are about to recommend to check it is not already in
+the tree.
 
 ### P-7: `list_tags` sorts and limits in Python (S)
 
@@ -479,10 +502,9 @@ Quick wins (an afternoon each, no design change):
 
 1. P-1 indexes + `init_db` lines.
 2. P-2 lazy sklearn/chroma imports.
-3. P-6 TTL on `count_pending_metadata`.
-4. M-12 `scripts/check.*` + M-7 mypy config with baseline; fix the format drift
+3. M-12 `scripts/check.*` + M-7 mypy config with baseline; fix the format drift
    and the two deprecation warnings (M-11).
-5. M-13 hygiene batch (delete `pipeline.py`, vulture items).
+4. M-13 hygiene batch (delete `pipeline.py`, vulture items).
 
 Medium (a focused day or two each):
 
@@ -503,7 +525,7 @@ Larger (plan file each, per the `planning/` convention):
 Security was not reviewed (a separate `security-review` skill exists for
 that). No benchmark was run against a real archive, so the P-items are ranked
 by code shape and by what the schema makes SQLite do, with nothing timed.
-P-1, P-3, P-4 and P-6 are the ones where a measurement on the
+P-1, P-3 and P-4 are the ones where a measurement on the
 production database (read-only `EXPLAIN QUERY PLAN`, or timing one
 `list_documents` and one clustering run) would confirm or demote them.
 
