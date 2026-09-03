@@ -331,12 +331,14 @@ modules. Most of the remaining 110 read-site edits buy readability only.
 **The two pieces that are worth doing on their own,** if someone is already in
 these files — neither needs the nesting:
 
-- **`SecretsFileSettingsSource` → subclass `EnvSettingsSource`** and override
-  `_load_env_vars` (lowercase the keys — it lowercases when `case_sensitive` is
-  False). Deletes ~45 lines of hand-rolled prefix matching and field lookup,
-  inherits pydantic's own resolution. Verified to preserve env > secrets >
-  `.env` precedence. **Entirely independent of M-8** — applies to the flat model
-  as-is.
+- ~~**`SecretsFileSettingsSource` → subclass `EnvSettingsSource`**~~ — **done**,
+  shipped separately since it was independent of the rest of M-8. `__init__`,
+  `get_field_value`, `__call__` and the by-hand field lookup (~20 lines of
+  mechanism) gave way to inheriting pydantic's own resolution; the file is only
+  3 lines shorter, because the saving went into a docstring and both warnings
+  were kept. `test_config.py::TestSecretsFileSourceResolvesNestedFields` pins
+  the nested-resolution guarantee, and was confirmed to fail against the old
+  implementation.
 - **A shared `RemoteBackend` model** for `ollama_cloud` / `openrouter` / `ovh` /
   `scaleway`, which declare the same four fields each. Replaces 16 duplicated
   declarations and collapses `settings_view`'s three parallel provider dicts to
@@ -351,6 +353,6 @@ read them before touching any of this:
   the moment env sets any field of that submodel; pydantic rebuilds from
   class-level defaults. Setting `ALEXANDRIA_OPENROUTER_API_KEY` alone silently
   empties `base_url`. Use a one-line subclass per backend instead.
-- Nesting a field breaks its `SECRET_ALEXANDRIA_*` lookup silently — the current
-  source matches against top-level `model_fields` only, so a moved API key is
-  dropped with a warning and no import-time error.
+- ~~Nesting a field breaks its `SECRET_ALEXANDRIA_*` lookup silently~~ — fixed
+  by the source rewrite above; a secret now resolves into a submodel. Left here
+  because it is why that rewrite is a prerequisite, not an optional tidy-up.

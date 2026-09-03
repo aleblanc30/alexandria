@@ -172,9 +172,14 @@ class SecretsFileSettingsSource(EnvSettingsSource):
 
 Verified: this resolves nested *and* flat secrets, preserves untouched
 defaults, and keeps env > secrets > `.env` precedence. It **deletes** the
-hand-rolled prefix matching, field lookup and `get_field_value` (~45 lines) and
-inherits pydantic's own nested resolution, so it stays correct as the model
-grows — a genuine simplification of the file, not a patch to accommodate one.
+hand-rolled prefix matching, field lookup and `get_field_value` (~20 lines of
+mechanism) and inherits pydantic's own nested resolution, so it stays correct as
+the model grows — a genuine simplification of the file, not a patch to
+accommodate one. Note the *file* barely shrinks (3 lines): the saving goes into
+a docstring, and both warnings are worth keeping.
+
+**Shipped ahead of the rest of M-8**, as step 4 anticipated — it is a no-op
+against the flat model, so it carries none of the nesting's risk.
 
 `parse_secrets_file` is unchanged, so its three direct tests pass untouched.
 One behaviour is lost: the per-key "does not match any setting" warning. Re-add

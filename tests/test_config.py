@@ -1,11 +1,20 @@
 """Config parsing — ``image_dirs`` env forms and the ``.secrets`` credential file."""
 
 import json
+import logging
 import os
 
 import pytest
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from pka.config import Settings, _parse_path_list, parse_secrets_file, reject_system_path
+from pka.config import (
+    SecretsFileSettingsSource,
+    Settings,
+    _parse_path_list,
+    parse_secrets_file,
+    reject_system_path,
+)
 
 
 class TestParsePathList:
@@ -137,3 +146,94 @@ class TestSecretsFileSource:
         )
         monkeypatch.setenv("ALEXANDRIA_SECRETS_FILE", "")
         assert Settings(_env_file=None).openrouter_api_key == ""
+
+    def test_unknown_setting_warns_but_does_not_drop_its_neighbours(
+        self, secrets_file, monkeypatch, caplog
+    ):
+        """A typo in a credentials file is worth a log line, but must never be
+        what discards a value — the check cannot see into submodels."""
+        monkeypatch.delenv("ALEXANDRIA_OPENROUTER_API_KEY", raising=False)
+        secrets_file("SECRET_ALEXANDRIA_OPENROUTR_API_KEY=typo\nSECRET_ALEXANDRIA_OVH_API_KEY=ok\n")
+        with caplog.at_level(logging.WARNING, logger="pka.config"):
+            assert Settings(_env_file=None).ovh_api_key == "ok"
+        assert "OPENROUTR" in caplog.text
+
+    def test_key_without_the_env_prefix_is_ignored(self, secrets_file, monkeypatch, caplog):
+        monkeypatch.delenv("ALEXANDRIA_OVH_API_KEY", raising=False)
+        secrets_file("SECRET_NOT_OUR_PREFIX=x\nSECRET_ALEXANDRIA_OVH_API_KEY=ok\n")
+        with caplog.at_level(logging.WARNING, logger="pka.config"):
+            assert Settings(_env_file=None).ovh_api_key == "ok"
+        assert "does not start with" in caplog.text
+
+
+class TestSecretsFileSourceResolvesNestedFields:
+    """The reason ``SecretsFileSettingsSource`` subclasses ``EnvSettingsSource``.
+
+    The previous implementation matched a parsed key against
+    ``settings_cls.model_fields`` by hand, so a secret whose field lived inside a
+    submodel matched nothing and was dropped with only a log line. Grouping any
+    credential — ``openrouter_api_key`` under a ``providers`` model, say — would
+    have silently stopped reading it. These use a throwaway settings class so the
+    guarantee is pinned regardless of whether ``Settings`` itself ever nests.
+    """
+
+    @staticmethod
+    def _nested_settings_cls():
+        class Backend(BaseModel):
+            api_key: str = ""
+            base_url: str = "https://default.example/v1"
+
+        class Nested(BaseSettings):
+            openrouter: Backend = Backend()
+            staan_api_key: str = ""  # flat, for contrast
+
+            model_config = SettingsConfigDict(
+                env_prefix="ALEXANDRIA_",
+                env_nested_delimiter="_",
+                env_nested_max_split=1,
+                env_file=None,
+            )
+
+            @classmethod
+            def settings_customise_sources(
+                cls,
+                settings_cls,
+                init_settings,
+                env_settings,
+                dotenv_settings,
+                file_secret_settings,
+            ):
+                return (
+                    init_settings,
+                    env_settings,
+                    SecretsFileSettingsSource(settings_cls),
+                    dotenv_settings,
+                    file_secret_settings,
+                )
+
+        return Nested
+
+    def test_secret_reaches_a_field_inside_a_submodel(self, secrets_file, monkeypatch):
+        monkeypatch.delenv("ALEXANDRIA_OPENROUTER_API_KEY", raising=False)
+        secrets_file("SECRET_ALEXANDRIA_OPENROUTER_API_KEY=sk-nested\n")
+        assert self._nested_settings_cls()().openrouter.api_key == "sk-nested"
+
+    def test_flat_and_nested_secrets_coexist(self, secrets_file, monkeypatch):
+        monkeypatch.delenv("ALEXANDRIA_OPENROUTER_API_KEY", raising=False)
+        monkeypatch.delenv("ALEXANDRIA_STAAN_API_KEY", raising=False)
+        secrets_file(
+            "SECRET_ALEXANDRIA_OPENROUTER_API_KEY=sk-nested\nSECRET_ALEXANDRIA_STAAN_API_KEY=st\n"
+        )
+        s = self._nested_settings_cls()()
+        assert (s.openrouter.api_key, s.staan_api_key) == ("sk-nested", "st")
+
+    def test_sibling_defaults_survive_a_nested_secret(self, secrets_file, monkeypatch):
+        """Setting one field of a submodel must not blank the rest of it."""
+        monkeypatch.delenv("ALEXANDRIA_OPENROUTER_API_KEY", raising=False)
+        secrets_file("SECRET_ALEXANDRIA_OPENROUTER_API_KEY=sk-nested\n")
+        assert self._nested_settings_cls()().openrouter.base_url == "https://default.example/v1"
+
+    def test_env_var_still_beats_a_nested_secret(self, secrets_file, monkeypatch):
+        secrets_file("SECRET_ALEXANDRIA_OPENROUTER_API_KEY=from-secrets\n")
+        monkeypatch.setenv("ALEXANDRIA_OPENROUTER_API_KEY", "from-env")
+        assert self._nested_settings_cls()().openrouter.api_key == "from-env"

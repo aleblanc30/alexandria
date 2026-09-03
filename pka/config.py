@@ -12,12 +12,14 @@ can stay free of API keys and passwords. See ``SecretsFileSettingsSource``.
 import json
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import (
     BaseSettings,
+    EnvSettingsSource,
     NoDecode,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
@@ -81,49 +83,44 @@ def parse_secrets_file(path: Path) -> dict[str, str]:
     return out
 
 
-class SecretsFileSettingsSource(PydanticBaseSettingsSource):
+class SecretsFileSettingsSource(EnvSettingsSource):
     """Settings source backed by the ``.secrets`` file.
 
     Sits between the process environment and ``.env`` in precedence: a real env
-    var still wins, but a secret overrides anything left in ``.env``. Keys are
-    matched the same way as env vars — ``SECRET_`` stripped, then the
-    ``ALEXANDRIA_`` prefix, then lowercased to a field name.
+    var still wins, but a secret overrides anything left in ``.env``.
+
+    Subclasses :class:`EnvSettingsSource` and swaps only where the "environment"
+    is read from, so key matching is pydantic's own — ``ALEXANDRIA_`` prefix
+    stripped, case folded, complex values decoded, nested models resolved. That
+    matters beyond taste: hand-rolling the match against
+    ``settings_cls.model_fields`` silently dropped any secret whose field was
+    not top-level, so grouping (say) ``openrouter_api_key`` under a submodel
+    would have discarded the key with nothing failing at import.
     """
 
-    def __init__(self, settings_cls: type[BaseSettings]):
-        super().__init__(settings_cls)
-        self._values = self._load()
-
-    def _load(self) -> dict[str, Any]:
+    def _load_env_vars(self) -> Mapping[str, str | None]:
         path = _secrets_file_path()
         if path is None or not path.is_file():
             return {}
 
-        prefix = self.config.get("env_prefix", "")
-        fields = self.settings_cls.model_fields
-        values: dict[str, Any] = {}
+        prefix = self.env_prefix
+        out: dict[str, str | None] = {}
         for key, value in parse_secrets_file(path).items():
             if prefix and not key.upper().startswith(prefix.upper()):
                 log.warning(
                     "Secret %s%s does not start with %s — ignoring", SECRET_KEY_PREFIX, key, prefix
                 )
                 continue
-            name = key[len(prefix) :].lower()
-            if name not in fields:
-                log.warning(
-                    "Secret %s%s does not match any setting — ignoring", SECRET_KEY_PREFIX, key
-                )
-                continue
-            values[name] = value
-        return values
-
-    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
-        if field_name in self._values:
-            return self._values[field_name], field_name, False
-        return None, field_name, False
-
-    def __call__(self) -> dict[str, Any]:
-        return dict(self._values)
+            # Warn only, and let the parent decide what resolves: an unknown key
+            # is worth flagging in a credentials file, but the check itself is a
+            # guess (it cannot see into submodels), so it must never be what
+            # drops a value.
+            if key[len(prefix) :].lower() not in self.settings_cls.model_fields:
+                log.warning("Secret %s%s matches no top-level setting", SECRET_KEY_PREFIX, key)
+            # EnvSettingsSource folds case when case_sensitive is False, which is
+            # this project's config; hand it keys in the form it expects.
+            out[key if self.case_sensitive else key.lower()] = value
+        return out
 
 
 def _parse_path_list(value: object) -> list[Path]:
