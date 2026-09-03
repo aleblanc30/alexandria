@@ -5,7 +5,7 @@ checkout, that starts automatically at logon and serves the UI at
 `http://localhost:8420`.
 
 The install is pinned to a release tag. Substitute the tag you are installing
-for `v0.0.8` throughout.
+for `v0.0.9` throughout.
 
 ## 1. Prerequisites
 
@@ -56,7 +56,7 @@ synchronise at every logon.
 mkdir "%LOCALAPPDATA%\Alexandria\data"
 git clone https://github.com/aleblanc30/alexandria "%LOCALAPPDATA%\Alexandria\app"
 cd /d "%LOCALAPPDATA%\Alexandria\app"
-git checkout v0.0.8
+git checkout v0.0.9
 ```
 
 Create the virtual environment and install the package:
@@ -355,7 +355,7 @@ there is nothing to write — use it where it is:
 
 ```powershell
 cd $env:LOCALAPPDATA\Alexandria\app
-powershell -ExecutionPolicy Bypass -File .\scripts\upgrade.ps1 v0.0.8
+powershell -ExecutionPolicy Bypass -File .\scripts\upgrade.ps1 v0.0.9
 ```
 
 `-ExecutionPolicy Bypass` is what lets an unsigned script run under the default

@@ -1,5 +1,113 @@
 # Changelog
 
+## v0.0.9
+
+### Ingestion
+
+- **Eight publisher hosts now resolve by identifier instead of being scraped.**
+  `journals.aps.org`, `mitpress.mit.edu`, `direct.mit.edu` and
+  `researchgate.net` answered a non-browser client with 403, so those bookmarks
+  sat in the archive with no title and no chunks. `nature.com`,
+  `link.springer.com`, `sciencedirect.com` and `doi.org` were worse: they
+  answered 200 with a paywall, which was extracted, chunked and embedded as
+  though it were the paper — an invisible failure, since those domains rank on
+  documents rather than on failures. Each URL already carries a resolvable DOI,
+  PII or ISBN, so the new handlers (`pka/ingestion/doi_meta.py` and one module
+  per host) go to Crossref, doi.org content negotiation, Semantic Scholar or
+  Open Library instead of to the publisher's HTML. A miss never falls through
+  to the generic GET — that would reinstate the paywall scrape these handlers
+  exist to remove. Crossref and Semantic Scholar sit behind a new
+  `doi_metadata_lookup` flag (default on); with it off the handlers degrade to
+  a URL-derived card, not to a scrape.
+- **Reddit replays its archive backlog before walking the feed.**
+  `data/reddit/saved.jsonl` was only reachable by opting out of polling
+  entirely (`--from-archive`), so a database that had fallen behind the archive
+  could only be caught up by re-walking the live feed. `sync_reddit_metadata`
+  now ingests archived items that have no `documents` row off disk first and
+  folds their ids into the stop set, so Reddit is asked only for what neither
+  store holds.
+- **`upsert_chunks` batches under Chroma's `max_batch_size`.** One large
+  document (14584 chunks from a single Firefox fetch) exceeded Chroma's
+  per-call ceiling and lost its whole embedding to an `InternalError`.
+- **One connector read per sync cycle, not three.** The pending-metadata probe,
+  the corpus-size probe, and each source's own sync job independently re-read
+  the Firefox bookmarks file, Calibre library, and image folder; all three now
+  route through the existing TTL probe cache.
+- **A blocked page's error quotes its visible text, not its inlined
+  stylesheet.** Reddit's block page opens on hundreds of KB of CSS custom
+  properties, so the 200-character excerpt was always noise instead of the
+  sentence a person could act on.
+
+### Maintenance & provenance
+
+- **Selective purge.** Swapping an embedding or summarisation backend used to
+  mean deleting whole documents, so clearing a cached summary cost a full
+  re-fetch of every bookmark URL. `pka/purge.py` registers eight targets
+  (summaries, vectors, image text, CLIP vectors, machine tags, fetched text,
+  fetch failures, cluster runs), each with a dry-run count that is a promise
+  about what the button will do, reachable as `alexandria purge`,
+  `/ingestion/purge*`, and a Maintenance panel on `/ingestion`.
+- **Enrichment provenance.** `enrichment_runs` records one row per pass —
+  provider, resolved model, parameters, status, calls and characters sent — and
+  `documents.summary_run_id` stamps it, so a purge can filter by `--run-id` /
+  `--provider` / `--model` / `--unknown`. A target that carries no stamp
+  *refuses* such a filter rather than silently widening "purge what the old
+  model made" into "purge everything".
+- **`purge-source` no longer destroys hand-applied data.** It deleted
+  `overlay_tags` unfiltered and `reading_list_items` outright, so purging
+  Firefox to re-fetch a few broken bookmarks silently took every manual tag,
+  every actively-learned one, and every reading-list entry with it — none of it
+  recoverable by re-ingesting, because the source system never had it.
+- **Purge IN-lists batch at 5000**, so a source larger than SQLite's
+  32766-variable cap no longer fails with `too many SQL variables`.
+
+### Clustering
+
+- **HDBSCAN noise gets its own bucket instead of being forced into clusters.**
+  Noise (label `-1`) got no `cluster_assignments` row at all, so it read as
+  merely "unassigned" and `assign_new_docs` filed every one of those documents
+  into its nearest real cluster on the very next ingest — laundering noise into
+  clusters it does not belong to. A run with any noise now gets one
+  `is_noise` bucket row that noise documents are assigned to, excluded from
+  centroids, LLM labelling, tagging, the run counts and the trends timeline.
+  A new `cluster_assign_min_similarity` floor (default off) sends weak
+  newly-ingested matches to the bucket rather than to their least-bad cluster.
+- **Agglomerative clustering is fully wired.** `--linkage` / `--n-clusters` /
+  `--distance-threshold` on `alexandria clustering`, plus the matching fields
+  in `ClusterRunDialog.vue`. scipy is now an explicit dependency.
+- **OpenRouter errors are diagnosable.** A free model returning 200 OK with no
+  `choices` key surfaced as a bare `'choices'` and silently degraded cluster
+  labelling to tf-idf every time; the error body is now logged.
+
+### Performance
+
+- **The API no longer imports scikit-learn at startup.** The clusters router
+  pulled in `pka.clustering.engine` at module scope, so every
+  `import pka.api.main` paid for sklearn whether or not anyone ran a
+  clustering job. Cold start drops from 2.63s to 1.05s. (audit P-2)
+- **Indexes for seven unindexed foreign keys** behind correlated `EXISTS`
+  filters and browse/search joins — `source_tags`, `source_collections`,
+  `cluster_assignments`, `images`, `fetch_log`, `reading_list_items`, and
+  `chunks`. (audit P-1)
+
+### Developer experience
+
+- **A maintainability and performance audit of v0.0.8**, numbered `M-n` / `P-n`
+  so `planning/TODO.md` can point back at findings, plus a
+  `maintainability-performance-audit` skill that makes it repeatable. One
+  finding (P-6) was withdrawn on re-reading the code it cited.
+- **`scripts/check.sh` / `check.ps1`** run ruff, ruff format, mypy, pytest and
+  the frontend test/build in sequence as one manual gate, letting every step
+  run even when an earlier one fails. Deliberately not wired into CI. (M-12)
+- **mypy is configured and green**, baseline-ratcheted: modules with
+  pre-existing errors are frozen with `ignore_errors`, so the gate is "no new
+  errors" rather than "fix 89 errors first". (M-7)
+- **`alexandria dev` moved to port 8421.** It defaulted to 8420, the same port
+  the installed production app binds, so a dev frontend could silently proxy
+  into real production data.
+- **Removed** the deprecated `pka/pipeline.py` shim and two dead parameters;
+  added `PROD_PORT` / `DEV_PORT` constants. (M-13)
+
 ## v0.0.8
 
 ### Ingestion
