@@ -174,15 +174,17 @@ def populated_with_noise(monkeypatch):
 
 class TestRunClustering:
     def test_returns_cluster_run_result(self, populated):
-        from pka.clustering.engine import ClusterRunResult, run_clustering
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams, ClusterRunResult
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         assert isinstance(result, ClusterRunResult)
 
     def test_run_id_persisted_to_db(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         with get_engine().connect() as con:
             row = con.execute(
                 sa.select(cluster_runs.c.run_id).where(cluster_runs.c.run_id == result.run_id)
@@ -191,15 +193,17 @@ class TestRunClustering:
 
     def test_correct_cluster_count(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         assert result.diagnostics["n_l1_clusters"] == 4
         assert result.diagnostics["n_l2_clusters"] >= 2
 
     def test_cluster_rows_written(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         with get_engine().connect() as con:
             count = con.execute(
                 sa.select(sa.func.count())
@@ -222,8 +226,9 @@ class TestRunClustering:
 
     def test_assignments_written_for_all_docs(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         with get_engine().connect() as con:
             l1_count = con.execute(
                 sa.select(sa.func.count())
@@ -246,8 +251,9 @@ class TestRunClustering:
 
     def test_l2_clusters_have_parent(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         with get_engine().connect() as con:
             rows = con.execute(
                 sa.select(clusters.c.parent_cluster_id).where(
@@ -259,8 +265,9 @@ class TestRunClustering:
 
     def test_run_not_accepted_by_default(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         with get_engine().connect() as con:
             row = con.execute(
                 sa.select(cluster_runs.c.accepted).where(cluster_runs.c.run_id == result.run_id)
@@ -269,8 +276,9 @@ class TestRunClustering:
 
     def test_llm_labels_applied(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         assert all(v != "" for v in result.cluster_labels.values())
 
     def test_skip_labelling_uses_tfidf(self, populated, monkeypatch):
@@ -284,8 +292,9 @@ class TestRunClustering:
 
         monkeypatch.setattr("httpx.post", counting_post)
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        run_clustering(min_cluster_size=2, skip_labelling=True)
+        run_clustering(ClusterParams(min_cluster_size=2, skip_labelling=True))
         assert call_count["n"] == 0
 
     def test_cancel_during_multi_worker_labelling_does_not_block(self, monkeypatch):
@@ -294,14 +303,14 @@ class TestRunClustering:
         dispatched worker in the batch to finish (regression for the "Stop"
         button appearing to do nothing while other clusters keep labelling).
         """
-        from pka.clustering import engine
+        from pka.clustering import labelling
         from pka.clustering.run_progress import ClusterRunCancelled, begin, request_cancel
 
         run_id = 999
         begin(run_id)
-        monkeypatch.setattr(engine.cfg, "cluster_label_workers", 4)
+        monkeypatch.setattr(labelling.cfg, "cluster_label_workers", 4)
         monkeypatch.setattr(
-            engine,
+            labelling,
             "sample_cluster_documents_for_clusters",
             lambda con, cluster_docs: {cid: [] for cid in cluster_docs},
         )
@@ -315,12 +324,12 @@ class TestRunClustering:
                 release.wait(2.0)
             return cid, f"label-{cid}", ""
 
-        monkeypatch.setattr(engine, "_label_one_cluster", fake_label_one_cluster)
+        monkeypatch.setattr(labelling, "_label_one_cluster", fake_label_one_cluster)
         cluster_docs = {cid: [cid] for cid in range(4)}
 
         start = time.perf_counter()
         with pytest.raises(ClusterRunCancelled):
-            engine._label_clusters(
+            labelling._label_clusters(
                 cluster_docs, skip_labelling=False, chat_model=None, run_id=run_id
             )
         elapsed = time.perf_counter() - start
@@ -330,14 +339,16 @@ class TestRunClustering:
 
     def test_umap_2d_shape(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         assert result.umap_2d.shape == (N_DOCS, 2)
 
     def test_diagnostics_keys_present(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         for key in (
             "n_clusters",
             "n_l1_clusters",
@@ -352,16 +363,18 @@ class TestRunClustering:
 
     def test_timings_ms_has_load_step(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         timings = result.diagnostics["timings_ms"]
         assert "load_embeddings_ms" in timings
         assert timings["load_embeddings_ms"] >= 0
 
     def test_parameters_stored_as_json(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=3)
+        result = run_clustering(ClusterParams(min_cluster_size=3))
         with get_engine().connect() as con:
             row = con.execute(
                 sa.select(cluster_runs.c.parameters, cluster_runs.c.algorithm).where(
@@ -387,7 +400,7 @@ class TestRunClustering:
             run_clustering()
 
 
-# ── engine.run_clustering(cluster_space="agglomerative") ─────────────────────
+# ── engine.run_clustering(ClusterParams(cluster_space="agglomerative")) ─────────────────────
 #
 # Unlike HDBSCAN, agglomerative needs no mock: it's sklearn/scipy, already a
 # hard dependency, so these run the real clusterer over the fixture — see
@@ -407,8 +420,9 @@ def populated_agglomerative(monkeypatch):
 class TestRunClusteringAgglomerative:
     def test_run_persisted(self, populated_agglomerative):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(cluster_space="agglomerative", n_clusters=4)
+        result = run_clustering(ClusterParams(cluster_space="agglomerative", n_clusters=4))
         with get_engine().connect() as con:
             row = con.execute(
                 sa.select(cluster_runs.c.run_id).where(cluster_runs.c.run_id == result.run_id)
@@ -417,17 +431,19 @@ class TestRunClusteringAgglomerative:
 
     def test_n_clusters_yields_exact_l1_count(self, populated_agglomerative):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(cluster_space="agglomerative", n_clusters=4)
+        result = run_clustering(ClusterParams(cluster_space="agglomerative", n_clusters=4))
         assert result.diagnostics["n_l1_clusters"] == 4
 
-        result5 = run_clustering(cluster_space="agglomerative", n_clusters=5)
+        result5 = run_clustering(ClusterParams(cluster_space="agglomerative", n_clusters=5))
         assert result5.diagnostics["n_l1_clusters"] == 5
 
     def test_cluster_rows_written_with_l2_parents(self, populated_agglomerative):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(cluster_space="agglomerative", n_clusters=4)
+        result = run_clustering(ClusterParams(cluster_space="agglomerative", n_clusters=4))
         with get_engine().connect() as con:
             l1 = con.execute(
                 sa.select(sa.func.count())
@@ -446,8 +462,9 @@ class TestRunClusteringAgglomerative:
     def test_no_noise_and_full_coverage(self, populated_agglomerative):
         """§3 invariant: agglomerative assigns every document; n_noise is 0."""
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(cluster_space="agglomerative", n_clusters=4)
+        result = run_clustering(ClusterParams(cluster_space="agglomerative", n_clusters=4))
         assert result.n_noise == 0
         assert result.diagnostics["n_noise"] == 0
         assert -1 not in result.assignments.values()
@@ -468,8 +485,9 @@ class TestRunClusteringAgglomerative:
         deeper cut of the same tree, not an independently rebuilt clustering.
         """
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(cluster_space="agglomerative", n_clusters=4)
+        result = run_clustering(ClusterParams(cluster_space="agglomerative", n_clusters=4))
         with get_engine().connect() as con:
             l1_rows = con.execute(
                 sa.select(
@@ -507,15 +525,21 @@ class TestRunClusteringAgglomerative:
 
     def test_invalid_linkage_rejected(self, populated_agglomerative):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
         with pytest.raises(ValueError, match="linkage"):
-            run_clustering(cluster_space="agglomerative", linkage="centroid", n_clusters=4)
+            run_clustering(
+                ClusterParams(cluster_space="agglomerative", linkage="centroid", n_clusters=4)
+            )
 
     def test_n_clusters_and_distance_threshold_conflict(self, populated_agglomerative):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
         with pytest.raises(ValueError, match="Exactly one"):
-            run_clustering(cluster_space="agglomerative", n_clusters=4, distance_threshold=1.0)
+            run_clustering(
+                ClusterParams(cluster_space="agglomerative", n_clusters=4, distance_threshold=1.0)
+            )
 
     def test_auto_k_sweep_clamped_to_corpus_and_recorded(self, populated_agglomerative):
         """A 20-doc fixture must not propose a k the corpus can't support, and
@@ -523,8 +547,9 @@ class TestRunClusteringAgglomerative:
         auto-pick is diagnosable rather than invisible.
         """
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(cluster_space="agglomerative")
+        result = run_clustering(ClusterParams(cluster_space="agglomerative"))
         assert 2 <= result.diagnostics["n_l1_clusters"] <= N_DOCS - 1
         with get_engine().connect() as con:
             row = con.execute(
@@ -537,14 +562,14 @@ class TestRunClusteringAgglomerative:
 
 class TestAgglomerativeKCandidates:
     def test_clamped_below_corpus_size(self):
-        from pka.clustering.engine import _agglomerative_k_candidates
+        from pka.clustering.agglomerative import _agglomerative_k_candidates
 
         candidates = _agglomerative_k_candidates(40, k_min=8, k_max=40)
         assert max(candidates) <= 39
         assert min(candidates) >= 2
 
     def test_tiny_corpus_falls_back_to_two(self):
-        from pka.clustering.engine import _agglomerative_k_candidates
+        from pka.clustering.agglomerative import _agglomerative_k_candidates
 
         assert _agglomerative_k_candidates(3, k_min=8, k_max=40) == [2]
 
@@ -561,7 +586,7 @@ class TestSplitSubtreeMatchesRebuild:
         from scipy.cluster.hierarchy import linkage as scipy_linkage
         from sklearn.metrics import adjusted_rand_score
 
-        from pka.clustering.engine import _build_linkage, _cut_linkage, _split_subtree
+        from pka.clustering.agglomerative import _build_linkage, _cut_linkage, _split_subtree
 
         rng = np.random.default_rng(3)
         n, k_l1, k_l2 = 300, 6, 4
@@ -599,7 +624,7 @@ class TestAutoKAgglomerative:
         candidate grid — see planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.2c on why
         the count must be on the grid for this assertion to mean anything.
         """
-        from pka.clustering.engine import _auto_k_agglomerative, _build_linkage
+        from pka.clustering.agglomerative import _auto_k_agglomerative, _build_linkage
 
         rng = np.random.default_rng(7)
         planted_k = 16
@@ -682,8 +707,9 @@ class TestAcceptRejectRun:
 class TestClusterCentroids:
     def test_l1_and_l2_centroids_written(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         with get_engine().connect() as con:
             rows = con.execute(
                 sa.select(clusters.c.centroid).where(clusters.c.run_id == result.run_id)
@@ -694,6 +720,7 @@ class TestClusterCentroids:
     def test_centroid_matches_mean_of_member_embeddings(self, monkeypatch):
         from pka.clustering.doc_embeddings import blob_to_embedding
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
         doc_ids = _seed_documents(N_DOCS)
         store, _col = _mock_chroma_with_docs(monkeypatch, doc_ids)
@@ -702,7 +729,7 @@ class TestClusterCentroids:
         _mock_llm(monkeypatch)
         emb_by_doc = {v["meta"]["document_id"]: np.array(v["embedding"]) for v in store.values()}
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         with get_engine().connect() as con:
             row = con.execute(
                 sa.select(clusters.c.cluster_id, clusters.c.centroid).where(
@@ -726,8 +753,9 @@ class TestClusterCentroids:
     def test_get_cluster_centroids_uses_persisted_value_without_chroma_call(self, populated):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import _get_cluster_centroids
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
 
         from pka.storage import vector_store as vs
 
@@ -740,8 +768,9 @@ class TestClusterCentroids:
     def test_legacy_run_without_centroids_falls_back_and_backfills(self, populated):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import _get_cluster_centroids
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         # Simulate a pre-migration run: no persisted centroids.
         with get_engine().begin() as con:
             con.execute(
@@ -762,8 +791,9 @@ class TestClusterCentroids:
     def test_purge_leaves_no_centroid_rows(self, populated):
         from pka.cli.purge_cluster_runs import purge_cluster_run
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         purge_cluster_run(result.run_id)
         with get_engine().connect() as con:
             count = con.execute(
@@ -844,8 +874,9 @@ class TestComputeDrift:
     def test_returns_list(self, populated):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, compute_drift
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
         drift = compute_drift()
         assert isinstance(drift, list)
@@ -853,8 +884,9 @@ class TestComputeDrift:
     def test_each_entry_has_required_keys(self, populated):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, compute_drift
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
         for entry in compute_drift():
             for key in ("cluster_id", "label", "drift_score", "n_recent", "flagged"):
@@ -863,8 +895,9 @@ class TestComputeDrift:
     def test_drift_score_in_range(self, populated):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, compute_drift
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
         for entry in compute_drift():
             assert 0.0 <= entry["drift_score"] <= 1.0
@@ -882,8 +915,9 @@ class TestComputeMergeSuggestions:
     def test_returns_list(self, populated):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, compute_merge_suggestions
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
         suggestions = compute_merge_suggestions()
         assert isinstance(suggestions, list)
@@ -891,8 +925,9 @@ class TestComputeMergeSuggestions:
     def test_each_suggestion_has_required_keys(self, populated):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, compute_merge_suggestions
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
         for s in compute_merge_suggestions():
             for key in ("cluster_id_a", "label_a", "cluster_id_b", "label_b", "similarity"):
@@ -901,8 +936,9 @@ class TestComputeMergeSuggestions:
     def test_no_self_pairs(self, populated):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, compute_merge_suggestions
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
         for s in compute_merge_suggestions():
             assert s["cluster_id_a"] != s["cluster_id_b"]
@@ -910,8 +946,9 @@ class TestComputeMergeSuggestions:
     def test_similarity_in_range(self, populated):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, compute_merge_suggestions
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
         for s in compute_merge_suggestions():
             assert 0.0 <= s["similarity"] <= 1.0
@@ -939,9 +976,10 @@ class TestNoiseCluster:
             )
 
     def test_run_creates_one_noise_cluster_holding_every_noise_doc(self, populated_with_noise):
-        from pka.clustering.engine import NOISE_CLUSTER_LABEL, run_clustering
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.types import NOISE_CLUSTER_LABEL, ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         assert result.n_noise > 0
 
         row = self._noise_row(result.run_id)
@@ -962,16 +1000,18 @@ class TestNoiseCluster:
 
     def test_run_without_noise_creates_no_noise_cluster(self, populated):
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         assert result.n_noise == 0
         assert self._noise_row(result.run_id) is None
 
     def test_noise_cluster_is_excluded_from_centroids(self, populated_with_noise):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import load_persisted_centroids
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         noise_cid = self._noise_row(result.run_id)["cluster_id"]
 
         assert noise_cid not in load_persisted_centroids(result.run_id, level=1)
@@ -979,8 +1019,9 @@ class TestNoiseCluster:
     def test_noise_cluster_is_not_counted_as_a_cluster(self, populated_with_noise):
         """``n_l1_clusters`` counts topics; the bucket is not one of them."""
         from pka.clustering.engine import run_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         with get_engine().connect() as con:
             n_l1_rows = con.execute(
                 sa.select(sa.func.count())
@@ -991,18 +1032,22 @@ class TestNoiseCluster:
         assert n_l1_rows == n_l1_topics + 1  # the topics, plus the bucket
 
     def test_relabelling_the_noise_bucket_is_refused(self, populated_with_noise):
-        from pka.clustering.engine import relabel_single_cluster, run_clustering
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.labelling import relabel_single_cluster
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         noise_cid = self._noise_row(result.run_id)["cluster_id"]
 
         with pytest.raises(ValueError, match="noise"):
             relabel_single_cluster(noise_cid, result.run_id)
 
     def test_run_relabelling_leaves_the_noise_bucket_alone(self, populated_with_noise):
-        from pka.clustering.engine import NOISE_CLUSTER_LABEL, relabel_run_clusters, run_clustering
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.labelling import relabel_run_clusters
+        from pka.clustering.types import NOISE_CLUSTER_LABEL, ClusterParams
 
-        result = run_clustering(min_cluster_size=2, skip_labelling=True)
+        result = run_clustering(ClusterParams(min_cluster_size=2, skip_labelling=True))
         relabel_run_clusters(result.run_id)
 
         assert self._noise_row(result.run_id)["label"] == NOISE_CLUSTER_LABEL
@@ -1035,9 +1080,10 @@ class TestAssignNewDocs:
     def test_assigns_unassigned_docs(self, populated, monkeypatch):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, assign_new_docs
+        from pka.clustering.types import ClusterParams
         from pka.db.queries import insert_chunks
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
 
         new_id = make_document("zotero", "NEW001", "New doc", None, int(time.time()))
@@ -1078,8 +1124,9 @@ class TestAssignNewDocs:
         keep a row of their own, so the incremental pass leaves them alone."""
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, assign_new_docs, noise_cluster_id
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
         noise_cid = noise_cluster_id(result.run_id)
         assert noise_cid is not None
@@ -1129,10 +1176,11 @@ class TestAssignNewDocs:
     ):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, assign_new_docs, noise_cluster_id
+        from pka.clustering.types import ClusterParams
         from pka.config import settings
         from pka.db.queries import insert_chunks
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
         noise_cid = noise_cluster_id(result.run_id)
 
@@ -1173,8 +1221,9 @@ class TestAssignNewDocs:
     def test_all_assigned_returns_zero(self, populated, monkeypatch):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, assign_new_docs
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
         stats = assign_new_docs(result.run_id)
         assert stats["assigned"] == 0
@@ -1182,10 +1231,11 @@ class TestAssignNewDocs:
     def test_compute_drift_with_recent_docs(self, populated, monkeypatch):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, compute_drift
+        from pka.clustering.types import ClusterParams
         from pka.db.queries import get_engine
         from pka.db.schema import documents
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
 
         with get_engine().begin() as con:
@@ -1205,7 +1255,7 @@ class TestAssignNewDocs:
 
 class TestAdaptiveClusterParams:
     def test_scales_with_corpus_size(self):
-        from pka.clustering.engine import adaptive_cluster_params
+        from pka.clustering.hdbscan_step import adaptive_cluster_params
 
         mcs, ms, nn = adaptive_cluster_params(100)
         assert 3 <= mcs <= 15
@@ -1213,7 +1263,7 @@ class TestAdaptiveClusterParams:
         assert 5 <= nn <= 30
 
     def test_small_corpus_minimums(self):
-        from pka.clustering.engine import adaptive_cluster_params
+        from pka.clustering.hdbscan_step import adaptive_cluster_params
 
         mcs, ms, nn = adaptive_cluster_params(5)
         assert mcs >= 2
@@ -1225,14 +1275,14 @@ class TestAdaptiveClusterParams:
         min_cluster_size scale ~linearly with n_docs (744 at 17.9k documents,
         with min_samples=372) instead of staying in a browsable absolute range.
         """
-        from pka.clustering.engine import adaptive_cluster_params
+        from pka.clustering.hdbscan_step import adaptive_cluster_params
 
         mcs, ms, _nn = adaptive_cluster_params(17_879)
         assert mcs <= 50
         assert ms <= 25
 
     def test_min_cluster_size_does_not_grow_past_the_cap(self):
-        from pka.clustering.engine import adaptive_cluster_params
+        from pka.clustering.hdbscan_step import adaptive_cluster_params
 
         mcs_18k, _ms, _nn = adaptive_cluster_params(18_000)
         mcs_180k, _ms, _nn = adaptive_cluster_params(180_000)
@@ -1241,13 +1291,13 @@ class TestAdaptiveClusterParams:
 
 class TestParseLlmJson:
     def test_strips_markdown_fence(self):
-        from pka.clustering.engine import _parse_llm_json
+        from pka.json_utils import parse_llm_json as _parse_llm_json
 
         raw = '```json\n{"label": "Topic A"}\n```'
         assert _parse_llm_json(raw)["label"] == "Topic A"
 
     def test_regex_fallback_for_wrapped_json(self):
-        from pka.clustering.engine import _parse_llm_json
+        from pka.json_utils import parse_llm_json as _parse_llm_json
 
         raw = 'Here is the result: {"label": "B"} thanks'
         assert _parse_llm_json(raw)["label"] == "B"
@@ -1257,7 +1307,7 @@ class TestParseLlmJson:
 
         import pytest
 
-        from pka.clustering.engine import _parse_llm_json
+        from pka.json_utils import parse_llm_json as _parse_llm_json
 
         with pytest.raises(json.JSONDecodeError):
             _parse_llm_json("not json at all")
@@ -1267,7 +1317,7 @@ class TestRunUmapLegacy:
     def test_legacy_umap_shapes(self, monkeypatch):
         import numpy as np
 
-        from pka.clustering.engine import _run_umap_legacy
+        from pka.clustering.reduce import _run_umap_legacy
 
         matrix = np.random.rand(20, 8).astype(np.float32)
         mock_reducer = MagicMock()
@@ -1288,18 +1338,20 @@ class TestRunUmapLegacy:
 class TestIncrementalClustering:
     def test_no_active_run_triggers_full(self, populated):
         from pka.clustering.lifecycle import run_incremental_clustering
+        from pka.clustering.types import ClusterParams
 
-        out = run_incremental_clustering(min_cluster_size=2)
+        out = run_incremental_clustering(ClusterParams(min_cluster_size=2))
         assert out["action"] == "full_run"
         assert out["result"] is not None
 
     def test_assign_only_when_active_and_no_drift(self, populated):
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, run_incremental_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
-        out = run_incremental_clustering(min_cluster_size=2)
+        out = run_incremental_clustering(ClusterParams(min_cluster_size=2))
         assert out["action"] == "assign_only"
         assert out["assigned"] == 0
 
@@ -1308,8 +1360,9 @@ class TestIncrementalClustering:
         from pka.clustering import lifecycle
         from pka.clustering.engine import run_clustering
         from pka.clustering.lifecycle import accept_run, run_incremental_clustering
+        from pka.clustering.types import ClusterParams
 
-        result = run_clustering(min_cluster_size=2)
+        result = run_clustering(ClusterParams(min_cluster_size=2))
         accept_run(result.run_id)
 
         monkeypatch.setattr(
@@ -1325,7 +1378,7 @@ class TestIncrementalClustering:
             lambda **kw: pytest.fail("drift must not trigger a re-cluster"),
         )
 
-        out = run_incremental_clustering(min_cluster_size=2)
+        out = run_incremental_clustering(ClusterParams(min_cluster_size=2))
 
         assert out["action"] == "assign_only"
         assert out["run_id"] == result.run_id  # still the accepted run
@@ -1356,7 +1409,7 @@ class TestClusterLabellingSamples:
         assert "neural" in samples[0][1].lower()
 
     def test_label_cluster_prompt_includes_excerpt(self, monkeypatch):
-        from pka.clustering.engine import _label_cluster_with_llm
+        from pka.clustering.labelling import _label_cluster_with_llm
 
         captured: list[str] = []
 
@@ -1372,10 +1425,11 @@ class TestClusterLabellingSamples:
     def test_l1_from_l2_children(self, monkeypatch):
         import numpy as np
 
-        from pka.clustering.engine import L2ClusterBatch, _label_l1_clusters
+        from pka.clustering.labelling import _label_l1_clusters
+        from pka.clustering.types import L2ClusterBatch
 
         monkeypatch.setattr(
-            "pka.clustering.engine._label_parent_from_children_with_llm",
+            "pka.clustering.labelling._label_parent_from_children_with_llm",
             lambda labels, descs, model=None: ("Parent Topic", "Parent desc."),
         )
         l2_batches = [

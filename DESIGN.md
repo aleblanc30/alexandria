@@ -641,7 +641,7 @@ next ingest — exactly what HDBSCAN's noise call was avoiding. With the bucket,
 rule going forward to newly-ingested documents that don't clear it either. The
 bucket is excluded from centroid computation, LLM labelling, tagging, and the
 cluster explorer's size ordering — it is a holding pen, not a topic.
-**Agglomerative** (ward/average/complete/single, `pka/clustering/engine.py`'s
+**Agglomerative** (ward/average/complete/single, `pka/clustering/agglomerative.py`,
 `cluster_space=agglomerative`) is the alternative: it partitions every document
 — no noise, so no bucket — and picks its L1 cluster count either explicitly, by
 a distance cut, or by an automatic silhouette sweep over one prebuilt
@@ -677,7 +677,7 @@ Alexandria already has several tagging mechanisms that do not overlap with this 
 | Source tags | `source_tags` | Imported from Zotero/Firefox; read-only |
 | Rule-based classification | `pka/classification.py` | Fixed tags `{academic, paper, preprint}` at ingest; `TagOrigin.INFERRED` |
 | Manual / cluster overlay tags | `overlay_tags`, `pka/clustering/cluster_tags.py` | User edits or cluster-label overlays (`cluster_l1` / `cluster_l2`) |
-| Unsupervised structure | `pka/clustering/engine.py` | HDBSCAN groups; no per-tag classifier |
+| Unsupervised structure | `pka/clustering/engine.py` (+ its step modules) | HDBSCAN groups; no per-tag classifier |
 | Document vectors | `documents.doc_embedding`, `pka/clustering/doc_embeddings.py` | 384-d MiniLM mean-pool — reuse as classifier features |
 
 Active learning fills the gap: **user-defined, semantic tags** learned from

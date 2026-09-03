@@ -32,6 +32,7 @@ from pka.clustering.lifecycle import (
     get_active_run_id,
     run_incremental_clustering,
 )
+from pka.clustering.types import ClusterParams
 from pka.db.queries import init_db
 
 log = logging.getLogger("run_clustering")
@@ -138,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
             log.info("  MERGE? '%s' + '%s'  sim=%.3f", s["label_a"], s["label_b"], s["similarity"])
         return 0
 
-    run_kw = dict(
+    params = ClusterParams(
         min_cluster_size=args.min_cluster_size,
         min_samples=args.min_samples,
         n_neighbors=args.n_neighbors,
@@ -151,12 +152,14 @@ def main(argv: list[str] | None = None) -> int:
         distance_threshold=args.distance_threshold,
         label_model=args.label_model,
         skip_labelling=args.skip_labelling,
+        # argparse gives False for an unset store_true flag; ``None`` is what
+        # means "use the configured default", so don't force it off.
         async_labelling=args.async_labelling or None,
     )
 
     if args.incremental:
         log.info("Starting incremental clustering update…")
-        summary = run_incremental_clustering(**run_kw)
+        summary = run_incremental_clustering(params)
         log.info(
             "Incremental result: action=%s run_id=%s assigned=%s flagged=%s",
             summary["action"],
@@ -171,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
     else:
         log.info("Starting clustering pipeline…")
-        result = run_clustering(**run_kw)
+        result = run_clustering(params)
 
     log.info("Run #%d complete:", result.run_id)
     log.info("  Clusters : %d", result.n_clusters)

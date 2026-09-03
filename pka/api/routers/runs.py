@@ -243,15 +243,14 @@ def trigger_run(
     if _running_run_id(engine) is not None:
         raise HTTPException(409, "A clustering run is already in progress")
 
-    from pka.clustering.engine import (
+    from pka.clustering.engine import run_clustering
+    from pka.clustering.persist import create_run_placeholder, set_run_status
+    from pka.clustering.run_progress import ClusterRunCancelled, begin, finish
+    from pka.clustering.types import (
         ALGORITHM_AGGLOMERATIVE,
         ALGORITHM_LEGACY,
         ALGORITHM_PCA,
-        create_run_placeholder,
-        run_clustering,
-        set_run_status,
     )
-    from pka.clustering.run_progress import ClusterRunCancelled, begin, finish
 
     req = body or TriggerRunRequest()
     algorithm = {
@@ -265,21 +264,7 @@ def trigger_run(
 
     def _run() -> None:
         try:
-            result = run_clustering(
-                run_id=run_id,
-                min_cluster_size=req.min_cluster_size,
-                min_samples=req.min_samples,
-                n_neighbors=req.n_neighbors,
-                min_dist=req.min_dist,
-                n_components=req.n_components,
-                pca_components=req.pca_components,
-                linkage=req.linkage,
-                n_clusters=req.n_clusters,
-                distance_threshold=req.distance_threshold,
-                skip_labelling=req.skip_labelling,
-                async_labelling=req.async_labelling or None,
-                cluster_space=req.cluster_space,
-            )
+            result = run_clustering(req.to_params(), run_id=run_id)
             log.info(
                 "Clustering run #%d finished (%d clusters, %d noise)",
                 result.run_id,

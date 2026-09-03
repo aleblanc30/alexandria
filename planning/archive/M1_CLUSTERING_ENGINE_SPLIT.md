@@ -1,8 +1,11 @@
 # M-1: split `pka/clustering/engine.py`
 
+**Done** — shipped as described, with `agglomerative.py` kept as a peer of
+`hdbscan_step.py` and the `_parse_llm_json` re-export dropped rather than moved.
+See the M-1 line in `planning/TODO.md` for what actually landed.
+
 Plan for the audit's top-priority item (`planning/MAINTAINABILITY_PERFORMANCE_AUDIT.md`
-§M-1). Not started — this file records the split and the order of operations before
-touching code.
+§M-1). This file records the split and the order of operations.
 
 ## Why now
 

@@ -14,6 +14,7 @@ import time
 import numpy as np
 import sqlalchemy as sa
 
+from pka.clustering.types import ClusterParams
 from pka.clustering.vectors import l2_normalize_rows
 from pka.config import settings as cfg
 from pka.db.queries import get_engine
@@ -560,11 +561,7 @@ def compute_merge_suggestions(
 # ── Incremental update ───────────────────────────────────────────────────────
 
 
-def run_incremental_clustering(
-    *,
-    label_model: str | None = None,
-    **run_kwargs,
-) -> dict:
+def run_incremental_clustering(params: ClusterParams | None = None) -> dict:
     """
     Assign new documents to the active run; run a full clustering only when
     there is no active run to assign them to.
@@ -577,7 +574,7 @@ def run_incremental_clustering(
 
     active = get_active_run_id()
     if active is None:
-        result = run_clustering(label_model=label_model, **run_kwargs)
+        result = run_clustering(params)
         return {
             "action": "full_run",
             "run_id": result.run_id,

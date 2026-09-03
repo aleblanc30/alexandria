@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, Field, model_validator
 
+from pka.clustering.types import ClusterParams
+
 
 class ClusterOut(BaseModel):
     cluster_id: int
@@ -62,6 +64,29 @@ class TriggerRunRequest(BaseModel):
         if self.n_clusters is not None and self.distance_threshold is not None:
             raise ValueError("Set at most one of n_clusters and distance_threshold, not both.")
         return self
+
+    def to_params(self) -> ClusterParams:
+        """The tuning knobs this request carries, as ``run_clustering`` takes them.
+
+        ``async_labelling`` is the one field that does not map straight across:
+        the request models it as a plain bool, while ``ClusterParams`` uses
+        ``None`` for "use the configured default", so an unset (False) request
+        must not force it off.
+        """
+        return ClusterParams(
+            cluster_space=self.cluster_space,
+            min_cluster_size=self.min_cluster_size,
+            min_samples=self.min_samples,
+            n_neighbors=self.n_neighbors,
+            min_dist=self.min_dist,
+            pca_components=self.pca_components,
+            n_components=self.n_components,
+            linkage=self.linkage,
+            n_clusters=self.n_clusters,
+            distance_threshold=self.distance_threshold,
+            skip_labelling=self.skip_labelling,
+            async_labelling=self.async_labelling or None,
+        )
 
 
 class RunOut(BaseModel):

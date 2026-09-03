@@ -319,7 +319,7 @@ def regenerate_cluster_label(cluster_id: int, engine=Depends(get_engine)):
 
     # Imported here, not at module scope: the engine pulls in sklearn/scipy, which
     # would otherwise cost ~1.7s on every API start (see planning audit P-2).
-    from pka.clustering.engine import relabel_single_cluster
+    from pka.clustering.labelling import relabel_single_cluster
 
     try:
         relabel_single_cluster(cluster_id, run_id)

@@ -109,7 +109,6 @@ module = [
     "pka.api.document_serialize",
     "pka.api.routers.clusters",
     "pka.api.routers.search",
-    "pka.clustering.engine",
     "pka.config",
     "pka.db.queries",
     "pka.ingestion.firefox_sync",

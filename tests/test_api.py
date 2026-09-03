@@ -1089,7 +1089,7 @@ class TestClusters:
         _seed_run(ids, n_clusters=1)
         cid = client.get("/clusters").json()[0]["cluster_id"]
         monkeypatch.setattr(
-            "pka.clustering.engine._label_cluster_with_llm",
+            "pka.clustering.labelling._label_cluster_with_llm",
             lambda samples, model=None, **kw: ("Regenerated Topic", "A description."),
         )
         r = client.post(f"/clusters/{cid}/regenerate-label")
@@ -1351,7 +1351,7 @@ class TestRuns:
         monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
         monkeypatch.setattr(
             "pka.clustering.engine.run_clustering",
-            lambda **kw: MagicMock(run_id=99, n_clusters=3, n_noise=1),
+            lambda params=None, **kw: MagicMock(run_id=99, n_clusters=3, n_noise=1),
         )
         r = client.post("/runs/trigger")
         assert r.status_code == 202
@@ -1366,7 +1366,10 @@ class TestRuns:
         calls = []
         monkeypatch.setattr(
             "pka.clustering.engine.run_clustering",
-            lambda **kw: (calls.append(kw), MagicMock(run_id=99, n_clusters=3, n_noise=1))[1],
+            lambda params=None, **kw: (
+                calls.append((params, kw)),
+                MagicMock(run_id=99, n_clusters=3, n_noise=1),
+            )[1],
         )
         body = {
             "cluster_space": "legacy_umap",
@@ -1381,15 +1384,15 @@ class TestRuns:
         r = client.post("/runs/trigger", json=body)
         assert r.status_code == 202
         assert len(calls) == 1
-        kw = calls[0]
-        assert kw["cluster_space"] == "legacy_umap"
-        assert kw["min_cluster_size"] == 10
-        assert kw["min_samples"] == 5
-        assert kw["n_neighbors"] == 20
-        assert kw["min_dist"] == 0.2
-        assert kw["n_components"] == 8
-        assert kw["skip_labelling"] is True
-        assert kw["async_labelling"] is True
+        params, kw = calls[0]
+        assert params.cluster_space == "legacy_umap"
+        assert params.min_cluster_size == 10
+        assert params.min_samples == 5
+        assert params.n_neighbors == 20
+        assert params.min_dist == 0.2
+        assert params.n_components == 8
+        assert params.skip_labelling is True
+        assert params.async_labelling is True
 
         run_row = next(x for x in client.get("/runs").json() if x["run_id"] == kw["run_id"])
         assert run_row["algorithm"] == "HDBSCAN-hierarchical"
@@ -1412,17 +1415,20 @@ class TestRuns:
         calls = []
         monkeypatch.setattr(
             "pka.clustering.engine.run_clustering",
-            lambda **kw: (calls.append(kw), MagicMock(run_id=99, n_clusters=3, n_noise=0))[1],
+            lambda params=None, **kw: (
+                calls.append((params, kw)),
+                MagicMock(run_id=99, n_clusters=3, n_noise=0),
+            )[1],
         )
         body = {"cluster_space": "agglomerative", "linkage": "average", "n_clusters": 6}
         r = client.post("/runs/trigger", json=body)
         assert r.status_code == 202
         assert len(calls) == 1
-        kw = calls[0]
-        assert kw["cluster_space"] == "agglomerative"
-        assert kw["linkage"] == "average"
-        assert kw["n_clusters"] == 6
-        assert kw["distance_threshold"] is None
+        params, kw = calls[0]
+        assert params.cluster_space == "agglomerative"
+        assert params.linkage == "average"
+        assert params.n_clusters == 6
+        assert params.distance_threshold is None
 
         run_row = next(x for x in client.get("/runs").json() if x["run_id"] == kw["run_id"])
         assert run_row["algorithm"] == "agglomerative-hierarchical"
@@ -1515,7 +1521,7 @@ class TestRuns:
         monkeypatch.setattr("pka.storage.vector_store.get_collection", lambda: mock_col)
         monkeypatch.setattr(
             "pka.clustering.engine.run_clustering",
-            lambda **kw: MagicMock(run_id=kw["run_id"], n_clusters=1, n_noise=0),
+            lambda params=None, **kw: MagicMock(run_id=kw["run_id"], n_clusters=1, n_noise=0),
         )
 
         stranded = self._seed_running_run()

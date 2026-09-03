@@ -174,7 +174,7 @@ Two configuration facts that otherwise read as bugs:
 | What each source persists (tables) | `docs/persisted-fields.md` — column-by-source matrices for `documents`, the side tables, and the chunk/Chroma payload |
 | Model backends (local + hosted) | `pka/providers/`, `DESIGN.md` §1.1 |
 | Search / vectors | `pka/storage/vector_store.py`, `pka/api/routers/search.py` |
-| Clustering | `pka/clustering/engine.py`, `pka/clustering/lifecycle.py` |
+| Clustering | `pka/clustering/engine.py` (orchestrator: pipelines + `run_clustering`), then its step modules — `embeddings.py`, `reduce.py`, `hdbscan_step.py`, `agglomerative.py`, `labelling.py`, `persist.py`, shared `types.py` — plus `pka/clustering/lifecycle.py` |
 | Sync progress / SSE | `pka/ingestion/progress/` (`state` → `tracker` → `view`/`baselines`) |
 | Images | `pka/ingestion/image_pipeline.py`, `image_extractor.py`, `image_gate.py` |
 | Image search (CLIP vs inferred text) | `DESIGN.md` §3.3, `pka/api/image_hits.py` |
