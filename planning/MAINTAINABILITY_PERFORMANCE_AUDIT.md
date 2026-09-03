@@ -208,6 +208,20 @@ by design.
 
 ### M-8: `Settings` is one 91-field class, the most-churned file, imported as a global by 31 modules (M)
 
+> **Deferred to `BACKLOG.md` after costing — do not re-raise without reading
+> `M8_NESTED_SETTINGS.md`.** Two corrections to the evidence below. (1) The
+> "most-churned" signal is misread here: config.py's churn is 613 lines added
+> against 96 deleted over 45 commits, median 8 per commit — *growth*, one
+> setting per feature, not the rework that the churn × complexity heuristic in
+> *References* is meant to flag. Nesting removes none of it. (2) Step 1 (the
+> deprecated `class Config`) shipped under M-7. What survives costing is two
+> narrow pieces — a shared `RemoteBackend` for the four duplicated remote
+> backends, and subclassing `EnvSettingsSource` in `SecretsFileSettingsSource`
+> — both recorded in `BACKLOG.md` under *Configuration*. Note also that this
+> item bundles two complaints, and nesting addresses only the first: the
+> process-wide singleton is what drives the 97 test monkeypatches, and it would
+> need a `get_settings()` accessor or injection, not a namespace change.
+
 Evidence: `pka/config.py`, 39 commits (highest in the repo), 91 fields in a
 single `class Settings`, a deprecated inner `class Config` at line 491 (pydantic
 emits `PydanticDeprecatedSince20` on every test run), and

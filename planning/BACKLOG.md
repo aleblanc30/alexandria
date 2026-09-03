@@ -312,3 +312,45 @@ fields whose effect is *not* live (the EasyOCR reader caches independently, and 
 Chroma collection is dimension-locked, so an embedding-model change needs
 `rebuild_from_chunks`, not a toggle). Lift `_persist_env_var` and `ENV_FILE_PATH`
 into a shared `pka/api/env_file.py` that `source_paths.py` re-imports.
+
+### M-8: group `Settings` into submodels
+
+**What:** Nest the 49 `Settings` fields that already carry a group prefix
+(`fetch_*`, `cluster_*`, `reddit_*`, `image_gate_*`, `easyocr_*`, and the four
+remote backends) into submodels named for that prefix. Plan, fully costed, in
+`M8_NESTED_SETTINGS.md`.
+
+**Why deferred:** The value did not survive costing. The audit ranks M-8 on
+"most-churned file in the repo", but that churn is *growth*, not rework — 613
+lines added against 96 deleted across 45 commits, median 8 lines each, a config
+file gaining one setting per feature. Nesting removes none of it. It also leaves
+two of the item's three stated complaints standing: the class is still 42 fields
+plus 9 submodels, and `settings` is still a process-wide singleton imported by 31
+modules. Most of the remaining 110 read-site edits buy readability only.
+
+**The two pieces that are worth doing on their own,** if someone is already in
+these files — neither needs the nesting:
+
+- **`SecretsFileSettingsSource` → subclass `EnvSettingsSource`** and override
+  `_load_env_vars` (lowercase the keys — it lowercases when `case_sensitive` is
+  False). Deletes ~45 lines of hand-rolled prefix matching and field lookup,
+  inherits pydantic's own resolution. Verified to preserve env > secrets >
+  `.env` precedence. **Entirely independent of M-8** — applies to the flat model
+  as-is.
+- **A shared `RemoteBackend` model** for `ollama_cloud` / `openrouter` / `ovh` /
+  `scaleway`, which declare the same four fields each. Replaces 16 duplicated
+  declarations and collapses `settings_view`'s three parallel provider dicts to
+  one accessor. This *is* nesting, but only for those 16 fields, and
+  `env_nested_max_split=1` keeps every legacy env var working.
+
+**Two traps recorded in the plan, verified against pydantic-settings 2.14.1** —
+read them before touching any of this:
+
+- A submodel default given as an *instance*
+  (`openrouter: RemoteBackend = RemoteBackend(base_url=...)`) is **discarded**
+  the moment env sets any field of that submodel; pydantic rebuilds from
+  class-level defaults. Setting `ALEXANDRIA_OPENROUTER_API_KEY` alone silently
+  empties `base_url`. Use a one-line subclass per backend instead.
+- Nesting a field breaks its `SECRET_ALEXANDRIA_*` lookup silently — the current
+  source matches against top-level `model_fields` only, so a moved API key is
+  dropped with a warning and no import-time error.
