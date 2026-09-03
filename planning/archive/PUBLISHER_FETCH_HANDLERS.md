@@ -1,6 +1,28 @@
 # Publisher fetch handlers: doi.org, Nature, Springer, APS, ScienceDirect, MIT Press, ResearchGate
 
-**Status:** proposed, not implemented.
+**Status:** implemented, 2026-09-03. Kept as the record of *why* each handler
+is shaped the way it is; the code in `pka/ingestion/` is what it does now.
+Two things shipped differently from the text below. **§13's open question is
+now answered:** `direct.mit.edu` was probed on 2026-09-03 and returns `403` to a
+non-browser client on both an article page and a book page, so the
+`citation_doi` scrape §9 floated is not a route — a meta tag cannot be read out
+of a page that never loads. It got a handler anyway
+(`pka/ingestion/direct_mit.py`), but not the one §9 imagined. Its article URLs
+carry volume, issue and first page — the same numbers that appear in a legacy
+`10.1162` DOI suffix, though the year does not and modern deposits
+(`10.1162/neco_a_01227`) abandon the pattern — so the DOI is **searched** with a
+`query.bibliographic` call scoped by `filter=prefix:10.1162` and then **verified**
+against those three coordinates. Its `article-pdf` URLs are cheaper still: the
+filename is the DOI suffix verbatim, in both the legacy (`neco.1997.9.8.1735`)
+and modern (`neco_a_01227`) forms, so those need no search at all — just the
+prefix, one lookup, and the same coordinate check. That verification is what
+makes a ranked query admissible here and inadmissible in §10.1: an RG slug has nothing to round-trip
+against, a citation does. Its book URLs carry only a title, which goes to
+`openlibrary.lookup_by_title_author` — the existing verified ladder, on the
+existing `external_lookup_enabled`. Either shape falls back to a slug card
+rather than to the blocked GET. Second, the four DOI handlers share one
+`fetch_doi_card` entry point in `doi_meta.py` rather than repeating the lookup
+body per module.
 **Touches:** `pka/ingestion/doi_meta.py`, `doi_org.py`, `nature.py`, `springer.py`,
 `aps.py`, `sciencedirect.py`, `mitpress.py`, `researchgate.py` (all new),
 `pka/ingestion/fetcher.py`, `pka/ingestion/fetch_base.py`, `pka/domains.py`,
@@ -707,11 +729,16 @@ hosts and `linkinghub.elsevier.com`.
 
 ## 13. Open questions
 
-- **`direct.mit.edu` article paths carry no DOI** (§9). Reading `citation_doi`
+- ~~**`direct.mit.edu` article paths carry no DOI** (§9). Reading `citation_doi`
   from the page is a scrape of a host that may or may not block us; the
   alternative is leaving that host to the generic path. Needs one probe against
   a real URL before committing either way — it is the only claim in this plan
-  not verified against a live response.
+  not verified against a live response.~~ **Settled 2026-09-03: it blocks us.**
+  `direct.mit.edu/neco/article/9/8/1735/6109/…` and
+  `direct.mit.edu/books/monograph/2313/…` both return `403` to a non-browser
+  client, so the `citation_doi` route does not exist. Handled instead by
+  `direct_mit.py`, which searches Crossref and verifies the hit against the
+  URL's own volume/issue/page — see the status note at the top.
 - **§3's default.** `doi_metadata_lookup: bool = True` is argued, not obvious.
   If the answer is "default off", §8.5's URL-derived card becomes the *normal*
   outcome for §6–§9 rather than the fallback, which changes what these handlers

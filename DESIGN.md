@@ -108,7 +108,7 @@ more than the on/off state:
 | Category | Settings | What is sent |
 |---|---|---|
 | Inference providers | `chat_provider`, `vision_provider`, `image_gate_vision_provider`, `ocr_provider` | **Document content** — chunk text, or image bytes. The largest exposure; a hosted provider sees the material itself. |
-| Enrichment lookups | `external_lookup_enabled`, `cover_search_fallback` | **Derived identifiers** — an ISBN, or a title+author string. Reveals *library inventory* (what is on the shelf) rather than content. |
+| Enrichment lookups | `external_lookup_enabled`, `cover_search_fallback`, `doi_metadata_lookup` | **Derived identifiers** — an ISBN, a title+author string, or a DOI derived from a bookmarked publisher URL. Reveals *library inventory* (what is on the shelf) rather than content. |
 | Source connectors | `ALEXANDRIA_YOUTUBE_*`, `ALEXANDRIA_REDDIT_*` (OAuth credentials or `reddit_feed_url`), Firefox phase-2 fetch | **Nothing new** — these read back your own data from a service you already gave it to, or fetch a URL you bookmarked. |
 
 Text-chunk embeddings are the one capability with no remote option: they stay
@@ -212,6 +212,24 @@ extracted text is not batched in RAM. Docs marked `fetched` but missing
 chunks are re-queued automatically on the next ingest run. When a Firefox URL
 returns HTTP 404, the fetcher can fall back to the closest Internet Archive
 snapshot (`fetch_wayback_fallback`, default on).
+
+**Publisher URLs are resolved by identifier, not scraped.** A bookmark on
+`nature.com`, `link.springer.com`, `journals.aps.org`, `sciencedirect.com` or
+`doi.org` carries a DOI (or an Elsevier PII), and `mitpress.mit.edu` carries an
+ISBN, so the handlers in `pka/ingestion/` look the identifier up instead of
+fetching a page that is either a `403` or a paywall served at HTTP 200. A
+`doi.org` bookmark resolves against `doi.org` itself, which is the host the user
+bookmarked, so it needs no flag; the others reach `api.crossref.org` (and
+Semantic Scholar when the record carries no abstract) and are gated on
+`doi_metadata_lookup`, default **on** — the wire carries one DOI to a
+non-commercial registry, and with the flag off those handlers degrade to a
+URL-derived card rather than to the paywall scrape. `mitpress.mit.edu` rides the
+existing `external_lookup_enabled` (default off) since its lookup is Open
+Library by ISBN, and `researchgate.net` — hard-blocked, no public API — builds
+its card from the URL slug with no request at all. `direct.mit.edu` is blocked
+too and uses whichever of the two applies: a Crossref citation query for an
+article (`doi_metadata_lookup`), an Open Library title lookup for a book
+(`external_lookup_enabled`). No flag enables another.
 
 **PDF extraction reports why it found nothing.** `extract_pdf_report`
 (`book_extractor.py`) returns sections *plus* a `PdfTextLayer` verdict, because an

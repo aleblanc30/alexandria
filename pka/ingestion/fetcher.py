@@ -19,6 +19,16 @@ Strategy:
   - ``arxiv.org`` URLs → export.arxiv.org API (metadata + PDF); title and abstract on cards
   - ``biorxiv.org`` URLs → api.biorxiv.org DOI lookup (metadata + PDF); title and abstract on cards
   - ``pubmed.ncbi.nlm.nih.gov`` URLs → NCBI efetch (metadata + abstract, no PDF); title and abstract on cards
+  - ``researchgate.net/publication/…`` URLs → card from the URL slug, no request (hard-blocked)
+  - ``mitpress.mit.edu`` book pages → ISBN from the path; Open Library synopsis when
+    ``external_lookup_enabled``, otherwise a slug card — no request either way
+  - ``direct.mit.edu`` → hard 403, so articles resolve by Crossref bibliographic query
+    **verified against the URL's volume/issue/page**, and books by Open Library title;
+    either falls back to a slug card, never to the blocked GET
+  - ``doi.org`` URLs → DOI content negotiation (CSL-JSON) instead of scraping the redirect target
+  - ``nature.com`` / ``link.springer.com`` / ``journals.aps.org`` / ``sciencedirect.com`` →
+    DOI derived from the URL, resolved via Crossref (+ Semantic Scholar for a missing
+    abstract); gate: ``doi_metadata_lookup``. Replaces a paywall scrape or a 403.
 
 Previously skipped PDF bookmarks stay ``fetch_status=skipped`` until reset manually, e.g.::
 
@@ -102,6 +112,9 @@ def _fetch_budget_seconds(
     wayback: bool = False,
     wikipedia: bool = False,
     preprint: bool = False,
+    doi: bool = False,
+    pii: bool = False,
+    book_lookup: bool = False,
 ) -> float:
     """Hard ceiling per URL including rate-limit wait and text extraction."""
     if pdf:
@@ -121,6 +134,18 @@ def _fetch_budget_seconds(
     if preprint:
         base += cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds
         base += cfg.fetch_pdf_timeout_seconds + cfg.fetch_pdf_budget_extra_seconds
+    if doi:
+        # Worst case is two sequential requests and no PDF: the primary record,
+        # then the Semantic Scholar rung when it carried no abstract.
+        base += cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds
+    if pii:
+        # ScienceDirect adds the alternative-id query in front of those two.
+        base += 2 * (cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds)
+    if book_lookup and cfg.external_lookup_enabled:
+        # openlibrary.py is synchronous and makes up to two requests of its own
+        # (edition or search, then work) at fetch_timeout_seconds each, behind a
+        # 1 rps limiter — none of which the base budget accounts for.
+        base += 2 * (cfg.fetch_timeout_seconds + cfg.fetch_connect_timeout_seconds)
     return base
 
 
@@ -144,6 +169,13 @@ async def _fetch_one_impl(
     from pka.ingestion.search_url import search_url_result
 
     if (result := search_url_result(doc_id, url)) is not None:
+        return result
+
+    from pka.ingestion.researchgate import researchgate_result
+
+    # Sync and un-awaited like search_url_result above: no request is made, so
+    # there is no client, no rate-limiter slot and no budget leg.
+    if (result := researchgate_result(doc_id, url)) is not None:
         return result
 
     if is_wikipedia_special(url):
@@ -183,6 +215,62 @@ async def _fetch_one_impl(
 
     if parse_pubmed_url(url):
         result = await fetch_pubmed_article(client, doc_id, url)
+        if result is not None:
+            return result
+
+    # Identifier-carrying publisher URLs (PUBLISHER_FETCH_HANDLERS.md). Order
+    # within this block is free — the host checks are disjoint — but it must
+    # stay after arXiv: doi.org/10.48550/arXiv.… is a valid arXiv DOI, and
+    # doi_org.py hands that cross-walk back to fetch_arxiv_paper itself.
+    from pka.ingestion.mitpress import fetch_mitpress_book, parse_mitpress_url
+
+    if parse_mitpress_url(url):
+        result = await fetch_mitpress_book(client, doc_id, url)
+        if result is not None:
+            return result
+
+    from pka.ingestion.direct_mit import fetch_direct_mit, parse_direct_mit_url
+
+    if parse_direct_mit_url(url) is not None:
+        result = await fetch_direct_mit(client, doc_id, url)
+        if result is not None:
+            return result
+
+    from pka.ingestion.doi_org import fetch_doi_url, parse_doi_url
+
+    if parse_doi_url(url):
+        result = await fetch_doi_url(client, doc_id, url)
+        if result is not None:
+            return result
+
+    from pka.ingestion.nature import fetch_nature_article, parse_nature_url
+
+    if parse_nature_url(url):
+        result = await fetch_nature_article(client, doc_id, url)
+        if result is not None:
+            return result
+
+    from pka.ingestion.springer import fetch_springer_article, parse_springer_url
+
+    if parse_springer_url(url):
+        result = await fetch_springer_article(client, doc_id, url)
+        if result is not None:
+            return result
+
+    from pka.ingestion.aps import fetch_aps_article, parse_aps_url
+
+    if parse_aps_url(url):
+        result = await fetch_aps_article(client, doc_id, url)
+        if result is not None:
+            return result
+
+    from pka.ingestion.sciencedirect import (
+        fetch_sciencedirect_article,
+        parse_sciencedirect_url,
+    )
+
+    if parse_sciencedirect_url(url):
+        result = await fetch_sciencedirect_article(client, doc_id, url)
         if result is not None:
             return result
 
@@ -257,14 +345,30 @@ async def _fetch_one(
     doc_id: int,
     url: str,
 ) -> FetchResult:
+    from pka.ingestion.aps import parse_aps_url
     from pka.ingestion.arxiv import parse_arxiv_url
     from pka.ingestion.biorxiv import parse_biorxiv_url
+    from pka.ingestion.direct_mit import DirectMitArticle, parse_direct_mit_url
+    from pka.ingestion.doi_org import parse_doi_url
+    from pka.ingestion.mitpress import parse_mitpress_url
+    from pka.ingestion.nature import parse_nature_url
+    from pka.ingestion.sciencedirect import parse_sciencedirect_url
+    from pka.ingestion.springer import parse_springer_url
     from pka.ingestion.wikipedia import parse_wikipedia_url
 
     pdf = _url_looks_like_pdf(url)
     wayback = cfg.fetch_wayback_fallback
     wikipedia = parse_wikipedia_url(url) is not None
     preprint = parse_arxiv_url(url) is not None or parse_biorxiv_url(url) is not None
+    direct_mit = parse_direct_mit_url(url)
+    doi = any(
+        parse(url) is not None
+        for parse in (parse_doi_url, parse_nature_url, parse_springer_url, parse_aps_url)
+    ) or isinstance(direct_mit, DirectMitArticle)
+    pii = parse_sciencedirect_url(url) is not None
+    # Both routes that reach openlibrary.py: an MIT Press ISBN, and a
+    # direct.mit.edu book title (parse returns the title as a bare str).
+    book_lookup = parse_mitpress_url(url) is not None or isinstance(direct_mit, str)
     try:
         return await asyncio.wait_for(
             _fetch_one_impl(client, doc_id, url),
@@ -273,6 +377,9 @@ async def _fetch_one(
                 wayback=wayback,
                 wikipedia=wikipedia,
                 preprint=preprint,
+                doi=doi,
+                pii=pii,
+                book_lookup=book_lookup,
             ),
         )
     except TimeoutError:
@@ -361,6 +468,8 @@ def _persist_fetch_result(r: FetchResult) -> None:
             update_values["year"] = r.year
         if r.authors_json:
             update_values["authors_json"] = r.authors_json
+        if r.isbn:
+            update_values["isbn"] = r.isbn
         con.execute(
             documents.update().where(documents.c.id == r.document_id).values(**update_values)
         )

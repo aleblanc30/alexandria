@@ -40,11 +40,19 @@ def domain_has_fetch_handler(domain: str) -> bool:
     this report silently under-counts.
     """
     from pka.ingestion.amazon import is_amazon_host
+    from pka.ingestion.aps import is_aps_url
     from pka.ingestion.arxiv import is_arxiv_url
     from pka.ingestion.biorxiv import is_biorxiv_url
+    from pka.ingestion.direct_mit import is_direct_mit_url
+    from pka.ingestion.doi_org import is_doi_host
+    from pka.ingestion.mitpress import is_mitpress_url
+    from pka.ingestion.nature import is_nature_url
     from pka.ingestion.pubmed import is_pubmed_url
     from pka.ingestion.reddit_bookmark import is_reddit_host
+    from pka.ingestion.researchgate import is_researchgate_url
+    from pka.ingestion.sciencedirect import is_sciencedirect_url
     from pka.ingestion.search_url import is_search_engine_host
+    from pka.ingestion.springer import is_springer_url
     from pka.ingestion.wikipedia import is_wikipedia_url
     from pka.ingestion.youtube_bookmark import is_youtube_url
 
@@ -61,6 +69,17 @@ def domain_has_fetch_handler(domain: str) -> bool:
         # as "handled" here, including non-search pages on the same host
         # (e.g. google.com/maps/...) — acceptable imprecision for a report.
         or is_search_engine_host(probe)
+        # Publisher handlers (PUBLISHER_FETCH_HANDLERS.md), host-only for the
+        # same reason: an index page on one of these hosts falls through inside
+        # the handler but still reports as handled here.
+        or is_doi_host(probe)
+        or is_nature_url(probe)
+        or is_springer_url(probe)
+        or is_aps_url(probe)
+        or is_sciencedirect_url(probe)
+        or is_mitpress_url(probe)
+        or is_direct_mit_url(probe)
+        or is_researchgate_url(probe)
     )
 
 

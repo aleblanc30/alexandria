@@ -35,12 +35,16 @@ class FetchResult:
     archive_url: str | None = None  # Wayback snapshot URL when content came from archive.org
     title: str | None = None  # when set, overrides documents.title on persist
     card_summary: str | None = None  # when set, overrides documents.card_summary on persist
-    # Structured bibliographic fields, set only by the arXiv/bioRxiv fetchers
-    # (DOCUMENT_METADATA_PLAN.md). Written when present, never blanked.
+    # Structured bibliographic fields, set by the identifier-resolving fetch
+    # handlers (arXiv, bioRxiv, PubMed, and the DOI/ISBN publisher handlers —
+    # DOCUMENT_METADATA_PLAN.md). Written when present, never blanked.
     doi: str | None = None
     arxiv_id: str | None = None
     year: int | None = None
     authors_json: str | None = None
+    # documents.isbn is a join key: only a checksum-valid ISBN reaches it
+    # (openlibrary.normalize_isbn / isbn_checksum_valid).
+    isbn: str | None = None
 
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────

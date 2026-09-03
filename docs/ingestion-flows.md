@@ -230,6 +230,23 @@ every fetched page is embedded **inline by the fetch worker**, so there is no
 separate embedding phase to report. Everything from `fetch_and_embed_pending`
 down is shared with Reddit's link-post branch.
 
+The dispatch chain's newest arrivals are the **publisher handlers**
+(`planning/archive/PUBLISHER_FETCH_HANDLERS.md`), and they exist to remove two opposite
+failures. `journals.aps.org`, `mitpress.mit.edu`, `direct.mit.edu` and `researchgate.net`
+answer a non-browser client with `403`, so those bookmarks land as
+`unfetchable` with no title at all. `nature.com`, `link.springer.com`, `sciencedirect.com` and
+`doi.org` are worse: they answer `200` with a paywall, which trafilatura
+extracts and the pipeline then chunks and embeds as if it were the paper —
+invisible in the unfetchable report, because they rank on documents, not on
+failures. Both are avoided the same way: the URL carries a resolvable identifier
+(a DOI, an Elsevier PII, an ISBN, a citation's volume/issue/page, or a title
+slug), so the publisher's HTML is never requested. `direct.mit.edu` is the one
+that sometimes has to *search* for its identifier rather than read it — and it
+is allowed to only because the URL's volume, issue and page can verify the hit,
+which is the check `researchgate.net` has nothing to perform. The same check
+guards its cheaper route, where a PDF filename spells the DOI suffix outright. Note the colours — `researchgate.net` is orange, not red,
+because it makes **no request at all**.
+
 ```mermaid
 flowchart TD
     START["sync_firefox_metadata()<br/>ingestion/firefox_sync.py"]
@@ -282,6 +299,11 @@ flowchart TD
         ARX["fetch_arxiv_paper()<br/>export.arxiv.org + PDF"]
         BIO["fetch_biorxiv_paper()<br/>api.biorxiv.org + PDF"]
         PMD["fetch_pubmed_article()<br/>NCBI efetch — metadata + abstract, no PDF"]
+        RG["researchgate_result()<br/>card from the URL slug — no request"]
+        MITP["fetch_mitpress_book()<br/>ISBN from the path → openlibrary.lookup_by_isbn<br/>gate: external_lookup_enabled (else slug card, no request)"]
+        DMIT["fetch_direct_mit()<br/>article-pdf: filename is the DOI suffix → direct lookup ·<br/>article: crossref bibliographic query · both accepted only if<br/>volume/issue/page round-trip · book: openlibrary by title<br/>gates: doi_metadata_lookup / external_lookup_enabled"]
+        DOIO["fetch_doi_url()<br/>doi.org content negotiation (CSL-JSON)<br/>— the bookmarked host, so no flag"]
+        PUB["fetch_nature / springer / aps / sciencedirect_article()<br/>DOI (or Elsevier PII) from the URL → api.crossref.org,<br/>+ Semantic Scholar when the record has no abstract<br/>gate: doi_metadata_lookup"]
         EXT["non-HTML extension → skipped"]
         GET["httpx GET, follow_redirects"]
         WB["fetch_via_wayback()<br/>gate: fetch_wayback_fallback"]
@@ -295,6 +317,11 @@ flowchart TD
         DISPATCH --> ARX
         DISPATCH --> BIO
         DISPATCH --> PMD
+        DISPATCH --> RG
+        DISPATCH --> MITP
+        DISPATCH --> DMIT
+        DISPATCH --> DOIO
+        DISPATCH --> PUB
         DISPATCH --> EXT
         DISPATCH --> GET
         GET -->|HTTP 404| WB
@@ -312,6 +339,10 @@ flowchart TD
     ARX --> NET
     BIO --> NET
     PMD --> NET
+    MITP --> NET
+    DMIT --> NET
+    DOIO --> NET
+    PUB --> NET
     GET --> NET
     WB --> NET
 
@@ -319,6 +350,11 @@ flowchart TD
     PERSIST["_persist_fetch_result()<br/>documents.fetch_status/title/card_summary + fetch_log"]
     ADV["advance(key, phase='fetching', failed=…)"]
     WIKI --> RESULT
+    RG --> RESULT
+    MITP --> RESULT
+    DMIT --> RESULT
+    DOIO --> RESULT
+    PUB --> RESULT
     ARX --> RESULT
     BIO --> RESULT
     PDF --> RESULT
@@ -364,8 +400,9 @@ flowchart TD
 
     class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,LIM,ONE,DISPATCH,EXT,PDF,HTML,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
     class LOADBM,MRUN,QUEUE,EMBED specific
-    class NET,GET,WIKI,ARX,BIO,AMZ external
-    class WB,SUM,LLM gated
+    class NET,GET,WIKI,ARX,BIO,AMZ,DOIO external
+    class RG specific
+    class WB,SUM,LLM,MITP,PUB,DMIT gated
     class PLACES,SQLITE,CHROMA store
 ```
 
@@ -546,7 +583,7 @@ flowchart TD
         SKIPF["sp.skip_phase('reddit','fetching')"]
         SETF["sp.set_phase('reddit','fetching', n)"]
         FAE["fetch_and_embed_pending(source=REDDIT,<br/>embed_fn=embed_fetched_text)"]
-        POOL["_run_fetch_workers → _fetch_one_impl<br/>search / wikipedia / youtube / reddit / arxiv / biorxiv / pubmed /<br/>PDF / amazon / wayback / trafilatura — identical to Firefox"]
+        POOL["_run_fetch_workers → _fetch_one_impl<br/>search / researchgate / wikipedia / youtube / reddit / arxiv / biorxiv /<br/>pubmed / doi.org / nature / springer / aps / sciencedirect / mitpress / direct.mit /<br/>PDF / amazon / wayback / trafilatura — identical to Firefox"]
         PERSIST["_persist_fetch_result() + fetch_log"]
         EMBEDF["embed_fetched_text()<br/>runners/reddit.py"]
         COMPOSE["body_excerpt() →<br/>fetched_embed_text(title, card, text)"]

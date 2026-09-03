@@ -59,6 +59,28 @@ class TestDomainHasFetchHandler:
         assert domain_has_fetch_handler("google.com") is True
         assert domain_has_fetch_handler("www.bing.com") is True
 
+    def test_publisher_domains_have_handlers(self):
+        # PUBLISHER_FETCH_HANDLERS.md — both APS hosts and both Elsevier hosts.
+        for domain in (
+            "doi.org",
+            "dx.doi.org",
+            "www.nature.com",
+            "link.springer.com",
+            "journals.aps.org",
+            "link.aps.org",
+            "www.sciencedirect.com",
+            "linkinghub.elsevier.com",
+            "mitpress.mit.edu",
+            "direct.mit.edu",
+            "www.researchgate.net",
+        ):
+            assert domain_has_fetch_handler(domain) is True, domain
+
+    def test_excluded_publisher_neighbours_have_no_handler(self):
+        # Same publisher, deliberately not handled — see each module's docstring.
+        for domain in ("springer.com", "www.scientificamerican.com"):
+            assert domain_has_fetch_handler(domain) is False, domain
+
 
 class TestBuildDomainFrequencyReport:
     def test_sorts_by_count_and_aggregates_status(self):

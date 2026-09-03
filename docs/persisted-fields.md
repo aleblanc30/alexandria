@@ -39,7 +39,7 @@ Every source, images included, gets a row here. `(source, source_id)` is unique.
 | `generated_summary` | — | 🟪 | 🟪 | 🟪 | — | — |
 | `doi` | ⬛ | ⬛ ³ | — | ⬛ ³ | — | — |
 | `arxiv_id` | ⬛ | ⬛ ³ | — | ⬛ ³ | — | — |
-| `isbn` | — | — | ⬛ ⁴ | — | — | — |
+| `isbn` | — | ⬛ ⁴ ⁶ | ⬛ ⁴ | — | — | — |
 | `year` | ⬛ | ⬛ ³ | ⬛ | ⬛ ³ | — | — |
 | `authors_json` | ⬛ | ⬛ ³ | ⬛ | ⬛ ³ | — | — |
 | `zotero_url` | ⬛ | — | — | — | — | — |
@@ -50,8 +50,17 @@ Every source, images included, gets a row here. `(source, source_id)` is unique.
 (`FetchResult.title`).
 ² Wayback snapshot URL, written only when the fetch fell back to archive.org on
 a 404 — `fetch_wayback_fallback`, which unlike the other flags defaults **on**.
-³ Set only by the arXiv/bioRxiv fetch handlers during phase 2, never blanked.
+³ Set by the identifier-resolving fetch handlers during phase 2, never blanked —
+the family that derives an identifier from the URL and looks it up rather than
+scraping the page (arXiv, bioRxiv, PubMed, and the DOI publisher handlers:
+`doi.org`, `nature.com`, `link.springer.com`, `journals.aps.org`,
+`sciencedirect.com`, `direct.mit.edu`). Naming the family rather than its
+members is deliberate: the list grew twice already without this footnote being
+updated.
 ⁴ Rejected rather than stored when the checksum fails — it is a join key.
+⁶ From an `mitpress.mit.edu` book URL, whose path carries the ISBN-13
+(`pka/ingestion/mitpress.py`). Validated with `openlibrary.normalize_isbn` /
+`isbn_checksum_valid` before it reaches the column, per footnote ⁴.
 
 ### What each column means per source
 

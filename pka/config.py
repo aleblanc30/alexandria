@@ -343,6 +343,14 @@ class Settings(BaseSettings):
     fetch_pdf_timeout_seconds: float = 120.0  # read timeout for .pdf bookmark URLs
     fetch_pdf_budget_extra_seconds: float = 30.0  # extraction slack on top of PDF timeouts
     search_url_cards: bool = True  # build a card from a search URL's query, no fetch
+    # Crossref / Semantic Scholar lookup for a DOI derived from a publisher URL
+    # (nature.com, link.springer.com, journals.aps.org, sciencedirect.com). What
+    # crosses the wire is one DOI the user bookmarked, in plain text, to a
+    # non-commercial scholarly registry — DESIGN.md §1.1's *enrichment lookup*
+    # category, hence a named setting. Default on, like fetch_wayback_fallback:
+    # with it off these handlers degrade to a URL-derived card rather than to
+    # the paywall scrape they exist to remove.
+    doi_metadata_lookup: bool = True
     fetch_wayback_fallback: bool = True  # on HTTP 404, query archive.org for a snapshot
     fetch_wayback_extra_budget_seconds: float = 15.0  # extra time for availability + snapshot
     fetch_wikipedia_retry_delay_seconds: float = 2.0  # pause between Wikipedia API retries
@@ -448,6 +456,7 @@ class Settings(BaseSettings):
         "dev",
         "search_url_cards",
         "fetch_wayback_fallback",
+        "doi_metadata_lookup",
         "cluster_async_labelling",
         "ocr_enabled",
         "clip_enabled",
