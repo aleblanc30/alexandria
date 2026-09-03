@@ -54,6 +54,22 @@ class SlotScheduler:
         self._next: dict[str, float] = {}
         self._lock = threading.Lock()
 
+    def now(self) -> float:
+        """The scheduler's own clock reading, for comparing against ``next_slot``."""
+        return self._clock()
+
+    def next_slot(self, key: str) -> float:
+        """When ``key``'s next send may go, as an **absolute** clock time.
+
+        Reserves nothing — this is the read-only query a caller doing its own
+        ordering needs (``fetcher._DomainQueue``). Absolute rather than a delay
+        on purpose: a queue compares readings taken at different moments, and
+        two delays that both say "0.1s away" are 0.9s apart when one was taken
+        at t=0 and the other at t=0.9.
+        """
+        with self._lock:
+            return max(self._clock(), self._next.get(key, 0.0))
+
     def claim(self, key: str) -> float:
         """Reserve the next slot for ``key``; return the seconds to wait for it.
 
@@ -73,6 +89,16 @@ class AsyncRateLimiter:
 
     def __init__(self, rps: float = 1.0) -> None:
         self._scheduler = SlotScheduler(rps)
+
+    @property
+    def scheduler(self) -> SlotScheduler:
+        """The underlying scheduler, for callers that order work themselves.
+
+        ``fetcher._DomainQueue`` needs ``next_slot`` / ``claim`` on the *same*
+        scheduler this limiter awaits on, so that a slot the queue claims is the
+        slot the fetch would otherwise have claimed for itself.
+        """
+        return self._scheduler
 
     async def wait(self, url: str) -> None:
         delay = self._scheduler.claim(domain_of(url))

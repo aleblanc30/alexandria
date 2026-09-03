@@ -30,7 +30,7 @@ local-*first* (see `DESIGN.md` §1.1).
 Work tracking and in-flight design proposals live in `planning/`, not at repo
 root: `planning/TODO.md` (high-priority, one line each), `planning/BACKLOG.md`
 (nice-to-haves), and one dedicated `planning/<NAME>.md` per larger plan (e.g.
-`planning/FETCH_DISPATCH_PLAN.md`, `planning/WAYBACK.md`). None of these are
+`planning/COLLECTION_TAGS.md`, `planning/WAYBACK.md`). None of these are
 authoritative about current behavior — they describe proposed or deferred
 work, not what the code does. Once a `planning/<NAME>.md` plan's corresponding
 `TODO.md` line(s) are checked off with nothing left proposed, move the file to

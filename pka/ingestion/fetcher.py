@@ -37,10 +37,12 @@ Previously skipped PDF bookmarks stay ``fetch_status=skipped`` until reset manua
 """
 
 import asyncio
+import heapq
 import logging
 import re
 import time
-from collections.abc import Callable
+from collections import deque
+from collections.abc import Callable, Iterable
 from urllib.parse import urlparse
 
 import httpx
@@ -62,6 +64,7 @@ from pka.ingestion.fetch_base import (  # re-exported: shared primitives live on
     _url_looks_like_pdf,
 )
 from pka.ingestion.progress import advance, should_stop
+from pka.ingestion.rate_limit import SlotScheduler, domain_of
 
 log = logging.getLogger(__name__)
 
@@ -116,7 +119,14 @@ def _fetch_budget_seconds(
     pii: bool = False,
     book_lookup: bool = False,
 ) -> float:
-    """Hard ceiling per URL including rate-limit wait and text extraction."""
+    """Hard ceiling per URL, covering the request(s) and text extraction.
+
+    The pool's rate-limit wait happens *before* this budget starts (the worker
+    sleeps on the delay ``_DomainQueue.get`` hands back), so a backed-up domain
+    no longer eats into a healthy site's request budget. A fetch that claims its
+    own slot inside ``_fetch_one_impl`` — the ``slot_held=False`` fall-through,
+    and every per-site handler — still waits on the limiter inside the budget.
+    """
     if pdf:
         base = (
             cfg.fetch_pdf_timeout_seconds
@@ -149,6 +159,172 @@ def _fetch_budget_seconds(
     return base
 
 
+# ── Dispatch: which domain's slot a worker must hold ─────────────────────────
+
+
+def _throttle_key(url: str) -> str | None:
+    """The domain whose send slot a worker must hold before starting ``url``.
+
+    ``None`` means "do not order this item by a slot": either no request is made
+    at all (local path, bad scheme, skipped extension, the two card-from-URL
+    handlers), or the request is made by a per-site handler that claims its own
+    slots against its own hosts (one arXiv item claims ``export.arxiv.org`` and
+    then ``arxiv.org``, which a single worker-level claim cannot represent).
+
+    This mirrors the guards and the handler dispatch at the top of
+    ``_fetch_one_impl`` and drifts from them if they change. The drift is not
+    symmetric: a key returned where ``_fetch_one_impl`` returns early only wastes
+    a slot, while a *missing* key merely leaves the item unordered — the
+    ``slot_held=False`` path still claims before sending, so the rate limit holds
+    either way.
+
+    Blind spot it shares with the limiter itself: the key is the host in the
+    *bookmarked* URL, so a redirect is spaced against the host that redirected
+    rather than the one that answers (see
+    ``planning/archive/PUBLISHER_FETCH_HANDLERS.md``).
+    """
+    from pka.ingestion.aps import parse_aps_url
+    from pka.ingestion.arxiv import parse_arxiv_url
+    from pka.ingestion.biorxiv import parse_biorxiv_url
+    from pka.ingestion.direct_mit import parse_direct_mit_url
+    from pka.ingestion.doi_org import parse_doi_url
+    from pka.ingestion.mitpress import parse_mitpress_url
+    from pka.ingestion.nature import parse_nature_url
+    from pka.ingestion.pubmed import parse_pubmed_url
+    from pka.ingestion.reddit_bookmark import parse_reddit_permalink
+    from pka.ingestion.researchgate import parse_researchgate_url
+    from pka.ingestion.sciencedirect import parse_sciencedirect_url
+    from pka.ingestion.search_url import parse_search_url
+    from pka.ingestion.springer import parse_springer_url
+    from pka.ingestion.wikipedia import is_wikipedia_special, parse_wikipedia_url
+    from pka.ingestion.youtube_bookmark import parse_youtube_url
+
+    if bookmark_url_unfetchable_reason(url):
+        return None
+    if is_wikipedia_special(url) or parse_wikipedia_url(url) is not None:
+        return None
+    if parse_search_url(url) is not None or parse_researchgate_url(url) is not None:
+        return None
+    for parse in (
+        parse_youtube_url,
+        parse_reddit_permalink,
+        parse_arxiv_url,
+        parse_biorxiv_url,
+        parse_pubmed_url,
+        parse_mitpress_url,
+        parse_direct_mit_url,
+        parse_doi_url,
+        parse_nature_url,
+        parse_springer_url,
+        parse_aps_url,
+        parse_sciencedirect_url,
+    ):
+        if parse(url) is not None:
+            return None
+    if not _url_looks_like_pdf(url):
+        path = urlparse(url).path.lower()
+        if any(path.endswith(ext) for ext in _SKIP_EXTENSIONS):
+            return None
+    return domain_of(url)
+
+
+class _DomainQueue:
+    """Work queue that hands out whatever a worker can actually send *now*.
+
+    A flat FIFO parks every worker on one busy host: the throttle is applied
+    after the choice of URL, so a worker that draws a URL from a domain a second
+    from its next slot sleeps for that second while holding a worker slot, with
+    ready work from other domains queued behind it.
+
+    ``get`` picks, in order: a throttled item whose slot is open now; else an
+    item needing no slot; else the throttled item whose slot opens soonest,
+    together with the delay to sleep first.
+
+    **``get`` is synchronous by design.** Choosing a bucket and claiming its slot
+    happen with no ``await`` between them, which is what stops two workers from
+    both reading a domain as ready and then stacking up. A peek-then-claim split
+    reintroduces that race and must not be "simplified" back in.
+
+    Not solved here: a batch made up entirely of one site's per-site handler
+    (every URL a Wikipedia one, say) carries no throttle key at all, so nothing
+    is ordered and the workers converge on that handler's own limiter.
+    """
+
+    def __init__(
+        self,
+        items: Iterable[tuple[int, str]] = (),
+        *,
+        scheduler: SlotScheduler | None = None,
+    ) -> None:
+        self._scheduler = scheduler if scheduler is not None else _limiter.scheduler
+        self._free: deque[tuple[int, str]] = deque()
+        self._by_key: dict[str, deque[tuple[int, str]]] = {}
+        # Exactly one entry per non-empty bucket, keyed by that domain's next
+        # slot; entries go stale as slots are claimed and are refreshed on pop.
+        self._heap: list[tuple[float, str]] = []
+        self._size = 0
+        for item in items:
+            self.put(item)
+
+    def __len__(self) -> int:
+        return self._size
+
+    def put(self, item: tuple[int, str]) -> None:
+        key = _throttle_key(item[1])
+        self._size += 1
+        if key is None:
+            self._free.append(item)
+            return
+        bucket = self._by_key.get(key)
+        if bucket is None:
+            bucket = self._by_key[key] = deque()
+            heapq.heappush(self._heap, (self._scheduler.next_slot(key), key))
+        bucket.append(item)
+
+    def _pop_soonest(self) -> tuple[str, float] | None:
+        """Remove and return the (key, next_slot) of the earliest-ready bucket."""
+        while self._heap:
+            slot, key = heapq.heappop(self._heap)
+            if not self._by_key.get(key):
+                self._by_key.pop(key, None)
+                continue
+            fresh = self._scheduler.next_slot(key)
+            if fresh > slot:  # stale: slots were claimed since this was pushed
+                heapq.heappush(self._heap, (fresh, key))
+                continue
+            return key, fresh
+        return None
+
+    def get(self) -> tuple[tuple[int, str], float, bool] | None:
+        """``(item, delay, slot_held)``, or ``None`` when the queue is empty.
+
+        ``delay`` is how long the worker must sleep before its first request;
+        ``slot_held`` says the slot for that request is already claimed, so
+        ``_fetch_one`` must not claim a second one.
+        """
+        if self._size == 0:
+            return None
+        head = self._pop_soonest()
+        if head is not None:
+            key, slot = head
+            if slot <= self._scheduler.now() or not self._free:
+                bucket = self._by_key[key]
+                item = bucket.popleft()
+                delay = self._scheduler.claim(key)
+                if bucket:
+                    heapq.heappush(self._heap, (self._scheduler.next_slot(key), key))
+                else:
+                    del self._by_key[key]
+                self._size -= 1
+                return item, delay, True
+            # Throttled work exists but is not ready, and slot-free work is
+            # waiting: fill the gap with that instead of sleeping on this.
+            heapq.heappush(self._heap, (slot, key))
+        item = self._free.popleft()
+        self._size -= 1
+        return item, 0.0, False
+
+
 # ── Per-URL fetch ─────────────────────────────────────────────────────────────
 
 
@@ -156,6 +332,8 @@ async def _fetch_one_impl(
     client: httpx.AsyncClient,
     doc_id: int,
     url: str,
+    *,
+    slot_held: bool = False,
 ) -> FetchResult:
     from pka.ingestion.wikipedia import (
         fetch_wikipedia_with_retries,
@@ -279,7 +457,12 @@ async def _fetch_one_impl(
     if not expect_pdf and any(path.endswith(ext) for ext in _SKIP_EXTENSIONS):
         return FetchResult(doc_id, url, "skipped", None, None, "non-html extension")
 
-    await _limiter.wait(url)
+    # The pool claims this slot before dispatching (``_DomainQueue``), so
+    # claiming again here would spend two slots per URL and halve the rate.
+    # Still needed for every other caller, and for the fall-through above where
+    # a per-site handler declined and this plain GET was not what was scheduled.
+    if not slot_held:
+        await _limiter.wait(url)
 
     try:
         resp = await client.get(
@@ -344,6 +527,8 @@ async def _fetch_one(
     client: httpx.AsyncClient,
     doc_id: int,
     url: str,
+    *,
+    slot_held: bool = False,
 ) -> FetchResult:
     from pka.ingestion.aps import parse_aps_url
     from pka.ingestion.arxiv import parse_arxiv_url
@@ -371,7 +556,7 @@ async def _fetch_one(
     book_lookup = parse_mitpress_url(url) is not None or isinstance(direct_mit, str)
     try:
         return await asyncio.wait_for(
-            _fetch_one_impl(client, doc_id, url),
+            _fetch_one_impl(client, doc_id, url, slot_held=slot_held),
             timeout=_fetch_budget_seconds(
                 pdf=pdf,
                 wayback=wayback,
@@ -525,11 +710,7 @@ async def _run_fetch_workers(
     workers = concurrency if concurrency is not None else cfg.fetch_concurrency
     results: list[FetchResult] = []
     stopped: str | None = None
-    queue: asyncio.Queue[tuple[int, str] | None] = asyncio.Queue()
-    for item in work:
-        queue.put_nowait(item)
-    for _ in range(workers):
-        queue.put_nowait(None)
+    queue = _DomainQueue(work)
 
     async def worker(client: httpx.AsyncClient) -> None:
         nonlocal stopped
@@ -537,14 +718,16 @@ async def _run_fetch_workers(
             if progress_key and should_stop(progress_key):
                 stopped = should_stop(progress_key)
                 break
-            item = await queue.get()
-            if item is None:
+            drawn = queue.get()
+            if drawn is None:
                 break
-            doc_id, url = item
+            (doc_id, url), delay, slot_held = drawn
+            if delay > 0:
+                await asyncio.sleep(delay)
             failed = False
             r: FetchResult | None = None
             try:
-                r = await _fetch_one(client, doc_id, url)
+                r = await _fetch_one(client, doc_id, url, slot_held=slot_held)
                 results.append(r)
                 failed = r.status == "unfetchable"
                 if on_result:

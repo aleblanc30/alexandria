@@ -11,13 +11,16 @@ from pka.db.queries import DocumentWrite, init_db, upsert_document
 from pka.ingestion.book_extractor import BookExtraction
 from pka.ingestion.fetcher import (
     FetchResult,
+    _DomainQueue,
     _fetch_one,
     _persist_fetch_result,
+    _throttle_key,
     bookmark_url_unfetchable_reason,
     fetch_and_embed_pending,
     fetch_pending,
     reset_unfetchable_for_fetch,
 )
+from pka.ingestion.rate_limit import SlotScheduler
 from tests.conftest import make_document
 
 
@@ -145,6 +148,26 @@ class TestFetchOne:
         assert result.http_status == 200
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("slot_held,waits", [(True, 0), (False, 1)])
+    async def test_slot_held_suppresses_the_second_claim(self, monkeypatch, slot_held, waits):
+        """Claiming again under a slot the pool already claimed would spend two
+        slots per URL and halve the configured rate."""
+        claimed: list[str] = []
+
+        class _RecordingLimiter:
+            async def wait(self, url: str) -> None:
+                claimed.append(url)
+
+        monkeypatch.setattr("pka.ingestion.fetcher._limiter", _RecordingLimiter())
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = _html_response(200)
+        result = await _fetch_one(
+            mock_client, doc_id=1, url="https://example.com/page", slot_held=slot_held
+        )
+        assert result.status == "fetched"
+        assert len(claimed) == waits
+
+    @pytest.mark.asyncio
     async def test_text_extracted_on_success(self):
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.get.return_value = _html_response(
@@ -182,7 +205,7 @@ class TestFetchOne:
     async def test_unfetchable_when_overall_budget_exceeded(self, monkeypatch):
         monkeypatch.setattr("pka.ingestion.fetcher._fetch_budget_seconds", lambda **kw: 0.05)
 
-        async def slow_fetch(client, doc_id, url):
+        async def slow_fetch(client, doc_id, url, **_):
             await asyncio.sleep(1)
             return FetchResult(doc_id, url, "fetched", "late", 200, None)
 
@@ -287,6 +310,130 @@ class TestFetchOne:
         assert "/w/api.php" not in mock_client.get.call_args.args[0]
 
 
+class _FakeClock:
+    """Monotonic clock the test moves by hand (mirrors test_rate_limiter)."""
+
+    def __init__(self, now: float = 1000.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class TestThrottleKey:
+    """Which domain's slot a worker must hold before starting a URL."""
+
+    def test_plain_url_is_keyed_by_host(self):
+        assert _throttle_key("https://example.com/page") == "example.com"
+
+    def test_local_path_and_file_url_need_no_slot(self):
+        assert _throttle_key("C:/Users/foo.pdf") is None
+        assert _throttle_key("file:///C:/Users/foo.pdf") is None
+
+    def test_skipped_extension_needs_no_slot(self):
+        assert _throttle_key("https://example.com/book.epub") is None
+
+    def test_pdf_extension_is_still_keyed(self):
+        """A PDF is fetched over the plain GET — only *skipped* types drop out."""
+        assert _throttle_key("https://example.com/paper.pdf") == "example.com"
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://en.wikipedia.org/wiki/Python",
+            "https://arxiv.org/abs/2401.00001",
+            "https://www.biorxiv.org/content/10.1101/2020.01.01.900000v1",
+        ],
+    )
+    def test_per_site_handlers_need_no_worker_slot(self, url):
+        """They claim their own slots, against their own hosts (one arXiv item
+        claims export.arxiv.org and then arxiv.org), which a single worker-level
+        claim cannot represent."""
+        assert _throttle_key(url) is None
+
+
+class TestDomainQueue:
+    def _queue(self, items, clock=None, rps=1.0):
+        clock = clock or _FakeClock()
+        return _DomainQueue(items, scheduler=SlotScheduler(rps=rps, clock=clock)), clock
+
+    def test_hot_domain_does_not_hold_up_an_unrelated_one(self):
+        """The bug: a flat FIFO hands out hot.com twice in a row, so the second
+        worker sleeps through the gap while cool.com sits ready behind it."""
+        queue, _ = self._queue(
+            [
+                (1, "https://hot.com/a"),
+                (2, "https://hot.com/b"),
+                (3, "https://cool.com/c"),
+            ]
+        )
+        drawn = [queue.get() for _ in range(3)]
+        # Both ready domains go out with no wait; hot.com's second item is last,
+        # and is the only draw that costs a sleep.
+        assert [d[1] for d in drawn] == pytest.approx([0.0, 0.0, 1.0])
+        assert drawn[2][0] == (2, "https://hot.com/b")
+        assert {d[0][0] for d in drawn[:2]} == {1, 3}
+
+    def test_same_domain_runs_are_spaced_by_the_gap(self):
+        queue, _ = self._queue(
+            [(i, f"https://hot.com/{i}") for i in range(3)],
+            rps=2.0,  # 0.5s gap
+        )
+        delays = [queue.get()[1] for _ in range(3)]
+        assert delays == pytest.approx([0.0, 0.5, 1.0])
+
+    def test_slot_free_work_fills_a_gap_instead_of_stalling(self):
+        queue, _ = self._queue(
+            [(1, "https://hot.com/a"), (2, "https://hot.com/b"), (3, "C:/local/file.pdf")]
+        )
+        queue.get()  # hot.com now cooling
+        item, delay, slot_held = queue.get()
+        assert item == (3, "C:/local/file.pdf")
+        assert delay == 0.0
+        assert slot_held is False
+
+    def test_falls_back_to_the_soonest_domain_when_nothing_is_ready(self):
+        queue, _ = self._queue([(1, "https://hot.com/a"), (2, "https://hot.com/b")])
+        queue.get()
+        item, delay, slot_held = queue.get()
+        assert item == (2, "https://hot.com/b")
+        assert delay == pytest.approx(1.0)
+        assert slot_held is True
+
+    def test_picks_up_a_domain_already_cooling_from_an_earlier_run(self):
+        """The limiter is module state, so a fresh queue inherits its slots."""
+        clock = _FakeClock()
+        sched = SlotScheduler(rps=1.0, clock=clock)
+        sched.claim("hot.com")  # an earlier batch just sent to hot.com
+        queue = _DomainQueue([(1, "https://hot.com/a"), (2, "https://cool.com/b")], scheduler=sched)
+        assert queue.get()[0] == (2, "https://cool.com/b")
+
+    def test_drains_each_item_exactly_once(self):
+        items = [
+            (1, "https://a.com/1"),
+            (2, "https://b.com/2"),
+            (3, "C:/x"),
+            (4, "https://a.com/4"),
+        ]
+        queue, _ = self._queue(items)
+        assert len(queue) == 4
+        drawn = []
+        while (got := queue.get()) is not None:
+            drawn.append(got[0])
+        assert sorted(drawn) == sorted(items)
+        assert len(queue) == 0
+        assert queue.get() is None
+
+    def test_claims_the_slot_the_fetch_would_have_claimed(self):
+        """``slot_held=True`` is only honest if the claim landed on the same
+        scheduler the limiter awaits on."""
+        clock = _FakeClock()
+        sched = SlotScheduler(rps=1.0, clock=clock)
+        queue = _DomainQueue([(1, "https://hot.com/a")], scheduler=sched)
+        queue.get()
+        assert sched.next_slot("hot.com") == pytest.approx(clock.now + 1.0)
+
+
 class TestFetchPending:
     @pytest.mark.asyncio
     async def test_returns_stats_dict(self):
@@ -303,7 +450,7 @@ class TestFetchPending:
     def test_two_asyncio_run_calls_do_not_break_limiter(self, monkeypatch):
         make_document("firefox", "F5", "T5", "https://ok.com/x", None)
 
-        async def fake_fetch(client, doc_id, url):
+        async def fake_fetch(client, doc_id, url, **_):
             return FetchResult(doc_id, url, "skipped", None, None, "non-html extension")
 
         monkeypatch.setattr("pka.ingestion.fetcher._fetch_one", fake_fetch)
@@ -317,13 +464,43 @@ class TestFetchPending:
         make_document("firefox", "F1", "T1", "https://ok.com/page", None)
         make_document("firefox", "F2", "T2", "https://ok.com/page2", None)
 
-        async def fake_fetch(client, doc_id, url):
+        async def fake_fetch(client, doc_id, url, **_):
             return FetchResult(doc_id, url, "fetched", "Some text content here", 200, None)
 
         monkeypatch.setattr("pka.ingestion.fetcher._fetch_one", fake_fetch)
         stats = await fetch_pending()
         assert stats["fetched"] == 2
         assert len(stats["texts"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_pool_claims_the_slot_and_says_so(self, monkeypatch):
+        """The pool schedules the first request itself, so ``_fetch_one`` must be
+        told not to claim a second slot for the same send."""
+        make_document("firefox", "F6", "T6", "https://ok.com/page", None)
+        seen: list[bool] = []
+
+        async def fake_fetch(client, doc_id, url, *, slot_held=False):
+            seen.append(slot_held)
+            return FetchResult(doc_id, url, "fetched", "text", 200, None)
+
+        monkeypatch.setattr("pka.ingestion.fetcher._fetch_one", fake_fetch)
+        await fetch_pending()
+        assert seen == [True]
+
+    @pytest.mark.asyncio
+    async def test_pool_leaves_unschedulable_work_to_claim_for_itself(self, monkeypatch):
+        """A per-site handler claims its own hosts, so the pool must not pretend
+        it holds a slot for one."""
+        make_document("firefox", "F7", "T7", "https://en.wikipedia.org/wiki/Python", None)
+        seen: list[bool] = []
+
+        async def fake_fetch(client, doc_id, url, *, slot_held=False):
+            seen.append(slot_held)
+            return FetchResult(doc_id, url, "fetched", "text", 200, None)
+
+        monkeypatch.setattr("pka.ingestion.fetcher._fetch_one", fake_fetch)
+        await fetch_pending()
+        assert seen == [False]
 
     @pytest.mark.asyncio
     async def test_persists_each_result_before_batch_end(self, monkeypatch):
@@ -334,7 +511,7 @@ class TestFetchPending:
 
         make_document("firefox", "F4", "T4", "https://fail.com", None)
 
-        async def fake_fetch(client, doc_id, url):
+        async def fake_fetch(client, doc_id, url, **_):
             return FetchResult(doc_id, url, "unfetchable", None, 404, "not found")
 
         monkeypatch.setattr("pka.ingestion.fetcher._fetch_one", fake_fetch)
@@ -359,7 +536,7 @@ class TestFetchPending:
 
         call = {"n": 0}
 
-        async def fake_fetch(client, doc_id, url):
+        async def fake_fetch(client, doc_id, url, **_):
             call["n"] += 1
             if call["n"] == 1:
                 sp.request_cancel("firefox-fetch")
@@ -384,7 +561,7 @@ class TestFetchPending:
         make_document("firefox", "F11", "T11", "https://b.com", None)
         make_document("firefox", "F12", "T12", "https://c.com", None)
 
-        async def fake_fetch(client, doc_id, url):
+        async def fake_fetch(client, doc_id, url, **_):
             if doc_id == 2:
                 sp.request_cancel("firefox-fetch")
             return FetchResult(doc_id, url, "fetched", "Page text content here.", 200, None)
@@ -407,7 +584,7 @@ class TestFetchAndEmbedPending:
             embed_calls.append((doc_id, text))
             return {"processed": True, "chunks": 2, "skipped": False, "failed": False}
 
-        async def fake_fetch(client, doc_id, url):
+        async def fake_fetch(client, doc_id, url, **_):
             return FetchResult(
                 doc_id,
                 url,
@@ -446,7 +623,7 @@ class TestFetchAndEmbedPending:
             embed_calls.append(doc_id)
             return {"processed": True, "chunks": 1, "skipped": False, "failed": False}
 
-        async def fake_fetch(client, doc_id, url):
+        async def fake_fetch(client, doc_id, url, **_):
             return FetchResult(
                 doc_id, url, "fetched", "Recovered orphan page text content.", 200, None
             )

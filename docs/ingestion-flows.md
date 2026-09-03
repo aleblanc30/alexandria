@@ -291,10 +291,12 @@ flowchart TD
     NW -->|no| SETF
 
     ASYNC["asyncio.run(fetch_and_embed_pending(<br/>embed_fn=embed_fetched_text))"]
-    POOL["_run_fetch_workers()<br/>N workers + asyncio.Queue + Semaphore"]
-    LIM["_limiter.wait(url)<br/>per-domain slot, 1 req/s"]
-    ONE["_fetch_one() — asyncio.wait_for<br/>_fetch_budget_seconds(pdf, wayback, wikipedia, preprint)"]
-    SETF --> ASYNC --> POOL --> LIM --> ONE
+    POOL["_run_fetch_workers()<br/>N workers over one _DomainQueue"]
+    DQ["_DomainQueue.get() — sync<br/>ready domain, else slot-free work,<br/>else soonest domain + its delay"]
+    KEY["_throttle_key(url)<br/>host, or None for a per-site handler"]
+    SLEEP["await asyncio.sleep(delay)<br/>outside the per-URL budget"]
+    ONE["_fetch_one(slot_held=…) — asyncio.wait_for<br/>_fetch_budget_seconds(pdf, wayback, wikipedia, preprint)"]
+    SETF --> ASYNC --> POOL --> KEY --> DQ --> SLEEP --> ONE
 
     subgraph handlers["_fetch_one_impl dispatch — shared fetcher"]
         DISPATCH{"URL shape?"}
@@ -311,6 +313,7 @@ flowchart TD
         DOIO["fetch_doi_url()<br/>doi.org content negotiation (CSL-JSON)<br/>— the bookmarked host, so no flag"]
         PUB["fetch_nature / springer / aps / sciencedirect_article()<br/>DOI (or Elsevier PII) from the URL → api.crossref.org,<br/>+ Semantic Scholar when the record has no abstract<br/>gate: doi_metadata_lookup"]
         EXT["non-HTML extension → skipped"]
+        LIM["_limiter.wait(url)<br/>per-domain slot, 1 req/s —<br/>skipped when the pool already claimed it"]
         GET["httpx GET, follow_redirects"]
         WB["fetch_via_wayback()<br/>gate: fetch_wayback_fallback"]
         PDF["_fetch_pdf_result()<br/>extract_pdf_report() → text,<br/>or no_text_layer for a scan"]
@@ -329,7 +332,7 @@ flowchart TD
         DISPATCH --> DOIO
         DISPATCH --> PUB
         DISPATCH --> EXT
-        DISPATCH --> GET
+        DISPATCH --> LIM --> GET
         GET -->|HTTP 404| WB
         GET -->|PDF bytes / content-type| PDF
         GET -->|amazon book URL| AMZ
@@ -404,7 +407,7 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,LIM,ONE,DISPATCH,EXT,PDF,HTML,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
+    class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,KEY,DQ,SLEEP,LIM,ONE,DISPATCH,EXT,PDF,HTML,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
     class LOADBM,MRUN,QUEUE,EMBED specific
     class NET,GET,WIKI,ARX,BIO,AMZ,DOIO external
     class RG specific

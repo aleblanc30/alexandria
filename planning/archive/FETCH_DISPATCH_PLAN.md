@@ -1,6 +1,6 @@
 # Domain-aware fetch dispatch
 
-**Status:** proposed, not implemented.
+**Status:** implemented, as designed.
 **Touches:** `pka/ingestion/fetcher.py`, `pka/ingestion/rate_limit.py`, `docs/ingestion-flows.md`.
 
 ## The problem
@@ -161,7 +161,6 @@ this must be redrawn in the same commit; only the Firefox graph is affected
 
 ## Note on formatting
 
-`ruff check` is clean on this change, but `ruff format --check` wants to
-reformat any file touched here — it also wants to reformat 182 of the repo's
-203 files, so the formatter is not enforced at baseline. Leave formatting alone
-rather than bury the diff in unrelated churn.
+*Stale as written:* the repo has since been brought to a clean
+`ruff format --check`, so touched files are formatted normally now. The note
+described a baseline where 182 of 203 files were unformatted.

@@ -139,7 +139,7 @@ duplicate-code report lands entirely in this family: `arxiv.py:177-210` ≡
 `biorxiv.py:139-172`, `arxiv.py:241-260` ≡ `biorxiv.py:209-228`,
 `biorxiv.py:107-127` ≡ `reddit_bookmark.py:161-181`, `pubmed.py:131-146` ≡
 `reddit_bookmark.py:161-176`, `runners/firefox.py:125-139` ≡
-`runners/reddit.py:184-198`. `planning/FETCH_DISPATCH_PLAN.md` and
+`runners/reddit.py:184-198`. `planning/archive/FETCH_DISPATCH_PLAN.md` and
 `planning/archive/PUBLISHER_FETCH_HANDLERS.md` already proposed the handler registry
 that fixes this; the duplicated blocks above are the concrete lines a shared
 `fetch_base` template should absorb. No new item.

@@ -134,6 +134,49 @@ async def test_concurrent_same_domain_requests_are_spaced():
     assert stamps[-1] - stamps[0] >= 0.45, stamps
 
 
+class TestNextSlot:
+    """The read-only scheduling query ``_DomainQueue`` orders buckets by."""
+
+    def test_reserves_nothing(self):
+        sched = SlotScheduler(rps=1.0, clock=_FakeClock())
+        assert sched.next_slot("a.com") == sched.next_slot("a.com")
+        assert sched.claim("a.com") == 0.0  # still the first claim
+
+    def test_reflects_a_claim(self):
+        clock = _FakeClock()
+        sched = SlotScheduler(rps=2.0, clock=clock)  # 0.5s gap
+        sched.claim("a.com")
+        assert sched.next_slot("a.com") == pytest.approx(clock.now + 0.5)
+
+    def test_orders_busy_domain_after_idle_one(self):
+        clock = _FakeClock()
+        sched = SlotScheduler(rps=1.0, clock=clock)
+        sched.claim("busy.com")
+        assert sched.next_slot("idle.com") < sched.next_slot("busy.com")
+
+    def test_readings_at_different_times_stay_comparable(self):
+        """Why it returns an absolute time, not a delay.
+
+        Two delays that both read "0.1s away" are 0.9s apart when one was taken
+        at t=0 and the other at t=0.9; a queue that compares them picks wrong.
+        """
+        clock = _FakeClock()
+        sched = SlotScheduler(rps=1.0, clock=clock)
+        sched.claim("early.com")
+        early = sched.next_slot("early.com")
+        clock.now += 0.9
+        sched.claim("late.com")
+        late = sched.next_slot("late.com")
+        assert early < late
+
+    def test_elapsed_gap_is_not_in_the_past(self):
+        clock = _FakeClock()
+        sched = SlotScheduler(rps=1.0, clock=clock)
+        sched.claim("a.com")
+        clock.now += 10.0
+        assert sched.next_slot("a.com") == clock.now
+
+
 class TestSyncRateLimiter:
     def test_same_domain_is_spaced(self):
         limiter = SyncRateLimiter(rps=10.0)  # 0.1s gap
