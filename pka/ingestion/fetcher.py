@@ -9,6 +9,8 @@ Strategy:
   - Scanned PDFs (readable, paginated, no text layer) → "no_text_layer", never re-fetched
   - Other non-HTML targets (EPUB, torrents, …) flagged as "skipped"
   - Local ``file:`` URLs and bare filesystem paths → "unfetchable" (no HTTP fetch)
+  - Extracted text that is a consent wall, a bot check or a bare stylesheet →
+    "unfetchable" with the wall named, never stored (``content_gate.py``)
   - Auth failures, timeouts, 4xx/5xx → status "unfetchable", logged to fetch_log
   - HTTP 404 with ``fetch_wayback_fallback`` enabled → query archive.org for a snapshot
   - ``*.wikipedia.org`` URLs → MediaWiki Action API (with retries) instead of HTML scrape
@@ -54,6 +56,7 @@ from pka.config import settings as cfg
 from pka.constants import FetchStatus, Source
 from pka.db.queries import get_engine
 from pka.db.schema import documents, fetch_log
+from pka.ingestion.content_gate import interstitial_reason
 from pka.ingestion.fetch_base import (  # re-exported: shared primitives live one layer down
     _HTML_TYPES,
     FetchResult,
@@ -532,6 +535,14 @@ async def _fetch_one_impl(
         return FetchResult(
             doc_id, url, "unfetchable", None, http_status, "content extraction yielded no text"
         )
+
+    # A consent wall or a stylesheet extracts as cleanly as an article does, so
+    # nothing above this rejects it. Recording it unfetchable — rather than
+    # storing it — keeps meaningless text out of the chunks and the vector
+    # store, and puts the domain in the unfetchable lists, where a missing
+    # handler is something the operator can see and act on.
+    if reason := interstitial_reason(text):
+        return FetchResult(doc_id, url, "unfetchable", None, http_status, reason)
 
     return FetchResult(doc_id, url, "fetched", text, http_status, None)
 

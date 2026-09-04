@@ -350,15 +350,18 @@ class TestResolveDescription:
     def test_strips_markup_from_a_stored_summary(self):
         assert resolve_description("<p>Abstract text.</p>", None) == "Abstract text."
 
-    def test_refuses_an_interstitial_as_a_summary(self):
-        wall = "JavaScript is disabled in your browser. Please enable JavaScript to proceed."
-        assert resolve_description(wall, None) == ""
+    def test_shows_what_was_stored_including_junk(self):
+        """Junk is *not* suppressed here, deliberately.
 
-    def test_does_not_swap_one_interstitial_for_the_same_one(self):
-        """For a page whose scrape returned a consent wall, the stored summary
-        and the first chunk are both that wall — falling back gains nothing."""
-        wall = "Bevor Sie zu YouTube weitergehen Wir verwenden Cookies und Daten"
-        assert resolve_description(None, wall) == ""
+        A card that quietly goes blank for a page whose scrape returned a consent
+        wall hides the one thing worth knowing — that the URL needs a handler —
+        while the meaningless text stays chunked and embedded either way.
+        ``ingestion/content_gate.py`` keeps such a page out of the archive at
+        fetch time instead; see tests/test_content_gate.py.
+        """
+        wall = "JavaScript is disabled in your browser. Please enable JavaScript to proceed."
+        assert resolve_description(wall, None) == wall
+        assert resolve_description(None, wall) == wall
 
 
 class TestFilterDocumentIds:

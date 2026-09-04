@@ -1,18 +1,17 @@
 """Card summary text for browse/search cards.
 
-Two shapes of junk reach a card and neither is the writer's fault, so both are
-cleaned here rather than at each of the dozen call sites:
+Abstracts arrive as JATS or HTML from Crossref, Zotero and Calibre —
+``<h3>Abstract</h3> <p>We report…``. ``doi_meta.strip_jats`` cleans the Crossref
+rung, but a Zotero ``abstractNote`` is copied verbatim, so ``truncate_summary``
+strips tags for everyone. Because every card path (write *and* read, via
+``queries.resolve_description``) goes through it, this also fixes rows already
+stored, with no re-ingestion. The text itself is genuine prose either way — this
+is presentation, and nothing is hidden by it.
 
-- **Markup.** Abstracts arrive as JATS or HTML from Crossref, Zotero and
-  Calibre — ``<h3>Abstract</h3> <p>We report…``. ``doi_meta.strip_jats`` cleans
-  the Crossref rung, but a Zotero ``abstractNote`` is copied verbatim, so
-  ``truncate_summary`` strips tags for everyone. Because every card path (write
-  *and* read, via ``queries.resolve_description``) goes through it, this also
-  fixes rows already stored, with no re-ingestion.
-- **Interstitials.** A consent wall or a "JavaScript is disabled" page is what a
-  scrape returns for YouTube channel pages, webmail and app shells. It is real
-  page text, so nothing upstream rejects it; ``looks_like_boilerplate`` marks it
-  so a card can show nothing rather than something wrong.
+Junk of the other kind — a consent wall or a stylesheet returned in place of the
+page — is deliberately *not* handled here. Suppressing it on the card leaves the
+meaningless text chunked and embedded, and removes the only signal that the URL
+needs a handler. ``ingestion/content_gate.py`` rejects it at fetch time instead.
 """
 
 from __future__ import annotations
@@ -36,29 +35,6 @@ _ABSTRACT_HEADING_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Checked against the opening of a summary only: a page *about* cookie consent
-# says so in its prose, an interstitial leads with it.
-_BOILERPLATE_HEAD_CHARS = 200
-_BOILERPLATE_RE = re.compile(
-    r"""
-    javascript\ (is\ |must\ )
-    | enable\ javascript
-    | requires\ javascript
-    | (does\ not|doesn't)\ support\ javascript
-    | you\ need\ to\ enable\ javascript
-    | before\ you\ continue
-    | bevor\ sie\ zu                      # google/youtube consent wall, de
-    | vor\ der\ weiterleitung
-    | we\ use\ cookies\ and\ data
-    | wir\ verwenden\ cookies             # …and its german twin
-    | accept\ all\ cookies
-    | checking\ your\ browser\ before
-    | (verify|confirm)\ (you\ are|that\ you\ are)\ (a\ )?human
-    | enable\ cookies\ to\ continue
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
-
 
 def clean_summary_text(text: str) -> str:
     """Strip markup and unescape entities, leaving readable prose.
@@ -68,18 +44,6 @@ def clean_summary_text(text: str) -> str:
     instead of becoming a tag this then removes.
     """
     return html.unescape(_TAG_RE.sub(" ", _ABSTRACT_HEADING_RE.sub("", text)))
-
-
-def looks_like_boilerplate(text: str | None) -> bool:
-    """True when ``text`` is a consent wall or a "turn on JavaScript" notice.
-
-    Only the opening of the text is examined — see ``_BOILERPLATE_HEAD_CHARS``.
-    A false positive costs a card its summary; a false negative shows the wall,
-    which is what this exists to stop.
-    """
-    if not text:
-        return False
-    return _BOILERPLATE_RE.search(text[:_BOILERPLATE_HEAD_CHARS]) is not None
 
 
 def truncate_summary(text: str | None, max_len: int = SUMMARY_MAX_LEN) -> str:

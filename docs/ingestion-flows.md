@@ -320,6 +320,8 @@ flowchart TD
         PDF["_fetch_pdf_result()<br/>extract_pdf_report() → text,<br/>or no_text_layer for a scan"]
         AMZ["extract_amazon_book()<br/>title + editorial summary"]
         HTML["_extract_text()<br/>trafilatura → readability-lxml"]
+        GATE{"interstitial_reason()<br/>consent wall · bot check · stylesheet ·<br/>inline script · embedded data?"}
+        REJECT["unfetchable, wall named<br/>never chunked or embedded"]
         DISPATCH --> SRCH
         DISPATCH --> WIKI
         DISPATCH --> YT
@@ -339,6 +341,8 @@ flowchart TD
         GET -->|PDF bytes / content-type| PDF
         GET -->|amazon book URL| AMZ
         GET -->|text/html| HTML
+        HTML --> GATE
+        GATE -->|interstitial| REJECT
     end
 
     ONE --> DISPATCH
@@ -370,7 +374,8 @@ flowchart TD
     BIO --> RESULT
     PDF --> RESULT
     AMZ --> RESULT
-    HTML --> RESULT
+    GATE -->|real content| RESULT
+    REJECT --> RESULT
     EXT --> RESULT
     RESULT --> PERSIST --> ADV
 
@@ -409,7 +414,7 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,KEY,DQ,SLEEP,LIM,ONE,DISPATCH,EXT,PDF,HTML,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
+    class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,KEY,DQ,SLEEP,LIM,ONE,DISPATCH,EXT,PDF,HTML,GATE,REJECT,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
     class LOADBM,MRUN,QUEUE,EMBED specific
     class NET,GET,WIKI,ARX,BIO,AMZ,DOIO external
     class RG,YTP specific

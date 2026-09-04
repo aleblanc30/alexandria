@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.0.10
+
+### Ingestion
+
+- **Consent walls and bot checks are rejected at fetch time, not hidden on the
+  card.** The previous fix suppressed a stored interstitial on read
+  (`resolve_description` returned `""` for text matching `looks_like_boilerplate`),
+  which left the wall chunked and embedded in Chroma regardless, and destroyed
+  the only signal that a URL needed a real handler. `pka/ingestion/content_gate.py`
+  now runs `interstitial_reason` against the opening of extracted text inside
+  `_fetch_one_impl`; a hit is recorded `unfetchable` with the wall named, so it
+  never reaches the chunk/embedding pipeline and shows up in `fetch_log` and the
+  top-unfetchable-domains panel instead. Tuned against the live archive: 97/9230
+  fetched documents (1.05%) match, every one confirmed junk on inspection
+  (JSTOR/PyPI bot challenges, webmail, Box, Scribd, Streamlit shells, JSON-LD,
+  `window.WIZ_global_data`). `card_summary.py`'s `looks_like_boilerplate` is
+  removed; markup cleaning (`clean_summary_text`) is unaffected.
+- One-off re-queue against the installed archive for documents a newer handler
+  now covers: 634 documents (556 search-URL, 41 YouTube channel/playlist, 37
+  ResearchGate) had their body chunks and 1474 Chroma vectors dropped,
+  `card_summary` cleared, and status reset `fetched` → `pending`.
+
 ## v0.0.9
 
 ### Ingestion

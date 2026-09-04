@@ -1,11 +1,8 @@
 """Tests for card summary text helpers."""
 
-import pytest
-
 from pka.card_summary import (
     body_excerpt,
     clean_summary_text,
-    looks_like_boilerplate,
     preprint_card_summary,
     truncate_summary,
 )
@@ -64,38 +61,6 @@ class TestCleanSummaryText:
         """Tags go before entities are unescaped, so text an author escaped on
         purpose is not stripped as if it were markup."""
         assert "<p>" in clean_summary_text("the &lt;p&gt; element")
-
-
-class TestLooksLikeBoilerplate:
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "JavaScript is disabled in your browser. Please enable JavaScript to proceed.",
-            "Note: Your browser does not support JavaScript, Press Continue to proceed...",
-            "You need to enable JavaScript to run this app.",
-            "JavaScript must be enabled. Outlook",
-            "Bevor Sie zu YouTube weitergehen Wir verwenden Cookies und Daten",
-            "Before you continue to Google We use cookies and data to deliver services",
-        ],
-    )
-    def test_interstitials_are_recognized(self, text):
-        assert looks_like_boilerplate(text)
-
-    def test_none_and_empty_are_not_boilerplate(self):
-        assert not looks_like_boilerplate(None)
-        assert not looks_like_boilerplate("")
-
-    def test_ordinary_prose_survives(self):
-        assert not looks_like_boilerplate(
-            "A history of the browser wars, from Netscape to the JavaScript era."
-        )
-
-    def test_only_the_opening_is_examined(self):
-        """A page *about* consent banners says so in its prose; an interstitial
-        leads with it."""
-        prose = "An essay on tracking. " * 12 + "we use cookies and data"
-        assert len(prose) > 200
-        assert not looks_like_boilerplate(prose)
 
 
 class TestBodyExcerpt:

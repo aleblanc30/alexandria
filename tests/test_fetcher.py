@@ -178,6 +178,23 @@ class TestFetchOne:
         assert len(result.text) > 0
 
     @pytest.mark.asyncio
+    async def test_an_interstitial_is_unfetchable_not_content(self, monkeypatch):
+        """A consent wall extracts as cleanly as an article. Storing it would put
+        meaningless text in the chunks and the vector store; recording it
+        unfetchable puts the domain where a missing handler can be seen."""
+        wall = "JavaScript is disabled in your browser. Please enable JavaScript to proceed."
+        monkeypatch.setattr("pka.ingestion.fetcher._extract_text", lambda html, url: wall)
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = _html_response(200)
+
+        result = await _fetch_one(mock_client, doc_id=1, url="https://webmail.example.com")
+        assert result.status == "unfetchable"
+        assert result.text is None
+        assert result.error_msg == "interstitial: consent or script wall"
+        # The HTTP status is kept: the request succeeded, the content did not.
+        assert result.http_status == 200
+
+    @pytest.mark.asyncio
     async def test_unfetchable_on_404(self):
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.get.return_value = _html_response(404)

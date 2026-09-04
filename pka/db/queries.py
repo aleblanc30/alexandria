@@ -12,7 +12,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from pka.card_summary import looks_like_boilerplate, truncate_summary
+from pka.card_summary import truncate_summary
 from pka.config import settings as cfg
 from pka.constants import FetchStatus, Source, TagOrigin
 from pka.db.schema import (
@@ -662,16 +662,15 @@ def existing_chunk_count(document_id: int) -> int:
 def resolve_description(card_summary: str | None, chunk_text: str | None) -> str:
     """Prefer stored card summary; fall back to first-chunk snippet.
 
-    A consent wall or "enable JavaScript" notice is refused rather than shown:
-    for a page whose scrape returned an interstitial, the stored summary *and*
-    the first chunk are both that interstitial, so the fallback would only swap
-    one piece of junk for the same one. An empty description reads as "no
-    summary", which is the truth.
+    Whatever was stored is shown, junk included. A card that quietly goes blank
+    for a page whose scrape returned a consent wall hides the one thing worth
+    knowing — that the URL needs a handler — while the meaningless text stays
+    chunked and embedded regardless. ``ingestion/content_gate.py`` keeps such a
+    page out of the archive in the first place.
     """
-    chosen = card_summary if (card_summary and card_summary.strip()) else chunk_text
-    if looks_like_boilerplate(chosen):
-        return ""
-    return truncate_summary(chosen)
+    if card_summary and card_summary.strip():
+        return truncate_summary(card_summary)
+    return truncate_summary(chunk_text)
 
 
 def set_fetch_status(doc_id: int, status: FetchStatus | str) -> None:
