@@ -343,6 +343,7 @@ class TestThrottleKey:
             "https://en.wikipedia.org/wiki/Python",
             "https://arxiv.org/abs/2401.00001",
             "https://www.biorxiv.org/content/10.1101/2020.01.01.900000v1",
+            "https://www.youtube.com/c/EasyTurkish/videos",
         ],
     )
     def test_per_site_handlers_need_no_worker_slot(self, url):

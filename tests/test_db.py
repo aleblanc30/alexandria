@@ -347,6 +347,19 @@ class TestResolveDescription:
         assert len(desc) <= 300
         assert "word" in desc
 
+    def test_strips_markup_from_a_stored_summary(self):
+        assert resolve_description("<p>Abstract text.</p>", None) == "Abstract text."
+
+    def test_refuses_an_interstitial_as_a_summary(self):
+        wall = "JavaScript is disabled in your browser. Please enable JavaScript to proceed."
+        assert resolve_description(wall, None) == ""
+
+    def test_does_not_swap_one_interstitial_for_the_same_one(self):
+        """For a page whose scrape returned a consent wall, the stored summary
+        and the first chunk are both that wall — falling back gains nothing."""
+        wall = "Bevor Sie zu YouTube weitergehen Wir verwenden Cookies und Daten"
+        assert resolve_description(None, wall) == ""
+
 
 class TestFilterDocumentIds:
     def test_no_filters_returns_all(self):

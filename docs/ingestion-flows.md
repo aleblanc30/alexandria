@@ -303,6 +303,7 @@ flowchart TD
         SRCH["search_url_result()<br/>query decoded from the URL — no request"]
         WIKI["fetch_wikipedia_with_retries()<br/>MediaWiki Action API"]
         YT["fetch_youtube_video()<br/>oEmbed — title + channel, no key"]
+        YTP["youtube_page_result()<br/>channel / playlist card from the URL — no request<br/>(a scrape returns Google's consent wall)"]
         RDT["fetch_reddit_thread()<br/>.json listing; url-derived fallback if blocked"]
         ARX["fetch_arxiv_paper()<br/>export.arxiv.org + PDF"]
         BIO["fetch_biorxiv_paper()<br/>api.biorxiv.org + PDF"]
@@ -322,6 +323,7 @@ flowchart TD
         DISPATCH --> SRCH
         DISPATCH --> WIKI
         DISPATCH --> YT
+        DISPATCH --> YTP
         DISPATCH --> RDT
         DISPATCH --> ARX
         DISPATCH --> BIO
@@ -410,7 +412,7 @@ flowchart TD
     class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,KEY,DQ,SLEEP,LIM,ONE,DISPATCH,EXT,PDF,HTML,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
     class LOADBM,MRUN,QUEUE,EMBED specific
     class NET,GET,WIKI,ARX,BIO,AMZ,DOIO external
-    class RG specific
+    class RG,YTP specific
     class WB,SUM,LLM,MITP,PUB,DMIT gated
     class PLACES,SQLITE,CHROMA store
 ```

@@ -14,6 +14,8 @@ Strategy:
   - ``*.wikipedia.org`` URLs → MediaWiki Action API (with retries) instead of HTML scrape
   - Amazon book product pages → title + editorial summary extracted for browse cards
   - YouTube video URLs → oEmbed API (title + channel, no API key); title on cards
+  - YouTube channel / playlist URLs → card from the URL, no request (a scrape returns
+    Google's consent interstitial, which then reads as the document)
   - Reddit thread URLs → public ``.json`` listing (title + selftext, or top comments
     for a link post); URL-derived title/subreddit fallback when blocked
   - ``arxiv.org`` URLs → export.arxiv.org API (metadata + PDF); title and abstract on cards
@@ -197,13 +199,15 @@ def _throttle_key(url: str) -> str | None:
     from pka.ingestion.search_url import parse_search_url
     from pka.ingestion.springer import parse_springer_url
     from pka.ingestion.wikipedia import is_wikipedia_special, parse_wikipedia_url
-    from pka.ingestion.youtube_bookmark import parse_youtube_url
+    from pka.ingestion.youtube_bookmark import parse_youtube_page_url, parse_youtube_url
 
     if bookmark_url_unfetchable_reason(url):
         return None
     if is_wikipedia_special(url) or parse_wikipedia_url(url) is not None:
         return None
     if parse_search_url(url) is not None or parse_researchgate_url(url) is not None:
+        return None
+    if parse_youtube_page_url(url) is not None:
         return None
     for parse in (
         parse_youtube_url,
@@ -361,12 +365,21 @@ async def _fetch_one_impl(
     if parse_wikipedia_url(url) is not None:
         return await fetch_wikipedia_with_retries(client, doc_id, url)
 
-    from pka.ingestion.youtube_bookmark import fetch_youtube_video, parse_youtube_url
+    from pka.ingestion.youtube_bookmark import (
+        fetch_youtube_video,
+        parse_youtube_url,
+        youtube_page_result,
+    )
 
     if parse_youtube_url(url):
         result = await fetch_youtube_video(client, doc_id, url)
         if result is not None:
             return result
+
+    # Sync and un-awaited: a channel or playlist card is built from the URL, and
+    # scraping one returns Google's consent interstitial, not page content.
+    if (result := youtube_page_result(doc_id, url)) is not None:
+        return result
 
     from pka.ingestion.reddit_bookmark import fetch_reddit_thread, parse_reddit_permalink
 

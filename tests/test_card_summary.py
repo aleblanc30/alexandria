@@ -1,6 +1,14 @@
 """Tests for card summary text helpers."""
 
-from pka.card_summary import body_excerpt, preprint_card_summary, truncate_summary
+import pytest
+
+from pka.card_summary import (
+    body_excerpt,
+    clean_summary_text,
+    looks_like_boilerplate,
+    preprint_card_summary,
+    truncate_summary,
+)
 
 
 class TestTruncateSummary:
@@ -16,6 +24,78 @@ class TestTruncateSummary:
         result = truncate_summary(text, max_len=50)
         assert len(result) <= 51
         assert result.endswith("…")
+
+    def test_strips_markup(self):
+        """Every card path runs through here, on the read side too, so stored
+        rows with markup in them are cleaned without re-ingestion."""
+        assert truncate_summary("<p>Plain <em>prose</em>.</p>") == "Plain prose ."
+
+
+class TestCleanSummaryText:
+    """Abstracts arrive as JATS or HTML from Crossref, Zotero and Calibre."""
+
+    def test_strips_tags(self):
+        raw = "<p>We report the discovery.</p> <em>Really.</em>"
+        assert clean_summary_text(raw).split() == ["We", "report", "the", "discovery.", "Really."]
+
+    def test_drops_a_leading_abstract_heading(self):
+        """Stripping its tags alone would glue "Abstract" to the first sentence."""
+        raw = "<h3>Abstract</h3> <p>We report the discovery.</p>"
+        assert clean_summary_text(raw).split() == ["We", "report", "the", "discovery."]
+        jats = "<jats:title>Abstract</jats:title><jats:p>Body text.</jats:p>"
+        assert clean_summary_text(jats).split() == ["Body", "text."]
+
+    def test_keeps_a_summary_that_merely_starts_with_the_word(self):
+        assert clean_summary_text("Abstract algebra for beginners.").startswith("Abstract algebra")
+
+    def test_strips_namespaced_and_attributed_tags(self):
+        raw = '<jats:p>Body</jats:p> <a href="http://x/y">link</a>'
+        assert "jats" not in clean_summary_text(raw)
+        assert "href" not in clean_summary_text(raw)
+
+    def test_unescapes_entities(self):
+        assert "Smith & Jones" in clean_summary_text("Smith &amp; Jones")
+
+    def test_leaves_comparisons_alone(self):
+        """A bare ``<`` in prose is not a tag; ``p < 0.05`` must survive."""
+        assert clean_summary_text("we found p < 0.05 overall") == "we found p < 0.05 overall"
+
+    def test_escaped_markup_stays_visible(self):
+        """Tags go before entities are unescaped, so text an author escaped on
+        purpose is not stripped as if it were markup."""
+        assert "<p>" in clean_summary_text("the &lt;p&gt; element")
+
+
+class TestLooksLikeBoilerplate:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "JavaScript is disabled in your browser. Please enable JavaScript to proceed.",
+            "Note: Your browser does not support JavaScript, Press Continue to proceed...",
+            "You need to enable JavaScript to run this app.",
+            "JavaScript must be enabled. Outlook",
+            "Bevor Sie zu YouTube weitergehen Wir verwenden Cookies und Daten",
+            "Before you continue to Google We use cookies and data to deliver services",
+        ],
+    )
+    def test_interstitials_are_recognized(self, text):
+        assert looks_like_boilerplate(text)
+
+    def test_none_and_empty_are_not_boilerplate(self):
+        assert not looks_like_boilerplate(None)
+        assert not looks_like_boilerplate("")
+
+    def test_ordinary_prose_survives(self):
+        assert not looks_like_boilerplate(
+            "A history of the browser wars, from Netscape to the JavaScript era."
+        )
+
+    def test_only_the_opening_is_examined(self):
+        """A page *about* consent banners says so in its prose; an interstitial
+        leads with it."""
+        prose = "An essay on tracking. " * 12 + "we use cookies and data"
+        assert len(prose) > 200
+        assert not looks_like_boilerplate(prose)
 
 
 class TestBodyExcerpt:
