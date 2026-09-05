@@ -43,6 +43,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, replace
+from html import unescape
 from urllib.parse import quote, unquote
 
 import httpx
@@ -65,7 +66,9 @@ _CSL_ACCEPT = "application/vnd.citationstyles.csl+json"
 # the next slash and may itself contain slashes.
 _DOI_PREFIX_SEGMENT = re.compile(r"^10\.\d{4,9}$")
 _DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$")
-_TAG_RE = re.compile(r"<[^>]+>")
+# A tag must open with a letter, so a literal comparison in a title
+# ("Superconductivity at T < 100 K") is not mistaken for markup and eaten.
+_TAG_RE = re.compile(r"</?[A-Za-z][\w:.-]*(?:\s[^<>]*)?/?>")
 _JATS_ABSTRACT_TITLE = re.compile(r"<jats:title>\s*abstract\s*</jats:title>", re.IGNORECASE)
 _LEADING_ABSTRACT = re.compile(r"^abstract[\s:.–—-]*", re.IGNORECASE)
 
@@ -127,6 +130,22 @@ def doi_from_path(path: str, *, prefix: str | None = None) -> str | None:
 # ── Record parsing ───────────────────────────────────────────────────────────
 
 
+def clean_text(raw: str | None) -> str | None:
+    """Plain text from a Crossref string field — entities and markup removed.
+
+    Crossref carries markup in *every* text field, not only abstracts: titles
+    arrive with escaped HTML (``An Overview of &lt;i&gt;C. elegans&lt;/i&gt;
+    Biology``), with MathML (``<mml:math ...>`` in APS titles), and with the
+    newlines and runs of spaces of the publisher's own XML. Unescaping first is
+    what turns the escaped form into markup this can then strip; a title that
+    reaches ``documents.title`` unfiltered is what a reader sees on the card.
+    """
+    if not raw:
+        return None
+    text = _TAG_RE.sub(" ", unescape(raw))
+    return " ".join(text.split()).strip() or None
+
+
 def strip_jats(raw: str | None) -> str | None:
     """Crossref abstracts are JATS XML inside a JSON string — return plain text.
 
@@ -136,11 +155,8 @@ def strip_jats(raw: str | None) -> str | None:
     """
     if not raw:
         return None
-    text = _JATS_ABSTRACT_TITLE.sub(" ", raw)
-    text = _TAG_RE.sub(" ", text)
-    text = " ".join(text.split()).strip()
-    text = _LEADING_ABSTRACT.sub("", text).strip()
-    return text or None
+    text = clean_text(_JATS_ABSTRACT_TITLE.sub(" ", raw)) or ""
+    return _LEADING_ABSTRACT.sub("", text).strip() or None
 
 
 def _first(value: object) -> str | None:
@@ -188,7 +204,7 @@ def parse_doi_record(record: object) -> DoiMetadata | None:
     """
     if not isinstance(record, dict):
         return None
-    title = _first(record.get("title"))
+    title = clean_text(_first(record.get("title")))
     doi = normalize_doi(_first(record.get("DOI")) or _first(record.get("doi")))
     if not title or not doi:
         return None
@@ -200,7 +216,7 @@ def parse_doi_record(record: object) -> DoiMetadata | None:
             record.get("abstract") if isinstance(record.get("abstract"), str) else None
         ),
         year=_year(record),
-        container=_first(record.get("container-title")),
+        container=clean_text(_first(record.get("container-title"))),
         type=_first(record.get("type")),
     )
 

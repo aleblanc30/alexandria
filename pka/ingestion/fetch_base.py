@@ -6,8 +6,10 @@ wikipedia) can use these without importing the dispatcher that calls them —
 ``fetcher`` dispatches down to those modules, they depend only on this one.
 """
 
+import re
 import tempfile
 from dataclasses import dataclass
+from html import unescape
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -103,6 +105,32 @@ def _sections_text(sections: list[dict]) -> str | None:
 # ── Content extraction ────────────────────────────────────────────────────────
 
 
+# Elements whose *contents* are code or presentation, not prose. The tag-strip
+# fallbacks below remove tags but keep everything between them, so a page whose
+# main content trafilatura cannot find would otherwise contribute its inline
+# JavaScript and JSON-LD to the archive — "function amw_confirm() { return
+# confirm('Are you sure?') } { "@context" : "http://schema.org" ..." as the
+# opening chunk, and hence as the card summary via body_excerpt().
+_NON_PROSE_ELEMENTS = re.compile(
+    r"<(script|style|noscript|template|svg)\b[^>]*>.*?</\1\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_ANY_TAG = re.compile(r"<[^>]+>")
+
+
+def _tags_to_text(markup: str) -> str:
+    """Strip markup to plain text: drop code elements, tags, then unescape.
+
+    ``unescape`` runs last so a document's ``&#160;`` and ``&amp;`` reach the
+    chunker as the characters they denote rather than as entity source.
+    """
+    text = _NON_PROSE_ELEMENTS.sub(" ", markup)
+    text = _HTML_COMMENT.sub(" ", text)
+    text = _ANY_TAG.sub(" ", text)
+    return re.sub(r"\s+", " ", unescape(text)).strip()
+
+
 def _extract_text(html: str, url: str) -> str | None:
     # Primary: trafilatura (respects main-content heuristics)
     try:
@@ -119,22 +147,15 @@ def _extract_text(html: str, url: str) -> str | None:
         from readability import Document
 
         doc = Document(html)
-        import re
-
-        raw = doc.summary()
-        text = re.sub(r"<[^>]+>", " ", raw)
-        text = re.sub(r"\s+", " ", text).strip()
+        text = _tags_to_text(doc.summary())
         if text:
             return text
     except Exception:
         pass
 
-    # Last resort: strip tags from the raw HTML
+    # Last resort: strip the raw HTML itself.
     try:
-        import re
-
-        text = re.sub(r"<[^>]+>", " ", html)
-        text = re.sub(r"\s+", " ", text).strip()
+        text = _tags_to_text(html)
         if text:
             return text
     except Exception:

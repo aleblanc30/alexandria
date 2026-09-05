@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 from pka.ingestion.doi_meta import (
+    clean_text,
     doi_from_path,
     fetch_doi_metadata,
     parse_doi_record,
@@ -255,3 +256,51 @@ class TestFetchDoiMetadataLadder:
 
         assert lookup.meta is None
         assert lookup.http_status == 404
+
+
+class TestCleanText:
+    """Crossref carries markup in every text field, not only abstracts."""
+
+    def test_unescapes_then_strips_escaped_markup(self):
+        raw = "An Overview of &lt;i&gt;C. elegans&lt;/i&gt; Biology"
+        assert clean_text(raw) == "An Overview of C. elegans Biology"
+
+    def test_strips_mathml_from_an_aps_title(self):
+        raw = 'Target gain <mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow>G</mml:mrow></mml:math>'
+        assert clean_text(raw) == "Target gain G"
+
+    def test_collapses_the_publishers_own_whitespace(self):
+        assert clean_text("Design of the first\n     fusion  experiment\n   ") == (
+            "Design of the first fusion experiment"
+        )
+
+    def test_a_literal_comparison_is_not_eaten_as_markup(self):
+        """A tag opens with a letter; `T < 100 K` must survive intact."""
+        assert clean_text("Superconductivity at T < 100 K in a hydride") == (
+            "Superconductivity at T < 100 K in a hydride"
+        )
+
+    def test_decodes_named_and_numeric_entities(self):
+        assert clean_text("Ca&#178;&#8314; signalling &amp; release") == "Ca²⁺ signalling & release"
+
+    def test_empty_returns_none(self):
+        assert clean_text("") is None
+        assert clean_text(None) is None
+        assert clean_text("<i></i>") is None
+
+
+class TestRecordFieldsAreCleaned:
+    def test_title_and_container_are_sanitised(self):
+        meta = parse_doi_record(
+            {
+                "DOI": "10.1385/1-59745-151-7:1",
+                "title": ["An Overview of &lt;i&gt;C. elegans&lt;/i&gt; Biology"],
+                "container-title": ["C. &lt;i&gt;elegans&lt;/i&gt;"],
+            }
+        )
+        assert meta is not None
+        assert meta.title == "An Overview of C. elegans Biology"
+        assert meta.container == "C. elegans"
+
+    def test_a_title_that_is_only_markup_is_a_failed_lookup(self):
+        assert parse_doi_record({"DOI": "10.1/x", "title": ["&lt;i&gt;&lt;/i&gt;"]}) is None

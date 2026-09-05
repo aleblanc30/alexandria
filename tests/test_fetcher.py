@@ -1246,3 +1246,78 @@ class TestEventLoopNotBlocked:
         siblings = results[:3]
         assert [r.error_msg for r in siblings] == [None] * 3
         assert all(r.status == "fetched" for r in siblings)
+
+
+class TestLastResortDropsCodeElements:
+    """Regression: the tag-strip fallbacks kept `<script>` *contents*.
+
+    trafilatura and readability both fail on some JS-heavy pages
+    (theanarchistlibrary.org, edx.org), so `_extract_text` reaches its last
+    resort, which removed tags but not what sat between them. The archive then
+    took on the page's inline JavaScript and JSON-LD as its opening chunk — and
+    so as its card summary, via `body_excerpt`.
+    """
+
+    @staticmethod
+    def _no_extractors(monkeypatch):
+        import sys
+
+        fake_traf = MagicMock()
+        fake_traf.extract.return_value = None
+        monkeypatch.setitem(sys.modules, "trafilatura", fake_traf)
+        fake_readability = MagicMock()
+        fake_readability.Document = MagicMock(side_effect=RuntimeError("no readability"))
+        monkeypatch.setitem(sys.modules, "readability", fake_readability)
+
+    def test_script_contents_never_reach_the_text(self, monkeypatch):
+        self._no_extractors(monkeypatch)
+        from pka.ingestion.fetcher import _extract_text
+
+        html = (
+            "<html><head><script>function amw_confirm() { return confirm('Are you sure?') }"
+            '</script><script type="application/ld+json">{ "@context": "http://schema.org" }'
+            "</script><style>.x{color:red}</style></head>"
+            "<body><p>An Anarchist FAQ</p></body></html>"
+        )
+        text = _extract_text(html, "https://theanarchistlibrary.org/library/x")
+
+        assert text == "An Anarchist FAQ"
+        for leak in ("amw_confirm", "schema.org", "color:red", "@context"):
+            assert leak not in text
+
+    def test_entities_are_decoded_not_carried_through(self, monkeypatch):
+        self._no_extractors(monkeypatch)
+        from pka.ingestion.fetcher import _extract_text
+
+        text = _extract_text("<p>Introduction&#160;&#160;2. Anarchism &amp; power</p>", "https://x")
+        assert "&#160;" not in text
+        assert "&amp;" not in text
+        assert text == "Introduction 2. Anarchism & power"
+
+    def test_html_comments_are_dropped(self, monkeypatch):
+        self._no_extractors(monkeypatch)
+        from pka.ingestion.fetcher import _extract_text
+
+        text = _extract_text("<p>Real<!-- tracking pixel id=123 --> body</p>", "https://x")
+        assert "tracking pixel" not in text
+        assert text == "Real body"
+
+    def test_readability_branch_is_cleaned_too(self, monkeypatch):
+        import sys
+
+        fake_traf = MagicMock()
+        fake_traf.extract.return_value = None
+        monkeypatch.setitem(sys.modules, "trafilatura", fake_traf)
+
+        class FakeDoc:
+            def summary(self):
+                return "<div><script>var x = 1;</script><p>Body&#160;text.</p></div>"
+
+        fake_readability = MagicMock()
+        fake_readability.Document = lambda html: FakeDoc()
+        monkeypatch.setitem(sys.modules, "readability", fake_readability)
+        from pka.ingestion.fetcher import _extract_text
+
+        text = _extract_text("<html></html>", "https://x.com")
+        assert "var x" not in text
+        assert text == "Body text."
