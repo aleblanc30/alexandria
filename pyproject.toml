@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pka"
-version = "0.0.10"
+version = "0.0.11"
 description = "Alexandria — local-first research library"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -21,6 +21,9 @@ dependencies = [
     "pdfplumber>=0.11",
     "ebooklib>=0.18",
     "trafilatura>=1.9",
+    # Arrives with trafilatura and readability-lxml, but fetch_base imports it
+    # directly to strip markup, so it is declared rather than assumed.
+    "lxml>=5",
 
     # Clustering
     "numpy>=1.26",

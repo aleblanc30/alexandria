@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.0.11
+
+### Ingestion
+
+- **Extraction uses an HTML parser instead of a tag regex.** `_extract_text`'s
+  two tag-strip fallbacks removed tags but kept what sat between them, so a page
+  where trafilatura *and* readability both fail contributed its inline
+  JavaScript and JSON-LD to the archive as prose — opening chunk, and therefore
+  card summary via `body_excerpt`. Measured against the installed archive:
+  **1,660 documents, 58,760 chunks, 212 MB of text**, led by
+  `theanarchistlibrary.org` (22 docs, 18 MB), `docs.google.com`, `theses.fr` and
+  `amazon.com`. `_tags_to_text` now parses with lxml, drops
+  `script`/`style`/`noscript`/`template`/`svg` subtrees, and unescapes on the
+  way out, so `&#160;` and `&amp;` reach the chunker as characters. Two failures
+  a regex cannot avoid are now covered by tests: an unclosed `<script>` (nothing
+  for `</script>` to match, so the whole tail leaks) and a `>` inside an
+  attribute value (`<div title="a > b">` ends the "tag" early). lxml arrived
+  transitively with trafilatura; it is now declared in `pyproject.toml`, since
+  code that imports a package by name should not depend on someone else's
+  requirements.
+- **Crossref markup no longer reaches `documents.title`.** Only abstracts went
+  through `strip_jats`, but Crossref carries markup in every text field: titles
+  arrive with escaped HTML (`An Overview of &lt;i&gt;C. elegans&lt;/i&gt;
+  Biology`), with MathML in APS physics titles, and with the publisher's own
+  newlines. `clean_text` unescapes, strips and collapses, and runs on
+  `title` and `container-title` as well as the abstract. Its tag pattern
+  requires a tag to open with a letter, so a literal comparison in a title
+  (`Superconductivity at T < 100 K`) is no longer eaten as markup.
+- One-off purge against the installed archive for junk both bugs had already
+  written: **1,982 documents, 63,212 chunks, ~730 MB of text** — 322 YouTube
+  channel/playlist pages scraped before `youtube_page_result` was deployed, plus
+  the 1,660 script-leakage documents above — had their body chunks and Chroma
+  vectors dropped and status reset `fetched` → `pending`.
+
 ## v0.0.10
 
 ### Ingestion

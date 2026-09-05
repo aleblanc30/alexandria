@@ -105,30 +105,51 @@ def _sections_text(sections: list[dict]) -> str | None:
 # ── Content extraction ────────────────────────────────────────────────────────
 
 
-# Elements whose *contents* are code or presentation, not prose. The tag-strip
-# fallbacks below remove tags but keep everything between them, so a page whose
-# main content trafilatura cannot find would otherwise contribute its inline
-# JavaScript and JSON-LD to the archive — "function amw_confirm() { return
-# confirm('Are you sure?') } { "@context" : "http://schema.org" ..." as the
-# opening chunk, and hence as the card summary via body_excerpt().
-_NON_PROSE_ELEMENTS = re.compile(
-    r"<(script|style|noscript|template|svg)\b[^>]*>.*?</\1\s*>",
-    re.IGNORECASE | re.DOTALL,
-)
-_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+# Elements whose *contents* are code or presentation, not prose. Dropped before
+# the text is taken, so a page whose main content trafilatura cannot find does
+# not contribute its inline JavaScript and JSON-LD to the archive — "function
+# amw_confirm() { return confirm('Are you sure?') } { "@context" :
+# "http://schema.org" ..." as the opening chunk, and hence as the card summary
+# via body_excerpt().
+_NON_PROSE_XPATH = "//script|//style|//noscript|//template|//svg"
+# Only for the degraded path below, when lxml cannot parse the input at all.
 _ANY_TAG = re.compile(r"<[^>]+>")
 
 
 def _tags_to_text(markup: str) -> str:
-    """Strip markup to plain text: drop code elements, tags, then unescape.
+    """Markup to plain text, with a real parser rather than a tag regex.
 
-    ``unescape`` runs last so a document's ``&#160;`` and ``&amp;`` reach the
-    chunker as the characters they denote rather than as entity source.
+    This runs only where trafilatura *and* readability have already failed, so
+    its input is the malformed end of the web — which is precisely where a
+    regex stripper goes wrong. Two failures that cost the archive real damage:
+    an unclosed ``<script>`` (nothing for ``</script>`` to match, so the whole
+    tail leaks as prose) and a ``>`` inside an attribute value (``<div title="a
+    > b">`` ends the "tag" early, leaking ``b">``). An HTML parser applies the
+    spec's tokenizer to both, and decodes entities on the way out, so ``&#160;``
+    and ``&amp;`` reach the chunker as characters.
+
+    lxml arrives with trafilatura and readability-lxml but is declared directly
+    in ``pyproject.toml``: a transitive dependency that the code imports by name
+    is one ``pip install`` away from vanishing.
     """
-    text = _NON_PROSE_ELEMENTS.sub(" ", markup)
-    text = _HTML_COMMENT.sub(" ", text)
-    text = _ANY_TAG.sub(" ", text)
-    return re.sub(r"\s+", " ", unescape(text)).strip()
+    if not markup or not markup.strip():
+        return ""
+    try:
+        import lxml.html
+
+        doc = lxml.html.fromstring(markup)
+        for element in doc.xpath(_NON_PROSE_XPATH):
+            element.drop_tree()
+        # itertext() rather than text_content(): the latter concatenates
+        # nodes with no separator, gluing a heading to the paragraph after
+        # it ("An Anarchist FAQIntroduction"). Joining on a space keeps the
+        # element boundary the old tag-substitution gave us for free.
+        return " ".join(" ".join(doc.itertext()).split())
+    except Exception:
+        # A document lxml cannot parse at all (empty, or not markup) still gets
+        # the old best-effort treatment rather than dropping the fetch.
+        text = _ANY_TAG.sub(" ", markup)
+        return " ".join(unescape(text).split())
 
 
 def _extract_text(html: str, url: str) -> str | None:

@@ -1321,3 +1321,56 @@ class TestLastResortDropsCodeElements:
         text = _extract_text("<html></html>", "https://x.com")
         assert "var x" not in text
         assert text == "Body text."
+
+
+class TestParserBeatsTagRegex:
+    """The cases a tag regex gets wrong, on the input this path actually sees.
+
+    `_extract_text` reaches `_tags_to_text` only when trafilatura *and*
+    readability have both failed, so its input is the malformed end of the web
+    — exactly where regex stripping breaks down.
+    """
+
+    @staticmethod
+    def _no_extractors(monkeypatch):
+        import sys
+
+        fake_traf = MagicMock()
+        fake_traf.extract.return_value = None
+        monkeypatch.setitem(sys.modules, "trafilatura", fake_traf)
+        fake_readability = MagicMock()
+        fake_readability.Document = MagicMock(side_effect=RuntimeError("no readability"))
+        monkeypatch.setitem(sys.modules, "readability", fake_readability)
+
+    def test_unclosed_script_does_not_leak_its_tail(self, monkeypatch):
+        """No `</script>` to match on, so a regex leaks everything after it."""
+        self._no_extractors(monkeypatch)
+        from pka.ingestion.fetcher import _extract_text
+
+        text = _extract_text("<p>Body.</p><script>var leak = 42;", "https://x")
+        assert text == "Body."
+        assert "leak" not in text
+
+    def test_angle_bracket_in_an_attribute_does_not_leak(self, monkeypatch):
+        """`<div title="a > b">` ends the "tag" early for `<[^>]+>`."""
+        self._no_extractors(monkeypatch)
+        from pka.ingestion.fetcher import _extract_text
+
+        text = _extract_text('<div title="a > b">Body.</div>', "https://x")
+        assert text == "Body."
+
+    def test_unparseable_input_degrades_rather_than_failing(self, monkeypatch):
+        """lxml raising must not turn a fetched page into an unfetchable one."""
+        self._no_extractors(monkeypatch)
+        from pka.ingestion.fetcher import _extract_text
+
+        assert _extract_text("", "https://x") is None
+        assert _extract_text("   ", "https://x") is None
+
+    def test_block_boundaries_become_whitespace(self, monkeypatch):
+        """text_content() would glue a heading to the paragraph after it."""
+        self._no_extractors(monkeypatch)
+        from pka.ingestion.fetcher import _extract_text
+
+        text = _extract_text("<h1>An Anarchist FAQ</h1><p>Introduction</p>", "https://x")
+        assert text == "An Anarchist FAQ Introduction"
