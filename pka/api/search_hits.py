@@ -26,6 +26,21 @@ log = logging.getLogger(__name__)
 
 Hits = list[tuple[int, float | None]]
 
+# Ceiling on the chunk hits one semantic query asks Chroma for (audit P-5).
+#
+# The request is over-fetched 3x because hits are chunk-level and collapse to
+# one row per document, so asking for exactly ``offset + limit`` routinely comes
+# back with too few distinct documents to fill the page. That term scales with
+# page depth rather than page size: at the default limit, page 1 asks for 60 and
+# offset 2000 asks for 6060, all to return 20 rows.
+#
+# The trade this makes is explicit. Past the cap a deep page sees fewer
+# candidates than it would need, so ``total`` drops and some documents stop
+# appearing. At the default limit that starts around offset 313, well beyond
+# where anyone pages by hand. It also bounds a request that sets a very large
+# ``limit``, which nothing else currently does.
+_MAX_SEMANTIC_HITS = 1000
+
 
 def semantic_hits(req: SearchRequest) -> Hits:
     """Query the vector store and collapse chunk hits to one row per document.
@@ -43,7 +58,7 @@ def semantic_hits(req: SearchRequest) -> Hits:
         # Fetch enough hits to fill the requested page, not just page 1.
         hits = vquery(
             req.query,
-            n_results=(req.offset + req.limit) * 3,
+            n_results=min((req.offset + req.limit) * 3, _MAX_SEMANTIC_HITS),
             where=where_filter or None,
         )
     except Exception:

@@ -10,6 +10,7 @@ import pytest
 
 from pka.api.schemas.search import SearchRequest
 from pka.api.search_hits import (
+    _MAX_SEMANTIC_HITS,
     apply_browse_filters,
     apply_row_filters,
     fulltext_hits,
@@ -75,6 +76,40 @@ class TestSemanticHits:
         monkeypatch.setattr("pka.storage.vector_store.query", _capture)
         semantic_hits(_req(sources=["zotero", "firefox"]))
         assert seen["where"] == {"source": {"$in": ["zotero", "firefox"]}}
+
+    def test_over_fetches_three_times_the_page(self, monkeypatch):
+        seen: dict = {}
+
+        def _capture(query, n_results, where=None):
+            seen["n"] = n_results
+            return []
+
+        monkeypatch.setattr("pka.storage.vector_store.query", _capture)
+        semantic_hits(_req(offset=40, limit=20))
+        assert seen["n"] == 180
+
+    def test_over_fetch_is_capped_at_deep_offsets(self, monkeypatch):
+        """Without the ceiling this would ask Chroma for 6060 hits to return 20."""
+        seen: dict = {}
+
+        def _capture(query, n_results, where=None):
+            seen["n"] = n_results
+            return []
+
+        monkeypatch.setattr("pka.storage.vector_store.query", _capture)
+        semantic_hits(_req(offset=2000, limit=20))
+        assert seen["n"] == _MAX_SEMANTIC_HITS
+
+    def test_over_fetch_cap_also_bounds_a_large_limit(self, monkeypatch):
+        seen: dict = {}
+
+        def _capture(query, n_results, where=None):
+            seen["n"] = n_results
+            return []
+
+        monkeypatch.setattr("pka.storage.vector_store.query", _capture)
+        semantic_hits(_req(limit=100_000))
+        assert seen["n"] == _MAX_SEMANTIC_HITS
 
     def test_no_source_filter_passes_where_none(self, monkeypatch):
         seen: dict = {}
