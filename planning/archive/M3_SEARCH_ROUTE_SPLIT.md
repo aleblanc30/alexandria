@@ -1,5 +1,13 @@
 # M-3: split the `/search` route, and the P-5 column projections that ride with it
 
+**Done** — shipped as the five commits below. Three things landed differently
+than written, all recorded in the M-3 line of `planning/TODO.md`: the guard test
+iterates `DocumentOut.model_fields` rather than asserting a hand-listed set, so
+a field added later is covered without editing it; `archive_url` had to be set
+by direct update in that test because `DocumentWrite` deliberately does not own
+it; and the over-fetch ceiling shipped as the bare constant described here,
+leaving the `SearchRequest` bound discussed under *Out of scope* still open.
+
 Plan for `planning/MAINTAINABILITY_PERFORMANCE_AUDIT.md` §M-3, plus the two
 `select(documents)` projections from §P-5 that touch the same code path. FTS5
 stays out of scope and keeps its own follow-up, as the audit's §6 ordering

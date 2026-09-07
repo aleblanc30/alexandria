@@ -115,7 +115,16 @@ Recommendation:
   `filter_document_ids`), `clusters.py`. `pka/db/queries.py` can stay as a
   re-export shim for one release, the way `pka/pipeline.py` did.
 
-### M-3: the `search` route is one 160-line function (M)
+### M-3: the `search` route is one 160-line function (M) — **done**
+
+Shipped: the five stages moved to `pka/api/search_hits.py` and the router body
+dropped to 20 lines. Two departures from the recommendation below, both to make
+the stages testable alone: `fulltext_hits(con, req)` drops the `existing`
+parameter in favour of a separate `merge_new(base, extra)`, and the helpers are
+public names in a module rather than router privates. `TestSearch` was kept
+whole rather than shrunk — it is the evidence the extraction preserved
+behaviour — and `tests/test_search_hits.py` adds 36 unit tests below it. Plan in
+`M3_SEARCH_ROUTE_SPLIT.md`, now archived.
 
 Evidence: `pka/api/routers/search.py:29`, radon CC 73 (F), ruff C901 28,
 27 branches, 75 statements; 13 commits. It interleaves five concerns: semantic
@@ -408,7 +417,19 @@ Recommendations, independently adoptable:
   batch at the end of the sync phase (`refresh_document_embeddings(ids)` with a
   single `fetch_records_by_document_ids`).
 
-### P-5: search: unbounded title scan and over-wide row fetch (S)
+### P-5: search: unbounded title scan and over-wide row fetch (S) — **2 of 3 done**
+
+Both column projections and the over-fetch ceiling shipped with M-3. The row
+filter now selects `id` / `fetch_status` / `date_added`, and `documents_out_batch`
+selects a `_CARD_COLUMNS` tuple guarded by
+`test_documents_out_batch_populates_every_field`, since a column missing from a
+projection returns `None` from `row.get(...)` rather than raising.
+`document_detail` was deliberately left alone: single row, different column set.
+The semantic over-fetch is capped at `_MAX_SEMANTIC_HITS`, which trades
+completeness past roughly offset 313 for a bounded query.
+
+**Still open: the FTS5 index** (the first bullet). It is a schema change with a
+migration and a backfill, so it stays its own item.
 
 - Fulltext branch (`search.py:64-77`): `documents.title ILIKE '%q%'` with no
   `LIMIT` over the whole table on every fulltext/hybrid search and on every
