@@ -6,6 +6,13 @@ was done (CLAUDE.md forbids running real ingestion), so every performance
 finding below argues from code shape rather than from a measurement. Where a
 number would change the priority, the finding says what to measure.
 
+**Exception:** §5 was re-measured on 2026-09-07 against v0.0.11 at `99567a8`
+and now argues from `pytest --durations` output rather than code shape. That
+turned out to matter — the two slow test groups this audit named from shape
+alone were both wrong, and the real cost was a cross-test state leak no static
+reading would have found. Treat the rest of the performance findings with that
+in mind.
+
 This is a proposal document like the rest of `planning/`: nothing here is
 authoritative about current behaviour. Items are numbered `M-n`
 (maintainability) and `P-n` (performance) so `TODO.md` / `BACKLOG.md` lines can
@@ -492,18 +499,104 @@ index-only aggregate.
 
 ## 5. Test-suite health
 
-- 1,418 tests pass in 261 s on Windows (WSL is roughly 3× faster per the dev
-  notes). The slowest groups are `test_settings_view.py` (≈3 s **per test**,
-  eight tests; they build a full report and probably a fresh `Settings()`
-  plus provider construction each time, so a module-scoped report fixture
-  would cut ~20 s) and `test_clustering.py` (≈2.6 s per test with UMAP/HDBSCAN
-  mocked; worth a `--durations=0` look at what each `run_clustering` call is
-  paying for, likely the sklearn import in P-2 plus real PCA on synthetic
-  data).
-- Coverage 84 % vs the 85 % gate. The low-coverage modules are the same three
-  complexity hotspots (`engine.py` 62 %, `clustering/lifecycle.py` 63 %,
-  `connectors/reddit.py` 59 %) plus `routers/runs.py` 69 % and
-  `routers/tag_training.py` 58 %. M-1 and M-3 will make these testable at the
+**Re-measured 2026-09-07** against v0.0.11 at `99567a8`, on Windows with
+`pytest --durations=0`. The original September-02 numbers are kept below for
+comparison, but both slow groups they named are gone and the actual cause was
+not among them — worth remembering that this section was written from code
+shape (§1), and the shape argument picked the wrong two files.
+
+### 5.1 Where the time went (measured)
+
+Baseline before the fix below: **151.5 s for 1,781 tests** (1,776 passed,
+5 skipped). Per test that is *faster* than the original audit — 85 ms vs
+184 ms — so the suite did not get slower, it got 25% bigger. The budget:
+
+| | | |
+|---|---|---|
+| Per-domain rate limiter leaking between tests | 53 s | 35% |
+| `init_db()` — 875 calls | 22 s | 15% |
+| Remaining per-test fixture floor (~10 ms × 1,756) | ~18 s | 12% |
+| Test bodies themselves | 50 s | 33% |
+
+Split by phase, `setup` was **49% of the whole run** (49.0 s) against 50.0 s of
+`call` and 0.8 s of `teardown`. A suite that spends as long arriving at a test
+as running it is the finding; the individual items below are why.
+
+### 5.2 The rate limiter was 35% of the run — fixed
+
+`ingestion/fetch_base.py`'s `_limiter` is a module-level `AsyncRateLimiter`,
+and `SlotScheduler._next` was never reset between tests. The first test to
+fetch a domain reserved a slot and pushed that domain 1/rps into the future;
+every later test in the process touching the same domain then slept out a full
+second before a fetch that was mocked anyway. It showed up as a band of tests
+pinned at 0.95–1.00 s across `test_fetcher`, `test_wayback`, `test_wikipedia`,
+`test_doi_meta`, `test_direct_mit`, `test_reddit_bookmark`,
+`test_youtube_bookmark`, `test_publisher_handlers` and `test_arxiv`.
+
+Confirmed as a cross-test leak rather than per-test cost: `test_wayback.py`
+runs 10 tests in 8.67 s, but a *single* test from it takes 2.96 s, of which
+~2.5 s is interpreter start.
+
+**This was an isolation defect that happened to show up as slowness** — a
+test's runtime depended on which tests ran before it, which is exactly the
+order dependence that becomes flakiness if anything ever shuffles the order
+(the suite has no `pytest-randomly` today, which is the only reason it stayed
+invisible).
+
+Fixed by `SlotScheduler.reset()` plus a call in `conftest.py`'s autouse
+fixture, over all three limiter singletons (`fetch_base`, `book_search`,
+`openlibrary`). **151.5 s → 92.8 s.** Only the reservations are dropped; the
+production spacing is left alone. That measured the same as disabling the limit
+outright (92.4 s with a 0.1 ms gap), which is the evidence that no test fights
+the limiter inside its own body — and the reason the fix carries no invented
+test-only rps.
+
+Nothing depended on the leaked state: all tests still pass, and the spacing
+arithmetic was already covered where it belongs, by tests building their own
+`SlotScheduler` on a fake clock (`test_rate_limiter.py`, and the `_DomainQueue`
+tests in `test_fetcher.py`). `book_search` and `openlibrary` are reset for the
+same isolation reason but bought no measurable time.
+
+### 5.3 `init_db()` is the next 22 s — open
+
+875 calls across 818 tests, ~25 ms each. On a fresh database `meta.create_all`
+does all the work and every one of `queries.py`'s ~40 migration branches is a
+no-op that still issues its `PRAGMA table_info` and index DDL.
+
+A session-scoped schema template — build once, `shutil.copyfile` per test —
+was measured in isolation at **20.5 ms → 6.8 ms** median, so it recovers about
+**12 s of the 22 s**, not all of it. Worth weighing against the cost: the
+template has to be rebuilt whenever the schema changes, and
+`tests/test_schema_migration.py` exercises `init_db`'s idempotency directly, so
+those tests must keep the real path. Not filed as a numbered item yet.
+
+The remaining ~18 s is a ~10 ms floor on every test — `tmp_path` plus the
+autouse fixture's monkeypatching. The fixture's own reset block
+(`reset_providers`, `reset_gate`, probes, enrichment runs) benchmarks at
+effectively 0 ms, so it is not the cost; M-8 will not help here.
+
+Unmeasured third lever: `pytest-xdist`. The suite is fully mocked and
+`tmp_path`-isolated, and this machine has 12 cores, so it should parallelise
+cleanly — but it needs a new dev dependency and has not been tried.
+
+### 5.4 What the original audit said, and what became of it
+
+- *"`test_settings_view.py` ≈3 s per test, eight tests, a module-scoped report
+  fixture would cut ~20 s"* — **gone, and not by that fix.** The file now costs
+  **0.2 s in total**. `conftest.py` gained a `chat_model` pin, which removed the
+  `/api/tags` probe inside `build_capability_report` that was the real cost. No
+  module-scoped fixture was ever added, and none is needed.
+- *"`test_clustering.py` ≈2.6 s per test"* — **now 144 ms** (7.9 s over 55
+  tests). P-2's lazy sklearn imports and M-1's split did this.
+- Slowest single test is now `test_image_extractor.py::TestClipEmbed::
+  test_image_embedding` at 2.5 s, and only 11 tests exceed 1 s.
+
+### 5.5 Unchanged from the original audit
+
+- Coverage 84% vs the 85% gate. The low-coverage modules are the same three
+  complexity hotspots (`engine.py` 62%, `clustering/lifecycle.py` 63%,
+  `connectors/reddit.py` 59%) plus `routers/runs.py` 69% and
+  `routers/tag_training.py` 58%. M-1 and M-3 will make these testable at the
   unit level rather than through `run_clustering`.
 - The mocks in `conftest.py` are thorough (Ollama, Chroma, HTTP, CLIP, umap,
   hdbscan via `sys.modules`), and the autouse settings fixture makes the

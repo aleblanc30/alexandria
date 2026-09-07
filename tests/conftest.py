@@ -111,6 +111,25 @@ def isolated_settings(tmp_path, monkeypatch):
 
     image_gate.reset_gate()
 
+    # Drop every per-domain send reservation.
+    #
+    # Each of these modules holds its rate limiter as a module-level singleton,
+    # so the scheduler's reservations outlive the test that made them: the first
+    # test to fetch a domain pushes that domain's next slot 1/rps into the
+    # future, and every later test touching it sleeps out the gap before its
+    # (mocked) fetch. That made a test's runtime depend on which tests ran
+    # before it — 35% of the suite's wall time, and the kind of order dependence
+    # that becomes flakiness the moment anything shuffles the order.
+    #
+    # Only the reservations go; the spacing is left at its production value, so
+    # a test that really does hit one domain twice still pays the real gap. That
+    # measured the same as disabling the limit outright, which is the evidence
+    # that no test is fighting the limiter within its own body.
+    from pka.ingestion import book_search, fetch_base, openlibrary
+
+    for _limited in (fetch_base, book_search, openlibrary):
+        _limited._limiter.scheduler.reset()
+
     # Reset in-memory sync progress so job state never leaks between tests
     from pka.constants import ALL_SOURCES
     from pka.ingestion import progress as sp

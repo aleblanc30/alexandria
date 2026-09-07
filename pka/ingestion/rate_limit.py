@@ -70,6 +70,20 @@ class SlotScheduler:
         with self._lock:
             return max(self._clock(), self._next.get(key, 0.0))
 
+    def reset(self) -> None:
+        """Forget every outstanding reservation — used by the test suite.
+
+        Nothing in production wants this: a reservation exists precisely so it
+        outlives the caller that made it. A suite that reuses one process is the
+        exception — the module-level limiters below live for the whole run, so a
+        slot one test reserves is still standing when the next one asks, and
+        every later test touching that domain waits out a gap protecting a host
+        that was mocked. The spacing itself is left alone; only the memory of
+        who has already sent goes.
+        """
+        with self._lock:
+            self._next.clear()
+
     def claim(self, key: str) -> float:
         """Reserve the next slot for ``key``; return the seconds to wait for it.
 
@@ -115,6 +129,15 @@ class SyncRateLimiter:
 
     def __init__(self, rps: float = 1.0) -> None:
         self._scheduler = SlotScheduler(rps)
+
+    @property
+    def scheduler(self) -> SlotScheduler:
+        """The underlying scheduler, mirroring :class:`AsyncRateLimiter`.
+
+        Both limiters are module-level singletons at their use sites, so both
+        need to be reachable for ``SlotScheduler.reset``.
+        """
+        return self._scheduler
 
     def wait(self, url: str) -> None:
         delay = self._scheduler.claim(domain_of(url))

@@ -77,6 +77,47 @@ class TestSlotScheduler:
             SlotScheduler(rps=0)
 
 
+class TestReset:
+    """``reset`` exists for the suite: the limiters are module-level singletons,
+    so without it a reservation made by one test is still standing in the next.
+    """
+
+    def test_reset_makes_the_next_claim_immediate(self):
+        sched = SlotScheduler(rps=1.0, clock=_FakeClock())
+        sched.claim("example.com")
+        assert sched.claim("example.com") == pytest.approx(1.0)
+        sched.reset()
+        assert sched.claim("example.com") == 0.0
+
+    def test_reset_clears_every_key(self):
+        sched = SlotScheduler(rps=1.0, clock=_FakeClock())
+        sched.claim("a.com")
+        sched.claim("b.com")
+        sched.reset()
+        assert sched.claim("a.com") == 0.0
+        assert sched.claim("b.com") == 0.0
+
+    def test_reset_keeps_the_spacing(self):
+        """Only the reservations go — the gap is not what was stale."""
+        sched = SlotScheduler(rps=2.0, clock=_FakeClock())  # 0.5s gap
+        sched.claim("example.com")
+        sched.reset()
+        assert sched.claim("example.com") == 0.0
+        assert sched.claim("example.com") == pytest.approx(0.5)
+
+    def test_reset_on_a_fresh_scheduler_is_a_no_op(self):
+        sched = SlotScheduler(rps=1.0, clock=_FakeClock())
+        sched.reset()
+        assert sched.claim("example.com") == 0.0
+
+    def test_both_limiters_expose_their_scheduler(self):
+        """The conftest fixture reaches the reservations through this property,
+        so both wrappers must carry it, not just the async one.
+        """
+        assert isinstance(AsyncRateLimiter(rps=1.0).scheduler, SlotScheduler)
+        assert isinstance(SyncRateLimiter(rps=1.0).scheduler, SlotScheduler)
+
+
 def test_domain_of_keys_on_netloc():
     assert domain_of("https://example.com/a?b=c") == "example.com"
     assert domain_of("https://example.com/a") == domain_of("https://example.com/b")
