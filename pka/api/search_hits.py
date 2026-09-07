@@ -168,6 +168,11 @@ def apply_row_filters(con, results: Hits, req: SearchRequest, run_id: int | None
     everything. That is deliberate: without a run there is no membership to
     test against, and silently ignoring the filter would return documents the
     caller explicitly excluded.
+
+    The row fetch is sized by the pre-pagination result count, not by
+    ``req.limit``, so it selects the three columns it reads rather than the
+    whole table: a query matching several thousand titles would otherwise pull
+    each row's 1.5 KB ``doc_embedding`` blob to compare a timestamp.
     """
     if not (req.cluster_ids or req.tags or req.date_from or req.date_to or req.fetch_status):
         return results
@@ -176,7 +181,13 @@ def apply_row_filters(con, results: Hits, req: SearchRequest, run_id: int | None
     row_map = {
         r["id"]: r
         for r in fetchall_mappings(
-            con.execute(sa.select(documents).where(documents.c.id.in_(doc_ids_to_check)))
+            con.execute(
+                sa.select(
+                    documents.c.id,
+                    documents.c.fetch_status,
+                    documents.c.date_added,
+                ).where(documents.c.id.in_(doc_ids_to_check))
+            )
         )
     }
     cluster_membership: dict[int, int] = {}
