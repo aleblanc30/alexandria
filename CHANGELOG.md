@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Ingestion
+
+- **Fetched body text is retained verbatim** in a new `document_texts` sidecar
+  (`pka/ingestion/text_store.py`), zlib-compressed, one row per document,
+  written before chunking. Until now `chunks.text` was the only copy — normalised,
+  cut into overlapping sentence windows, and missing every window under
+  `min_chunk_chars` — so re-summarising, re-chunking, re-running an extraction
+  fix and auditing what the fetcher actually got all required re-fetching every
+  URL. That is why `ingestion/enrich.py` summarises text *reassembled* from
+  chunks. Firefox and Reddit link posts write it; Reddit's inline bodies, image
+  text, Zotero abstracts and YouTube descriptions deliberately do not (already
+  verbatim elsewhere, or a millisecond re-read from their own source). Calibre
+  full text is slice 2. Stored is the **body**, not the title + card-summary
+  composite that gets embedded, and a failed write never costs a document its
+  chunks. No backfill: reconstructing text from chunks would look verbatim while
+  being a reconstruction. Setting `retain_document_text` (local, default on);
+  plan in `planning/FULL_TEXT_RETENTION.md`.
+- Purge wiring for it: `purge-source` now clears `document_texts` (an omission
+  would have orphaned rows against deleted document ids), the `fetched_text`
+  target takes the retained text with the body chunks it re-queues, and a new
+  tier-3 `document_texts` target reclaims the disk while leaving the chunks that
+  serve search in place.
+
 ## v0.0.11
 
 ### Ingestion

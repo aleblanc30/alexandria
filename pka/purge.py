@@ -28,7 +28,15 @@ import sqlalchemy as sa
 
 from pka.constants import EnrichmentKind, FetchStatus, Source, TagOrigin
 from pka.db.queries import get_engine
-from pka.db.schema import chunks, documents, enrichment_runs, fetch_log, images, overlay_tags
+from pka.db.schema import (
+    chunks,
+    document_texts,
+    documents,
+    enrichment_runs,
+    fetch_log,
+    images,
+    overlay_tags,
+)
 from pka.storage import vector_store
 
 # SQLite binds one variable per id in an ``IN (...)`` list and
@@ -135,6 +143,11 @@ def _vector_ids_for_chunks(con, chunk_ids: list[int]) -> list[str]:
 def _delete_chunks(con, chunk_ids: list[int]) -> None:
     for batch in _batches(chunk_ids):
         con.execute(chunks.delete().where(chunks.c.id.in_(batch)))
+
+
+def _delete_document_texts(con, doc_ids: list[int]) -> None:
+    for batch in _batches(doc_ids):
+        con.execute(document_texts.delete().where(document_texts.c.document_id.in_(batch)))
 
 
 # ── summaries ────────────────────────────────────────────────────────────────
@@ -390,11 +403,30 @@ def _fetched_text_rows(con, source: str | None) -> list:
     return list(con.execute(_source_clause(q, source)).fetchall())
 
 
+def _stored_text_ids(con, doc_ids: list[int]) -> list[int]:
+    """Ids of the ``document_texts`` rows belonging to *doc_ids*."""
+    out: list[int] = []
+    for batch in _batches(doc_ids):
+        out.extend(
+            r[0]
+            for r in con.execute(
+                sa.select(document_texts.c.id).where(document_texts.c.document_id.in_(batch))
+            ).fetchall()
+        )
+    return out
+
+
 def _count_fetched_text(scope: PurgeScope) -> dict[str, int]:
     source = scope.source
     with get_engine().connect() as con:
         rows = _fetched_text_rows(con, source)
-    return {"chunks": len(rows), "documents": len({r.document_id for r in rows})}
+        doc_ids = sorted({r.document_id for r in rows})
+        stored = _stored_text_ids(con, doc_ids)
+    return {
+        "chunks": len(rows),
+        "documents": len(doc_ids),
+        "document_texts": len(stored),
+    }
 
 
 def _purge_fetched_text(scope: PurgeScope) -> dict[str, int]:
@@ -403,6 +435,11 @@ def _purge_fetched_text(scope: PurgeScope) -> dict[str, int]:
     Only ``fetched`` documents go back to ``pending``: a Calibre book or Zotero
     PDF rests at ``available``/``missing`` and is re-read from disk, so moving
     it to ``pending`` would misdescribe it to the fetch dispatcher.
+
+    The retained body text goes too: it *is* the fetched text, and leaving it
+    behind would let the re-fetch this target queues compare against a stale
+    ``content_hash``. Reclaiming that text without dropping the chunks is what
+    the ``document_texts`` target below is for.
     """
     source = scope.source
     eng = get_engine()
@@ -411,13 +448,20 @@ def _purge_fetched_text(scope: PurgeScope) -> dict[str, int]:
         chunk_ids = [r.id for r in rows]
         doc_ids = sorted({r.document_id for r in rows})
         vector_ids = _vector_ids_for_chunks(con, chunk_ids)
+        text_ids = _stored_text_ids(con, doc_ids)
 
-    counts = {"documents": len(doc_ids), "chunks": len(chunk_ids), "vectors_purged": 0}
+    counts = {
+        "documents": len(doc_ids),
+        "chunks": len(chunk_ids),
+        "document_texts": len(text_ids),
+        "vectors_purged": 0,
+    }
     if vector_ids:
         counts["vectors_purged"] = vector_store.purge_vectors(vector_ids)
 
     with eng.begin() as con:
         _delete_chunks(con, chunk_ids)
+        _delete_document_texts(con, doc_ids)
         for batch in _batches(doc_ids):
             con.execute(
                 documents.update()
@@ -426,6 +470,37 @@ def _purge_fetched_text(scope: PurgeScope) -> dict[str, int]:
                 .values(fetch_status=str(FetchStatus.PENDING))
             )
     return counts
+
+
+# ── document_texts ───────────────────────────────────────────────────────────
+
+
+def _stored_text_doc_ids(con, source: str | None) -> list[int]:
+    q = sa.select(document_texts.c.document_id).select_from(
+        document_texts.join(documents, document_texts.c.document_id == documents.c.id)
+    )
+    return [r[0] for r in con.execute(_source_clause(q, source)).fetchall()]
+
+
+def _count_document_texts(scope: PurgeScope) -> dict[str, int]:
+    with get_engine().connect() as con:
+        return {"document_texts": len(_stored_text_doc_ids(con, scope.source))}
+
+
+def _purge_document_texts(scope: PurgeScope) -> dict[str, int]:
+    """Drop the retained body text, keeping the chunks that serve search.
+
+    Reclaims the disk without touching what is indexed. The cost is that
+    re-chunking, re-summarising exactly and auditing the fetch all need a
+    re-fetch again for these documents until the source is re-ingested
+    (planning/FULL_TEXT_RETENTION.md §7).
+    """
+    eng = get_engine()
+    with eng.connect() as con:
+        doc_ids = _stored_text_doc_ids(con, scope.source)
+    with eng.begin() as con:
+        _delete_document_texts(con, doc_ids)
+    return {"document_texts": len(doc_ids)}
 
 
 # ── fetch_failures ───────────────────────────────────────────────────────────
@@ -601,6 +676,14 @@ TARGETS: dict[str, PurgeTarget] = {
             _count_fetched_text,
             _purge_fetched_text,
             "POST /ingestion/sync/{source}/ingest (re-fetches over the network)",
+        ),
+        PurgeTarget(
+            "document_texts",
+            "Retained body text",
+            3,
+            _count_document_texts,
+            _purge_document_texts,
+            "POST /ingestion/sync/{source}/ingest (re-fetches or re-extracts)",
         ),
         PurgeTarget(
             "fetch_failures",

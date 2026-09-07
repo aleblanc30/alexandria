@@ -20,6 +20,7 @@ from pka.db.queries import get_engine
 from pka.db.schema import (
     chunks,
     cluster_assignments,
+    document_texts,
     documents,
     fetch_log,
     image_rejections,
@@ -48,6 +49,7 @@ _CHILD_TABLES = (
     chunks,
     source_tags,
     source_collections,
+    document_texts,
 )
 
 # SQLite binds one variable per id in an ``IN (...)`` list and

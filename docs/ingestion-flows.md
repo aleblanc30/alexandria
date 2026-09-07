@@ -383,6 +383,7 @@ flowchart TD
     SKIPC{"doc already chunked?"}
     SKIPPED(["skipped"])
     EXC["body_excerpt(text) — card_summary.py"]
+    STORE["store_document_text(body)<br/>ingestion/text_store.py — before chunking"]
     COMPOSE["fetched_embed_text(title, card_summary, text)<br/>ingestion/core.py — §3.2"]
     BLOCK["ingest_text_block(fallback_text=embed_text)"]
     SUM["attach_summary_chunk(FIREFOX)<br/>gate: bookmark_summary_enabled"]
@@ -391,7 +392,7 @@ flowchart TD
 
     ADV --> EMBED --> SKIPC
     SKIPC -->|yes| SKIPPED
-    SKIPC -->|no| EXC --> COMPOSE --> BLOCK
+    SKIPC -->|no| EXC --> STORE --> COMPOSE --> BLOCK
     BLOCK --> SUM --> LLM --> BLOCK
     BLOCK --> CARD2
 
@@ -401,11 +402,12 @@ flowchart TD
     DOCEMB["refresh_document_embedding()"]
     BLOCK --> CHUNK --> UPSC --> INSC --> DOCEMB
 
-    SQLITE[("SQLite: documents,<br/>fetch_log, chunks")]
+    SQLITE[("SQLite: documents,<br/>fetch_log, chunks,<br/>document_texts")]
     CHROMA[("ChromaDB: alexandria_chunks")]
     PERSIST --> SQLITE
     INSDOC --> SQLITE
     INSC --> SQLITE
+    STORE --> SQLITE
     UPSC --> CHROMA
 
     classDef shared   fill:#1f6feb,stroke:#0b3d91,stroke-width:1px,color:#ffffff
@@ -414,7 +416,7 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,KEY,DQ,SLEEP,LIM,ONE,DISPATCH,EXT,PDF,HTML,GATE,REJECT,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
+    class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,KEY,DQ,SLEEP,LIM,ONE,DISPATCH,EXT,PDF,HTML,GATE,REJECT,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,STORE,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
     class LOADBM,MRUN,QUEUE,EMBED specific
     class NET,GET,WIKI,ARX,BIO,AMZ,DOIO external
     class RG,YTP specific
@@ -602,12 +604,13 @@ flowchart TD
         POOL["_run_fetch_workers → _fetch_one_impl<br/>search / researchgate / wikipedia / youtube / reddit / arxiv / biorxiv /<br/>pubmed / doi.org / nature / springer / aps / sciencedirect / mitpress / direct.mit /<br/>PDF / amazon / wayback / trafilatura — identical to Firefox"]
         PERSIST["_persist_fetch_result() + fetch_log"]
         EMBEDF["embed_fetched_text()<br/>runners/reddit.py"]
+        STOREF["store_document_text(body)<br/>ingestion/text_store.py — fetched bodies only:<br/>an inline body is already in reddit_items"]
         COMPOSE["body_excerpt() →<br/>fetched_embed_text(title, card, text)"]
         BF["ingest_text_block(fallback_text=embed_text)"]
         SUMF["attach_summary_chunk(REDDIT)<br/>gate: bookmark_summary_enabled"]
         Q --> NQ
         NQ -->|yes| SKIPF
-        NQ -->|no| SETF --> FAE --> POOL --> PERSIST --> EMBEDF --> COMPOSE --> BF --> SUMF
+        NQ -->|no| SETF --> FAE --> POOL --> PERSIST --> EMBEDF --> STOREF --> COMPOSE --> BF --> SUMF
     end
 
     subgraph inline["Phase 2 — self-posts and comments (inline body)"]
@@ -634,11 +637,12 @@ flowchart TD
     SUMF --> TAIL
     LLM --> TAIL
 
-    SQLITE[("SQLite: documents, reddit_items,<br/>collections, fetch_log, chunks")]
+    SQLITE[("SQLite: documents, reddit_items,<br/>collections, fetch_log, chunks,<br/>document_texts")]
     CHROMA[("ChromaDB: alexandria_chunks")]
     JSONL[("data/reddit/&lt;timestamp&gt;/<br/>+ saved.jsonl")]
     INSDOC --> SQLITE
     RITEM --> SQLITE
+    STOREF --> SQLITE
     PERSIST --> SQLITE
     TAIL --> SQLITE
     TAIL --> CHROMA
@@ -650,7 +654,7 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,KNOWN,TAKE,BEGIN,MLOOP,INSDOC,COLL,FULL,ING,CORPUS,Q,NQ,SKIPF,SETF,FAE,POOL,PERSIST,COMPOSE,BF,SETE,ELOOP,CARD,BI,TAIL shared
+    class START,INIT,KNOWN,TAKE,BEGIN,MLOOP,INSDOC,COLL,FULL,ING,CORPUS,Q,NQ,SKIPF,SETF,FAE,POOL,PERSIST,STOREF,COMPOSE,BF,SETE,ELOOP,CARD,BI,TAIL shared
     class MODE,ARCH,BACK,FEED,MERGE,THROT,POLLA,PARSE,PEND,MRUN,FSTAT,RITEM,RELOAD,FORK,EMBEDF,ERUN,RFIELDS specific
     class ATOM,NET,NETX external
     class SUMF,SUMI,LLM gated
@@ -881,6 +885,7 @@ Reading the six graphs together, the shared surface is:
 | `classification.classify_document` | ✅ | ✅ | — | — | ✅ | — ² |
 | `fetcher.fetch_and_embed_pending` (async pool, per-domain limiter, handler dispatch) | — | ✅ | — | ✅ ³ | — | — |
 | `core.fetched_embed_text` + `card_summary.body_excerpt` | — | ✅ | — | ✅ ³ | — | — |
+| `text_store.store_document_text` (`retain_document_text`) | — | ✅ | — ⁵ | ✅ ³ | — | — |
 | `core.attach_summary_chunk` (`_SUMMARY_FLAGS`) | — | ✅ | ✅ | ✅ | — | — |
 | `enrichment_runs` provenance around the summary call ⁴ | — | ✅ | ✅ | ✅ | — | — |
 | `openlibrary.lookup_book` ladder | — | — | ✅ | — | — | ✅ |
@@ -897,6 +902,11 @@ graph: it wraps `attach_summary_chunk`'s cache-miss branch, which is already
 shared. The run opens on the first document that actually infers, stamps
 `documents.summary_run_id`, and is closed by the job skeleton when the sync
 ends — so a sync whose summaries are all cached opens no run at all.
+⁵ Calibre full text is in scope for retention and not yet wired
+(`planning/FULL_TEXT_RETENTION.md` slice 2). The sources marked `—` for good
+are the ones whose text already has a verbatim home (`reddit_items.body`,
+`images.ocr_text`/`description`) or is a millisecond re-read from the source
+itself (Zotero abstract, YouTube description).
 
 The genuinely source-specific surface is always the same two things: **how the
 corpus is read** (`pka/connectors/<source>.py`) and **what text is handed to

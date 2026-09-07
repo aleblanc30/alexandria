@@ -17,6 +17,7 @@ from pka.config import settings as cfg
 from pka.db.queries import get_engine, init_db, insert_chunks
 from pka.db.schema import chunks, documents, images, overlay_tags
 from pka.ingestion.chunker import sentence_window_chunks
+from pka.ingestion.text_store import load_document_text, store_document_text
 from pka.purge import TARGETS, purge_target
 from tests.conftest import make_document
 
@@ -33,7 +34,8 @@ def _seed_fetched_doc(
     """A document whose body text is stored the way ingestion stores it.
 
     Chunked by the real chunker, so a reassembly test sees genuine overlap
-    rather than a convenient fixture.
+    rather than a convenient fixture, and retained verbatim in
+    ``document_texts`` the way the runners now do it.
     """
     doc_id = make_document(
         source,
@@ -43,8 +45,10 @@ def _seed_fetched_doc(
         int(time.time()),
         fetch_status="fetched",
     )
+    body = _sentences(sentences)
+    store_document_text(doc_id, body)
     texts = sentence_window_chunks(
-        _sentences(sentences),
+        body,
         window=cfg.chunk_sentences,
         overlap=cfg.chunk_overlap,
         min_chars=cfg.min_chunk_chars,
@@ -396,6 +400,32 @@ def test_fetched_text_requeues_only_network_fetched_documents(db):
         assert con.execute(sa.select(sa.func.count()).select_from(chunks)).scalar() == 0
     assert statuses[fetched] == "pending"
     assert statuses[book] == "available"
+
+
+def test_fetched_text_takes_the_retained_body_with_it(db):
+    """It *is* the fetched text; leaving it would re-fetch against a stale hash."""
+    doc_id = _seed_fetched_doc("firefox", "F1")
+    assert load_document_text(doc_id)
+
+    counts = purge_target("fetched_text")
+
+    assert counts["document_texts"] == 1
+    assert load_document_text(doc_id) is None
+
+
+def test_document_texts_target_keeps_the_chunks(db):
+    """Reclaiming the disk must not blind search (plan §7)."""
+    doc_id = _seed_fetched_doc("firefox", "F1")
+
+    counts = purge_target("document_texts")
+
+    assert counts["document_texts"] == 1
+    assert load_document_text(doc_id) is None
+    with get_engine().connect() as con:
+        remaining = con.execute(
+            sa.select(sa.func.count()).select_from(chunks).where(chunks.c.document_id == doc_id)
+        ).scalar()
+    assert remaining > 0
 
 
 # ── Reassembly (§10's open risk) ────────────────────────────────────────────

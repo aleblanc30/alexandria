@@ -1,6 +1,8 @@
 # Full-text retention — `document_texts`
 
-**Status:** proposal, nothing implemented. Supersedes the sketches it grew from:
+**Status:** **slice 1 shipped** (table, `text_store.py`, Firefox + Reddit write
+sites, purge wiring, `retain_document_text`, docs, `tests/test_text_store.py`).
+Slices 2 and 3 are still proposals. Supersedes the sketches it grew from:
 `BACKLOG.md` → *Ingestion → Retain the raw extracted text alongside the chunks*,
 and `PURGE_AND_PROVENANCE_PLAN.md` §5.2.2. Both stay as pointers; this file is
 the worked-out version.
@@ -255,9 +257,10 @@ sources, measure the real installed archive, then decide.
 
 ## 10. Slices
 
-1. **Storage + fetched sources.** Table, `text_store.py`, Firefox and Reddit
-   write sites, purge wiring (§7), setting, docs. No behaviour change beyond the
-   write; nothing reads the table yet.
+1. ~~**Storage + fetched sources.** Table, `text_store.py`, Firefox and Reddit
+   write sites, purge wiring (§7), setting, docs.~~ **Shipped.** No behaviour
+   change beyond the write; nothing reads the table yet. `blocks_json` is
+   written and read by `text_store` but no runner passes blocks until slice 2.
 2. **Calibre.** Section join, `blocks_json`, the size measurement that decides
    whether §8 needs a cap after all.
 3. **Consumers.** `enrich` ladder, the `rechunk` pass, `GET /documents/{id}/text`.
