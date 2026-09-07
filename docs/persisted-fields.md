@@ -96,7 +96,7 @@ was written, not when the user saved it.
 | `fetch_log` | — | one row per fetch attempt | — | link posts only | — | — |
 | `reddit_items` | — | — | — | ✅ 1:1 | — | — |
 | `images` | — | — | — | — | — | ✅ 1:1 |
-| `document_texts` | — | fetched body ⁴ | — | link posts only ⁴ | — | — |
+| `document_texts` | — | fetched body ⁴ | joined pass-2 sections ⁴ | link posts only ⁴ | — | — |
 
 ¹ Only the short ones — a tag over `MAX_TAG_WORDS` words is diverted to
 `documents.note` by `split_calibre_tags`.
@@ -104,11 +104,11 @@ was written, not when the user saved it.
 carried as a collection instead.
 ³ Written directly via `insert_overlay_tags`, not through the rule-based
 `classify_document`.
-⁴ Only text that has no other verbatim home and cost a network round trip:
-Reddit's inline bodies are already in `reddit_items.body`, image text is already
-in `images`, and a Zotero abstract or YouTube description is a millisecond
-re-read from its own source. Calibre full text is in scope but not yet written —
-see `planning/FULL_TEXT_RETENTION.md` §3.
+⁴ Only text that has no other verbatim home and cost a network round trip or a
+slow extraction: Reddit's inline bodies are already in `reddit_items.body`, image
+text is already in `images`, and a Zotero abstract or YouTube description is a
+millisecond re-read from its own source — see
+`planning/FULL_TEXT_RETENTION.md` §3.
 
 `overlay_tags` also receives `manual` (user edits), `llm` / `cluster_l1` /
 `cluster_l2` (clustering), and `learned` (tag training) rows — none of them
@@ -124,12 +124,13 @@ ingestion-time, all of them source-agnostic.
 | `external_url` | link-post target, else NULL |
 | `body` | selftext / comment body, **verbatim** — neither the 280-char card excerpt nor the overlapped, whitespace-normalised chunks can reproduce it |
 
-### `document_texts` (fetched documents)
+### `document_texts` (fetched documents and books)
 
 The extracted body text kept verbatim, so summarising, chunking and extraction
-can be redone without going back to the network
+can be redone without going back to the network — or, for a book, without
+re-running an extraction that costs minutes
 (`planning/FULL_TEXT_RETENTION.md`). One row per document, written by the
-runners before chunking and refreshed on a re-fetch.
+runners before chunking and refreshed on a re-fetch or re-extraction.
 
 | Column | Value |
 |--------|-------|
@@ -137,7 +138,7 @@ runners before chunking and refreshed on a re-fetch.
 | `encoding` | `zlib`; the column exists so a codec change is a migration, not archaeology |
 | `char_count` | uncompressed length, so counts and dry runs never decompress |
 | `content_hash` | sha256 of the plain text — "did the page change?" on a re-fetch. Recorded; nothing reads it yet |
-| `blocks_json` | section map (`index`, `title`, `page_start`, `page_end`, `offset`) for paginated sources; NULL for fetched HTML, which arrives as one blob |
+| `blocks_json` | section map for Calibre — `index`, `title`, `page_start`, `page_end`, and the `offset`/`length` that slice the section back out of `text` verbatim, so a re-chunk can reproduce the per-section chunk metadata. NULL for a fetched body, which arrives as one blob |
 | `extracted_at` | unix ts of the write |
 
 No backfill: a document ingested before retention shipped has no row, and

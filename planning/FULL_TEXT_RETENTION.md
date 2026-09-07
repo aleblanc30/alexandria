@@ -1,8 +1,10 @@
 # Full-text retention — `document_texts`
 
-**Status:** **slice 1 shipped** (table, `text_store.py`, Firefox + Reddit write
-sites, purge wiring, `retain_document_text`, docs, `tests/test_text_store.py`).
-Slices 2 and 3 are still proposals. Supersedes the sketches it grew from:
+**Status:** **slices 1 and 2 shipped** — the table, `text_store.py`, the
+Firefox / Reddit / Calibre write sites, `blocks_json`, purge wiring,
+`retain_document_text`, docs and `tests/test_text_store.py`. Slice 3, the
+consumers that pay for it, is still a proposal. Supersedes the sketches it grew
+from:
 `BACKLOG.md` → *Ingestion → Retain the raw extracted text alongside the chunks*,
 and `PURGE_AND_PROVENANCE_PLAN.md` §5.2.2. Both stay as pointers; this file is
 the worked-out version.
@@ -259,10 +261,17 @@ sources, measure the real installed archive, then decide.
 
 1. ~~**Storage + fetched sources.** Table, `text_store.py`, Firefox and Reddit
    write sites, purge wiring (§7), setting, docs.~~ **Shipped.** No behaviour
-   change beyond the write; nothing reads the table yet. `blocks_json` is
-   written and read by `text_store` but no runner passes blocks until slice 2.
-2. **Calibre.** Section join, `blocks_json`, the size measurement that decides
-   whether §8 needs a cap after all.
+   change beyond the write; nothing reads the table yet.
+2. ~~**Calibre.** Section join, `blocks_json`.~~ **Shipped** as
+   `section_blocks(sections) -> (text, blocks)` in `text_store.py`, called from
+   `ingest_calibre_fulltext` right after extraction — the same joined string now
+   feeds both retention and `attach_summary_chunk`, so the two cannot drift.
+   Empty sections are dropped and each one stripped, because `store_document_text`
+   strips what it is given and an offset computed against an unstripped join
+   would be off by the whitespace it removed. **Still open from this slice:** the
+   size measurement against the installed archive that decides whether §8 needs a
+   cap after all — Calibre is 97 % of the corpus's chunk bytes on the dev
+   archive, so it is the only source that can make retention expensive.
 3. **Consumers.** `enrich` ladder, the `rechunk` pass, `GET /documents/{id}/text`.
 
 Each slice is independently shippable and independently useful; slice 3 is the

@@ -60,6 +60,42 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def section_blocks(sections: list[dict]) -> tuple[str, list[dict]]:
+    """Join extracted sections into one body, and map each back into it.
+
+    Returns ``(text, blocks)`` where every block carries the ``offset`` and
+    ``length`` that slice its section out of ``text`` verbatim. Without that map
+    a re-chunk of a book could not reproduce the ``section_title`` /
+    ``section_index`` / ``page_start`` / ``page_end`` metadata the chunks
+    carried, so it would be a strict downgrade of what it replaced.
+
+    Empty sections are dropped and each text is stripped: the joined string then
+    needs no further normalisation, and since :func:`store_document_text` strips
+    what it is given, an offset computed against an unstripped join would be off
+    by exactly the whitespace it removed.
+    """
+    parts: list[str] = []
+    blocks: list[dict] = []
+    offset = 0
+    for section in sections:
+        text = (section.get("text") or "").strip()
+        if not text:
+            continue
+        blocks.append(
+            {
+                "index": section.get("index", len(blocks)),
+                "title": section.get("title") or "",
+                "page_start": section.get("page_start"),
+                "page_end": section.get("page_end"),
+                "offset": offset,
+                "length": len(text),
+            }
+        )
+        parts.append(text)
+        offset += len(text) + 2  # the "\n\n" the join inserts after this part
+    return "\n\n".join(parts), blocks
+
+
 def store_document_text(
     doc_id: int,
     text: str,

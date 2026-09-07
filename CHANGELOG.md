@@ -13,12 +13,20 @@
   URL. That is why `ingestion/enrich.py` summarises text *reassembled* from
   chunks. Firefox and Reddit link posts write it; Reddit's inline bodies, image
   text, Zotero abstracts and YouTube descriptions deliberately do not (already
-  verbatim elsewhere, or a millisecond re-read from their own source). Calibre
-  full text is slice 2. Stored is the **body**, not the title + card-summary
+  verbatim elsewhere, or a millisecond re-read from their own source).
+  Stored is the **body**, not the title + card-summary
   composite that gets embedded, and a failed write never costs a document its
   chunks. No backfill: reconstructing text from chunks would look verbatim while
   being a reconstruction. Setting `retain_document_text` (local, default on);
   plan in `planning/FULL_TEXT_RETENTION.md`.
+- **Calibre full text is retained too**, as the joined pass-2 sections plus a
+  `blocks_json` map — `section_blocks()` records each section's index, title,
+  page range and the offset/length that slice it back out of the stored text,
+  so a later re-chunk can reproduce the per-section chunk metadata instead of
+  downgrading it. The file is still on disk, but re-extracting a library costs
+  minutes per book, which is what makes a re-chunk impractical without this.
+  The same joined string now feeds retention and `attach_summary_chunk`, so the
+  two cannot drift.
 - Purge wiring for it: `purge-source` now clears `document_texts` (an omission
   would have orphaned rows against deleted document ids), the `fetched_text`
   target takes the retained text with the body chunks it re-queues, and a new

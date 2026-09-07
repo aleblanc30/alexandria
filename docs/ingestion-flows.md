@@ -491,13 +491,16 @@ flowchart TD
         EPUB["extract_epub() — per-chapter sections"]
         PDFX["extract_pdf_report() — page-numbered sections<br/>+ text-layer verdict"]
         NOTEXT["no sections, verdict no_text_layer:<br/>set_fetch_status(NO_TEXT_LAYER)<br/>— OCR candidate, never re-queued"]
+        JOIN["section_blocks(sections)<br/>→ full_text + offset/page map"]
+        STOREB["store_document_text(full_text, blocks)<br/>ingestion/text_store.py — before chunking"]
         SECT["for each section:<br/>ingest_text_block(pass='fulltext',<br/>section_title, section_index,<br/>page_start/page_end, chunk_offset)"]
         SUM["attach_summary_chunk(CALIBRE, full_text)<br/>gate: book_summary_enabled"]
         LLM["summarize_text() — map-reduce over the book"]
         P2 --> EXTRACT --> DISP
-        DISP -->|.epub| EPUB --> SECT
-        DISP -->|.pdf| PDFX --> SECT
+        DISP -->|.epub| EPUB --> JOIN
+        DISP -->|.pdf| PDFX --> JOIN
         PDFX -->|scan| NOTEXT
+        JOIN --> STOREB --> SECT
         SECT --> SUM --> LLM
     end
 
@@ -518,10 +521,11 @@ flowchart TD
     SECT --> TAIL
     LLM --> TAIL
 
-    SQLITE[("SQLite: documents, tags,<br/>collections, chunks")]
+    SQLITE[("SQLite: documents, tags,<br/>collections, chunks,<br/>document_texts")]
     CHROMA[("ChromaDB: alexandria_chunks")]
     INSDOC --> SQLITE
     TAIL --> SQLITE
+    STOREB --> SQLITE
     TAIL --> CHROMA
 
     classDef shared   fill:#1f6feb,stroke:#0b3d91,stroke-width:1px,color:#ffffff
@@ -530,7 +534,7 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,AVAIL,OK,UNAV,ENDU,TAKE,BEGIN,MLOOP,FS,INSDOC,TAGS,FULL,ING,SKIPF,SETE1,ELOOP1,SKIP1,B1,B2,STOP1,ENDE,SETE2,TAIL,NOOP1,NOTEXT shared
+    class START,INIT,AVAIL,OK,UNAV,ENDU,TAKE,BEGIN,MLOOP,FS,INSDOC,TAGS,FULL,ING,SKIPF,SETE1,ELOOP1,SKIP1,B1,B2,STOP1,ENDE,SETE2,TAIL,NOOP1,NOTEXT,JOIN,STOREB shared
     class LOADB,MRUN,SPLIT,COUNT,P1,MT,SYN,P2,EXTRACT,DISP,EPUB,PDFX,SECT,NOCLS specific
     class NETOL external
     class LOOK,LADDER,SUM,LLM gated
@@ -885,7 +889,7 @@ Reading the six graphs together, the shared surface is:
 | `classification.classify_document` | ✅ | ✅ | — | — | ✅ | — ² |
 | `fetcher.fetch_and_embed_pending` (async pool, per-domain limiter, handler dispatch) | — | ✅ | — | ✅ ³ | — | — |
 | `core.fetched_embed_text` + `card_summary.body_excerpt` | — | ✅ | — | ✅ ³ | — | — |
-| `text_store.store_document_text` (`retain_document_text`) | — | ✅ | — ⁵ | ✅ ³ | — | — |
+| `text_store.store_document_text` (`retain_document_text`) | — | ✅ | ✅ ⁵ | ✅ ³ | — | — |
 | `core.attach_summary_chunk` (`_SUMMARY_FLAGS`) | — | ✅ | ✅ | ✅ | — | — |
 | `enrichment_runs` provenance around the summary call ⁴ | — | ✅ | ✅ | ✅ | — | — |
 | `openlibrary.lookup_book` ladder | — | — | ✅ | — | — | ✅ |
@@ -902,11 +906,13 @@ graph: it wraps `attach_summary_chunk`'s cache-miss branch, which is already
 shared. The run opens on the first document that actually infers, stamps
 `documents.summary_run_id`, and is closed by the job skeleton when the sync
 ends — so a sync whose summaries are all cached opens no run at all.
-⁵ Calibre full text is in scope for retention and not yet wired
-(`planning/FULL_TEXT_RETENTION.md` slice 2). The sources marked `—` for good
-are the ones whose text already has a verbatim home (`reddit_items.body`,
-`images.ocr_text`/`description`) or is a millisecond re-read from the source
-itself (Zotero abstract, YouTube description).
+⁵ Calibre stores the *joined* pass-2 sections plus a `blocks_json` map of where
+each one sits in that text, so a later re-chunk can reproduce the section and
+page metadata; the fetched sources store one undifferentiated body. The sources
+marked `—` are the ones whose text already has a verbatim home
+(`reddit_items.body`, `images.ocr_text`/`description`) or is a millisecond
+re-read from the source itself (Zotero abstract, YouTube description) —
+`planning/FULL_TEXT_RETENTION.md` §3.
 
 The genuinely source-specific surface is always the same two things: **how the
 corpus is read** (`pka/connectors/<source>.py`) and **what text is handed to
