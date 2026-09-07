@@ -16,7 +16,7 @@ from pka.db.queries import (
     update_card_summary,
     upsert_document,
 )
-from pka.db.schema import cluster_assignments, cluster_runs, clusters
+from pka.db.schema import cluster_assignments, cluster_runs, clusters, documents
 from tests.conftest import make_document
 
 
@@ -103,6 +103,58 @@ class TestDocumentsOutBatch:
         assert doc.cluster_id == cluster_id
         assert doc.cluster_label == "Test Cluster"
         assert doc.description == "First chunk."
+
+    def test_documents_out_batch_populates_every_field(self):
+        """Guards ``_CARD_COLUMNS`` against drift from the builder.
+
+        ``documents_out_batch`` selects a column list rather than the whole
+        table, and reads optional fields with ``row.get(...)``. A column dropped
+        from that list therefore surfaces as a silently blank API field instead
+        of an error. Seeding one fully-populated document and asserting no
+        ``DocumentOut`` field comes back empty is what makes that a failure —
+        including for a field added later.
+        """
+        init_db()
+        doc_id = upsert_document(
+            DocumentWrite(
+                "zotero",
+                "DS999",
+                "Fully populated",
+                "https://example.com/full",
+                int(time.time()),
+                "fetched",
+                "ATTACH1",
+                "journalArticle",
+                "a note",
+                doi="10.1234/abcd",
+                arxiv_id="2401.00001",
+                isbn="9780306406157",
+                year=2024,
+                authors_json='["Ada Lovelace"]',
+            )
+        )
+        # archive_url is owned by the Wayback path rather than DocumentWrite.
+        with get_engine().begin() as con:
+            con.execute(
+                documents.update()
+                .where(documents.c.id == doc_id)
+                .values(archive_url="https://web.archive.org/web/1/https://example.com/full")
+            )
+        update_card_summary(doc_id, "A card summary.")
+        insert_source_tags(doc_id, ["tagged"], source="zotero")
+        run_id, _ = _seed_cluster(doc_id)
+
+        with get_engine().connect() as con:
+            doc = documents_out_batch([(doc_id, 0.5)], con, run_id)[0]
+
+        # Relations are asserted by the tests above; everything else on the
+        # model traces back to a column in ``_CARD_COLUMNS``.
+        blank = [
+            name
+            for name in type(doc).model_fields
+            if name not in {"overlay_tags"} and not getattr(doc, name)
+        ]
+        assert blank == []
 
     def test_card_summary_preferred_over_chunk(self):
         init_db()

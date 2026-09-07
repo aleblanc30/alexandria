@@ -47,6 +47,34 @@ def _doi_url(doi: str | None) -> str | None:
     return f"https://doi.org/{doi}" if doi else None
 
 
+# Exactly the ``documents`` columns the card builder below reads. Selecting the
+# whole table instead would carry the 1.5 KB ``doc_embedding`` blob and
+# ``generated_summary`` for every row on the page (audit P-5).
+#
+# Keep this in step with the builder. A column read but missing from here comes
+# back from ``row.get(...)`` as ``None`` rather than raising, so the symptom is a
+# silently blank API field; ``test_documents_out_batch_populates_every_field``
+# is what turns that into a test failure.
+_CARD_COLUMNS = (
+    documents.c.id,
+    documents.c.source,
+    documents.c.source_id,
+    documents.c.title,
+    documents.c.url_or_path,
+    documents.c.archive_url,
+    documents.c.zotero_attachment_key,
+    documents.c.date_added,
+    documents.c.fetch_status,
+    documents.c.card_summary,
+    documents.c.note,
+    documents.c.doi,
+    documents.c.arxiv_id,
+    documents.c.isbn,
+    documents.c.year,
+    documents.c.authors_json,
+)
+
+
 def documents_out_batch(
     doc_ids_with_sim: list[tuple[int, float | None]],
     con,
@@ -62,7 +90,7 @@ def documents_out_batch(
     doc_rows = {
         r["id"]: r
         for r in fetchall_mappings(
-            con.execute(sa.select(documents).where(documents.c.id.in_(doc_ids)))
+            con.execute(sa.select(*_CARD_COLUMNS).where(documents.c.id.in_(doc_ids)))
         )
     }
 
