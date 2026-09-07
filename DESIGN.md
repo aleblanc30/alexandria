@@ -229,8 +229,18 @@ Zotero abstract or YouTube description is a re-read from its own source.
 Local-only, so it is not a §1.1 gate; `retain_document_text` (default on) exists
 for disk. There is no backfill — documents ingested before retention shipped
 have no row, and reconstructing one from chunks would look verbatim while being
-a reconstruction. Plan and the consumers it unlocks:
-`planning/FULL_TEXT_RETENTION.md`.
+a reconstruction. Plan: `planning/FULL_TEXT_RETENTION.md`.
+
+Three things read it. `alexandria rechunk` / `POST /ingestion/rechunk`
+(`ingestion/rechunk.py`) re-cuts a retained body with the current chunker
+settings — the pass that makes an embedding-model swap applicable to an archive
+already ingested — replacing body chunks and their vectors while leaving the
+summary, external-synopsis and metadata passes alone, and rebuilding a fetched
+document's title + card-summary composite from `documents` on the way. The
+summary enrichment pass (`ingestion/enrich.py`) now summarises the retained text
+where there is one and falls back to its chunk reassembly where there is not.
+And `GET /documents/{id}/text` serves a body back verbatim, which is how to see
+what the fetcher actually got when a page ingests badly.
 
 **Publisher URLs are resolved by identifier, not scraped.** A bookmark on
 `nature.com`, `link.springer.com`, `journals.aps.org`, `sciencedirect.com` or

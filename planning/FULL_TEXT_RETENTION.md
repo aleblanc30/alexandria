@@ -1,10 +1,12 @@
 # Full-text retention — `document_texts`
 
-**Status:** **slices 1 and 2 shipped** — the table, `text_store.py`, the
-Firefox / Reddit / Calibre write sites, `blocks_json`, purge wiring,
-`retain_document_text`, docs and `tests/test_text_store.py`. Slice 3, the
-consumers that pay for it, is still a proposal. Supersedes the sketches it grew
-from:
+**Status:** **shipped** — all three slices. The table and `text_store.py`, the
+Firefox / Reddit / Calibre write sites with `blocks_json`, purge wiring,
+`retain_document_text`, and the consumers: the `enrich` ladder, the `rechunk`
+pass (`alexandria rechunk`, `POST /ingestion/rechunk`) and
+`GET /documents/{id}/text`. One follow-up is deliberately left open — the size
+measurement in §9 against the installed archive, which decides whether §8 needs
+a cap. Supersedes the sketches it grew from:
 `BACKLOG.md` → *Ingestion → Retain the raw extracted text alongside the chunks*,
 and `PURGE_AND_PROVENANCE_PLAN.md` §5.2.2. Both stay as pointers; this file is
 the worked-out version.
@@ -272,7 +274,14 @@ sources, measure the real installed archive, then decide.
    size measurement against the installed archive that decides whether §8 needs a
    cap after all — Calibre is 97 % of the corpus's chunk bytes on the dev
    archive, so it is the only source that can make retention expensive.
-3. **Consumers.** `enrich` ladder, the `rechunk` pass, `GET /documents/{id}/text`.
+3. ~~**Consumers.** `enrich` ladder, the `rechunk` pass,
+   `GET /documents/{id}/text`.~~ **Shipped.** Two decisions worth recording,
+   neither of them in the sketch above: the re-chunk writes its new chunks
+   *before* deleting the superseded ones (an interruption then leaves duplicates
+   a re-run cleans up, instead of a document with no body chunks at all), and it
+   offsets new indices past the **highest index in use** rather than past the
+   chunk count — a surviving summary chunk keeps the high index it was given
+   when the body still sat underneath it, so counting would collide with it.
 
 Each slice is independently shippable and independently useful; slice 3 is the
 one that pays for the other two.

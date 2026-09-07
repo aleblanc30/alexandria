@@ -145,6 +145,11 @@ No backfill: a document ingested before retention shipped has no row, and
 nothing reconstructs one from its chunks — a reconstruction that looked verbatim
 would defeat the point. Off under `retain_document_text=false`.
 
+Read by `ingestion/rechunk.py` (which rewrites this document's **body** chunks
+from it, leaving the summary / external-synopsis / metadata passes alone),
+`ingestion/enrich.py` (which prefers it over a chunk reassembly), and
+`GET /documents/{id}/text`.
+
 ### `images` (Images only)
 
 | Column | Written by | Notes |

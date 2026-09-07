@@ -71,6 +71,24 @@ def get_document(doc_id: int, engine=Depends(get_engine)):
     return detail
 
 
+@router.get("/{doc_id}/text")
+def get_document_text(doc_id: int):
+    """The body text retained at ingestion, verbatim.
+
+    The audit surface for "what did the fetcher actually get" — the question
+    that could previously only be guessed at from the chunks a document
+    produced (planning/FULL_TEXT_RETENTION.md §6.3). 404 when the document has
+    no retained text, which is the ordinary case for anything ingested before
+    retention shipped: there is no backfill.
+    """
+    from pka.ingestion.text_store import document_text_meta, load_document_text
+
+    meta = document_text_meta(doc_id)
+    if meta is None:
+        raise HTTPException(404, detail="No retained text for this document")
+    return {"document_id": doc_id, "text": load_document_text(doc_id) or "", **meta}
+
+
 @router.get("/{doc_id}/cover")
 def get_document_cover(doc_id: int, engine=Depends(get_engine)):
     """Serve a document's cover image.

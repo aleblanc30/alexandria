@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from pka.config import settings as cfg
 from pka.db.queries import get_engine, init_db, insert_chunks
-from pka.db.schema import chunks, documents, images, overlay_tags
+from pka.db.schema import chunks, document_texts, documents, images, overlay_tags
 from pka.ingestion.chunker import sentence_window_chunks
 from pka.ingestion.text_store import load_document_text, store_document_text
 from pka.purge import TARGETS, purge_target
@@ -177,6 +177,37 @@ class TestSummaryRoundTrip:
 
         assert enrich_summaries()["candidates"] == 0
         assert not chat, "a cached summary must not pay for inference again"
+
+    def test_enrich_summarises_the_retained_text_not_a_reassembly(
+        self, db, mock_chroma, summary_on, chat
+    ):
+        """Retention retires §5.2.2's compromise: the original is right there."""
+        doc_id = _seed_fetched_doc()
+        store_document_text(doc_id, "The retained body, kept verbatim at ingestion.")
+
+        from pka.ingestion.enrich import enrich_summaries
+
+        assert enrich_summaries()["summarised"] == 1
+
+        # Short enough that summarize_text returns it unchanged and spends no
+        # call, so the stored text is visible in the cached summary itself.
+        assert _summary_of(doc_id) == "The retained body, kept verbatim at ingestion."
+
+    def test_enrich_still_reassembles_when_nothing_was_retained(
+        self, db, mock_chroma, summary_on, chat
+    ):
+        """No backfill, so every pre-retention document must keep working."""
+        doc_id = _seed_fetched_doc()
+        with get_engine().begin() as con:
+            con.execute(document_texts.delete().where(document_texts.c.document_id == doc_id))
+
+        from pka.ingestion.enrich import enrich_summaries
+
+        stats = enrich_summaries()
+
+        assert stats == {"candidates": 1, "summarised": 1, "skipped": 0}
+        assert _summary_of(doc_id) == "Bees build hives. They also make honey."
+        assert chat, "the reassembled body was long enough to need the summariser"
 
     def test_enrich_respects_the_summary_flag_being_off(self, db, mock_chroma, chat):
         """The flag is the single gate for the whole mechanism (DESIGN.md §1.1)."""
