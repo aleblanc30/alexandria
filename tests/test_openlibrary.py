@@ -133,7 +133,7 @@ class TestGating:
     def test_disabled_by_default_makes_no_request(self, monkeypatch):
         """external_lookup_enabled is the single enforcement point for §1.1."""
         called = []
-        monkeypatch.setattr(ol, "_get_json", lambda *a, **k: called.append(1))
+        monkeypatch.setattr(ol, "get_json", lambda *a, **k: called.append(1))
         assert cfg.external_lookup_enabled is False
         assert ol.lookup_book(title="Dune", isbn="9780306406157") is None
         assert called == []
@@ -143,7 +143,7 @@ class TestLookupByIsbn:
     def test_description_on_the_edition(self, monkeypatch):
         monkeypatch.setattr(
             ol,
-            "_get_json",
+            "get_json",
             lambda path, params=None: {"title": "Dune", "description": "A desert planet."},
         )
         out = ol.lookup_by_isbn("9780306406157")
@@ -158,7 +158,7 @@ class TestLookupByIsbn:
             "/isbn/9780306406157.json": {"title": "Dune", "works": [{"key": "/works/OL1W"}]},
             "/works/OL1W.json": {"description": {"value": "A desert planet."}},
         }
-        monkeypatch.setattr(ol, "_get_json", lambda path, params=None: pages.get(path))
+        monkeypatch.setattr(ol, "get_json", lambda path, params=None: pages.get(path))
         out = ol.lookup_by_isbn("9780306406157")
         assert out is not None
         assert out.description == "A desert planet."
@@ -166,12 +166,12 @@ class TestLookupByIsbn:
 
     def test_bad_checksum_never_requests(self, monkeypatch):
         called = []
-        monkeypatch.setattr(ol, "_get_json", lambda *a, **k: called.append(1))
+        monkeypatch.setattr(ol, "get_json", lambda *a, **k: called.append(1))
         assert ol.lookup_by_isbn("9780306406175") is None
         assert called == []
 
     def test_no_description_anywhere(self, monkeypatch):
-        monkeypatch.setattr(ol, "_get_json", lambda path, params=None: {"title": "Dune"})
+        monkeypatch.setattr(ol, "get_json", lambda path, params=None: {"title": "Dune"})
         assert ol.lookup_by_isbn("9780306406157") is None
 
 
@@ -186,7 +186,7 @@ class TestLookupByTitleAuthor:
         pages = self._pages(
             [{"key": "/works/OL1W", "title": "Dune", "author_name": ["Frank Herbert"]}]
         )
-        monkeypatch.setattr(ol, "_get_json", lambda path, params=None: pages.get(path))
+        monkeypatch.setattr(ol, "get_json", lambda path, params=None: pages.get(path))
         out = ol.lookup_by_title_author("Dune", ["Frank Herbert"])
         assert out is not None
         assert out.resolved_by == "search"
@@ -197,14 +197,14 @@ class TestLookupByTitleAuthor:
         pages = self._pages(
             [{"key": "/works/OL9W", "title": "Neuromancer", "author_name": ["William Gibson"]}]
         )
-        monkeypatch.setattr(ol, "_get_json", lambda path, params=None: pages.get(path))
+        monkeypatch.setattr(ol, "get_json", lambda path, params=None: pages.get(path))
         assert ol.lookup_by_title_author("Dune", ["Frank Herbert"]) is None
 
     def test_author_mismatch_is_rejected(self, monkeypatch):
         pages = self._pages(
             [{"key": "/works/OL1W", "title": "Dune", "author_name": ["Someone Else"]}]
         )
-        monkeypatch.setattr(ol, "_get_json", lambda path, params=None: pages.get(path))
+        monkeypatch.setattr(ol, "get_json", lambda path, params=None: pages.get(path))
         assert ol.lookup_by_title_author("Dune", ["Frank Herbert"]) is None
 
     def test_skips_unverified_hit_and_takes_the_verified_one(self, monkeypatch):
@@ -214,14 +214,14 @@ class TestLookupByTitleAuthor:
                 {"key": "/works/OL1W", "title": "Dune", "author_name": ["Frank Herbert"]},
             ]
         )
-        monkeypatch.setattr(ol, "_get_json", lambda path, params=None: pages.get(path))
+        monkeypatch.setattr(ol, "get_json", lambda path, params=None: pages.get(path))
         out = ol.lookup_by_title_author("Dune", ["Frank Herbert"])
         assert out is not None
         assert out.work_key == "/works/OL1W"
 
     def test_thin_title_never_requests(self, monkeypatch):
         called = []
-        monkeypatch.setattr(ol, "_get_json", lambda *a, **k: called.append(1))
+        monkeypatch.setattr(ol, "get_json", lambda *a, **k: called.append(1))
         assert ol.lookup_by_title_author("A", []) is None
         assert called == []
 
@@ -240,7 +240,7 @@ class TestLadderAndCache:
                 }
             return {"description": "A desert planet."}
 
-        monkeypatch.setattr(ol, "_get_json", fake)
+        monkeypatch.setattr(ol, "get_json", fake)
         out = ol.lookup_book(title="Dune", authors=["Frank Herbert"], isbn="9780306406175")
         assert out is not None
         assert out.resolved_by == "search"
@@ -254,7 +254,7 @@ class TestLadderAndCache:
             paths.append(path)
             return {"title": "Dune", "description": "A desert planet."}
 
-        monkeypatch.setattr(ol, "_get_json", fake)
+        monkeypatch.setattr(ol, "get_json", fake)
         out = ol.lookup_book(title="Dune", isbn="978-0-306-40615-7")
         assert out is not None
         assert out.resolved_by == "isbn"
@@ -267,7 +267,7 @@ class TestLadderAndCache:
             calls.append(path)
             return {"title": "Dune", "description": "A desert planet."}
 
-        monkeypatch.setattr(ol, "_get_json", fake)
+        monkeypatch.setattr(ol, "get_json", fake)
         first = ol.lookup_book(title="Dune", isbn="9780306406157")
         second = ol.lookup_book(title="Dune", isbn="9780306406157")
         assert first == second
@@ -281,7 +281,7 @@ class TestLadderAndCache:
             calls.append(path)
             return {"docs": []}
 
-        monkeypatch.setattr(ol, "_get_json", fake)
+        monkeypatch.setattr(ol, "get_json", fake)
         assert ol.lookup_book(title="Obscure Thesis On Bees") is None
         assert ol.lookup_book(title="Obscure Thesis On Bees") is None
         assert len(calls) == 1
@@ -290,7 +290,7 @@ class TestLadderAndCache:
         long_desc = " ".join(f"Sentence number {i} is here." for i in range(10))
         monkeypatch.setattr(
             ol,
-            "_get_json",
+            "get_json",
             lambda path, params=None: {"title": "Dune", "description": long_desc},
         )
         monkeypatch.setattr(cfg, "summary_max_sentences", 3)
@@ -305,7 +305,7 @@ class TestGetJsonErrorHandling:
             raise httpx.ConnectError("no route")
 
         monkeypatch.setattr(ol.httpx, "get", boom)
-        assert ol._get_json("/isbn/9780306406157.json") is None
+        assert ol.get_json("/isbn/9780306406157.json") is None
 
     def test_status_error_returns_none(self, monkeypatch):
         monkeypatch.setattr(
@@ -313,7 +313,7 @@ class TestGetJsonErrorHandling:
             "get",
             lambda *a, **k: httpx.Response(404, request=httpx.Request("GET", "http://x")),
         )
-        assert ol._get_json("/isbn/9780306406157.json") is None
+        assert ol.get_json("/isbn/9780306406157.json") is None
 
     def test_non_json_returns_none(self, monkeypatch):
         monkeypatch.setattr(
@@ -323,4 +323,4 @@ class TestGetJsonErrorHandling:
                 200, text="<html>nope</html>", request=httpx.Request("GET", "http://x")
             ),
         )
-        assert ol._get_json("/isbn/9780306406157.json") is None
+        assert ol.get_json("/isbn/9780306406157.json") is None

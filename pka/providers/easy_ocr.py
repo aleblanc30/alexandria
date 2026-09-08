@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from pka.config import settings as cfg
@@ -120,17 +121,31 @@ def _polygon_area(box) -> float:
 class EasyOcrProvider:
     """Run EasyOCR over an image file."""
 
-    def __init__(self) -> None:
+    def __init__(self, reader_factory: Callable[[list[str]], object] | None = None) -> None:
         # Readers load torch models and are expensive to build, so cache one per
         # language set. Tied to the instance, which ``reset_providers`` clears.
         self._readers: dict[tuple[str, ...], object] = {}
+        # The injection point for tests, which would otherwise have to patch a
+        # private method to keep torch out of the suite (audit item M-11).
+        # Called once per language set; the result is cached as above.
+        self._reader_factory = reader_factory or self._load_reader
 
-    def _reader(self, langs: list[str]):
+    @staticmethod
+    def _load_reader(langs: list[str]) -> object:
+        easyocr = _import_easyocr()
+        return easyocr.Reader(langs, gpu=cfg.easyocr_gpu)
+
+    def reader(self, langs: list[str]):
+        """The cached EasyOCR reader for ``langs``, built on first use.
+
+        Public because it is the seam: a caller that cannot inject a
+        ``reader_factory`` — the provider is usually built inside
+        ``get_ocr_provider()`` — replaces this instead.
+        """
         key = tuple(langs)
         reader = self._readers.get(key)
         if reader is None:
-            easyocr = _import_easyocr()
-            reader = easyocr.Reader(langs, gpu=cfg.easyocr_gpu)
+            reader = self._reader_factory(langs)
             self._readers[key] = reader
         return reader
 
@@ -148,7 +163,7 @@ class EasyOcrProvider:
 
     def ocr(self, path: Path, lang: str = "eng") -> str:
         try:
-            reader = self._reader(_to_easyocr_langs(lang))
+            reader = self.reader(_to_easyocr_langs(lang))
             # detail=0 → plain strings; paragraph=True groups words into lines.
             lines = reader.readtext(
                 _oriented_rgb_array(path), detail=0, paragraph=True, **self._readtext_kwargs()
@@ -181,7 +196,7 @@ class EasyOcrProvider:
             if total <= 0:
                 return 0.0
 
-            reader = self._reader(_to_easyocr_langs(lang))
+            reader = self.reader(_to_easyocr_langs(lang))
             results = reader.readtext(arr, detail=1, paragraph=False, **self._readtext_kwargs())
 
             covered = 0.0

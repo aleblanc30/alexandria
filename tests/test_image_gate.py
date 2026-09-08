@@ -43,7 +43,7 @@ class TestTextCoverage:
             (_box(0, 0, 200, 200), "A", 0.9),
             (_box(300, 300, 400, 400), "B", 0.9),
         ]
-        monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
+        monkeypatch.setattr(EasyOcrProvider, "reader", lambda self, langs: reader)
         cov = EasyOcrProvider().text_coverage(sample_png)
         assert cov == pytest.approx(50_000 / 480_000, rel=1e-3)
 
@@ -52,7 +52,7 @@ class TestTextCoverage:
 
         reader = MagicMock()
         reader.readtext.return_value = []
-        monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
+        monkeypatch.setattr(EasyOcrProvider, "reader", lambda self, langs: reader)
         assert EasyOcrProvider().text_coverage(sample_png) == 0.0
 
     def test_clamped_to_one(self, sample_png, monkeypatch):
@@ -61,7 +61,7 @@ class TestTextCoverage:
         reader = MagicMock()
         # Box larger than the image (overlaps inflate) — must clamp to 1.0.
         reader.readtext.return_value = [(_box(0, 0, 2000, 2000), "X", 0.9)]
-        monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
+        monkeypatch.setattr(EasyOcrProvider, "reader", lambda self, langs: reader)
         assert EasyOcrProvider().text_coverage(sample_png) == 1.0
 
     def test_failure_returns_zero(self, sample_png, monkeypatch):
@@ -70,7 +70,7 @@ class TestTextCoverage:
         def _boom(self, langs):
             raise RuntimeError("ocr fail")
 
-        monkeypatch.setattr(EasyOcrProvider, "_reader", _boom)
+        monkeypatch.setattr(EasyOcrProvider, "reader", _boom)
         assert EasyOcrProvider().text_coverage(sample_png) == 0.0
 
     def test_exif_orientation_is_applied(self, tmp_path, monkeypatch):
@@ -98,7 +98,7 @@ class TestTextCoverage:
                 captured["shape"] = image.shape  # numpy array, not a path
                 return [(_box(0, 0, 200, 200), "A", 0.9)]  # 40_000 px
 
-        monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: _FakeReader())
+        monkeypatch.setattr(EasyOcrProvider, "reader", lambda self, langs: _FakeReader())
         cov = EasyOcrProvider().text_coverage(src)
 
         # Array handed to EasyOCR is transposed to portrait (H=800, W=400).

@@ -375,7 +375,7 @@ class TestOcrImage:
 
         reader = MagicMock()
         reader.readtext.return_value = ["  Hello OCR  "]
-        monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
+        monkeypatch.setattr(EasyOcrProvider, "reader", lambda self, langs: reader)
         from pka.ingestion.image_extractor import ocr_image
 
         assert ocr_image(sample_png) == "Hello OCR"
@@ -386,7 +386,7 @@ class TestOcrImage:
         def _boom(self, langs):
             raise RuntimeError("ocr fail")
 
-        monkeypatch.setattr(EasyOcrProvider, "_reader", _boom)
+        monkeypatch.setattr(EasyOcrProvider, "reader", _boom)
         from pka.ingestion.image_extractor import ocr_image
 
         assert ocr_image(sample_png) == ""

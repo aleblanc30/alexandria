@@ -253,7 +253,7 @@ no live API, no network, consistent with the conftest rule:
 - API unreachable → one actionable error naming the URL, not a bare
   `ConnectError`.
 
-Plus a router test in `tests/test_api.py` for `/documents/{id}/chunks`: paging,
+Plus a router test in `tests/test_api_documents.py` for `/documents/{id}/chunks`: paging,
 `chunk_pass` filter, 404 on a missing document, page ranges present for a chunk
 that has them and null for one that does not.
 

@@ -185,8 +185,14 @@ def authors_match(extracted: list[str], canonical: list[str]) -> bool:
 # ── HTTP ──────────────────────────────────────────────────────────────────────
 
 
-def _get_json(path: str, params: dict[str, str] | None = None) -> Any | None:
-    """GET a JSON document from Open Library. ``None`` on any failure."""
+def get_json(path: str, params: dict[str, str] | None = None) -> Any | None:
+    """GET a JSON document from Open Library. ``None`` on any failure.
+
+    Public because it is this module's only outbound call and therefore its
+    seam: tests replace it rather than reaching the network. It was `_get_json`,
+    which made 21 test sites depend on a private name a refactor was free to
+    rename (audit item M-11).
+    """
     url = f"{cfg.openlibrary_base_url.rstrip('/')}{path}"
     _limiter.wait(url)
     try:
@@ -234,7 +240,7 @@ def lookup_by_isbn(isbn: object) -> BookSynopsis | None:
         log.debug("Rejecting ISBN before lookup: %r", isbn)
         return None
 
-    edition = _get_json(f"/isbn/{normalized}.json")
+    edition = get_json(f"/isbn/{normalized}.json")
     if not isinstance(edition, dict):
         return None
 
@@ -246,7 +252,7 @@ def lookup_by_isbn(isbn: object) -> BookSynopsis | None:
     if isinstance(works, list) and works and isinstance(works[0], dict):
         work_key = str(works[0].get("key") or "") or None
     if work_key and not description:
-        work = _get_json(f"{work_key}.json")
+        work = get_json(f"{work_key}.json")
         description = _description_text(work)
         if isinstance(work, dict) and not title:
             title = str(work.get("title") or "").strip()
@@ -275,7 +281,7 @@ def lookup_by_title_author(title: str, authors: list[str] | None = None) -> Book
     if author_list:
         params["author"] = ", ".join(author_list)
 
-    payload = _get_json("/search.json", params=params)
+    payload = get_json("/search.json", params=params)
     docs = payload.get("docs") if isinstance(payload, dict) else None
     if not isinstance(docs, list):
         return None
@@ -293,7 +299,7 @@ def lookup_by_title_author(title: str, authors: list[str] | None = None) -> Book
         work_key = str(doc.get("key") or "") or None
         if not work_key:
             continue
-        description = _description_text(_get_json(f"{work_key}.json"))
+        description = _description_text(get_json(f"{work_key}.json"))
         if not description:
             continue
         return BookSynopsis(

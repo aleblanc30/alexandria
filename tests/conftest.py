@@ -139,6 +139,26 @@ def isolated_settings(tmp_path, monkeypatch):
     reset_enrichment_runs()
 
 
+# ── API client ────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def client(empty_vector_store):
+    """A TestClient over a fresh DB with an empty (mocked) vector store.
+
+    Here rather than in one test module because the ``test_api_*`` modules all
+    need it: the old single ``test_api.py`` was split per router under audit
+    item M-11, and this fixture is what they share.
+    """
+    from fastapi.testclient import TestClient
+
+    from pka.api.main import app
+    from pka.db.queries import init_db
+
+    init_db()
+    return TestClient(app, raise_server_exceptions=True)
+
+
 # ── Document factory ──────────────────────────────────────────────────────────
 
 

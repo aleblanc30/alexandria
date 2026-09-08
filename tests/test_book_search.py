@@ -149,7 +149,7 @@ class TestGoogleBooks:
 
 class TestLadderIntegration:
     def test_third_rung_runs_when_openlibrary_misses(self, monkeypatch, search_on):
-        monkeypatch.setattr(ol, "_get_json", lambda path, params=None: {"docs": []})
+        monkeypatch.setattr(ol, "get_json", lambda path, params=None: {"docs": []})
         _respond(monkeypatch, _volumes())
         out = ol.lookup_book(title="Dune", authors=["Frank Herbert"])
         assert out is not None
@@ -162,7 +162,7 @@ class TestLadderIntegration:
             },
             "/works/OL1W.json": {"description": "From the catalogue."},
         }
-        monkeypatch.setattr(ol, "_get_json", lambda path, params=None: pages.get(path))
+        monkeypatch.setattr(ol, "get_json", lambda path, params=None: pages.get(path))
         called = []
         monkeypatch.setattr(bs.httpx, "get", lambda *a, **k: called.append(1))
         out = ol.lookup_book(title="Dune", authors=["Frank Herbert"])
@@ -174,7 +174,7 @@ class TestLadderIntegration:
         monkeypatch.setattr(cfg, "cover_search_fallback", True)
         called = []
         monkeypatch.setattr(bs.httpx, "get", lambda *a, **k: called.append(1))
-        monkeypatch.setattr(ol, "_get_json", lambda *a, **k: called.append(1))
+        monkeypatch.setattr(ol, "get_json", lambda *a, **k: called.append(1))
         assert ol.lookup_book(title="Dune") is None
         assert called == []
 

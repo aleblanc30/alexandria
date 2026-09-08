@@ -220,7 +220,7 @@ panel can only emit keys that exist on `Settings`.
 - Capability resolution does not populate the provider cache: assert the
   `_chat` / `_vision` / … module globals are still `None` after a report build.
 
-`tests/test_api.py` gets the two endpoint smoke cases. Frontend: a
+`tests/test_api_settings.py` gets the two endpoint smoke cases. Frontend: a
 `SettingsView` test alongside the existing view tests, plus `npm run build` for
 the typecheck.
 

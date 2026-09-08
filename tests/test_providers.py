@@ -166,7 +166,7 @@ class TestEasyOcr:
     def test_ocr_joins_recognised_lines(self, monkeypatch):
         reader = MagicMock()
         reader.readtext.return_value = ["Line one", "  Line two  "]
-        monkeypatch.setattr(EasyOcrProvider, "_reader", lambda self, langs: reader)
+        monkeypatch.setattr(EasyOcrProvider, "reader", lambda self, langs: reader)
         # ocr() decodes the file (EXIF-orienting it) before OCR; stub that out so
         # the test exercises only the line-joining, not image loading.
         monkeypatch.setattr("pka.providers.easy_ocr._oriented_rgb_array", lambda path: object())
@@ -176,7 +176,7 @@ class TestEasyOcr:
         def _boom(self, langs):
             raise RuntimeError("model load failed")
 
-        monkeypatch.setattr(EasyOcrProvider, "_reader", _boom)
+        monkeypatch.setattr(EasyOcrProvider, "reader", _boom)
         assert EasyOcrProvider().ocr(Path("slide.png")) == ""
 
     # ── Missing-install detection (must surface, never silently degrade) ───────
@@ -213,7 +213,7 @@ class TestEasyOcr:
 
             raise _U("no easyocr")
 
-        monkeypatch.setattr(EasyOcrProvider, "_reader", _unavailable)
+        monkeypatch.setattr(EasyOcrProvider, "reader", _unavailable)
         with pytest.raises(EasyOcrUnavailable):
             EasyOcrProvider().text_coverage(img)
 
@@ -228,7 +228,7 @@ class TestEasyOcr:
         def _unavailable(self, langs):
             raise EasyOcrUnavailable("no easyocr")
 
-        monkeypatch.setattr(EasyOcrProvider, "_reader", _unavailable)
+        monkeypatch.setattr(EasyOcrProvider, "reader", _unavailable)
         with pytest.raises(EasyOcrUnavailable):
             EasyOcrProvider().ocr(img)
 
