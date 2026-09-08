@@ -374,7 +374,16 @@ result: sub-2-second `alexandria dev` restarts and a faster `--reload` loop.
 This also shrinks the test-collection time, since `tests/test_api.py` imports
 the app.
 
-### P-3: clustering enumerates the whole Chroma collection to find document ids (S)
+### P-3: clustering enumerates the whole Chroma collection to find document ids (S) — **done**
+
+Shipped as recommended. Candidate ids come from `SELECT DISTINCT
+chunks.document_id`, and Chroma is read only for documents without a cached
+vector. Note the code moved to `pka/clustering/embeddings.py` in the M-1 split,
+so the line numbers below are stale. Two things the recommendation did not
+mention and that the implementation keeps: metadata is fetched before
+embeddings rather than in one call, preserving `fetch_embeddings_by_ids`'
+recovery of corrupt vectors, and both original error messages survive via an
+`EXISTS` on `chunks` that runs only on the empty path.
 
 `_load_document_embeddings` (`engine.py:116`) starts with
 `fetch_records(include=["metadatas"])`, a paged `collection.get` over **every
@@ -490,7 +499,12 @@ times per second", read X itself for memoisation before writing it up, and
 `git log -S` the fix you are about to recommend to check it is not already in
 the tree.
 
-### P-7: `list_tags` sorts and limits in Python (S)
+### P-7: `list_tags` sorts and limits in Python (S) — **done**
+
+Shipped as the `UNION ALL` the recommendation suggested, with `ORDER BY n DESC
+LIMIT` in SQL. A literal `grp` column keeps source tags ahead of overlay tags on
+a count tie, which is what the Python stable sort did implicitly by building the
+source list first.
 
 `queries.py:1143` runs two `GROUP BY` queries over the full `source_tags` and
 `overlay_tags` tables, concatenates, sorts by count in Python and slices
