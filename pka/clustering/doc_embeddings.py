@@ -24,10 +24,46 @@ def blob_to_embedding(blob: bytes) -> np.ndarray:
     return np.frombuffer(blob, dtype=np.float32).copy()
 
 
-def refresh_document_embedding(doc_id: int) -> bool:
-    """Recompute mean-pooled chunk embedding for one document and persist."""
+def _vectors_from_chroma(doc_id: int, vector_ids: list[str]) -> list[list[float]]:
+    """The document's chunk vectors, read back out of Chroma.
+
+    Two round trips: the metadatas, then the embeddings. The metadata pass is a
+    guard against Chroma and SQLite disagreeing about which document a vector
+    belongs to, which is why it is not skipped when only the vectors are wanted.
+    """
     from pka.storage.vector_store import fetch_embeddings_by_ids, fetch_records_by_ids
 
+    meta_page = fetch_records_by_ids(vector_ids, include=["metadatas"])
+    metadatas = meta_page.get("metadatas") or []
+    ids = meta_page.get("ids") or []
+    if not ids:
+        return []
+
+    embeddings, _ = fetch_embeddings_by_ids(ids)
+    vecs: list[list[float]] = []
+    for vid, meta in zip(ids, metadatas, strict=True):
+        emb = embeddings.get(vid)
+        if emb is None:
+            continue
+        if int(meta.get("document_id", -1)) != doc_id:
+            continue
+        vecs.append(emb)
+    return vecs
+
+
+def refresh_document_embedding(
+    doc_id: int,
+    known: dict[str, list[float]] | None = None,
+) -> bool:
+    """Recompute mean-pooled chunk embedding for one document and persist.
+
+    ``known`` carries chunk vectors the caller already holds, keyed by vector
+    id — what ``upsert_chunks`` just returned. It is used only when it covers
+    every chunk the document has, in which case Chroma is not read at all; a
+    document written in more than one block falls back to reading the whole set
+    back, once, rather than mixing the two sources. SQLite is the authority on
+    which vector ids belong to the document either way.
+    """
     eng = get_engine()
     with eng.connect() as con:
         rows = con.execute(
@@ -41,21 +77,10 @@ def refresh_document_embedding(doc_id: int) -> bool:
             )
         return False
 
-    meta_page = fetch_records_by_ids(vector_ids, include=["metadatas"])
-    metadatas = meta_page.get("metadatas") or []
-    ids = meta_page.get("ids") or []
-    if not ids:
-        return False
-
-    embeddings, _ = fetch_embeddings_by_ids(ids)
-    vecs: list[list[float]] = []
-    for vid, meta in zip(ids, metadatas, strict=True):
-        emb = embeddings.get(vid)
-        if emb is None:
-            continue
-        if int(meta.get("document_id", -1)) != doc_id:
-            continue
-        vecs.append(emb)
+    if known is not None and all(vid in known for vid in vector_ids):
+        vecs = [known[vid] for vid in vector_ids]
+    else:
+        vecs = _vectors_from_chroma(doc_id, vector_ids)
     if not vecs:
         return False
 

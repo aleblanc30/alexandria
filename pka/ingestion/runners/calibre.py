@@ -94,6 +94,7 @@ def _attach_book_synopsis(book: CalibreBook, doc_id: int, *, dry_run: bool) -> i
         extra_metadata=meta,
         chunk_offset=existing_chunk_count(doc_id),
         min_chars=1,
+        refresh=False,  # the caller refreshes once, after this second block
     )
     return 0 if result["skipped"] else result["chunks_added"]
 
@@ -187,11 +188,19 @@ def ingest_calibre_books(
             extra_metadata={"title": book.title, "pass": "metadata"},
             dry_run=dry_run,
             fallback_text=book.title,
+            refresh=False,
         )
         if result["skipped"]:
             return False, 0
         embedded.add(book.source_id)
         synopsis_chunks = _attach_book_synopsis(book, doc_id, dry_run=dry_run)
+        if not dry_run:
+            # Both blocks above deferred it; this is the only refresh on the
+            # metadata path, so an early return between them would strand the
+            # book without an embedding (audit item P-4).
+            from pka.clustering.doc_embeddings import refresh_document_embedding
+
+            refresh_document_embedding(doc_id)
         return True, result["chunks_added"] + synopsis_chunks
 
     return run_embed_loop(
@@ -273,6 +282,7 @@ def ingest_calibre_fulltext(
                     },
                     chunk_offset=chunk_offset + total_added,
                     dry_run=dry_run,
+                    refresh=False,
                 )
                 if not result["skipped"]:
                     total_added += result["chunks_added"]
@@ -290,7 +300,20 @@ def ingest_calibre_fulltext(
                     Source.CALIBRE,
                     title=book.title,
                     dry_run=dry_run,
+                    refresh=False,
                 )
+                # Once, here, rather than once per section: the mean-pool is
+                # over every chunk the book has, so every earlier pass computed
+                # a value this one supersedes (audit item P-4). Deferred blocks
+                # above make this call the only thing keeping the embedding
+                # current — it must stay on this path.
+                if not dry_run:
+                    # Function-level, like the one in ``ingest_text_block``:
+                    # ingestion reaches clustering lazily so the import cycle
+                    # the audit records under M-6 stays broken at module scope.
+                    from pka.clustering.doc_embeddings import refresh_document_embedding
+
+                    refresh_document_embedding(doc_id)
                 stats["processed"] += 1
                 stats["chunks"] += total_added
 

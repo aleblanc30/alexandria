@@ -92,3 +92,80 @@ class TestLoadCachedEmbeddings:
         found, missing = load_cached_embeddings([doc_id, 99999])
         assert doc_id in found
         assert 99999 in missing
+
+
+class TestRefreshReusesVectorsItWasGiven:
+    """The chunk vectors were just computed; reading them back is a wasted trip.
+
+    `ingest_text_block` upserts chunks to Chroma and then called
+    `refresh_document_embedding`, which fetched the metadatas and the embeddings
+    of those same chunks straight back out. Passing the vectors forward removes
+    both round trips for a document written in one block. Audit item P-4.
+    """
+
+    @staticmethod
+    def _doc_with_chunks(vector_ids: list[str]) -> int:
+        doc_id = make_document("zotero", "KV1", "Known vectors", None, None)
+        insert_chunks(
+            [
+                {
+                    "document_id": doc_id,
+                    "chunk_index": i,
+                    "text": f"chunk {i}",
+                    "token_count": 2,
+                    "vector_id": vid,
+                }
+                for i, vid in enumerate(vector_ids)
+            ]
+        )
+        return doc_id
+
+    @staticmethod
+    def _vec(value: float) -> list[float]:
+        return [value] * EMBEDDING_DIM
+
+    def test_complete_known_vectors_skip_chroma_entirely(self, mock_chroma):
+        _store, col = mock_chroma
+        doc_id = self._doc_with_chunks(["kv-1", "kv-2"])
+        known = {"kv-1": self._vec(1.0), "kv-2": self._vec(3.0)}
+
+        assert refresh_document_embedding(doc_id, known=known) is True
+
+        col.get.assert_not_called()
+        cached, _ = load_cached_embeddings([doc_id])
+        np.testing.assert_allclose(cached[doc_id], np.full(EMBEDDING_DIM, 2.0), rtol=1e-6)
+
+    def test_partial_known_vectors_fall_back_to_chroma(self, mock_chroma):
+        """A second block's chunks are not in hand, so the whole set is refetched."""
+        _store, col = mock_chroma
+        doc_id = self._doc_with_chunks(["kv-1", "kv-2"])
+        col.upsert(
+            ids=["kv-1", "kv-2"],
+            documents=["chunk 0", "chunk 1"],
+            metadatas=[{"document_id": doc_id}, {"document_id": doc_id}],
+            embeddings=[self._vec(1.0), self._vec(3.0)],
+        )
+
+        assert refresh_document_embedding(doc_id, known={"kv-1": self._vec(1.0)}) is True
+
+        assert col.get.called
+        cached, _ = load_cached_embeddings([doc_id])
+        np.testing.assert_allclose(cached[doc_id], np.full(EMBEDDING_DIM, 2.0), rtol=1e-6)
+
+    def test_known_vectors_give_the_same_result_as_reading_them_back(self, mock_chroma):
+        _store, col = mock_chroma
+        doc_id = self._doc_with_chunks(["kv-1", "kv-2"])
+        vectors = [self._vec(1.0), self._vec(3.0)]
+        col.upsert(
+            ids=["kv-1", "kv-2"],
+            documents=["chunk 0", "chunk 1"],
+            metadatas=[{"document_id": doc_id}, {"document_id": doc_id}],
+            embeddings=vectors,
+        )
+
+        refresh_document_embedding(doc_id)
+        from_chroma, _ = load_cached_embeddings([doc_id])
+        refresh_document_embedding(doc_id, known=dict(zip(["kv-1", "kv-2"], vectors, strict=True)))
+        from_known, _ = load_cached_embeddings([doc_id])
+
+        np.testing.assert_allclose(from_known[doc_id], from_chroma[doc_id], rtol=1e-6)

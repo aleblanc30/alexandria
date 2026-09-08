@@ -34,6 +34,7 @@ def ingest_text_block(
     dry_run: bool = False,
     min_chars: int | None = None,
     fallback_text: str | None = None,
+    refresh: bool = True,
 ) -> dict:
     """Chunk, embed, and persist a single block of text for a document.
 
@@ -42,6 +43,14 @@ def ingest_text_block(
     embedded as a single chunk regardless of length. This keeps documents with
     little or no body text — e.g. a Calibre book with only a title — findable by
     semantic search on that fallback (typically the title).
+
+    ``refresh=False`` leaves ``documents.doc_embedding`` alone. It is for
+    callers writing a document in several blocks: the mean-pool is over every
+    chunk the document has, so running it per block recomputes a value that is
+    wrong until the last block lands. Such a caller **must** call
+    :func:`pka.clustering.doc_embeddings.refresh_document_embedding` itself once
+    the last block is in, or the document keeps a stale embedding and never
+    reaches clustering, learned tags, or semantic search.
 
     Returns:
         ``{"chunks_added": int, "skipped": bool}``.
@@ -70,7 +79,7 @@ def ingest_text_block(
         **(extra_metadata or {}),
     }
 
-    upsert_chunks(
+    embeddings = upsert_chunks(
         ids=vector_ids,
         texts=chunk_texts,
         metadatas=[{**base_meta, "chunk_index": chunk_offset + i} for i in range(len(chunk_texts))],
@@ -103,9 +112,13 @@ def ingest_text_block(
             for i, (t, vid) in enumerate(zip(chunk_texts, vector_ids, strict=True))
         ]
     )
-    from pka.clustering.doc_embeddings import refresh_document_embedding
+    if refresh:
+        from pka.clustering.doc_embeddings import refresh_document_embedding
 
-    refresh_document_embedding(doc_id)
+        # The vectors just written are handed on rather than read back. They
+        # cover the whole document only when this block is its only one; a
+        # second block makes the refresh fall back to Chroma (audit item P-4).
+        refresh_document_embedding(doc_id, known=dict(zip(vector_ids, embeddings, strict=True)))
     return {"chunks_added": len(chunk_texts), "skipped": False}
 
 
@@ -128,6 +141,7 @@ def attach_summary_chunk(
     material: str | None = None,
     context: str | None = None,
     dry_run: bool = False,
+    refresh: bool = True,
 ) -> int:
     """Add a generated-summary chunk for a long document (DESIGN.md §3.2).
 
@@ -149,6 +163,10 @@ def attach_summary_chunk(
     text this is, the second supplies surrounding facts the text itself omits
     (a comment's thread title, say). Both are optional — callers that leave them
     unset get the generic document framing.
+
+    ``refresh`` is forwarded to :func:`ingest_text_block` and carries the same
+    obligation: a caller passing ``False`` owns refreshing the document
+    embedding once its last block is written.
     """
     if dry_run or not (text or "").strip():
         return 0
@@ -185,6 +203,7 @@ def attach_summary_chunk(
             extra_metadata={"title": title, "pass": "summary"},
             chunk_offset=existing_chunk_count(doc_id),
             min_chars=1,
+            refresh=refresh,
         )
         return 0 if result["skipped"] else result["chunks_added"]
     except Exception:

@@ -201,18 +201,29 @@ def upsert_chunks(
     ids: list[str],
     texts: list[str],
     metadatas: list[dict],
-) -> None:
-    """Upsert chunk documents; Chroma computes embeddings from ``texts``."""
+) -> list[list[float]]:
+    """Upsert chunk documents and return the embeddings that were stored.
+
+    The embeddings are computed here rather than left to Chroma, which would
+    otherwise run the same model over the same texts. Nothing about the stored
+    vectors changes — it is the collection's own embedding function — but the
+    caller now holds them, so the document mean-pool no longer has to read them
+    straight back out (audit item P-4).
+    """
     if not ids:
-        return
+        return []
     col = get_collection()
+    embeddings = [list(vec) for vec in _get_embedding_function()(texts)]
     for i in range(0, len(ids), _UPSERT_BATCH_SIZE):
+        window = slice(i, i + _UPSERT_BATCH_SIZE)
         col.upsert(
-            ids=ids[i : i + _UPSERT_BATCH_SIZE],
-            documents=texts[i : i + _UPSERT_BATCH_SIZE],
-            metadatas=metadatas[i : i + _UPSERT_BATCH_SIZE],
+            ids=ids[window],
+            documents=texts[window],
+            metadatas=metadatas[window],
+            embeddings=embeddings[window],
         )
     log.debug("Upserted %d chunks to Chroma", len(ids))
+    return embeddings
 
 
 def _empty_page(include: list[str]) -> dict[str, list]:

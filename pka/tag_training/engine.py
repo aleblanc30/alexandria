@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -49,7 +50,23 @@ def serialize_model(model: LogisticRegression) -> str:
     return json.dumps(payload)
 
 
+# Accepted models are rebuilt from JSON on every scoring call, and
+# ``apply_learned_tags_for_document`` scores one document against every accepted
+# model as the last step of ingesting it — so a sync pays this per document, per
+# model, for blobs that change only when a session is retrained. The blob is its
+# own cache key: new coefficients serialise differently and therefore miss,
+# which is why nothing has to invalidate this on accept or archive. Bounded
+# because the key is an unbounded-length string held by the cache.
+_MODEL_CACHE_SIZE = 32
+
+
+@lru_cache(maxsize=_MODEL_CACHE_SIZE)
 def deserialize_model(blob: str) -> LogisticRegression:
+    """Rebuild a fitted classifier from its serialised coefficients.
+
+    The returned model is shared between callers and must be treated as
+    read-only; nothing in the scoring path mutates it.
+    """
     # Imported here, not at module scope: sklearn costs ~1s to import and the API
     # only ever reaches it through a training session (see planning audit P-2).
     from sklearn.linear_model import LogisticRegression

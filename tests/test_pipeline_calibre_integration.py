@@ -485,3 +485,140 @@ def test_epub_chunks_have_no_page_range(mock_chroma, tmp_path, monkeypatch):
             ).scalar()
             == 0
         )
+
+
+class TestFulltextRefreshesTheEmbeddingOncePerBook:
+    """A section loop must not re-mean-pool the book on every section.
+
+    `ingest_text_block` refreshed `documents.doc_embedding` on every call, and
+    the fulltext pass calls it once per section. An N-section book therefore
+    read every chunk vector it had so far back out of Chroma N times, and
+    re-scored every accepted learned-tag model N times, to arrive at a value
+    only the last pass got right. Audit item P-4.
+    """
+
+    @staticmethod
+    def _sections(n: int) -> BookExtraction:
+        return BookExtraction(
+            [
+                {
+                    "title": f"Ch{i}",
+                    # Comfortably over ``min_chunk_chars`` (80), or the chunker
+                    # discards the section and the pass reports nothing added.
+                    "text": (
+                        f"Section {i} opens with a sentence long enough to survive the "
+                        f"minimum-length filter. Section {i} then continues for a second "
+                        f"sentence, and closes with a third so the window has something "
+                        f"to slide over."
+                    ),
+                    "index": i,
+                }
+                for i in range(n)
+            ]
+        )
+
+    @pytest.fixture()
+    def counting_refresh(self, monkeypatch):
+        from pka.clustering import doc_embeddings
+
+        calls: list[int] = []
+        real = doc_embeddings.refresh_document_embedding
+
+        def _counted(doc_id, known=None):
+            calls.append(doc_id)
+            return real(doc_id, known=known)
+
+        monkeypatch.setattr(doc_embeddings, "refresh_document_embedding", _counted)
+        return calls
+
+    def test_five_sections_refresh_once(self, mock_chroma, tmp_path, monkeypatch, counting_refresh):
+        from pka.ingestion.runners.calibre import ingest_calibre_books, ingest_calibre_fulltext
+
+        epub = tmp_path / "many.epub"
+        epub.write_bytes(b"PK")
+        book = _make_book(source_id="MANY", preferred_path=epub)
+        ingest_calibre_books([book])
+        counting_refresh.clear()
+
+        monkeypatch.setattr(
+            "pka.ingestion.runners.calibre.extract_book_report",
+            lambda p, **kw: self._sections(5),
+        )
+        ingest_calibre_fulltext([book])
+
+        assert len(counting_refresh) == 1
+
+    def test_the_embedding_still_covers_every_section(self, mock_chroma, tmp_path, monkeypatch):
+        """Deferring must not leave the book with a partial or stale mean-pool."""
+        import numpy as np
+
+        from pka.clustering.doc_embeddings import load_cached_embeddings
+        from pka.ingestion.runners.calibre import ingest_calibre_books, ingest_calibre_fulltext
+
+        epub = tmp_path / "cover.epub"
+        epub.write_bytes(b"PK")
+        book = _make_book(source_id="COVER", preferred_path=epub)
+        ingest_calibre_books([book])
+        monkeypatch.setattr(
+            "pka.ingestion.runners.calibre.extract_book_report",
+            lambda p, **kw: self._sections(3),
+        )
+        ingest_calibre_fulltext([book])
+
+        with get_engine().connect() as con:
+            doc_id = con.execute(
+                sa.select(documents.c.id).where(documents.c.source_id == "COVER")
+            ).scalar()
+            vector_ids = [
+                r[0]
+                for r in con.execute(
+                    sa.select(chunks.c.vector_id).where(chunks.c.document_id == doc_id)
+                ).fetchall()
+            ]
+
+        store, _col = mock_chroma
+        expected = np.mean(
+            np.array([store[vid]["emb"] for vid in vector_ids], dtype=np.float32), axis=0
+        )
+        cached, _ = load_cached_embeddings([doc_id])
+        np.testing.assert_allclose(cached[doc_id], expected, rtol=1e-5)
+
+
+class TestRefreshFalseLeavesTheEmbeddingAlone:
+    """The flag the section loop relies on, tested directly."""
+
+    def test_chunks_are_written_but_the_embedding_is_not(self, mock_chroma):
+        from pka.clustering.doc_embeddings import load_cached_embeddings
+        from pka.constants import Source
+        from pka.ingestion.core import ingest_text_block
+        from tests.conftest import make_document
+
+        doc_id = make_document("calibre", "NR1", "No refresh", None, None)
+        result = ingest_text_block(
+            doc_id,
+            "A sentence. Another sentence. A third one.",
+            Source.CALIBRE,
+            min_chars=1,
+            refresh=False,
+        )
+
+        assert result["chunks_added"] > 0
+        _cached, missing = load_cached_embeddings([doc_id])
+        assert doc_id in missing
+
+    def test_the_default_still_refreshes(self, mock_chroma):
+        from pka.clustering.doc_embeddings import load_cached_embeddings
+        from pka.constants import Source
+        from pka.ingestion.core import ingest_text_block
+        from tests.conftest import make_document
+
+        doc_id = make_document("calibre", "R1", "Refresh", None, None)
+        ingest_text_block(
+            doc_id,
+            "A sentence. Another sentence. A third one.",
+            Source.CALIBRE,
+            min_chars=1,
+        )
+
+        cached, _ = load_cached_embeddings([doc_id])
+        assert doc_id in cached

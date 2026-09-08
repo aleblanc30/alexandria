@@ -144,6 +144,14 @@ Every source ends in the same tail: `ingest_text_block` chunks the text, upserts
 to the `alexandria_chunks` Chroma collection, mirrors the row into SQLite
 `chunks`, and refreshes `documents.doc_embedding`.
 
+The refresh is the one step a caller may defer. `doc_embedding` is a mean-pool
+over *every* chunk the document has, so a source writing several blocks per
+document (Calibre's sections and synopsis; the Firefox and Reddit summary
+chunks) passes `refresh=False` and calls `refresh_document_embedding` once its
+last block is written. The column's contents are unchanged either way, and the
+✅ row above still means every source fills it — what changes is how many times
+it is written on the way there.
+
 | `chunks` column | Filled for | From |
 |-----------------|-----------|------|
 | `document_id`, `chunk_index`, `text`, `token_count`, `vector_id` | every source | always |

@@ -101,13 +101,17 @@ flowchart TD
         CHUNK["sentence_window_chunks()<br/>ingestion/chunker.py"]
         FB{"no chunks and<br/>fallback_text given?"}
         FBUSE["embed fallback as one chunk"]
-        UPS["upsert_chunks() → embedding model<br/>storage/vector_store.py"]
+        UPS["upsert_chunks() → embedding model<br/>storage/vector_store.py<br/>returns the vectors it stored"]
         SQL["insert_chunks() — mirrors §3.2<br/>provenance into SQLite"]
-        DOCEMB["refresh_document_embedding()<br/>clustering/doc_embeddings.py"]
+        RF{"refresh=True?"}
+        DOCEMB["refresh_document_embedding(known=…)<br/>clustering/doc_embeddings.py<br/>reads Chroma only when known is short"]
+        DEFER["caller refreshes once<br/>after its last block"]
         TAIL --> CHUNK --> FB
         FB -->|yes| FBUSE --> UPS
         FB -->|no| UPS
-        UPS --> SQL --> DOCEMB
+        UPS --> SQL --> RF
+        RF -->|yes| DOCEMB
+        RF -->|no| DEFER
     end
 
     REG --> META
@@ -199,9 +203,9 @@ flowchart TD
     TEXT["zotero_embed_text(item)<br/>title + creators + abstract + annotations"]
     BLOCK["ingest_text_block(min_chars=1)"]
     CHUNK["sentence_window_chunks()"]
-    UPSC["upsert_chunks() → embedding model"]
+    UPSC["upsert_chunks() → embedding model<br/>returns the vectors it stored"]
     INSC["insert_chunks()"]
-    DOCEMB["refresh_document_embedding()"]
+    DOCEMB["refresh_document_embedding(known=…)<br/>one block per document, so no Chroma read"]
 
     SETE --> ERUN --> ELOOP --> UPD --> TEXT --> BLOCK --> CHUNK --> UPSC --> INSC --> DOCEMB
 
@@ -396,9 +400,9 @@ flowchart TD
     BLOCK --> CARD2
 
     CHUNK["sentence_window_chunks()"]
-    UPSC["upsert_chunks() → embedding model"]
+    UPSC["upsert_chunks() → embedding model<br/>returns the vectors it stored"]
     INSC["insert_chunks()"]
-    DOCEMB["refresh_document_embedding()"]
+    DOCEMB["refresh_document_embedding()<br/>once, after the body and summary blocks<br/>(both pass refresh=False)"]
     BLOCK --> CHUNK --> UPSC --> INSC --> DOCEMB
 
     SQLITE[("SQLite: documents,<br/>fetch_log, chunks")]
@@ -510,7 +514,7 @@ flowchart TD
     STOP1 -->|yes| ENDE
     STOP1 -->|no| SETE2 --> P2
 
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()"]
+    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
     B1 --> TAIL
     B2 --> TAIL
     SECT --> TAIL
@@ -628,7 +632,7 @@ flowchart TD
     NETX(["Internet — target sites"])
     POOL --> NETX
 
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()"]
+    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
     BF --> TAIL
     BI --> TAIL
     SUMF --> TAIL
@@ -721,7 +725,7 @@ flowchart TD
     HAVE["skip when source_id in source_ids_with_chunks(YOUTUBE)"]
     TEXT["youtube_embed_text(video)<br/>title + channel + description + tags"]
     BLOCK["ingest_text_block(min_chars=1,<br/>fallback_text=title)"]
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()"]
+    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
 
     SETE --> ERUN --> ELOOP --> UPD --> HAVE --> TEXT --> BLOCK --> TAIL
 
@@ -834,7 +838,7 @@ flowchart TD
     CLIPUP["CLIP collection upsert<br/>ids, embeddings, metadata(document_id, image_id, path)"]
     P4A --> CLIPUP
 
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()"]
+    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
     BLOCK --> TAIL
 
     NOSUM["no attach_summary_chunk:<br/>IMAGE is absent from _SUMMARY_FLAGS"]
@@ -876,6 +880,7 @@ Reading the six graphs together, the shared surface is:
 | `loops.run_metadata_loop` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `loops.run_embed_loop` | ✅ | — ¹ | ✅ | ✅ | ✅ | ✅ |
 | `core.ingest_text_block` + chunk/embed/persist tail | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| deferred `refresh_document_embedding` (`refresh=False`) ⁵ | — | ✅ | ✅ | ✅ | — | — |
 | `sync_shared.run_full_sync` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `sync_shared.unavailable_metadata` | — | — | ✅ | — | ✅ | ✅ |
 | `classification.classify_document` | ✅ | ✅ | — | — | ✅ | — ² |
@@ -897,6 +902,16 @@ graph: it wraps `attach_summary_chunk`'s cache-miss branch, which is already
 shared. The run opens on the first document that actually infers, stamps
 `documents.summary_run_id`, and is closed by the job skeleton when the sync
 ends — so a sync whose summaries are all cached opens no run at all.
+⁵ The mean-pool is over every chunk a document has, so a source writing more
+than one block per document ran it once per block and threw away all but the
+last result. Those sources pass `refresh=False` and call
+`refresh_document_embedding` themselves once the last block is in: Calibre after
+its section loop and after its synopsis block, Firefox and Reddit after the
+generated-summary block. Zotero, YouTube and Images write one block per document
+and keep the default, which now costs no Chroma read at all because
+`upsert_chunks` hands the vectors back. A source that adopts `refresh=False`
+without adding that trailing call leaves its documents with a stale
+`doc_embedding`, invisible to clustering, learned tags and semantic search.
 
 The genuinely source-specific surface is always the same two things: **how the
 corpus is read** (`pka/connectors/<source>.py`) and **what text is handed to

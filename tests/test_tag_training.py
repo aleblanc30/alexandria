@@ -10,6 +10,7 @@ from pka.constants import TagOrigin
 from pka.db.queries import get_engine, init_db
 from pka.db.schema import overlay_tags, source_tags, tag_training_labels
 from pka.tag_training import lifecycle
+from pka.tag_training.engine import _MODEL_CACHE_SIZE
 from tests.conftest import make_document
 
 
@@ -618,3 +619,64 @@ class TestTagTrainingApi:
         r = client.get("/documents", params=[("learned_tags", "filter-tag")])
         assert r.status_code == 200
         assert r.json()["total"] >= 1
+
+
+class TestDeserializedModelsAreCached:
+    """`deserialize_model` runs once per distinct blob, not once per document.
+
+    `apply_learned_tags_for_document` rebuilds a `LogisticRegression` from JSON
+    for every accepted model, for every document ingested. The blob is its own
+    cache key: a retrained model serialises differently, so a stale entry can
+    never be returned and no invalidation hook is needed. Audit item P-4.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _empty_cache(self):
+        from pka.tag_training import engine
+
+        engine.deserialize_model.cache_clear()
+        yield
+        engine.deserialize_model.cache_clear()
+
+    @staticmethod
+    def _blob(coef: float) -> str:
+        import json
+
+        return json.dumps({"coef": [[coef] * EMBEDDING_DIM], "intercept": [0.0], "classes": [0, 1]})
+
+    def test_the_same_blob_is_rebuilt_once(self):
+        from pka.tag_training.engine import deserialize_model
+
+        blob = self._blob(0.25)
+        first = deserialize_model(blob)
+        second = deserialize_model(blob)
+
+        assert first is second
+        assert deserialize_model.cache_info().hits == 1
+
+    def test_a_different_blob_is_a_different_model(self):
+        from pka.tag_training.engine import deserialize_model
+
+        first = deserialize_model(self._blob(0.25))
+        second = deserialize_model(self._blob(0.75))
+
+        assert first is not second
+        assert float(second.coef_[0][0]) == 0.75
+
+    def test_a_retrained_model_is_never_served_from_the_cache(self):
+        """The blob is the key, so new coefficients cannot hit a stale entry."""
+        from pka.tag_training.engine import deserialize_model
+
+        stale = deserialize_model(self._blob(0.25))
+        retrained = deserialize_model(self._blob(-0.9))
+
+        assert float(stale.coef_[0][0]) == 0.25
+        assert float(retrained.coef_[0][0]) == -0.9
+
+    def test_the_cache_is_bounded(self):
+        from pka.tag_training.engine import deserialize_model
+
+        for i in range(_MODEL_CACHE_SIZE + 5):
+            deserialize_model(self._blob(i / 100.0))
+
+        assert deserialize_model.cache_info().currsize <= _MODEL_CACHE_SIZE

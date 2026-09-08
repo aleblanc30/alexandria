@@ -172,6 +172,7 @@ def embed_fetched_text(
             extra_metadata={"title": title},
             fallback_text=embed_text,
             dry_run=dry_run,
+            refresh=False,
         )
         if result["skipped"]:
             return {"processed": False, "chunks": 0, "skipped": True, "failed": False}
@@ -184,7 +185,15 @@ def embed_fetched_text(
             Source.REDDIT,
             title=title or "",
             dry_run=dry_run,
+            refresh=False,
         )
+        if not dry_run:
+            # One refresh for both blocks. Not left to the summary chunk: it is
+            # flag-gated and returns early when off, which would leave the
+            # document with no embedding at all (audit item P-4).
+            from pka.clustering.doc_embeddings import refresh_document_embedding
+
+            refresh_document_embedding(doc_id)
         if not dry_run and card_summary is None:
             update_card_summary(doc_id, summary)
         if chunked is not None:
@@ -236,6 +245,7 @@ def ingest_reddit_embed(
             fallback_text=saved.title,
             min_chars=1,
             dry_run=dry_run,
+            refresh=False,
         )
         if result["skipped"]:
             return False, 0
@@ -251,7 +261,15 @@ def ingest_reddit_embed(
             material=_MATERIAL_BY_KIND.get(saved.kind),
             context=_summary_context(saved),
             dry_run=dry_run,
+            refresh=False,
         )
+        if not dry_run:
+            # One refresh for both blocks. Not left to the summary chunk: it is
+            # flag-gated and returns early when off, which would leave the
+            # document with no embedding at all (audit item P-4).
+            from pka.clustering.doc_embeddings import refresh_document_embedding
+
+            refresh_document_embedding(doc_id)
         embedded.add(saved.source_id)
         return True, result["chunks_added"] + summary_chunks
 

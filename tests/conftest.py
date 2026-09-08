@@ -555,7 +555,18 @@ def mock_chroma(monkeypatch):
     col.get.side_effect = _get
     col.count.return_value = 0
 
+    class _FakeEmbeddingFunction:
+        """Stands in for Chroma's DefaultEmbeddingFunction.
+
+        ``upsert_chunks`` embeds in-process now (audit item P-4), so without
+        this the mocked path would load the real MiniLM model.
+        """
+
+        def __call__(self, input):  # noqa: A002 - Chroma's own parameter name
+            return [fake_embedding(text) for text in input]
+
     import pka.storage.vector_store as vs
 
     monkeypatch.setattr(vs, "get_collection", lambda: col)
+    monkeypatch.setattr(vs, "_embedding_fn", _FakeEmbeddingFunction())
     return store, col
