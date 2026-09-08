@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 def _pending_metadata_count(src: str) -> int:
     try:
         return count_pending_metadata(src)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - a probe failure shows zero, not a broken bar
         log.warning("Pending metadata count failed for %s: %s", src, exc)
         return 0
 
@@ -67,7 +67,7 @@ def _display_corpus_total(src: str, archive_count: int) -> int:
         n = source_corpus_size(src)
         if n > 0:
             return n
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - as above: fall back to the archive count
         log.warning("Source corpus size failed for %s: %s", src, exc)
     return archive_count
 

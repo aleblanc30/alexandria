@@ -82,7 +82,7 @@ class OpenAICompatChatProvider:
             if not content or not content.strip():
                 return {}, f"Empty response from model {chosen}"
             return parse_llm_json(content), None
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the failure is returned to the caller
             log.warning("%s chat failed (model=%s): %s", self.label, chosen, exc)
             return {}, str(exc)
 

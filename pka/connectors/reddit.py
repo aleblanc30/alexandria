@@ -201,7 +201,7 @@ def _save_failed_body(response, base: str) -> Path | None:
     """
     try:
         body = response.text or ""
-    except Exception:  # pragma: no cover - undecodable body
+    except Exception:  # noqa: BLE001  # pragma: no cover - undecodable body
         return None
     if not body.strip():
         return None
@@ -213,14 +213,14 @@ def _save_failed_body(response, base: str) -> Path | None:
         suffix = ".html" if stripped[:1] == "<" else ".txt"
         path = directory / f"reddit-feed-{response.status_code}-{int(time.time())}{suffix}"
         path.write_text(body, encoding="utf-8")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - the diagnostic is best-effort by design
         log.warning("Could not save the failed Reddit feed response: %s", exc)
         return None
 
     if cfg.reddit_feed_open_failed_page:
         try:
             webbrowser.open(path.as_uri())
-        except Exception as exc:  # pragma: no cover - no browser available
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - no browser available
             log.warning("Could not open %s: %s", path, exc)
     return path
 
@@ -270,7 +270,7 @@ def _html_to_text(html: str) -> str:
     try:
         parser.feed(html)
         parser.close()
-    except Exception:  # pragma: no cover - malformed block-page markup
+    except Exception:  # noqa: BLE001  # pragma: no cover - malformed block-page markup
         return ""
     return parser.text
 
@@ -287,7 +287,7 @@ def _body_excerpt(response, limit: int = 200) -> str:
     """
     try:
         body = (response.text or "").strip()
-    except Exception:  # pragma: no cover - a body that will not decode
+    except Exception:  # noqa: BLE001  # pragma: no cover - a body that will not decode
         return "<unreadable>"
     if not body:
         return "<empty body>"
@@ -316,7 +316,7 @@ def _diagnose_status(response) -> str:
     code = response.status_code
     try:
         body = (response.text or "").lstrip()
-    except Exception:  # pragma: no cover - a body that will not decode
+    except Exception:  # noqa: BLE001  # pragma: no cover - a body that will not decode
         body = ""
     looks_html = body[:1] == "<" or "<html" in body[:200].lower()
     looks_json = body[:1] in "{["
@@ -430,7 +430,7 @@ def _parse_atom_content(html: str) -> tuple[str, str | None]:
     try:
         parser.feed(html or "")
         parser.close()
-    except Exception as exc:  # pragma: no cover - malformed entry markup
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - malformed entry markup
         log.warning("Reddit feed entry content did not parse: %s", exc)
         return "", None
 

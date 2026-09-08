@@ -86,7 +86,7 @@ def get_client() -> chromadb.ClientAPI:
         if _client is None:
             try:
                 _client = _new_client()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a poisoned cache surfaces as anything
                 # A system left half-started or stopped in Chroma's per-path
                 # cache poisons every later client in the process. Dropping that
                 # cache is Chroma's own supported way out; retried once, because
@@ -115,7 +115,7 @@ def vector_count() -> int:
     """Return stored vector count, falling back to SQLite chunk rows."""
     try:
         return get_collection().count()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - a Chroma outage falls back to the chunk table
         log.warning("Chroma count failed (%s); using chunk table", exc)
         import sqlalchemy as sa
 
@@ -131,7 +131,7 @@ def drop_document_collection() -> None:
     reset_collection()
     try:
         get_client().delete_collection(COLLECTION_NAME)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - deleting a collection that is not there is fine
         log.warning("Could not delete Chroma collection %s: %s", COLLECTION_NAME, exc)
     reset_collection()
 
@@ -290,14 +290,14 @@ def _fetch_embedding_batch(col, ids: list[str], out: dict[str, list[float]]) -> 
         try:
             page = col.get(ids=ids, include=["embeddings"])
             out[ids[0]] = page["embeddings"][0]
-        except Exception:
+        except Exception:  # noqa: BLE001 - one unreadable vector is skipped, not fatal
             log.debug("Skipping unreadable Chroma vector %s", ids[0])
         return
     try:
         page = col.get(ids=ids, include=["embeddings"])
         for vid, emb in zip(page["ids"], page["embeddings"], strict=False):
             out[vid] = emb
-    except Exception:
+    except Exception:  # noqa: BLE001 - a bad id fails the whole get; bisect to isolate it
         mid = len(ids) // 2
         _fetch_embedding_batch(col, ids[:mid], out)
         _fetch_embedding_batch(col, ids[mid:], out)
@@ -327,7 +327,7 @@ def purge_vectors(vector_ids: list[str]) -> int:
         batch = vector_ids[i : i + _DELETE_BATCH_SIZE]
         try:
             col.delete(ids=batch)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - per batch, so one failure strands no others
             # Per batch rather than all-or-nothing: one unreadable batch should
             # not strand the rest of the source's vectors in Chroma.
             log.warning("Chroma delete failed (%s); removing chunk rows only", exc)

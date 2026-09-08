@@ -256,7 +256,7 @@ def load_items(
             try:
                 dt = datetime.fromisoformat(row["dateAdded"])
                 ts = int(dt.replace(tzinfo=UTC).timestamp())
-            except Exception:
+            except (ValueError, TypeError):
                 ts = None
 
             fields = _load_item_fields(cur, item_id, uses_value_id)

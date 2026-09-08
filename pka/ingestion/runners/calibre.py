@@ -66,7 +66,7 @@ def _attach_book_synopsis(book: CalibreBook, doc_id: int, *, dry_run: bool) -> i
             authors=book.authors,
             isbn=book.isbn,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - enrichment is optional; the book still lands
         log.warning("Book lookup failed for %s: %s", book.source_id, exc)
         return 0
     if synopsis is None:

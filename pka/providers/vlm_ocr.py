@@ -47,7 +47,7 @@ class VlmOcrProvider:
 
             b64 = _encode_image(path)
             content = get_vision_provider().complete(_OCR_PROMPT, b64, model=model)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - OCR is optional; a failure means no text
             log.warning("VLM OCR failed for %s: %s", path.name, exc)
             return ""
 

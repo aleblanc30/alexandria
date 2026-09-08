@@ -336,3 +336,34 @@ class TestSplitCalibreTags:
 
     def test_empty_tags(self):
         assert split_calibre_tags([]) == ([], None)
+
+
+class TestDateParsingRejectsJunkWithoutSwallowingBugs:
+    """Both parsers narrowed from `except Exception` to the conversion errors.
+
+    Calibre writes these columns freely, so a malformed value has to degrade to
+    None. A `TypeError` from passing the wrong type is a caller bug and now
+    propagates instead of being reported as a missing date. Audit item M-5.
+    """
+
+    @pytest.mark.parametrize("value", [None, "", "not a date", "2019-13-45 99:99:99"])
+    def test_parse_ts_returns_none_for_unusable_values(self, value):
+        from pka.connectors.calibre import _parse_ts
+
+        assert _parse_ts(value) is None
+
+    def test_parse_ts_reads_a_calibre_timestamp(self):
+        from pka.connectors.calibre import _parse_ts
+
+        assert _parse_ts("2024-03-01 12:00:00.000000+00:00") == 1709294400
+
+    @pytest.mark.parametrize("value", [None, "", "n/a", "0101-01-01"])
+    def test_parse_year_returns_none_for_unusable_values(self, value):
+        from pka.connectors.calibre import _parse_year
+
+        assert _parse_year(value) is None
+
+    def test_parse_year_reads_the_leading_year(self):
+        from pka.connectors.calibre import _parse_year
+
+        assert _parse_year("1994-06-15T00:00:00+00:00") == 1994

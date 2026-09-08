@@ -347,7 +347,7 @@ def summarize_text(
             material=material,
             context=context,
         )
-    except Exception as exc:  # provider, parsing, anything — enrichment is optional
+    except Exception as exc:  # noqa: BLE001 - provider, parsing, anything: enrichment is optional
         log.warning("Summarisation failed: %s", exc)
         return None
     return summary or None

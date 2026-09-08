@@ -79,7 +79,7 @@ class ClipImageEmbedder:
 
             return features.squeeze().tolist()
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a torch failure degrades to no vector
             log.warning("CLIP embedding failed for %s: %s", path.name, exc)
             return None
 
@@ -93,6 +93,6 @@ class ClipImageEmbedder:
                 features = _pooled(model.get_text_features(**inputs))
                 features = features / features.norm(dim=-1, keepdim=True)
             return features.squeeze().tolist()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - as above: no vector rather than a crash
             log.warning("CLIP text embedding failed: %s", exc)
             return None

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import urlparse
+
+log = logging.getLogger(__name__)
 
 _AMAZON_HOST = re.compile(r"^([a-z0-9-]+\.)*amazon\.[a-z.]+$", re.IGNORECASE)
 _ASIN_PATH = re.compile(
@@ -85,7 +88,8 @@ def _text_by_id(html: str, element_id: str) -> str | None:
     try:
         parser.feed(html)
         parser.close()
-    except Exception:
+    except Exception:  # noqa: BLE001 - HTMLParser on a live retail page; treat it as absent
+        log.debug("Could not parse #%s out of the Amazon page", element_id, exc_info=True)
         return None
     if not parser.found:
         return None

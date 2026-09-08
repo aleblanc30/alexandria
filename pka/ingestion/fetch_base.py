@@ -6,6 +6,7 @@ wikipedia) can use these without importing the dispatcher that calls them —
 ``fetcher`` dispatches down to those modules, they depend only on this one.
 """
 
+import logging
 import re
 import tempfile
 from dataclasses import dataclass
@@ -47,6 +48,9 @@ class FetchResult:
     # documents.isbn is a join key: only a checksum-valid ISBN reaches it
     # (openlibrary.normalize_isbn / isbn_checksum_valid).
     isbn: str | None = None
+
+
+log = logging.getLogger(__name__)
 
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -105,6 +109,24 @@ def _sections_text(sections: list[dict]) -> str | None:
 # ── Content extraction ────────────────────────────────────────────────────────
 
 
+# Optional extractors already reported absent. A package that is not installed
+# is an operator-visible deployment fault, but it is the *same* fault on every
+# page of a sync, so it is reported once per process rather than per document.
+_MISSING_EXTRACTORS: set[str] = set()
+
+
+def _warn_missing_extractor(package: str) -> None:
+    """Report an uninstalled extractor once, so it cannot read as an empty page."""
+    if package in _MISSING_EXTRACTORS:
+        return
+    _MISSING_EXTRACTORS.add(package)
+    log.warning(
+        "%s is not installed; HTML extraction is falling back to a cruder rung. "
+        "Reinstall the project (pip install -e .) to restore it.",
+        package,
+    )
+
+
 # Elements whose *contents* are code or presentation, not prose. Dropped before
 # the text is taken, so a page whose main content trafilatura cannot find does
 # not contribute its inline JavaScript and JSON-LD to the archive — "function
@@ -136,51 +158,69 @@ def _tags_to_text(markup: str) -> str:
         return ""
     try:
         import lxml.html
-
-        doc = lxml.html.fromstring(markup)
-        for element in doc.xpath(_NON_PROSE_XPATH):
-            element.drop_tree()
-        # itertext() rather than text_content(): the latter concatenates
-        # nodes with no separator, gluing a heading to the paragraph after
-        # it ("An Anarchist FAQIntroduction"). Joining on a space keeps the
-        # element boundary the old tag-substitution gave us for free.
-        return " ".join(" ".join(doc.itertext()).split())
-    except Exception:
-        # A document lxml cannot parse at all (empty, or not markup) still gets
-        # the old best-effort treatment rather than dropping the fetch.
-        text = _ANY_TAG.sub(" ", markup)
-        return " ".join(unescape(text).split())
+    except ImportError:
+        _warn_missing_extractor("lxml")
+    else:
+        try:
+            doc = lxml.html.fromstring(markup)
+            for element in doc.xpath(_NON_PROSE_XPATH):
+                element.drop_tree()
+            # itertext() rather than text_content(): the latter concatenates
+            # nodes with no separator, gluing a heading to the paragraph after
+            # it ("An Anarchist FAQIntroduction"). Joining on a space keeps the
+            # element boundary the old tag-substitution gave us for free.
+            return " ".join(" ".join(doc.itertext()).split())
+        except Exception:  # noqa: BLE001 - malformed markup degrades, it never drops the fetch
+            log.debug("lxml could not parse %d chars of markup", len(markup), exc_info=True)
+    # A document lxml cannot parse at all (empty, or not markup) still gets the
+    # old best-effort treatment rather than dropping the fetch.
+    text = _ANY_TAG.sub(" ", markup)
+    return " ".join(unescape(text).split())
 
 
 def _extract_text(html: str, url: str) -> str | None:
+    """Best available plain text for a page, trying three rungs in quality order.
+
+    The import and the extraction are caught separately at every rung. Wrapped
+    together, an uninstalled package and a page the package could not parse
+    produce the same silence, and the archive takes the cruder rung's output for
+    every document with nothing in the log to say why.
+    """
     # Primary: trafilatura (respects main-content heuristics)
     try:
         import trafilatura
-
-        text = trafilatura.extract(html, url=url, include_comments=False, include_tables=False)
-        if text and len(text.strip()) > 0:
-            return text.strip()
-    except Exception:
-        pass
+    except ImportError:
+        _warn_missing_extractor("trafilatura")
+    else:
+        try:
+            text = trafilatura.extract(html, url=url, include_comments=False, include_tables=False)
+            if text and len(text.strip()) > 0:
+                return text.strip()
+        except Exception:  # noqa: BLE001 - this page falls to the next rung, the sync goes on
+            log.debug("trafilatura could not extract %s", url, exc_info=True)
 
     # Fallback: readability-lxml
     try:
         from readability import Document
+    except ImportError:
+        _warn_missing_extractor("readability-lxml")
+    else:
+        try:
+            doc = Document(html)
+            text = _tags_to_text(doc.summary())
+            if text:
+                return text
+        except Exception:  # noqa: BLE001 - as above: fall through to the last resort
+            log.debug("readability could not extract %s", url, exc_info=True)
 
-        doc = Document(html)
-        text = _tags_to_text(doc.summary())
-        if text:
-            return text
-    except Exception:
-        pass
-
-    # Last resort: strip the raw HTML itself.
+    # Last resort: strip the raw HTML itself. _tags_to_text carries its own
+    # regex fallback, so reaching this handler means even that failed.
     try:
         text = _tags_to_text(html)
         if text:
             return text
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - an unextractable page is unfetchable, not a crash
+        log.debug("last-resort extraction failed for %s", url, exc_info=True)
 
     return None
 

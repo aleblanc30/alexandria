@@ -126,7 +126,9 @@ def _parse_ts(dt_str: str | None) -> int | None:
         dt_str = dt_str.split("+")[0].strip()  # strip tz suffix
         dt = datetime.fromisoformat(dt_str)
         return int(dt.replace(tzinfo=UTC).timestamp())
-    except Exception:
+    except (ValueError, TypeError):
+        # Calibre writes this column freely; an unparseable value means "no
+        # date", while anything else here is a bug that should surface.
         return None
 
 
@@ -136,7 +138,7 @@ def _parse_year(pubdate: str | None) -> int | None:
     try:
         year = int(pubdate[:4])
         return year if year > 1000 else None
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 

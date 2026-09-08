@@ -562,7 +562,7 @@ def extract_image_content(
     try:
         vision = provider or get_vision_provider()
         raw = vision.complete(prompt, _encode_image(path), model=model)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - a failed vision pass keeps the classification
         log.warning("Vision content pass failed for %s: %s", path.name, exc)
         return ImageContent(image_type=image_type, description=description)
 

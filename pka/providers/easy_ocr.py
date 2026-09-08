@@ -157,7 +157,7 @@ class EasyOcrProvider:
         except EasyOcrUnavailable:
             # Missing install → surface it; do not degrade to "no text".
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a missing install re-raised above
             log.warning("EasyOCR failed for %s: %s", path.name, exc)
             return ""
 
@@ -190,6 +190,6 @@ class EasyOcrProvider:
             return max(0.0, min(covered / total, 1.0))
         except EasyOcrUnavailable:
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - as above: coverage degrades to 0.0
             log.warning("EasyOCR coverage failed for %s: %s", path.name, exc)
             return 0.0

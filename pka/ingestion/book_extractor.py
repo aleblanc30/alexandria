@@ -63,7 +63,7 @@ def extract_epub(path: Path, max_chars_per_chapter: int | None = None) -> list[d
     chapters: list[dict] = []
     try:
         book = epub.read_epub(str(path), options={"ignore_ncx": False})
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - ebooklib raises freely on a malformed EPUB
         log.warning("Failed to open EPUB %s: %s", path, exc)
         return []
 
@@ -74,7 +74,8 @@ def extract_epub(path: Path, max_chars_per_chapter: int | None = None) -> list[d
             continue
         try:
             raw_html = item.get_body_content().decode("utf-8", errors="replace")
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - one unreadable chapter, not a lost book
+            log.debug("Skipping unreadable EPUB item %s in %s", item.get_id(), path.name)
             continue
 
         text = strip_html(raw_html)
@@ -122,7 +123,7 @@ def _pages_via_pdfplumber(
                 if text.strip():
                     found.append((i + 1, text))
             return found, page_count
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - pdfplumber failing falls through to pypdf
         log.debug("pdfplumber failed for %s (%s), trying pypdf", path.name, exc)
         return None
 
@@ -145,7 +146,7 @@ def _pages_via_pypdf(
             if text.strip():
                 found.append((i + 1, text))
         return found, page_count
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - both readers failed; the book is skipped
         log.warning("pypdf also failed for %s: %s", path.name, exc)
         return None
 

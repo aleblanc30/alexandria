@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -1374,3 +1375,103 @@ class TestParserBeatsTagRegex:
 
         text = _extract_text("<h1>An Anarchist FAQ</h1><p>Introduction</p>", "https://x")
         assert text == "An Anarchist FAQ Introduction"
+
+
+class TestMissingExtractorIsDistinguishedFromExtractionFailure:
+    """An uninstalled optional package must not read as an unextractable page.
+
+    Each rung of `_extract_text` used to wrap its import and its extraction in
+    one `try/except Exception: pass`, so a missing `trafilatura` and a page
+    trafilatura could not parse produced identical silence — and the archive
+    quietly took the cruder rung's output for every document. Audit item M-5.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _forget_reported_packages(self):
+        from pka.ingestion import fetch_base
+
+        fetch_base._MISSING_EXTRACTORS.clear()
+        yield
+        fetch_base._MISSING_EXTRACTORS.clear()
+
+    @staticmethod
+    def _absent(monkeypatch, *names):
+        """Make `import <name>` raise ImportError: None in sys.modules is the hook."""
+        import sys
+
+        for name in names:
+            monkeypatch.setitem(sys.modules, name, None)
+
+    @staticmethod
+    def _present_but_failing(monkeypatch):
+        """Both optional extractors importable, both raising on use."""
+        import sys
+
+        fake_traf = MagicMock()
+        fake_traf.extract.side_effect = RuntimeError("trafilatura blew up")
+        monkeypatch.setitem(sys.modules, "trafilatura", fake_traf)
+        fake_readability = MagicMock()
+        fake_readability.Document = MagicMock(side_effect=RuntimeError("readability blew up"))
+        monkeypatch.setitem(sys.modules, "readability", fake_readability)
+
+    def test_missing_trafilatura_is_named_in_a_warning(self, monkeypatch, caplog):
+        self._absent(monkeypatch, "trafilatura", "readability")
+        from pka.ingestion.fetcher import _extract_text
+
+        with caplog.at_level(logging.WARNING, logger="pka.ingestion.fetch_base"):
+            text = _extract_text("<p>Body.</p>", "https://x")
+
+        assert text == "Body."
+        assert "trafilatura" in caplog.text
+
+    def test_missing_readability_is_named_in_a_warning(self, monkeypatch, caplog):
+        import sys
+
+        fake_traf = MagicMock()
+        fake_traf.extract.return_value = None
+        monkeypatch.setitem(sys.modules, "trafilatura", fake_traf)
+        self._absent(monkeypatch, "readability")
+        from pka.ingestion.fetcher import _extract_text
+
+        with caplog.at_level(logging.WARNING, logger="pka.ingestion.fetch_base"):
+            text = _extract_text("<p>Body.</p>", "https://x")
+
+        assert text == "Body."
+        assert "readability" in caplog.text
+
+    def test_missing_lxml_still_yields_text_through_the_regex_path(self, monkeypatch, caplog):
+        self._absent(monkeypatch, "trafilatura", "readability", "lxml.html")
+        from pka.ingestion.fetcher import _extract_text
+
+        with caplog.at_level(logging.WARNING, logger="pka.ingestion.fetch_base"):
+            text = _extract_text("<p>Body.</p>", "https://x")
+
+        assert text == "Body."
+        assert "lxml" in caplog.text
+
+    def test_an_extractor_that_raises_is_not_reported_as_missing(self, monkeypatch, caplog):
+        self._present_but_failing(monkeypatch)
+        from pka.ingestion.fetcher import _extract_text
+
+        with caplog.at_level(logging.WARNING, logger="pka.ingestion.fetch_base"):
+            text = _extract_text("<p>Body.</p>", "https://x")
+
+        assert text == "Body."
+        assert "not installed" not in caplog.text
+
+    def test_a_missing_package_is_reported_once_not_once_per_document(self, monkeypatch, caplog):
+        self._absent(monkeypatch, "trafilatura", "readability")
+        from pka.ingestion.fetcher import _extract_text
+
+        with caplog.at_level(logging.WARNING, logger="pka.ingestion.fetch_base"):
+            for _ in range(3):
+                _extract_text("<p>Body.</p>", "https://x")
+
+        assert caplog.text.count("trafilatura") == 1
+
+    def test_every_rung_failing_still_returns_none(self, monkeypatch):
+        self._present_but_failing(monkeypatch)
+        self._absent(monkeypatch, "lxml.html")
+        from pka.ingestion.fetcher import _extract_text
+
+        assert _extract_text("", "https://x") is None

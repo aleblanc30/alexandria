@@ -58,9 +58,11 @@ def _read_exif(path: Path) -> tuple[dict, int | None, int | None, int | None]:
 
                         dt = datetime.strptime(dt_str[:19], "%Y:%m:%d %H:%M:%S")
                         date_ts = int(dt.timestamp())
-                    except Exception:
+                    except (ValueError, TypeError):
+                        # A camera that writes a malformed EXIF date leaves
+                        # date_ts None, and the file mtime is used below.
                         pass
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - EXIF is optional; Pillow raises freely here
         log.debug("EXIF read failed for %s: %s", path.name, exc)
 
     if date_ts is None:
@@ -108,7 +110,7 @@ def scan_images(root: Path) -> list[ImageFile]:
                     exif=exif,
                 )
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one unreadable file must not end the scan
             log.warning("Skipping %s: %s", p, exc)
 
     log.info("Scanned %d images under %s", len(results), root)

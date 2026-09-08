@@ -402,5 +402,5 @@ def probe_provider(capability: str) -> dict:
             )
         resp.raise_for_status()
         return {"reachable": True, "detail": "ok"}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any probe failure is reported as unreachable
         return {"reachable": False, "detail": str(exc)}

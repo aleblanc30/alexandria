@@ -97,7 +97,7 @@ class OllamaChatProvider(_OllamaEndpoint):
                     _cached_chat_model = name
                     log.info("Auto-selected Ollama chat model: %s", name)
                     return name
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - an unreachable Ollama uses the configured model
             log.warning("Could not list Ollama models: %s", exc)
 
         return cfg.chat_model or "llama3"
@@ -142,7 +142,7 @@ class OllamaChatProvider(_OllamaEndpoint):
             if not content.strip():
                 return {}, f"Empty response from model {chosen}"
             return parse_llm_json(content), None
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the failure is returned to the caller
             log.warning("%s chat failed (model=%s): %s", self.label, chosen, exc)
             return {}, str(exc)
 

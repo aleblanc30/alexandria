@@ -398,7 +398,7 @@ def test_snapshot_concurrent_with_advance_is_safe():
         try:
             while not stop.is_set():
                 sp.advance("zotero", phase="fetching")
-        except Exception as exc:  # pragma: no cover - failure path
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - failure path
             errors.append(exc)
 
     t = threading.Thread(target=hammer)

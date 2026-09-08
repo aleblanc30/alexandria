@@ -74,6 +74,6 @@ def try_load_youtube_videos() -> tuple[list[YouTubeVideo], str | None]:
     except YouTubeAuthError as exc:
         log.warning("YouTube unavailable: %s", exc)
         return [], str(exc)
-    except Exception as exc:  # network / quota / API errors must not crash the job
+    except Exception as exc:  # noqa: BLE001 - network / quota / API errors must not crash the job
         log.warning("YouTube load failed: %s", exc)
         return [], f"YouTube load failed: {exc}"

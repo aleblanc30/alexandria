@@ -91,7 +91,7 @@ def _resolve_backend(kind: str) -> tuple[str | None, str | None, dict]:
         return None, None, {}
     try:
         return _summary_backend()
-    except Exception:
+    except Exception:  # noqa: BLE001 - an unresolved backend records no model, not a crash
         log.debug("Could not resolve the backend for %s runs", kind, exc_info=True)
         return None, None, {}
 
@@ -228,7 +228,7 @@ def record_call(kind: str | EnrichmentKind, chars_sent: int) -> None:
                     chars_sent=enrichment_runs.c.chars_sent + max(0, chars_sent),
                 )
             )
-    except Exception:
+    except Exception:  # noqa: BLE001
         # Spend accounting must never cost an artifact its ingestion.
         log.debug("Could not record a call against run #%d", run_id, exc_info=True)
 
@@ -246,7 +246,7 @@ def count_artifact(kind: str | EnrichmentKind) -> None:
                 .where(enrichment_runs.c.run_id == run_id)
                 .values(artifacts=enrichment_runs.c.artifacts + 1)
             )
-    except Exception:
+    except Exception:  # noqa: BLE001 - as above: accounting never blocks ingestion
         log.debug("Could not count an artifact against run #%d", run_id, exc_info=True)
 
 
@@ -283,7 +283,7 @@ def _close_on_exit() -> None:
     """
     try:
         close_all()
-    except Exception:  # interpreter teardown: the engine may already be gone
+    except Exception:  # noqa: BLE001, S110 - teardown: logging may already be closed too
         pass
 
 

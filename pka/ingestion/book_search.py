@@ -309,7 +309,7 @@ def search_synopsis(title: str, authors: list[str] | None = None) -> BookSynopsi
             continue
         try:
             found = provider(title, author_list)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one provider failing tries the next
             log.warning("Search provider %r failed: %s", name, exc)
             continue
         if found is not None:

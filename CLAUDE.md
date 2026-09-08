@@ -86,6 +86,10 @@ Two configuration facts that otherwise read as bugs:
 - ruff sets `line-length = 100` but **ignores `E501`** (the formatter handles
   wrapping), and exempts `B008` under `pka/api/routers/*` because FastAPI's
   `Depends(...)`-in-defaults style triggers it by design.
+- ruff also selects `BLE001` / `S110` / `S112`, so a blind `except Exception` — and
+  especially a silent `pass` or `continue` under one — fails the lint. Narrow the
+  type, or log the failure, or write `# noqa: BLE001 - <why>` if the broad catch is
+  a deliberate "one document must not kill the sync" guard.
 
 ## Pitfalls
 

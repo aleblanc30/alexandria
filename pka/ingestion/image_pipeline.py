@@ -104,7 +104,7 @@ def delete_clip_vectors(vector_ids: list[str]) -> int:
         batch = ids[i : i + _DELETE_BATCH_SIZE]
         try:
             col.delete(ids=batch)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one bad batch must not strand the rest
             log.warning("CLIP Chroma delete failed: %s", exc)
             continue
         deleted += len(batch)
@@ -260,7 +260,7 @@ def _attach_book_synopses(doc_id: int, img: ImageFile, books: list[dict]) -> int
             continue
         try:
             synopsis = lookup_book(title=title, authors=authors, isbn=isbn)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - enrichment is optional; skip this book
             log.warning("Book lookup failed for %r: %s", title or isbn, exc)
             continue
         if synopsis is None:
@@ -470,7 +470,7 @@ def ingest_image(
                     }
                 ],
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - CLIP indexing is optional to the ingest
             log.warning("CLIP Chroma upsert failed: %s", exc)
 
     return {
@@ -620,7 +620,7 @@ def search_images_by_inferred_text(query: str, n: int = 10) -> list[dict]:
             n_results=max(n * 3, 10),
             where={"source": str(Source.IMAGE)},
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - image search degrades to no hits, never a 500
         log.warning("Image text search unavailable: %s", exc)
         return []
 

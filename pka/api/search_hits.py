@@ -61,7 +61,7 @@ def semantic_hits(req: SearchRequest) -> Hits:
             n_results=min((req.offset + req.limit) * 3, _MAX_SEMANTIC_HITS),
             where=where_filter or None,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - a vector store outage falls back to fulltext
         log.warning(
             "Semantic search unavailable; falling back to fulltext",
             exc_info=True,
@@ -125,7 +125,7 @@ def merge_clip_hits(results: Hits, req: SearchRequest) -> Hits:
         from pka.ingestion.image_pipeline import search_images_by_text
 
         clip_hits = search_images_by_text(req.query, n=max(10, req.offset + req.limit))
-    except Exception:
+    except Exception:  # noqa: BLE001 - CLIP is optional; search still answers
         log.warning("CLIP image search unavailable", exc_info=True)
         clip_hits = []
     if not clip_hits:
