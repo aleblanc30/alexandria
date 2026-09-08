@@ -74,7 +74,11 @@ def semantic_hits(req: SearchRequest) -> Hits:
         sim = float(1.0 - h["distance"])
         if did not in seen or sim > seen[did]:
             seen[did] = sim
-    return sorted(seen.items(), key=lambda x: -x[1])
+    # Ranked as `dict[int, float]` before widening to Hits: sorting the return
+    # expression directly types the lambda's argument from the `float | None`
+    # return annotation, and `-None` does not check.
+    ranked: list[tuple[int, float]] = sorted(seen.items(), key=lambda kv: -kv[1])
+    return [(doc_id, sim) for doc_id, sim in ranked]
 
 
 def fulltext_hits(con, req: SearchRequest) -> Hits:
@@ -133,7 +137,8 @@ def merge_clip_hits(results: Hits, req: SearchRequest) -> Hits:
 
     best: dict[int, float | None] = {}
     for doc_id, sim in results:
-        if doc_id not in best or (sim is not None and (best[doc_id] is None or sim > best[doc_id])):
+        current = best.get(doc_id)
+        if doc_id not in best or (sim is not None and (current is None or sim > current)):
             best[doc_id] = sim
     for hit in clip_hits:
         did = hit.get("document_id")
