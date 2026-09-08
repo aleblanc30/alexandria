@@ -1250,11 +1250,16 @@ def list_tags(
                 **filter_kwargs,
             )
 
+        # ``grp`` exists only to order source tags ahead of overlay tags on a
+        # count tie, which is what the previous Python-side stable sort did by
+        # concatenating the two result lists in that order. It is dropped from
+        # the projection below.
         src_q = (
             sa.select(
                 source_tags.c.tag_string.label("tag"),
                 sa.literal("source").label("origin"),
                 sa.func.count(source_tags.c.id).label("n"),
+                sa.literal(0).label("grp"),
             )
             .select_from(source_tags)
             .group_by(source_tags.c.tag_string)
@@ -1269,6 +1274,7 @@ def list_tags(
                 overlay_tags.c.tag.label("tag"),
                 overlay_tags.c.origin.label("origin"),
                 sa.func.count(overlay_tags.c.id).label("n"),
+                sa.literal(1).label("grp"),
             )
             .select_from(overlay_tags)
             .group_by(overlay_tags.c.tag, overlay_tags.c.origin)
@@ -1278,11 +1284,6 @@ def list_tags(
         if q:
             ov_q = ov_q.where(overlay_tags.c.tag.ilike(f"%{q}%"))
 
-        rows: list[dict[str, Any]] = []
-        if not origin or origin == "source":
-            rows += [
-                {"tag": r[0], "origin": r[1], "count": r[2]} for r in con.execute(src_q).fetchall()
-            ]
         overlay_origins = {
             str(TagOrigin.INFERRED),
             str(TagOrigin.MANUAL),
@@ -1291,12 +1292,25 @@ def list_tags(
             str(TagOrigin.CLUSTER_L2),
             str(TagOrigin.LEARNED),
         }
+        parts = []
+        if not origin or origin == "source":
+            parts.append(src_q)
         if not origin or origin in overlay_origins:
-            rows += [
-                {"tag": r[0], "origin": r[1], "count": r[2]}
-                for r in con.execute(ov_q).fetchall()
-                if not origin or r[1] == origin
-            ]
+            # Filtering before the GROUP BY is equivalent to filtering the rows
+            # after it, because ``origin`` is part of the group key.
+            parts.append(ov_q.where(overlay_tags.c.origin == origin) if origin else ov_q)
+        if not parts:
+            # An origin that is neither "source" nor an overlay origin matches
+            # nothing, as it did when both branches were skipped.
+            return []
 
-        rows.sort(key=lambda x: -x["count"])
-        return rows[:limit]
+        # ORDER BY / LIMIT belong in SQL: the two GROUP BYs are over the whole
+        # of source_tags and overlay_tags, so ranking in Python meant building
+        # every distinct tag in the archive to return `limit` of them (audit P-7).
+        combined = sa.union_all(*parts).subquery() if len(parts) > 1 else parts[0].subquery()
+        stmt = (
+            sa.select(combined.c.tag, combined.c.origin, combined.c.n)
+            .order_by(combined.c.n.desc(), combined.c.grp.asc(), combined.c.tag.asc())
+            .limit(limit)
+        )
+        return [{"tag": r[0], "origin": r[1], "count": r[2]} for r in con.execute(stmt).fetchall()]

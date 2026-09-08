@@ -20,6 +20,7 @@ from pka.db.queries import (
     insert_document_if_new,
     insert_source_tags,
     list_documents,
+    list_tags,
     resolve_description,
     source_ids_with_chunks,
     update_card_summary,
@@ -597,3 +598,60 @@ class TestEnumAndStringFormsAgree:
             == _document_row(str_id)["fetch_status"]
             == "pending"
         )
+
+
+class TestListTags:
+    """``list_tags`` ranks and limits in SQL (audit P-7)."""
+
+    @staticmethod
+    def _seed(counts: dict[str, int], *, origin=TagOrigin.MANUAL) -> None:
+        """Give each tag the requested number of documents."""
+        from pka.clustering.cluster_tags import insert_overlay_tags
+
+        made: list[int] = []
+        for i in range(max(counts.values())):
+            made.append(upsert_document(DocumentWrite("zotero", f"LT{i:03d}", "T", None, None)))
+        with get_engine().begin() as con:
+            for tag, n in counts.items():
+                insert_overlay_tags(con, made[:n], tag, origin)
+
+    def test_limit_returns_the_highest_counts_not_an_arbitrary_slice(self):
+        self._seed({"rare": 1, "common": 5, "middling": 3})
+        rows = list_tags(limit=2)
+        assert [r["tag"] for r in rows] == ["common", "middling"]
+
+    def test_counts_are_per_tag_document_counts(self):
+        self._seed({"common": 5, "rare": 1})
+        by_tag = {r["tag"]: r["count"] for r in list_tags()}
+        assert by_tag == {"common": 5, "rare": 1}
+
+    def test_limit_applies_across_both_tag_tables(self):
+        """The cap is over the merged ranking, not per-table."""
+        src_doc = upsert_document(DocumentWrite("zotero", "LTS1", "T", None, None))
+        insert_source_tags(src_doc, ["from-source"], source="zotero")
+        self._seed({"overlay-a": 3, "overlay-b": 2})
+        assert len(list_tags(limit=2)) == 2
+
+    def test_source_origin_excludes_overlay_tags(self):
+        src_doc = upsert_document(DocumentWrite("zotero", "LTS2", "T", None, None))
+        insert_source_tags(src_doc, ["from-source"], source="zotero")
+        self._seed({"overlay-only": 2})
+        rows = list_tags(origin="source")
+        assert [r["tag"] for r in rows] == ["from-source"]
+
+    def test_overlay_origin_excludes_other_origins(self):
+        self._seed({"manual-tag": 2}, origin=TagOrigin.MANUAL)
+        self._seed({"llm-tag": 3}, origin=TagOrigin.LLM)
+        rows = list_tags(origin=str(TagOrigin.MANUAL))
+        assert [r["tag"] for r in rows] == ["manual-tag"]
+
+    def test_unknown_origin_matches_nothing(self):
+        self._seed({"manual-tag": 2})
+        assert list_tags(origin="not-an-origin") == []
+
+    def test_source_tags_precede_overlay_tags_on_a_count_tie(self):
+        """Preserves the old Python-side stable sort, which built source first."""
+        src_doc = upsert_document(DocumentWrite("zotero", "LTS3", "T", None, None))
+        insert_source_tags(src_doc, ["tied-source"], source="zotero")
+        self._seed({"tied-overlay": 1})
+        assert [r["tag"] for r in list_tags()] == ["tied-source", "tied-overlay"]
