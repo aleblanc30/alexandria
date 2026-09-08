@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import sqlalchemy as sa
 
-from pka.db.queries import get_engine, init_db
+from pka.db.queries import get_engine, init_db, insert_chunks
 from pka.db.schema import cluster_assignments, cluster_runs, clusters
 from tests.conftest import make_document
 
@@ -41,8 +41,15 @@ def _fake_embeddings(n: int, dim: int = FAKE_DIM) -> np.ndarray:
 
 def _mock_chroma_with_docs(monkeypatch, doc_ids: list[int]) -> tuple[dict, MagicMock]:
     """
-    Populate a mock Chroma collection with one fake embedding per document.
+    Populate a mock Chroma collection with one fake embedding per document,
+    and the matching SQLite ``chunks`` rows.
     Returns (store_dict, collection_mock).
+
+    The chunk rows are not decoration. ``ingest_text_block`` writes the SQLite
+    chunk and the Chroma vector together, so a vector with no chunk row is a
+    state ingestion cannot produce, and the clustering run path now sources its
+    candidate document ids from ``chunks`` rather than by enumerating Chroma
+    (audit P-3).
     """
     embs = _fake_embeddings(len(doc_ids))
     store = {
@@ -53,6 +60,19 @@ def _mock_chroma_with_docs(monkeypatch, doc_ids: list[int]) -> tuple[dict, Magic
         }
         for i, did in enumerate(doc_ids)
     }
+
+    insert_chunks(
+        [
+            {
+                "document_id": did,
+                "chunk_index": 0,
+                "text": f"text {did}",
+                "token_count": 2,
+                "vector_id": f"vec-{did}",
+            }
+            for did in doc_ids
+        ]
+    )
 
     col = MagicMock()
     col.count.return_value = len(store)
@@ -398,6 +418,77 @@ class TestRunClustering:
 
         with pytest.raises(ValueError, match="empty"):
             run_clustering()
+
+
+class TestCandidateDocumentIds:
+    """Candidate ids come from SQLite ``chunks``, not from enumerating Chroma (P-3)."""
+
+    def test_ids_come_from_chunks(self):
+        from pka.clustering.embeddings import _candidate_document_ids
+
+        with_chunk = _seed_documents(1)[0]
+        no_chunk = make_document("zotero", "NOCHUNK", "No chunks", None, None)
+        insert_chunks(
+            [
+                {
+                    "document_id": with_chunk,
+                    "chunk_index": 0,
+                    "text": "t",
+                    "token_count": 1,
+                    "vector_id": "v-1",
+                }
+            ]
+        )
+        ids = _candidate_document_ids(None)
+        assert with_chunk in ids
+        assert no_chunk not in ids
+
+    def test_source_filter_applied(self):
+        from pka.clustering.embeddings import _candidate_document_ids
+
+        zot = make_document("zotero", "CZ", "Z", None, None)
+        fox = make_document("firefox", "CF", "F", None, None)
+        insert_chunks(
+            [
+                {
+                    "document_id": did,
+                    "chunk_index": 0,
+                    "text": "t",
+                    "token_count": 1,
+                    "vector_id": f"v-{did}",
+                }
+                for did in (zot, fox)
+            ]
+        )
+        assert _candidate_document_ids(["zotero"]) == [zot]
+
+    def test_chroma_is_read_only_for_documents_without_a_cached_vector(self, monkeypatch):
+        """The whole point of P-3: cached documents cost no Chroma round trip."""
+        from pka.clustering.embeddings import _load_document_embeddings
+
+        doc_ids = _seed_documents(3)
+        _mock_chroma_with_docs(monkeypatch, doc_ids)
+
+        # Give every document a cached doc_embedding.
+        from pka.clustering.doc_embeddings import refresh_document_embedding
+
+        for did in doc_ids:
+            refresh_document_embedding(did)
+
+        # fetch_records is the wide enumeration P-3 removes, and is also what
+        # fetch_records_by_document_ids delegates to, so zero calls means Chroma
+        # was not read at all. The old implementation called it unconditionally.
+        calls: list = []
+        import pka.storage.vector_store as vs
+
+        def _spy(*a, **kw):
+            calls.append((a, kw))
+            raise AssertionError("Chroma was read despite every document being cached")
+
+        monkeypatch.setattr(vs, "fetch_records", _spy)
+        loaded, _matrix = _load_document_embeddings(None)
+        assert loaded == sorted(doc_ids)
+        assert calls == []
 
 
 # ── engine.run_clustering(ClusterParams(cluster_space="agglomerative")) ─────────────────────
