@@ -79,6 +79,7 @@ import {
 } from '@/api/client'
 import TrainTagPrompt from '@/components/TrainTagPrompt.vue'
 import { useToastStore } from '@/stores/toast'
+import { errorMessage } from '@/lib/notifyError'
 
 const tags     = ref<TagRow[]>([])
 const sessions = ref<TagTrainingSession[]>([])
@@ -120,8 +121,8 @@ async function onTrainFromSourceConfirm(targetTag: string) {
     const session = await createTagTrainingFromSourceTag(sourceTag, targetTag)
     trainDialogOpen.value = false
     await router.push(`/tags/train/${session.session_id}`)
-  } catch (e: any) {
-    toast.push(e.message, 'error')
+  } catch (e: unknown) {
+    toast.push(errorMessage(e), 'error')
   } finally {
     trainBusy.value = false
   }

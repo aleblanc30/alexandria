@@ -1,0 +1,5525 @@
+{
+  "components": {
+    "schemas": {
+      "ApplyAllTagsResult": {
+        "properties": {
+          "clusters": {
+            "items": {
+              "$ref": "#/components/schemas/ApplyTagResult"
+            },
+            "title": "Clusters",
+            "type": "array"
+          },
+          "total_applied": {
+            "title": "Total Applied",
+            "type": "integer"
+          },
+          "total_skipped": {
+            "title": "Total Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clusters",
+          "total_applied",
+          "total_skipped"
+        ],
+        "title": "ApplyAllTagsResult",
+        "type": "object"
+      },
+      "ApplyTagRequest": {
+        "properties": {
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag"
+          }
+        },
+        "title": "ApplyTagRequest",
+        "type": "object"
+      },
+      "ApplyTagResult": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "cluster_id": {
+            "title": "Cluster Id",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_id",
+          "tag",
+          "applied",
+          "skipped"
+        ],
+        "title": "ApplyTagResult",
+        "type": "object"
+      },
+      "CapabilityStatus": {
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "capability": {
+            "title": "Capability",
+            "type": "string"
+          },
+          "credential_present": {
+            "title": "Credential Present",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "provider",
+          "model",
+          "base_url",
+          "credential_present"
+        ],
+        "title": "CapabilityStatus",
+        "type": "object"
+      },
+      "ClusterDetail": {
+        "properties": {
+          "cluster_id": {
+            "title": "Cluster Id",
+            "type": "integer"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "doc_count": {
+            "title": "Doc Count",
+            "type": "integer"
+          },
+          "is_noise": {
+            "default": false,
+            "title": "Is Noise",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "level": {
+            "default": 1,
+            "title": "Level",
+            "type": "integer"
+          },
+          "parent_cluster_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Cluster Id"
+          },
+          "parent_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Label"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "integer"
+          },
+          "top_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Top Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cluster_id",
+          "label",
+          "description",
+          "run_id",
+          "doc_count",
+          "top_tags"
+        ],
+        "title": "ClusterDetail",
+        "type": "object"
+      },
+      "ClusterOut": {
+        "properties": {
+          "cluster_id": {
+            "title": "Cluster Id",
+            "type": "integer"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "doc_count": {
+            "title": "Doc Count",
+            "type": "integer"
+          },
+          "is_noise": {
+            "default": false,
+            "title": "Is Noise",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "level": {
+            "default": 1,
+            "title": "Level",
+            "type": "integer"
+          },
+          "parent_cluster_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Cluster Id"
+          },
+          "parent_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Label"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cluster_id",
+          "label",
+          "description",
+          "run_id",
+          "doc_count"
+        ],
+        "title": "ClusterOut",
+        "type": "object"
+      },
+      "ClusterPatchRequest": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "ClusterPatchRequest",
+        "type": "object"
+      },
+      "DiagnosticsOut": {
+        "properties": {
+          "cluster_sizes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Cluster Sizes",
+            "type": "object"
+          },
+          "drift_flags": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Drift Flags",
+            "type": "array"
+          },
+          "merge_suggestions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Merge Suggestions",
+            "type": "array"
+          },
+          "n_clusters": {
+            "title": "N Clusters",
+            "type": "integer"
+          },
+          "n_noise": {
+            "title": "N Noise",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "n_clusters",
+          "n_noise",
+          "cluster_sizes",
+          "drift_flags",
+          "merge_suggestions"
+        ],
+        "title": "DiagnosticsOut",
+        "type": "object"
+      },
+      "DocumentDetail": {
+        "properties": {
+          "archive_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Url"
+          },
+          "arxiv_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arxiv Id"
+          },
+          "authors": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Authors",
+            "type": "array"
+          },
+          "chunks_count": {
+            "title": "Chunks Count",
+            "type": "integer"
+          },
+          "cluster_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Id"
+          },
+          "cluster_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Label"
+          },
+          "collections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Collections",
+            "type": "array"
+          },
+          "date_added": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Added"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "doi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doi"
+          },
+          "doi_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doi Url"
+          },
+          "enrichment": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EnrichmentOut"
+            },
+            "title": "Enrichment",
+            "type": "array"
+          },
+          "fetch_status": {
+            "title": "Fetch Status",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isbn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isbn"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "overlay_tags": {
+            "items": {
+              "$ref": "#/components/schemas/TagOut"
+            },
+            "title": "Overlay Tags",
+            "type": "array"
+          },
+          "reddit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedditDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url_or_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url Or Path"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "zotero_attachment_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zotero Attachment Key"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "source_id",
+          "title",
+          "url_or_path",
+          "date_added",
+          "fetch_status",
+          "source_tags",
+          "overlay_tags",
+          "cluster_id",
+          "cluster_label",
+          "chunks_count",
+          "collections"
+        ],
+        "title": "DocumentDetail",
+        "type": "object"
+      },
+      "DocumentListItem": {
+        "properties": {
+          "archive_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Url"
+          },
+          "cluster_l1_tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Cluster L1 Tags",
+            "type": "array"
+          },
+          "cluster_l2_tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Cluster L2 Tags",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url_or_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url Or Path"
+          },
+          "zotero_attachment_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zotero Attachment Key"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "source_id",
+          "title",
+          "description"
+        ],
+        "title": "DocumentListItem",
+        "type": "object"
+      },
+      "DocumentListResponse": {
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentListItem"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "documents"
+        ],
+        "title": "DocumentListResponse",
+        "type": "object"
+      },
+      "DocumentOut": {
+        "properties": {
+          "archive_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Url"
+          },
+          "arxiv_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arxiv Id"
+          },
+          "authors": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Authors",
+            "type": "array"
+          },
+          "cluster_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Id"
+          },
+          "cluster_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Label"
+          },
+          "date_added": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Added"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "doi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doi"
+          },
+          "doi_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doi Url"
+          },
+          "fetch_status": {
+            "title": "Fetch Status",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "isbn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isbn"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "overlay_tags": {
+            "items": {
+              "$ref": "#/components/schemas/TagOut"
+            },
+            "title": "Overlay Tags",
+            "type": "array"
+          },
+          "similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url_or_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url Or Path"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "zotero_attachment_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zotero Attachment Key"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "source_id",
+          "title",
+          "url_or_path",
+          "date_added",
+          "fetch_status",
+          "source_tags",
+          "overlay_tags",
+          "cluster_id",
+          "cluster_label"
+        ],
+        "title": "DocumentOut",
+        "type": "object"
+      },
+      "DomainRow": {
+        "properties": {
+          "by_fetch_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Fetch Status",
+            "type": "object"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "has_handler": {
+            "title": "Has Handler",
+            "type": "boolean"
+          },
+          "unfetchable": {
+            "title": "Unfetchable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "domain",
+          "count",
+          "unfetchable",
+          "has_handler",
+          "by_fetch_status"
+        ],
+        "title": "DomainRow",
+        "type": "object"
+      },
+      "DomainTopLists": {
+        "properties": {
+          "top_domains": {
+            "items": {
+              "$ref": "#/components/schemas/DomainRow"
+            },
+            "title": "Top Domains",
+            "type": "array"
+          },
+          "top_unfetchable": {
+            "items": {
+              "$ref": "#/components/schemas/DomainRow"
+            },
+            "title": "Top Unfetchable",
+            "type": "array"
+          }
+        },
+        "required": [
+          "top_domains",
+          "top_unfetchable"
+        ],
+        "title": "DomainTopLists",
+        "type": "object"
+      },
+      "EnrichmentOut": {
+        "description": "One retrieval-enrichment chunk's provenance (DESIGN.md \u00a73.2).\n\n``label`` is rendered here rather than in the frontend so the enrichment\nladder stays the single source of truth for how each rung is named.",
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "ref_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Title"
+          },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "resolved_by",
+          "label",
+          "source_ref",
+          "ref_title",
+          "text"
+        ],
+        "title": "EnrichmentOut",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ImageDetail": {
+        "description": "Image-specific fields, present only when ``source == image``.",
+        "properties": {
+          "image_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Type"
+          },
+          "ocr_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Text"
+          }
+        },
+        "title": "ImageDetail",
+        "type": "object"
+      },
+      "ImageOut": {
+        "properties": {
+          "date_taken": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Taken"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "image_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Type"
+          },
+          "matched_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched By"
+          },
+          "ocr_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Text"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "filename",
+          "image_type",
+          "width",
+          "height",
+          "description",
+          "ocr_text",
+          "date_taken",
+          "tags"
+        ],
+        "title": "ImageOut",
+        "type": "object"
+      },
+      "ItemAdd": {
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "integer"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id"
+        ],
+        "title": "ItemAdd",
+        "type": "object"
+      },
+      "LabelIn": {
+        "properties": {
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "integer"
+          },
+          "label": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Label",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "doc_id",
+          "label"
+        ],
+        "title": "LabelIn",
+        "type": "object"
+      },
+      "LabelsBatch": {
+        "properties": {
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/LabelIn"
+            },
+            "title": "Labels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "labels"
+        ],
+        "title": "LabelsBatch",
+        "type": "object"
+      },
+      "ListCreate": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ListCreate",
+        "type": "object"
+      },
+      "ProbeResult": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reachable",
+          "detail"
+        ],
+        "title": "ProbeResult",
+        "type": "object"
+      },
+      "PseudoLabelRequest": {
+        "properties": {
+          "batch_size": {
+            "anyOf": [
+              {
+                "maximum": 200.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Size"
+          },
+          "mode": {
+            "description": "model | llm",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "PseudoLabelRequest",
+        "type": "object"
+      },
+      "PseudoLabelResultOut": {
+        "properties": {
+          "added_negative": {
+            "title": "Added Negative",
+            "type": "integer"
+          },
+          "added_positive": {
+            "title": "Added Positive",
+            "type": "integer"
+          },
+          "batch_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Size"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "pseudo_label_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pseudo Label High"
+          },
+          "pseudo_label_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pseudo Label Low"
+          }
+        },
+        "required": [
+          "mode",
+          "added_positive",
+          "added_negative"
+        ],
+        "title": "PseudoLabelResultOut",
+        "type": "object"
+      },
+      "QueueDocOut": {
+        "properties": {
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "integer"
+          },
+          "probability": {
+            "title": "Probability",
+            "type": "number"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "uncertainty": {
+            "title": "Uncertainty",
+            "type": "number"
+          }
+        },
+        "required": [
+          "doc_id",
+          "title",
+          "probability",
+          "uncertainty"
+        ],
+        "title": "QueueDocOut",
+        "type": "object"
+      },
+      "RedditDetail": {
+        "description": "Reddit-specific fields, present only when ``source == reddit``.\n\n``body`` is the post or comment verbatim, not the 280-char ``description``\nthe cards use. ``permalink`` is the reddit thread; for a link post that is a\ndifferent URL from ``url_or_path``, which points at the external target.",
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "external_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Url"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "permalink": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permalink"
+          },
+          "subreddit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subreddit"
+          }
+        },
+        "title": "RedditDetail",
+        "type": "object"
+      },
+      "RunOut": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "algorithm": {
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "n_clusters": {
+            "title": "N Clusters",
+            "type": "integer"
+          },
+          "n_noise": {
+            "title": "N Noise",
+            "type": "integer"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "timestamp",
+          "algorithm",
+          "parameters",
+          "accepted",
+          "status",
+          "n_clusters",
+          "n_noise",
+          "notes"
+        ],
+        "title": "RunOut",
+        "type": "object"
+      },
+      "SearchRequest": {
+        "properties": {
+          "cluster_ids": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Cluster Ids",
+            "type": "array"
+          },
+          "cluster_l1_tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Cluster L1 Tags",
+            "type": "array"
+          },
+          "cluster_l2_tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Cluster L2 Tags",
+            "type": "array"
+          },
+          "date_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date From"
+          },
+          "date_to": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date To"
+          },
+          "fetch_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetch Status"
+          },
+          "general_tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "General Tags",
+            "type": "array"
+          },
+          "limit": {
+            "default": 20,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "semantic",
+            "title": "Mode",
+            "type": "string"
+          },
+          "offset": {
+            "default": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "source_tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Tags",
+            "type": "array"
+          },
+          "sources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "wayback_only": {
+            "default": false,
+            "title": "Wayback Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "SearchRequest",
+        "type": "object"
+      },
+      "SearchResponse": {
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentOut"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query",
+          "total",
+          "documents"
+        ],
+        "title": "SearchResponse",
+        "type": "object"
+      },
+      "SessionCreate": {
+        "properties": {
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/LabelIn"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag",
+          "labels"
+        ],
+        "title": "SessionCreate",
+        "type": "object"
+      },
+      "SessionFromSourceTag": {
+        "properties": {
+          "source_tag": {
+            "title": "Source Tag",
+            "type": "string"
+          },
+          "target_tag": {
+            "title": "Target Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_tag",
+          "target_tag"
+        ],
+        "title": "SessionFromSourceTag",
+        "type": "object"
+      },
+      "SessionOut": {
+        "properties": {
+          "accepted_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted At"
+          },
+          "bootstrap_negatives_added": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bootstrap Negatives Added"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "integer"
+          },
+          "has_model": {
+            "title": "Has Model",
+            "type": "boolean"
+          },
+          "negative_count": {
+            "title": "Negative Count",
+            "type": "integer"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "positive_count": {
+            "title": "Positive Count",
+            "type": "integer"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
+          },
+          "pseudo_label_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PseudoLabelResultOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          },
+          "train_stats": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Train Stats"
+          }
+        },
+        "required": [
+          "session_id",
+          "tag",
+          "status",
+          "created_at",
+          "parameters",
+          "positive_count",
+          "negative_count",
+          "has_model"
+        ],
+        "title": "SessionOut",
+        "type": "object"
+      },
+      "SettingField": {
+        "properties": {
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "is_secret": {
+            "title": "Is Secret",
+            "type": "boolean"
+          },
+          "is_set": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Set"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "is_secret",
+          "is_default",
+          "tier"
+        ],
+        "title": "SettingField",
+        "type": "object"
+      },
+      "SettingGroup": {
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/SettingField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fields"
+        ],
+        "title": "SettingGroup",
+        "type": "object"
+      },
+      "SettingsReport": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/CapabilityStatus"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/SettingGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups",
+          "capabilities"
+        ],
+        "title": "SettingsReport",
+        "type": "object"
+      },
+      "Source": {
+        "enum": [
+          "firefox",
+          "zotero",
+          "calibre",
+          "image",
+          "youtube",
+          "reddit"
+        ],
+        "title": "Source",
+        "type": "string"
+      },
+      "SourcePathUpdate": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SourcePathUpdate",
+        "type": "object"
+      },
+      "TagOut": {
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag",
+          "origin"
+        ],
+        "title": "TagOut",
+        "type": "object"
+      },
+      "TagPatchRequest": {
+        "properties": {
+          "add": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Add",
+            "type": "array"
+          },
+          "remove": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Remove",
+            "type": "array"
+          }
+        },
+        "title": "TagPatchRequest",
+        "type": "object"
+      },
+      "TriggerRunRequest": {
+        "properties": {
+          "async_labelling": {
+            "default": false,
+            "title": "Async Labelling",
+            "type": "boolean"
+          },
+          "cluster_space": {
+            "anyOf": [
+              {
+                "pattern": "^(pca|legacy_umap|agglomerative)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Space"
+          },
+          "distance_threshold": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Threshold"
+          },
+          "linkage": {
+            "anyOf": [
+              {
+                "pattern": "^(ward|average|complete|single)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linkage"
+          },
+          "min_cluster_size": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 2.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Cluster Size"
+          },
+          "min_dist": {
+            "default": 0.1,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Dist",
+            "type": "number"
+          },
+          "min_samples": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Samples"
+          },
+          "n_clusters": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 2.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Clusters"
+          },
+          "n_components": {
+            "default": 5,
+            "maximum": 50.0,
+            "minimum": 2.0,
+            "title": "N Components",
+            "type": "integer"
+          },
+          "n_neighbors": {
+            "anyOf": [
+              {
+                "maximum": 200.0,
+                "minimum": 2.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Neighbors"
+          },
+          "pca_components": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 2.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pca Components"
+          },
+          "skip_labelling": {
+            "default": false,
+            "title": "Skip Labelling",
+            "type": "boolean"
+          }
+        },
+        "title": "TriggerRunRequest",
+        "type": "object"
+      },
+      "UmapPoint": {
+        "properties": {
+          "cluster_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Id"
+          },
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "doc_id",
+          "x",
+          "y",
+          "cluster_id",
+          "title"
+        ],
+        "title": "UmapPoint",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Local-first research library API",
+    "title": "Alexandria",
+    "version": "0.0.9"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/clusters": {
+      "get": {
+        "operationId": "list_clusters_clusters_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ClusterOut"
+                  },
+                  "title": "Response List Clusters Clusters Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Clusters",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/clusters/apply-all-tags": {
+      "post": {
+        "description": "Apply each cluster's stored label as an overlay tag on its documents.",
+        "operationId": "apply_all_tags_clusters_apply_all_tags_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyAllTagsResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Apply All Tags",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/clusters/scatter/points": {
+      "get": {
+        "description": "Return persisted 2-D UMAP coordinates for the active run.",
+        "operationId": "scatter_points_clusters_scatter_points_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UmapPoint"
+                  },
+                  "title": "Response Scatter Points Clusters Scatter Points Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Scatter Points",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/clusters/{cluster_id}": {
+      "get": {
+        "operationId": "get_cluster_clusters__cluster_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Cluster Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Cluster",
+        "tags": [
+          "clusters"
+        ]
+      },
+      "patch": {
+        "description": "Persist a manually edited cluster label (and optional description).",
+        "operationId": "patch_cluster_clusters__cluster_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Cluster Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClusterPatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Cluster",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/clusters/{cluster_id}/apply-tag": {
+      "post": {
+        "description": "Apply the cluster label (slugified) or an override tag to every document.",
+        "operationId": "apply_cluster_tag_clusters__cluster_id__apply_tag_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Cluster Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ApplyTagRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyTagResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Cluster Tag",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/clusters/{cluster_id}/documents": {
+      "get": {
+        "operationId": "cluster_documents_clusters__cluster_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Cluster Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cluster Documents",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/clusters/{cluster_id}/regenerate-label": {
+      "post": {
+        "description": "Re-run LLM cluster labelling for one cluster.",
+        "operationId": "regenerate_cluster_label_clusters__cluster_id__regenerate_label_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Cluster Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Regenerate Cluster Label",
+        "tags": [
+          "clusters"
+        ]
+      }
+    },
+    "/documents": {
+      "get": {
+        "operationId": "list_documents_documents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sources",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/Source"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sources"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "general_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "General Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "overlay_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Overlay Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cluster_l1_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cluster L1 Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cluster_l2_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cluster L2 Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "learned_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learned Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "wayback_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Wayback Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 48,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Documents",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{doc_id}": {
+      "get": {
+        "operationId": "get_document_documents__doc_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{doc_id}/cover": {
+      "get": {
+        "description": "Serve a document's cover image.\n\nCalibre books have a ``cover.jpg`` next to their format files; image\ndocuments *are* the image, so their ``url_or_path`` is streamed directly.",
+        "operationId": "get_document_cover_documents__doc_id__cover_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Cover",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{doc_id}/tags": {
+      "patch": {
+        "operationId": "patch_tags_documents__doc_id__tags_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagPatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Patch Tags Documents  Doc Id  Tags Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Tags",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/images": {
+      "get": {
+        "operationId": "list_images_images_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "image_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Image Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImageOut"
+                  },
+                  "title": "Response List Images Images Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Images",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/images/search": {
+      "get": {
+        "description": "Search images by text over both paths (DESIGN.md \u00a73.3).\n\n``clip`` matches the query against the picture itself; ``text`` matches it\nagainst what the extraction passes read out of the picture. ``hybrid`` (the\ndefault) runs both and merges them \u2014 and is what keeps this endpoint useful\nwith ``clip_enabled`` off, where the CLIP path yields nothing. Each result\nreports which path found it in ``matched_by``.",
+        "operationId": "search_images_images_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "n",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "title": "N",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "hybrid",
+              "pattern": "^(hybrid|clip|text)$",
+              "title": "Mode",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImageOut"
+                  },
+                  "title": "Response Search Images Images Search Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Images",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/images/{image_id}": {
+      "get": {
+        "operationId": "get_image_images__image_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Image",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/images/{image_id}/file": {
+      "get": {
+        "description": "Serve the raw image file so the frontend can render it in an ``<img>``.",
+        "operationId": "get_image_file_images__image_id__file_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Image File",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/ingestion/domains": {
+      "get": {
+        "description": "Top domains by document count and by unfetchable count.",
+        "operationId": "domain_top_lists_ingestion_domains_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainTopLists"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Domain Top Lists",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/enrich": {
+      "post": {
+        "description": "Re-run an enrichment pass over documents missing that artifact.\n\nThe retrigger for ``purge summaries``: its skip gate is \"has any chunk\",\nwhich a summary purge leaves true, so re-syncing would not regenerate it\n(PURGE_AND_PROVENANCE_PLAN.md \u00a75.2.1).",
+        "operationId": "enrich_endpoint_ingestion_enrich_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "summary",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enrich Endpoint",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/enrichment-runs": {
+      "get": {
+        "description": "What ran, when, with which model, and at what cost in provider traffic.\n\nThe provenance surface behind the purge filters below: a run listed here is\na `run_id` a purge can target.",
+        "operationId": "enrichment_runs_list_ingestion_enrichment_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enrichment Runs List",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/purge-targets": {
+      "get": {
+        "description": "The purge registry with live dry-run counts \u2014 one row per button.",
+        "operationId": "purge_targets_ingestion_purge_targets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Purge Targets",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/purge/{key}": {
+      "post": {
+        "description": "Purge one registered target, optionally scoped by source and provenance.\n\n``run_id`` / ``provider`` / ``model`` narrow to what a particular backend\nproduced; ``unknown=true`` selects the pre-provenance backlog. Targets whose\nartifact carries no run stamp reject those filters with a 400 rather than\nsilently widening the purge.",
+        "operationId": "purge_target_endpoint_ingestion_purge__key__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unknown",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unknown",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Purge Target Endpoint",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/rebuild-vectors": {
+      "post": {
+        "description": "Rebuild the Chroma chunk index from SQLite chunk text.",
+        "operationId": "rebuild_vectors_ingestion_rebuild_vectors_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rebuild Vectors",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sources/image/dirs": {
+      "delete": {
+        "operationId": "remove_image_dir_ingestion_sources_image_dirs_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcePathUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Image Dir",
+        "tags": [
+          "ingestion"
+        ]
+      },
+      "get": {
+        "operationId": "get_image_dirs_ingestion_sources_image_dirs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Image Dirs",
+        "tags": [
+          "ingestion"
+        ]
+      },
+      "post": {
+        "operationId": "add_image_dir_ingestion_sources_image_dirs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcePathUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Image Dir",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sources/image/dirs/browse": {
+      "post": {
+        "operationId": "browse_image_dir_ingestion_sources_image_dirs_browse_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Browse Image Dir",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sources/{source}/browse": {
+      "post": {
+        "operationId": "browse_path_ingestion_sources__source__browse_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Browse Path",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sources/{source}/path": {
+      "get": {
+        "operationId": "get_path_ingestion_sources__source__path_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Path",
+        "tags": [
+          "ingestion"
+        ]
+      },
+      "put": {
+        "operationId": "update_path_ingestion_sources__source__path_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcePathUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Path",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sources/{source}/purge": {
+      "post": {
+        "description": "Delete every archived row (and vectors) for ``source``.\n\nBy default, manually-applied/learned tags and reading-list entries survive\n(see ``PURGE_AND_PROVENANCE_PLAN.md`` \u00a75.1); pass ``include_user_data=true``\nto remove those too. Refuses while a sync is running so a purge can't race\na live worker.",
+        "operationId": "purge_source_endpoint_ingestion_sources__source__purge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_user_data",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include User Data",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Purge Source Endpoint",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/status": {
+      "get": {
+        "operationId": "ingestion_status_ingestion_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ingestion Status",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sync/events": {
+      "get": {
+        "description": "Stream one source's progress until its job reaches a terminal state.",
+        "operationId": "sync_events_ingestion_sync_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Events",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sync/progress": {
+      "get": {
+        "description": "Return live progress for one or all ingestion sync jobs.",
+        "operationId": "sync_progress_ingestion_sync_progress_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Progress",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sync/{source}": {
+      "post": {
+        "operationId": "sync_source_ingestion_sync__source__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "backfill",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Backfill",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Source",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sync/{source}/cancel": {
+      "post": {
+        "operationId": "cancel_sync_ingestion_sync__source__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Sync",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sync/{source}/ingest": {
+      "post": {
+        "operationId": "sync_ingest_ingestion_sync__source__ingest_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Ingest",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sync/{source}/metadata": {
+      "post": {
+        "operationId": "sync_metadata_ingestion_sync__source__metadata_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "backfill",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Backfill",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Metadata",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/sync/{source}/pause": {
+      "post": {
+        "operationId": "pause_sync_ingestion_sync__source__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Sync",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/unfetchable": {
+      "get": {
+        "operationId": "unfetchable_urls_ingestion_unfetchable_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unfetchable Urls",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/reading-lists": {
+      "get": {
+        "operationId": "list_reading_lists_reading_lists_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Reading Lists",
+        "tags": [
+          "reading_lists"
+        ]
+      },
+      "post": {
+        "operationId": "create_list_reading_lists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create List",
+        "tags": [
+          "reading_lists"
+        ]
+      }
+    },
+    "/reading-lists/{list_id}": {
+      "delete": {
+        "operationId": "delete_list_reading_lists__list_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list_id",
+            "required": true,
+            "schema": {
+              "title": "List Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete List",
+        "tags": [
+          "reading_lists"
+        ]
+      }
+    },
+    "/reading-lists/{list_id}/items": {
+      "get": {
+        "operationId": "list_items_reading_lists__list_id__items_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list_id",
+            "required": true,
+            "schema": {
+              "title": "List Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Items",
+        "tags": [
+          "reading_lists"
+        ]
+      },
+      "post": {
+        "operationId": "add_item_reading_lists__list_id__items_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list_id",
+            "required": true,
+            "schema": {
+              "title": "List Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Item",
+        "tags": [
+          "reading_lists"
+        ]
+      }
+    },
+    "/reading-lists/{list_id}/items/{item_id}": {
+      "delete": {
+        "operationId": "remove_item_reading_lists__list_id__items__item_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list_id",
+            "required": true,
+            "schema": {
+              "title": "List Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Item",
+        "tags": [
+          "reading_lists"
+        ]
+      }
+    },
+    "/runs": {
+      "get": {
+        "operationId": "list_runs_runs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunOut"
+                  },
+                  "title": "Response List Runs Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/incremental": {
+      "post": {
+        "description": "Assign new docs to the active run; full run only if there is no active run.",
+        "operationId": "trigger_incremental_runs_incremental_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Trigger Incremental",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/trigger": {
+      "post": {
+        "description": "Kick off a new clustering run in the background.",
+        "operationId": "trigger_run_runs_trigger_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TriggerRunRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}": {
+      "delete": {
+        "description": "Delete a run and its clusters/assignments. Refuses an accepted or running\nrun unless ``force`` \u2014 mirrors ``alexandria purge-cluster-runs``.",
+        "operationId": "delete_run_runs__run_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}/accept": {
+      "post": {
+        "operationId": "accept_run_runs__run_id__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}/cancel": {
+      "post": {
+        "description": "Ask a running run to stop, or clear one whose worker is already gone.",
+        "operationId": "cancel_run_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}/diagnostics": {
+      "get": {
+        "operationId": "run_diagnostics_runs__run_id__diagnostics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Diagnostics",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}/reject": {
+      "post": {
+        "operationId": "reject_run_runs__run_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "notes",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Notes",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/search": {
+      "post": {
+        "operationId": "search_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/settings": {
+      "get": {
+        "operationId": "get_settings_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/settings/probe/{capability}": {
+      "post": {
+        "operationId": "probe_settings_probe__capability__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "capability",
+            "required": true,
+            "schema": {
+              "title": "Capability",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Probe",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/tag-training/sessions": {
+      "get": {
+        "operationId": "list_sessions_tag_training_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionOut"
+                  },
+                  "title": "Response List Sessions Tag Training Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sessions",
+        "tags": [
+          "tag_training"
+        ]
+      },
+      "post": {
+        "operationId": "create_session_tag_training_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tag-training/sessions/by-tag/{tag}": {
+      "get": {
+        "operationId": "get_session_by_tag_tag_training_sessions_by_tag__tag__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "title": "Tag",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session By Tag",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tag-training/sessions/from-source-tag": {
+      "post": {
+        "operationId": "create_from_source_tag_tag_training_sessions_from_source_tag_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionFromSourceTag"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create From Source Tag",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tag-training/sessions/{session_id}": {
+      "get": {
+        "operationId": "get_session_tag_training_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tag-training/sessions/{session_id}/accept": {
+      "post": {
+        "operationId": "post_accept_tag_training_sessions__session_id__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Accept",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tag-training/sessions/{session_id}/archive": {
+      "post": {
+        "operationId": "post_archive_tag_training_sessions__session_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Archive",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tag-training/sessions/{session_id}/labels": {
+      "post": {
+        "operationId": "post_labels_tag_training_sessions__session_id__labels_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelsBatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Labels",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tag-training/sessions/{session_id}/pseudo-label": {
+      "post": {
+        "operationId": "post_pseudo_label_tag_training_sessions__session_id__pseudo_label_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PseudoLabelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Pseudo Label",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tag-training/sessions/{session_id}/queue": {
+      "get": {
+        "operationId": "get_queue_tag_training_sessions__session_id__queue_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/QueueDocOut"
+                  },
+                  "title": "Response Get Queue Tag Training Sessions  Session Id  Queue Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Queue",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tag-training/sessions/{session_id}/resume": {
+      "post": {
+        "operationId": "post_resume_tag_training_sessions__session_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Resume",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tag-training/sessions/{session_id}/train": {
+      "post": {
+        "operationId": "post_train_tag_training_sessions__session_id__train_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Train",
+        "tags": [
+          "tag_training"
+        ]
+      }
+    },
+    "/tags": {
+      "get": {
+        "operationId": "list_tags_tags_get",
+        "parameters": [
+          {
+            "description": "source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned",
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned",
+              "title": "Origin"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sources",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/Source"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sources"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cluster_l1_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cluster L1 Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cluster_l2_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cluster L2 Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "wayback_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Wayback Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Tags",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/trends/sources": {
+      "get": {
+        "description": "Return ``{source: {period: count}}`` for the sources-over-time chart.",
+        "operationId": "sources_over_time_trends_sources_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "default": "month",
+              "title": "Granularity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sources Over Time",
+        "tags": [
+          "trends"
+        ]
+      }
+    },
+    "/trends/timeline": {
+      "get": {
+        "description": "Return kernel-smoothed level-1 cluster timelines for the interest chart.\n\nEach bookmark contributes a finite-support Gaussian-like kernel (one quarter\nwide) centered on ``date_added``. Values are sampled at month centers.",
+        "operationId": "timeline_trends_timeline_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Timeline",
+        "tags": [
+          "trends"
+        ]
+      }
+    }
+  }
+}

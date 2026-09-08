@@ -40,6 +40,7 @@ $steps = @(
     @{ Name = 'ruff format check'; Dir = $App;                    Cmd = { & $python -m ruff format --check pka tests scripts } }
     @{ Name = 'mypy';              Dir = $App;                    Cmd = { & $python -m mypy pka } }
     @{ Name = 'pytest --cov';      Dir = $App;                    Cmd = { & $python -m pytest --cov=pka --cov-report=term-missing } }
+    @{ Name = 'npm run lint';      Dir = (Join-Path $App 'frontend'); Cmd = { & $npm run lint } }
     @{ Name = 'npm run test';      Dir = (Join-Path $App 'frontend'); Cmd = { & $npm run test } }
     @{ Name = 'npm run build';     Dir = (Join-Path $App 'frontend'); Cmd = { & $npm run build } }
 )

@@ -5,6 +5,7 @@ import { PAGE_SIZE } from '@/constants/pagination'
 import { buildDocumentFilters } from '@/lib/browseFilters'
 import { useToastStore } from './toast'
 import type { useBrowseStore } from './browse'
+import { errorMessage } from '@/lib/notifyError'
 
 export const useSearchStore = defineStore('search', () => {
   const query       = ref('')
@@ -48,9 +49,9 @@ export const useSearchStore = defineStore('search', () => {
         results.value = res.documents
       }
       total.value = res.total
-    } catch (e: any) {
-      error.value = e.message
-      useToastStore().push(e.message, 'error')
+    } catch (e: unknown) {
+      error.value = errorMessage(e)
+      useToastStore().push(errorMessage(e), 'error')
     } finally {
       loading.value = false
       loadingMore.value = false

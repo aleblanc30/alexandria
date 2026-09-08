@@ -5,6 +5,7 @@ import { PAGE_SIZE } from '@/constants/pagination'
 import { buildDocumentFilters, type AcademicKind } from '@/lib/browseFilters'
 import { useSearchStore } from './search'
 import { useToastStore } from './toast'
+import { errorMessage } from '@/lib/notifyError'
 
 const VIEW_MODE_KEY = 'alexandria-browse-view-mode'
 
@@ -104,8 +105,8 @@ export const useBrowseStore = defineStore('browse', () => {
         api.listTags({ origin: 'cluster_l2', sources: scope, ...tagScope, limit: 200 }),
       ])
       tagRows.value = { source: sourceRows, level1: level1Rows, level2: level2Rows }
-    } catch (e: any) {
-      useToastStore().push(e.message, 'error')
+    } catch (e: unknown) {
+      useToastStore().push(errorMessage(e), 'error')
     } finally {
       loadingTags.value = false
     }
@@ -118,9 +119,9 @@ export const useBrowseStore = defineStore('browse', () => {
       const docRes = await api.listDocuments(listParams(0))
       documents.value = docRes.documents
       total.value     = docRes.total
-    } catch (e: any) {
-      error.value = e.message
-      useToastStore().push(e.message, 'error')
+    } catch (e: unknown) {
+      error.value = errorMessage(e)
+      useToastStore().push(errorMessage(e), 'error')
     } finally {
       loading.value = false
     }
@@ -134,9 +135,9 @@ export const useBrowseStore = defineStore('browse', () => {
       const docRes = await api.listDocuments(listParams(documents.value.length))
       documents.value = [...documents.value, ...docRes.documents]
       total.value     = docRes.total
-    } catch (e: any) {
-      error.value = e.message
-      useToastStore().push(e.message, 'error')
+    } catch (e: unknown) {
+      error.value = errorMessage(e)
+      useToastStore().push(errorMessage(e), 'error')
     } finally {
       loadingMore.value = false
     }

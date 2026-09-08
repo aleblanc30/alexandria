@@ -44,6 +44,7 @@ run_step "ruff check"        "$app"             "$python" -m ruff check pka test
 run_step "ruff format check" "$app"             "$python" -m ruff format --check pka tests scripts
 run_step "mypy"               "$app"             "$python" -m mypy pka
 run_step "pytest --cov"       "$app"             "$python" -m pytest --cov=pka --cov-report=term-missing
+run_step "npm run lint"       "$app/frontend"    npm run lint
 run_step "npm run test"       "$app/frontend"    npm run test
 run_step "npm run build"      "$app/frontend"    npm run build
 

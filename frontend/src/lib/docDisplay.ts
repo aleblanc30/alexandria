@@ -32,7 +32,7 @@ export function docAddedYear(doc: DocumentOut | DocumentListItem): string {
 }
 
 export function docSimilarity(doc: DocumentOut | DocumentListItem): number | null {
-  if ('similarity' in doc) return doc.similarity
+  if ('similarity' in doc) return doc.similarity ?? null
   return null
 }
 

@@ -4,9 +4,12 @@ import { canOpenInZotero } from '@/lib/zotero'
 
 export interface DocLinkSource {
   source: string
-  url_or_path: string | null | undefined
+  // Optional rather than `| undefined`: the generated API types mark a property
+  // with a default as optional, and TS does not accept one for a required
+  // property even when undefined is in its union.
+  url_or_path?: string | null
   archive_url?: string | null
-  source_id: string | null | undefined
+  source_id?: string | null
 }
 
 /** Shared open-in-browser / Zotero link computeds for document cards + panels. */

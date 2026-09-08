@@ -137,6 +137,7 @@ import BrowseNavPanel from '@/components/BrowseNavPanel.vue'
 import DocCard from '@/components/DocCard.vue'
 import DocGridCard from '@/components/DocGridCard.vue'
 import TrainTagPrompt from '@/components/TrainTagPrompt.vue'
+import { errorMessage } from '@/lib/notifyError'
 
 const store = useBrowseStore()
 const search = useSearchStore()
@@ -235,8 +236,8 @@ async function onTrainConfirm(tag: string) {
     store.clearSelection()
     trainDialogOpen.value = false
     await router.push(`/tags/train/${session.session_id}`)
-  } catch (e: any) {
-    toast.push(e.message, 'error')
+  } catch (e: unknown) {
+    toast.push(errorMessage(e), 'error')
   } finally {
     trainBusy.value = false
   }

@@ -65,6 +65,7 @@ Run from repo root with the venv active.
 | Backend tests + coverage | `pytest --cov=pka --cov-report=term-missing` |
 | Lint / format | `ruff check pka tests scripts` / `ruff format pka tests scripts` |
 | Type check | `mypy pka` |
+| Frontend lint | `cd frontend && npm run lint` |
 | Frontend tests | `cd frontend && npm run test` |
 | Frontend build + typecheck | `cd frontend && npm run build` |
 | All backend checks at once | `scripts/check.sh` (Bash/WSL) or `scripts/check.ps1` (PowerShell) |
@@ -72,8 +73,8 @@ Run from repo root with the venv active.
 `scripts/check.sh`/`check.ps1` run mypy, ruff, and pytest together as one manual
 gate — use it in place of chaining the three commands by hand.
 
-Run `pytest` after backend changes; run **both** `npm run test` and `npm run build`
-after TypeScript/Vue changes. `mypy pka` is baseline-ratcheted (`pyproject.toml`'s
+Run `pytest` after backend changes; run **all three** of `npm run lint`,
+`npm run test` and `npm run build` after TypeScript/Vue changes. `mypy pka` is baseline-ratcheted (`pyproject.toml`'s
 `[[tool.mypy.overrides]]`): modules with pre-existing errors are listed there with
 `ignore_errors = true`, so the gate is "no new errors" outside that list, not a
 clean `mypy` across the whole tree. None of this runs in CI yet — see
@@ -90,6 +91,20 @@ Two configuration facts that otherwise read as bugs:
   especially a silent `pass` or `continue` under one — fails the lint. Narrow the
   type, or log the failure, or write `# noqa: BLE001 - <why>` if the broad catch is
   a deliberate "one document must not kill the sync" guard.
+- **The frontend's API types are generated, not written.** `frontend/src/api/types.gen.ts`
+  comes from `frontend/src/api/openapi.json`, which `python scripts/dump_openapi.py`
+  writes from the live FastAPI app; `client.ts` aliases the generated schemas under
+  the names it always exported. Change a request or response model and
+  `tests/test_openapi_snapshot.py` fails until you run
+  `python scripts/dump_openapi.py && (cd frontend && npm run gen:api)` and commit
+  both files. Do not hand-edit either. A route with no `response_model` has nothing
+  to generate from, so its shape stays hand-written in `client.ts`, in the block
+  the comment there marks.
+- ESLint (`frontend/eslint.config.js`) selects `@typescript-eslint/no-explicit-any`,
+  so `catch (e: any)` fails; catch `unknown` and pass it to `errorMessage` /
+  `notifyError` (`src/lib/notifyError.ts`), which do the narrowing in one place.
+  eslint-plugin-vue runs on `flat/essential`, deliberately not `flat/recommended`,
+  whose template-formatting rules would rewrite every component.
 
 ## Pitfalls
 

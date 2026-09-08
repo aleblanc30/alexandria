@@ -85,6 +85,7 @@ import {
 } from '@/api/client'
 import { useToastStore } from '@/stores/toast'
 import { useUiStore } from '@/stores/ui'
+import { errorMessage } from '@/lib/notifyError'
 
 const route = useRoute()
 const ui = useUiStore()
@@ -139,8 +140,8 @@ async function load() {
   try {
     session.value = await getTagTrainingSession(sessionId.value)
     await loadQueue()
-  } catch (e: any) {
-    error.value = e.message
+  } catch (e: unknown) {
+    error.value = errorMessage(e)
   } finally {
     loading.value = false
   }
@@ -150,8 +151,8 @@ async function label(docId: number, labelVal: number) {
   try {
     session.value = await postTagTrainingLabels(sessionId.value, [{ doc_id: docId, label: labelVal }])
     await loadQueue()
-  } catch (e: any) {
-    toast.push(e.message, 'error')
+  } catch (e: unknown) {
+    toast.push(errorMessage(e), 'error')
   }
 }
 
@@ -167,8 +168,8 @@ async function runPseudo(mode: 'model' | 'llm') {
         'info',
       )
     }
-  } catch (e: any) {
-    toast.push(e.message, 'error')
+  } catch (e: unknown) {
+    toast.push(errorMessage(e), 'error')
   } finally {
     pseudoBusy.value = null
   }
@@ -180,8 +181,8 @@ async function accept() {
     session.value = await acceptTagTrainingSession(sessionId.value)
     queue.value = []
     toast.push(`Tag “${session.value.tag}” applied to matching documents`, 'info')
-  } catch (e: any) {
-    toast.push(e.message, 'error')
+  } catch (e: unknown) {
+    toast.push(errorMessage(e), 'error')
   } finally {
     accepting.value = false
   }
@@ -193,8 +194,8 @@ async function resume() {
     session.value = await resumeTagTrainingSession(sessionId.value)
     await loadQueue()
     toast.push('Training resumed — review the queue and accept again when ready', 'info')
-  } catch (e: any) {
-    toast.push(e.message, 'error')
+  } catch (e: unknown) {
+    toast.push(errorMessage(e), 'error')
   } finally {
     resuming.value = false
   }
