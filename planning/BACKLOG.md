@@ -356,3 +356,24 @@ read them before touching any of this:
 - ~~Nesting a field breaks its `SECRET_ALEXANDRIA_*` lookup silently~~ — fixed
   by the source rewrite above; a secret now resolves into a submodel. Left here
   because it is why that rewrite is a prerequisite, not an optional tidy-up.
+
+## Tooling
+
+### M-16: draw down the mypy override list
+
+**What:** `pyproject.toml`'s `[[tool.mypy.overrides]]` freezes **20** modules with
+`ignore_errors = true`. `mypy pka` is clean under the project config; with the
+overrides removed it is **76 errors in 19 files**, down from 89 in 22 when M-7
+shipped the ratchet a week ago.
+
+**Why here rather than `TODO.md`:** this is not a discrete task and should not be
+scheduled as one. The ratchet is working exactly as M-7 designed it — "no new
+errors" rather than "fix 89 first" — and the cheap moment to take a module off the
+list is while editing it for some other reason, which is how `pka.clustering.engine`
+came off during M-1. The finding is only that nothing gives the drawdown a
+direction, so the list is load-bearing indefinitely and a listed module silently
+loses type checking for unrelated future edits.
+
+**Next step:** name a target release (v0.1.0, say) by which the list is empty, and
+take one or two modules off it with each item that touches them. See
+`MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md` §3, M-16.
