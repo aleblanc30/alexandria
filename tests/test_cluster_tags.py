@@ -128,3 +128,63 @@ class TestApplyTagToDocuments:
                 TagOrigin.CLUSTER_L1,
             )
         assert applied == 2 and skipped == 0
+
+
+class TestClusterScopedReadUsesItsOwnIndex:
+    """A cluster-scoped read must not be a scan of the whole run.
+
+    `cluster_assignments` holds one row per document per run, so it is the
+    largest table in a clustered archive. Its only index was
+    `(run_id, document_id)`, which SQLite can open on the leading `run_id` and
+    then has to filter every assignment in the run to find one cluster's.
+    `apply_all_tags` pays that once per cluster. Audit item P-9.
+    """
+
+    @staticmethod
+    def _plan(sql: str, params: dict) -> str:
+        import sqlalchemy as sa
+
+        with get_engine().connect() as con:
+            rows = con.execute(sa.text(f"EXPLAIN QUERY PLAN {sql}"), params).fetchall()
+        return " | ".join(str(r[3]) for r in rows)
+
+    def test_the_document_id_read_uses_the_cluster_index(self):
+        cluster_id, run_id, _docs = _seed_cluster_with_docs(3)
+
+        plan = self._plan(
+            "SELECT document_id FROM cluster_assignments WHERE cluster_id = :cid AND run_id = :rid",
+            {"cid": cluster_id, "rid": run_id},
+        )
+
+        assert "ix_cluster_assignments_run_id_cluster_id" in plan, plan
+        assert "SCAN" not in plan, plan
+
+    def test_the_count_read_uses_the_cluster_index(self):
+        cluster_id, run_id, _docs = _seed_cluster_with_docs(3)
+
+        plan = self._plan(
+            "SELECT count(*) FROM cluster_assignments WHERE cluster_id = :cid AND run_id = :rid",
+            {"cid": cluster_id, "rid": run_id},
+        )
+
+        assert "ix_cluster_assignments_run_id_cluster_id" in plan, plan
+
+    def test_the_run_scoped_read_still_uses_the_document_index(self):
+        """The new index must not displace the one the browse path relies on."""
+        _cluster_id, run_id, doc_ids = _seed_cluster_with_docs(3)
+
+        plan = self._plan(
+            "SELECT cluster_id FROM cluster_assignments WHERE run_id = :rid AND document_id = :did",
+            {"rid": run_id, "did": doc_ids[0]},
+        )
+
+        assert "ix_cluster_assignments_run_id_document_id" in plan, plan
+
+    def test_the_helper_still_returns_the_cluster_documents(self):
+        """The index is an optimisation; the answer must not move."""
+        cluster_id, run_id, doc_ids = _seed_cluster_with_docs(3)
+
+        with get_engine().connect() as con:
+            found = cluster_document_ids(con, cluster_id, run_id)
+
+        assert sorted(found) == sorted(doc_ids)

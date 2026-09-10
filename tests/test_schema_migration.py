@@ -202,6 +202,7 @@ _MIGRATED_INDEXES = [
     ("source_tags", "ix_source_tags_document_id_tag_string"),
     ("source_collections", "ix_source_collections_document_id"),
     ("cluster_assignments", "ix_cluster_assignments_run_id_document_id"),
+    ("cluster_assignments", "ix_cluster_assignments_run_id_cluster_id"),
     ("images", "ix_images_document_id"),
     ("fetch_log", "ix_fetch_log_document_id"),
     ("reading_list_items", "ix_reading_list_items_list_id_document_id"),

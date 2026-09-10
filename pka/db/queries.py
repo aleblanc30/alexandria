@@ -216,6 +216,12 @@ def init_db() -> None:
             )
         )
         con.execute(
+            sa.text(
+                "CREATE INDEX IF NOT EXISTS ix_cluster_assignments_run_id_cluster_id "
+                "ON cluster_assignments(run_id, cluster_id)"
+            )
+        )
+        con.execute(
             sa.text("CREATE INDEX IF NOT EXISTS ix_images_document_id ON images(document_id)")
         )
         con.execute(

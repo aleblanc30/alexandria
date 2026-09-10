@@ -227,6 +227,12 @@ cluster_assignments = sa.Table(
     # Every browse page and search join filters by run_id, often combined with
     # a document_id IN (...) list (`documents_out_batch`, `search.py`).
     sa.Index("ix_cluster_assignments_run_id_document_id", "run_id", "document_id"),
+    # The other direction: reads scoped to one cluster of a run
+    # (`cluster_tags.cluster_document_ids`, `routers/clusters._cluster_doc_count`).
+    # The index above cannot serve these — SQLite opens it on the leading
+    # ``run_id`` and then filters every assignment in the run, which
+    # ``apply_all_tags`` pays once per cluster (audit item P-9).
+    sa.Index("ix_cluster_assignments_run_id_cluster_id", "run_id", "cluster_id"),
 )
 
 reading_lists = sa.Table(
