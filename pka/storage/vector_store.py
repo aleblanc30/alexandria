@@ -213,7 +213,18 @@ def upsert_chunks(
     if not ids:
         return []
     col = get_collection()
-    embeddings = [list(vec) for vec in _get_embedding_function()(texts)]
+    # Normalise to native Python floats. An embedding function may hand back
+    # either shape and both have bitten: Chroma's default returns numpy arrays,
+    # and a bare ``list(vec)`` over one yields ``np.float32`` *scalars*, which
+    # ``normalize_embeddings`` rejects outright ("expected a list of floats or
+    # ints ... got [[np.float32(...)]]"); a function returning plain lists — the
+    # suite's fake among them — has no ``.tolist()`` to call instead. Test for
+    # the array rather than assuming, and take its C-level conversion when it is
+    # there, since this runs over every chunk of every document.
+    embeddings = [
+        vec.tolist() if hasattr(vec, "tolist") else [float(x) for x in vec]
+        for vec in _get_embedding_function()(texts)
+    ]
     for i in range(0, len(ids), _UPSERT_BATCH_SIZE):
         window = slice(i, i + _UPSERT_BATCH_SIZE)
         col.upsert(

@@ -50,8 +50,11 @@ class TestVectorStore:
         call_sizes: list[int] = []
 
         class FakeCollection:
-            def upsert(self, ids, documents, metadatas):
-                assert len(ids) == len(documents) == len(metadatas)
+            def upsert(self, ids, documents, metadatas, embeddings):
+                # ``embeddings`` is passed positionally-by-keyword alongside the
+                # rest; it is sliced by the same window, so it belongs in the
+                # length check rather than being swallowed by a **kwargs.
+                assert len(ids) == len(documents) == len(metadatas) == len(embeddings)
                 assert len(ids) <= 3
                 call_sizes.append(len(ids))
 
