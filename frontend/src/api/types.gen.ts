@@ -213,6 +213,32 @@ export interface paths {
         patch: operations["patch_tags_documents__doc_id__tags_patch"];
         trace?: never;
     };
+    "/documents/{doc_id}/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document Text
+         * @description The body text retained at ingestion, verbatim.
+         *
+         *     The audit surface for "what did the fetcher actually get" — the question
+         *     that could previously only be guessed at from the chunks a document
+         *     produced (planning/FULL_TEXT_RETENTION.md §6.3). 404 when the document has
+         *     no retained text, which is the ordinary case for anything ingested before
+         *     retention shipped: there is no backfill.
+         */
+        get: operations["get_document_text_documents__doc_id__text_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/images": {
         parameters: {
             query?: never;
@@ -419,6 +445,31 @@ export interface paths {
          * @description Rebuild the Chroma chunk index from SQLite chunk text.
          */
         post: operations["rebuild_vectors_ingestion_rebuild_vectors_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ingestion/rechunk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rechunk Endpoint
+         * @description Re-chunk documents from their retained body text, with no re-fetch.
+         *
+         *     What `document_texts` was retained for (planning/FULL_TEXT_RETENTION.md
+         *     §6.2): applying a chunker or embedding-model change to documents already in
+         *     the archive. It replaces body chunks and their vectors, so — like a purge —
+         *     it refuses to start while a sync could be writing the same rows.
+         */
+        post: operations["rechunk_endpoint_ingestion_rechunk_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2310,6 +2361,37 @@ export interface operations {
             };
         };
     };
+    get_document_text_documents__doc_id__text_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_images_images_get: {
         parameters: {
             query?: {
@@ -2619,6 +2701,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    rechunk_endpoint_ingestion_rechunk_post: {
+        parameters: {
+            query?: {
+                source?: string | null;
+                limit?: number | null;
+                dry_run?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

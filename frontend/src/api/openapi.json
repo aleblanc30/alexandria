@@ -2870,6 +2870,47 @@
         ]
       }
     },
+    "/documents/{doc_id}/text": {
+      "get": {
+        "description": "The body text retained at ingestion, verbatim.\n\nThe audit surface for \"what did the fetcher actually get\" \u2014 the question\nthat could previously only be guessed at from the chunks a document\nproduced (planning/FULL_TEXT_RETENTION.md \u00a76.3). 404 when the document has\nno retained text, which is the ordinary case for anything ingested before\nretention shipped: there is no backfill.",
+        "operationId": "get_document_text_documents__doc_id__text_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document Text",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/images": {
       "get": {
         "operationId": "list_images_images_get",
@@ -3458,6 +3499,80 @@
           }
         },
         "summary": "Rebuild Vectors",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/ingestion/rechunk": {
+      "post": {
+        "description": "Re-chunk documents from their retained body text, with no re-fetch.\n\nWhat `document_texts` was retained for (planning/FULL_TEXT_RETENTION.md\n\u00a76.2): applying a chunker or embedding-model change to documents already in\nthe archive. It replaces body chunks and their vectors, so \u2014 like a purge \u2014\nit refuses to start while a sync could be writing the same rows.",
+        "operationId": "rechunk_endpoint_ingestion_rechunk_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rechunk Endpoint",
         "tags": [
           "ingestion"
         ]
