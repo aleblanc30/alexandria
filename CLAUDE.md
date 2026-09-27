@@ -50,6 +50,11 @@ work, not what the code does. Once a `planning/<NAME>.md` plan's corresponding
 - **Do not commit** `.env`, `.secrets`, real database paths, or user data under `data/`.
 - **Do not create git commits or PRs** unless asked. When asked, commit directly
   to `trunk` — no feature branch; this is a single-maintainer local repo.
+- **Never stage with `git add -A`, `git add .`, or `git commit -a`.** Stage the
+  files you actually touched, by path (`git add pka/foo.py tests/test_foo.py`).
+  Other agents and the user may be editing the same worktree concurrently, so a
+  blanket stage sweeps their unrelated in-flight edits into your commit. Check
+  `git status` first and leave anything you did not write alone.
 - **Do not edit** `.venv/`, `frontend/dist/`, `pka.egg-info/`, or generated caches.
 - **Never stop, restart, or otherwise touch a process bound to port 8420.** It is
   the user's real production Alexandria instance with real ingested data, not a
@@ -57,10 +62,18 @@ work, not what the code does. Once a `planning/<NAME>.md` plan's corresponding
 
 ## Verifying a change
 
-Run from repo root with the venv active.
+Run from repo root.
+
+**Default to `scripts/check.sh` (Bash/WSL) or `scripts/check.ps1` (PowerShell).**
+It runs every check below in one pass — ruff check, ruff format --check, mypy,
+pytest with coverage, `npm run lint`, `npm run test`, `npm run build` — using the repo's own
+`.venv` directly, so no activation is needed. Every step runs even when an
+earlier one fails, so one invocation reports everything that is broken; it exits
+non-zero if any step failed. Use it in place of chaining the commands by hand.
 
 | Task | Command |
 |------|---------|
+| **All checks at once** | **`scripts/check.sh` (Bash/WSL) or `scripts/check.ps1` (PowerShell)** |
 | Backend tests | `pytest` |
 | Backend tests + coverage | `pytest --cov=pka --cov-report=term-missing` |
 | Lint / format | `ruff check pka tests scripts` / `ruff format pka tests scripts` |
@@ -68,14 +81,12 @@ Run from repo root with the venv active.
 | Frontend lint | `cd frontend && npm run lint` |
 | Frontend tests | `cd frontend && npm run test` |
 | Frontend build + typecheck | `cd frontend && npm run build` |
-| All backend checks at once | `scripts/check.sh` (Bash/WSL) or `scripts/check.ps1` (PowerShell) |
 
-`scripts/check.sh`/`check.ps1` run mypy, ruff, and pytest together as one manual
-gate — use it in place of chaining the three commands by hand.
-
-Run `pytest` after backend changes; run **all three** of `npm run lint`,
-`npm run test` and `npm run build` after TypeScript/Vue changes. `mypy pka` is baseline-ratcheted (`pyproject.toml`'s
-`[[tool.mypy.overrides]]`): modules with pre-existing errors are listed there with
+Reach for the individual commands (with the venv active) only for a fast inner
+loop — a single failing test, a quick re-lint — then finish with the script.
+`pytest` is the minimum after backend changes; **all three** of `npm run lint`,
+`npm run test` and `npm run build` after TypeScript/Vue changes. `mypy pka` is
+baseline-ratcheted (`pyproject.toml`'s `[[tool.mypy.overrides]]`): modules with pre-existing errors are listed there with
 `ignore_errors = true`, so the gate is "no new errors" outside that list, not a
 clean `mypy` across the whole tree. None of this runs in CI yet — see
 `planning/TODO.md`'s M-12 item.

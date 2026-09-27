@@ -1,5 +1,58 @@
 # Changelog
 
+## Unreleased
+
+### Ingestion
+
+- **Fetched body text is retained verbatim** in a new `document_texts` sidecar
+  (`pka/ingestion/text_store.py`), zlib-compressed, one row per document,
+  written before chunking. Until now `chunks.text` was the only copy — normalised,
+  cut into overlapping sentence windows, and missing every window under
+  `min_chunk_chars` — so re-summarising, re-chunking, re-running an extraction
+  fix and auditing what the fetcher actually got all required re-fetching every
+  URL — which is why `ingestion/enrich.py` had to summarise text *reassembled*
+  from chunks (see below). Firefox and Reddit link posts write it; Reddit's inline bodies, image
+  text, Zotero abstracts and YouTube descriptions deliberately do not (already
+  verbatim elsewhere, or a millisecond re-read from their own source).
+  Stored is the **body**, not the title + card-summary
+  composite that gets embedded, and a failed write never costs a document its
+  chunks. No backfill: reconstructing text from chunks would look verbatim while
+  being a reconstruction. Setting `retain_document_text` (local, default on);
+  plan in `planning/FULL_TEXT_RETENTION.md`.
+- **Calibre full text is retained too**, as the joined pass-2 sections plus a
+  `blocks_json` map — `section_blocks()` records each section's index, title,
+  page range and the offset/length that slice it back out of the stored text,
+  so a later re-chunk can reproduce the per-section chunk metadata instead of
+  downgrading it. The file is still on disk, but re-extracting a library costs
+  minutes per book, which is what makes a re-chunk impractical without this.
+  The same joined string now feeds retention and `attach_summary_chunk`, so the
+  two cannot drift.
+- Purge wiring for it: `purge-source` now clears `document_texts` (an omission
+  would have orphaned rows against deleted document ids), the `fetched_text`
+  target takes the retained text with the body chunks it re-queues, and a new
+  tier-3 `document_texts` target reclaims the disk while leaving the chunks that
+  serve search in place.
+- **`alexandria rechunk` / `POST /ingestion/rechunk`** re-cuts a retained body
+  with the current chunker settings, which is what retention was for: changing
+  `chunk_sentences` / `chunk_overlap` / `min_chunk_chars`, or swapping the
+  embedding model, can now be applied to an archive already ingested without
+  re-fetching a single URL. Body chunks and their vectors are replaced; the
+  generated summary, external synopsis and Calibre's metadata pass are not what
+  changed and are left alone (`purge.body_chunk_predicate` is the shared
+  definition, so the pass and the `fetched_text` purge target cannot disagree).
+  New chunks are written before the old ones are deleted, so an interruption
+  leaves duplicates a re-run cleans up rather than a document with no body at
+  all, and indices continue past the highest in use rather than past the count —
+  a surviving summary chunk keeps whatever high index it was given.
+- **The summary enrichment pass no longer summarises a reassembly** when the
+  original is retained: `enrich.py` reads `document_texts` and falls back to
+  `reassemble_chunk_text` only for documents ingested before retention shipped.
+  That retires the compromise `PURGE_AND_PROVENANCE_PLAN.md` §5.2.1 had to make.
+- **`GET /documents/{id}/text`** serves a retained body back verbatim — the
+  audit surface for "what did the fetcher actually get", which previously could
+  only be guessed at from the chunks a document produced. 404 when there is no
+  retained text.
+
 ## v0.0.11
 
 ### Ingestion

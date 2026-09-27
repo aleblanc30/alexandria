@@ -187,6 +187,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "chunk_sentences",
         "chunk_overlap",
         "min_chunk_chars",
+        "retain_document_text",
     ),
     "Clustering": (
         "cluster_space",

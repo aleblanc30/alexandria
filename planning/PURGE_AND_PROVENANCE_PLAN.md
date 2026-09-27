@@ -346,7 +346,8 @@ impossible as re-summarising was), re-running extraction-quality changes over
 the existing corpus, and a genuine "what did the fetcher actually get" audit
 when a page ingests badly.
 
-Tracked in `BACKLOG.md`; not a prerequisite for Phase 1 — the enrich pass ships
+Worked out in `FULL_TEXT_RETENTION.md` (the sketch above is what it grew from);
+tracked in `BACKLOG.md`. Not a prerequisite for Phase 1 — the enrich pass ships
 against reassembled chunks and simply gets more accurate when this lands.
 
 ### 5.3 Surface

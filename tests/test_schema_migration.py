@@ -189,6 +189,7 @@ _MIGRATED_COLUMNS = [
     ("clusters", "parent_cluster_id"),
     ("clusters", "is_noise"),
     ("cluster_assignments", "level"),
+    ("document_texts", "full_char_count"),
 ]
 
 _MIGRATED_INDEXES = [
@@ -262,6 +263,15 @@ def _head_schema(tmp_path) -> dict:
 def _write_v1_archive() -> None:
     """Lay down a first-commit archive where ``init_db`` will find it."""
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    # This file must still be the database ``init_db`` migrates. conftest seeds a
+    # fresh test's archive from a prebuilt schema template, guarded on the
+    # archive not already existing — the write below is what makes that guard
+    # hold. Lose the guard and this file is replaced by a current-schema one, at
+    # which point most assertions in this module pass vacuously: "migrated from
+    # v1" and "freshly created" are exactly what they check for agreement.
+    # ``test_v1_data_survives_migration`` is what actually catches that, because
+    # a replaced file loses the rows ``_seed_v1_rows`` put in it — verified by
+    # removing the guard and watching only that test fail. Keep it that way.
     con = sqlite3.connect(settings.archive_db)
     try:
         con.executescript(_V1_SCHEMA_SQL)

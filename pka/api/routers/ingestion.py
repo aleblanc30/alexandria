@@ -343,6 +343,56 @@ def enrich_endpoint(kind: str = "summary", source: str | None = None):
     return {"status": "queued", "kind": kind, "source": source}
 
 
+_rechunk_lock = threading.Lock()
+_rechunk_running = False
+
+
+@router.post("/rechunk", status_code=202)
+def rechunk_endpoint(source: str | None = None, limit: int | None = None, dry_run: bool = False):
+    """Re-chunk documents from their retained body text, with no re-fetch.
+
+    What `document_texts` was retained for (planning/FULL_TEXT_RETENTION.md
+    §6.2): applying a chunker or embedding-model change to documents already in
+    the archive. It replaces body chunks and their vectors, so — like a purge —
+    it refuses to start while a sync could be writing the same rows.
+    """
+    global _rechunk_running
+    if source:
+        require_source(source)
+
+    from pka.db.queries import init_db
+    from pka.ingestion.rechunk import rechunk_documents
+
+    if dry_run:
+        init_db()
+        return {
+            "status": "counted",
+            "source": source,
+            "stats": rechunk_documents(source=source, dry_run=True, limit=limit),
+        }
+
+    _require_nothing_running(source)
+    with _rechunk_lock:
+        if _rechunk_running:
+            raise HTTPException(409, "A re-chunk pass is already in progress")
+        _rechunk_running = True
+
+    def _run() -> None:
+        global _rechunk_running
+        try:
+            init_db()
+            stats = rechunk_documents(source=source, limit=limit)
+            log.info("Re-chunk pass finished: %s", stats)
+        except Exception:
+            log.exception("Re-chunk pass failed")
+        finally:
+            with _rechunk_lock:
+                _rechunk_running = False
+
+    threading.Thread(target=_run, daemon=True, name="alexandria-rechunk").start()
+    return {"status": "queued", "source": source, "limit": limit}
+
+
 @router.get("/domains", response_model=DomainTopLists)
 def domain_top_lists(source: str | None = None, limit: int = 10):
     """Top domains by document count and by unfetchable count."""

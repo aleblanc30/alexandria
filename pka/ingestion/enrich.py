@@ -8,15 +8,18 @@ enough to make the next sync redo the work — but the summary gate is keyed on
 leaves true. Without this pass, purging summaries would be a trap: the artifact
 is gone and only a full source purge and re-fetch brings it back.
 
-**The body text is not retained verbatim.** After ingestion it survives only as
-``chunks.text``: whitespace-normalised and cut into overlapping sentence
-windows. So this pass summarises text reassembled from those chunks rather than
-re-fetching every URL — re-fetching would destroy the expensive network work to
-redo the cheap inference, which is the exact workflow this feature exists to
-eliminate. :func:`reassemble_chunk_text` undoes the overlap; the joins are
-imperfect where the chunker's ``min_chars`` filter dropped a short window, and
-a summariser is robust to that in a way an extractor would not be. Retaining
-raw text (plan §5.2.2) retires the compromise and makes this exact.
+**Where the body text comes from.** A document ingested since retention shipped
+has it verbatim in ``document_texts`` (``planning/FULL_TEXT_RETENTION.md``), and
+that is what this pass summarises. Anything older has no stored row — retention
+is not backfilled, because a reassembly stored as if it were the original would
+be a lie the audit use case would then read — so for those documents the pass
+falls back to text reassembled from ``chunks.text``, which is
+whitespace-normalised and cut into overlapping sentence windows.
+:func:`reassemble_chunk_text` undoes the overlap; the joins are imperfect where
+the chunker's ``min_chars`` filter dropped a short window, and a summariser is
+robust to that in a way an extractor would not be. Re-fetching instead was never
+an option: it would destroy the expensive network work to redo the cheap
+inference, which is the exact workflow this feature exists to eliminate.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from pka.db.schema import chunks, documents
 from pka.enrichment_runs import run_scope
 from pka.ingestion.chunker import _split_sentences
 from pka.ingestion.core import _SUMMARY_FLAGS, attach_summary_chunk
+from pka.ingestion.text_store import load_document_text
 from pka.purge import body_chunk_predicate
 
 log = logging.getLogger(__name__)
@@ -85,6 +89,15 @@ def _summary_candidates(con, source: str | None, limit: int | None) -> list[sa.R
 
 
 def _body_text(con, doc_id: int) -> str:
+    """The document's body: the retained text when there is one, else a reassembly.
+
+    The ladder, not a replacement: retention has no backfill, so every document
+    ingested before it shipped still reaches the reassembly branch and must keep
+    working.
+    """
+    stored = load_document_text(doc_id)
+    if stored:
+        return stored
     rows = con.execute(
         sa.select(chunks.c.text)
         .where(chunks.c.document_id == doc_id)

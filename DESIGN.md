@@ -213,6 +213,35 @@ chunks are re-queued automatically on the next ingest run. When a Firefox URL
 returns HTTP 404, the fetcher can fall back to the closest Internet Archive
 snapshot (`fetch_wayback_fallback`, default on).
 
+**The extracted body text is retained verbatim.** `store_document_text`
+(`ingestion/text_store.py`) writes it to the `document_texts` sidecar — one
+zlib-compressed row per document, written before chunking — because `chunks.text`
+is whitespace-normalised, overlapped and missing every window under
+`min_chunk_chars`, so re-summarising, re-chunking, re-running an extraction fix
+or auditing what the fetcher actually got would otherwise all mean re-fetching.
+Retention covers text with no other verbatim home that cost a round trip or a
+slow extraction: fetched bodies (Firefox, Reddit link posts) and Calibre's
+phase-2 sections, joined into one body with a `blocks_json` map — `index`,
+`title`, `page_start`/`page_end`, and the offset that slices each section back
+out — so a re-chunk can reproduce the per-section chunk metadata. Reddit's inline
+bodies (`reddit_items.body`) and image text (`images`) are already kept, and a
+Zotero abstract or YouTube description is a re-read from its own source.
+Local-only, so it is not a §1.1 gate; `retain_document_text` (default on) exists
+for disk. There is no backfill — documents ingested before retention shipped
+have no row, and reconstructing one from chunks would look verbatim while being
+a reconstruction. Plan: `planning/FULL_TEXT_RETENTION.md`.
+
+Three things read it. `alexandria rechunk` / `POST /ingestion/rechunk`
+(`ingestion/rechunk.py`) re-cuts a retained body with the current chunker
+settings — the pass that makes an embedding-model swap applicable to an archive
+already ingested — replacing body chunks and their vectors while leaving the
+summary, external-synopsis and metadata passes alone, and rebuilding a fetched
+document's title + card-summary composite from `documents` on the way. The
+summary enrichment pass (`ingestion/enrich.py`) now summarises the retained text
+where there is one and falls back to its chunk reassembly where there is not.
+And `GET /documents/{id}/text` serves a body back verbatim, which is how to see
+what the fetcher actually got when a page ingests badly.
+
 **Publisher URLs are resolved by identifier, not scraped.** A bookmark on
 `nature.com`, `link.springer.com`, `journals.aps.org`, `sciencedirect.com` or
 `doi.org` carries a DOI (or an Elsevier PII), and `mitpress.mit.edu` carries an

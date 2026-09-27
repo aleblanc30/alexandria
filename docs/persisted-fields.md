@@ -96,6 +96,7 @@ was written, not when the user saved it.
 | `fetch_log` | — | one row per fetch attempt | — | link posts only | — | — |
 | `reddit_items` | — | — | — | ✅ 1:1 | — | — |
 | `images` | — | — | — | — | — | ✅ 1:1 |
+| `document_texts` | — | fetched body ⁴ | joined pass-2 sections ⁴ | link posts only ⁴ | — | — |
 
 ¹ Only the short ones — a tag over `MAX_TAG_WORDS` words is diverted to
 `documents.note` by `split_calibre_tags`.
@@ -103,6 +104,11 @@ was written, not when the user saved it.
 carried as a collection instead.
 ³ Written directly via `insert_overlay_tags`, not through the rule-based
 `classify_document`.
+⁴ Only text that has no other verbatim home and cost a network round trip or a
+slow extraction: Reddit's inline bodies are already in `reddit_items.body`, image
+text is already in `images`, and a Zotero abstract or YouTube description is a
+millisecond re-read from its own source — see
+`planning/FULL_TEXT_RETENTION.md` §3.
 
 `overlay_tags` also receives `manual` (user edits), `llm` / `cluster_l1` /
 `cluster_l2` (clustering), and `learned` (tag training) rows — none of them
@@ -117,6 +123,32 @@ ingestion-time, all of them source-agnostic.
 | `permalink` | canonical thread URL — kept because a link post's `url_or_path` is the *external* target |
 | `external_url` | link-post target, else NULL |
 | `body` | selftext / comment body, **verbatim** — neither the 280-char card excerpt nor the overlapped, whitespace-normalised chunks can reproduce it |
+
+### `document_texts` (fetched documents and books)
+
+The extracted body text kept verbatim, so summarising, chunking and extraction
+can be redone without going back to the network — or, for a book, without
+re-running an extraction that costs minutes
+(`planning/FULL_TEXT_RETENTION.md`). One row per document, written by the
+runners before chunking and refreshed on a re-fetch or re-extraction.
+
+| Column | Value |
+|--------|-------|
+| `text` | the body, zlib-compressed UTF-8 — **not** the title + card-summary composite that gets embedded |
+| `encoding` | `zlib`; the column exists so a codec change is a migration, not archaeology |
+| `char_count` | uncompressed length, so counts and dry runs never decompress |
+| `content_hash` | sha256 of the plain text — "did the page change?" on a re-fetch. Recorded; nothing reads it yet |
+| `blocks_json` | section map for Calibre — `index`, `title`, `page_start`, `page_end`, and the `offset`/`length` that slice the section back out of `text` verbatim, so a re-chunk can reproduce the per-section chunk metadata. NULL for a fetched body, which arrives as one blob |
+| `extracted_at` | unix ts of the write |
+
+No backfill: a document ingested before retention shipped has no row, and
+nothing reconstructs one from its chunks — a reconstruction that looked verbatim
+would defeat the point. Off under `retain_document_text=false`.
+
+Read by `ingestion/rechunk.py` (which rewrites this document's **body** chunks
+from it, leaving the summary / external-synopsis / metadata passes alone),
+`ingestion/enrich.py` (which prefers it over a chunk reassembly), and
+`GET /documents/{id}/text`.
 
 ### `images` (Images only)
 

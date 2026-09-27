@@ -6,17 +6,62 @@ Calibre databases are touched. Ollama chat/vision and outbound HTTP calls are
 never made — Chroma is replaced by ``mock_chroma``.
 """
 
+import shutil
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
+# ── Schema template ───────────────────────────────────────────────────────────
+
+
+@pytest.fixture(scope="session")
+def _schema_template(tmp_path_factory) -> Path:
+    """One prebuilt archive holding the current schema, for the fixture below.
+
+    Creating the schema is 33 CREATE statements against a fresh SQLite file —
+    ~20 ms, of which the DDL itself is most and no amount of tuning removes it
+    (without WAL the same statements take ~114 ms, so the engine is already
+    doing the cheap thing). The suite paid that ~900 times. Copying a prebuilt
+    file is ~2 ms.
+
+    Built by calling the real ``init_db`` once, so it cannot drift from
+    ``schema.py``: the template *is* ``init_db``'s output, not a second copy of
+    the schema that someone has to remember to update.
+
+    ``data_dir`` is redirected here explicitly rather than relying on
+    ``isolated_settings`` — a session fixture may be built before any test's
+    monkeypatching applies, and calling ``init_db`` against a developer's real
+    ``data_dir`` is not something to leave to fixture ordering.
+    """
+    import pka.db.queries as q
+    from pka import config
+
+    target = tmp_path_factory.mktemp("schema_template")
+    saved_dir, saved_engine = config.settings.data_dir, q._engine
+    try:
+        config.settings.data_dir = target
+        q._engine = None
+        q.init_db()
+        q.get_engine().dispose()
+        # Fold the WAL back in so the .db file alone is a complete archive —
+        # the copy below does not carry -wal/-shm.
+        con = sqlite3.connect(config.settings.archive_db)
+        try:
+            con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            con.close()
+        return target / "archive.db"
+    finally:
+        config.settings.data_dir, q._engine = saved_dir, saved_engine
+
+
 # ── Settings override ─────────────────────────────────────────────────────────
 
 
 @pytest.fixture(autouse=True)
-def isolated_settings(tmp_path, monkeypatch):
+def isolated_settings(tmp_path, monkeypatch, _schema_template):
     """Redirect all data paths to a per-test temp directory and reset caches."""
     from pka import config
 
@@ -89,6 +134,31 @@ def isolated_settings(tmp_path, monkeypatch):
 
     monkeypatch.setattr(q, "_engine", None)
 
+    # Hand that fresh DB its schema as a file copy instead of 33 CREATE
+    # statements. ``init_db`` still runs in full on top — ``create_all`` finds
+    # every table present and each migration branch no-ops — so this changes
+    # what the setup costs, not what it produces.
+    #
+    # ``get_engine`` is the hook because ``init_db`` and every query helper look
+    # it up as a module global at *call* time. Patching ``init_db`` itself would
+    # not work: a hundred test modules did ``from pka.db.queries import init_db``
+    # at import time and hold the original function object, which this reaches
+    # and a rebind of the name does not.
+    #
+    # Seeding only when no archive exists yet is what keeps
+    # ``test_schema_migration.py`` honest: it writes a first-commit archive to
+    # this same path before anything opens an engine, so it finds its own file
+    # here and migrates that, never a modern schema dropped underneath it.
+    real_get_engine = q.get_engine
+
+    def seeded_get_engine():
+        if q._engine is None and not s.archive_db.exists():
+            s.archive_db.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(_schema_template, s.archive_db)
+        return real_get_engine()
+
+    monkeypatch.setattr(q, "get_engine", seeded_get_engine)
+
     # Reset cached Chroma client/collection
     import pka.storage.vector_store as vs
 
@@ -110,6 +180,25 @@ def isolated_settings(tmp_path, monkeypatch):
     import pka.ingestion.image_gate as image_gate
 
     image_gate.reset_gate()
+
+    # Drop every per-domain send reservation.
+    #
+    # Each of these modules holds its rate limiter as a module-level singleton,
+    # so the scheduler's reservations outlive the test that made them: the first
+    # test to fetch a domain pushes that domain's next slot 1/rps into the
+    # future, and every later test touching it sleeps out the gap before its
+    # (mocked) fetch. That made a test's runtime depend on which tests ran
+    # before it — 35% of the suite's wall time, and the kind of order dependence
+    # that becomes flakiness the moment anything shuffles the order.
+    #
+    # Only the reservations go; the spacing is left at its production value, so
+    # a test that really does hit one domain twice still pays the real gap. That
+    # measured the same as disabling the limit outright, which is the evidence
+    # that no test is fighting the limiter within its own body.
+    from pka.ingestion import book_search, fetch_base, openlibrary
+
+    for _limited in (fetch_base, book_search, openlibrary):
+        _limited._limiter.scheduler.reset()
 
     # Reset in-memory sync progress so job state never leaks between tests
     from pka.constants import ALL_SOURCES

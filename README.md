@@ -167,6 +167,23 @@ document have chunks", which stays true — so they get an explicit pass:
 curl -X POST 'localhost:8420/ingestion/enrich?kind=summary'
 ```
 
+The body text of anything fetched or extracted is kept verbatim
+(`document_texts`, setting `retain_document_text`, default on), so changing the
+chunker — or swapping the embedding model, which is the usual reason to — can be
+applied to documents already in the archive without fetching a single URL again:
+
+```bash
+alexandria rechunk --dry-run          # how many documents have retained text
+alexandria rechunk --source firefox   # re-cut with the current chunker settings
+```
+
+It replaces body chunks and their vectors only; a generated summary, an external
+synopsis and Calibre's metadata pass are left alone. Documents ingested before
+retention shipped have no stored text — there is no backfill — so they are
+skipped until something re-fetches them. `GET /documents/{id}/text` serves a
+retained body back, which is also how to see what the fetcher actually got when
+a page ingests badly.
+
 `alexandria purge-source <source>` remains the blunt instrument: it removes a
 whole connector's documents. It now keeps manually-applied and learned tags plus
 reading-list entries, since re-ingesting cannot recreate those; pass

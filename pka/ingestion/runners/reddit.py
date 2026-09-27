@@ -33,6 +33,7 @@ from pka.ingestion.core import (
 )
 from pka.ingestion.fetcher import bookmark_url_unfetchable_reason
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
+from pka.ingestion.text_store import store_document_text
 
 log = logging.getLogger(__name__)
 
@@ -164,6 +165,11 @@ def embed_fetched_text(
         if title is None:
             title = document_titles([doc_id]).get(doc_id, "")
         summary = card_summary or body_excerpt(text)
+        # Retain the fetched body verbatim before chunking, as the Firefox path
+        # does (planning/FULL_TEXT_RETENTION.md §5). The inline path below needs
+        # no equivalent: a self-post's or comment's body is already stored
+        # verbatim in `reddit_items.body`.
+        store_document_text(doc_id, text, dry_run=dry_run)
         embed_text = fetched_embed_text(title, summary, text)
         result = ingest_text_block(
             doc_id,

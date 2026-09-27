@@ -326,6 +326,12 @@ class Settings(BaseSettings):
     chunk_sentences: int = 5  # sentence-window size
     chunk_overlap: int = 1  # sentences of overlap between windows
     min_chunk_chars: int = 80  # discard chunks shorter than this
+    # Keep the extracted body text verbatim in `document_texts`, so summarising,
+    # chunking and extraction can be redone without re-fetching
+    # (planning/FULL_TEXT_RETENTION.md). Local retention only — no outbound call
+    # depends on it, so DESIGN.md §1.1's default-off rule does not apply; the
+    # flag is here for disk, and off means the pre-retention behaviour.
+    retain_document_text: bool = True
 
     # ── Firefox fetch ───────────────────────────────────────────────────────
     fetch_timeout_seconds: float = 10.0  # max seconds to read response body
@@ -464,6 +470,7 @@ class Settings(BaseSettings):
         "book_summary_enabled",
         "external_lookup_enabled",
         "cover_search_fallback",
+        "retain_document_text",
         mode="before",
     )
     @classmethod

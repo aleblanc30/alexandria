@@ -23,6 +23,7 @@ from pka.ingestion.core import attach_summary_chunk, ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 from pka.ingestion.openlibrary import isbn_checksum_valid, normalize_isbn
 from pka.ingestion.progress import should_stop, tick
+from pka.ingestion.text_store import section_blocks, store_document_text
 
 log = logging.getLogger(__name__)
 
@@ -264,6 +265,13 @@ def ingest_calibre_fulltext(
                 stats["skipped"] += 1
                 continue
             sections = report.sections
+            # Retain the extraction before chunking (FULL_TEXT_RETENTION.md §5).
+            # The file is still on disk, but re-extracting a library costs
+            # minutes per book, which is what makes a re-chunk impractical
+            # without this. `blocks` maps each section back into `full_text`, so
+            # a re-chunk can reproduce the section and page metadata below.
+            full_text, blocks = section_blocks(sections)
+            store_document_text(doc_id, full_text, blocks=blocks, dry_run=dry_run)
 
             chunk_offset = existing_chunk_count(doc_id)
             total_added = 0
@@ -293,7 +301,6 @@ def ingest_calibre_fulltext(
                 # The §3.2 gap this closes: hundreds of body chunks and not one
                 # of them says what the book is about, and /search collapses to
                 # the best single chunk per document.
-                full_text = "\n\n".join(sec.get("text", "") for sec in sections)
                 total_added += attach_summary_chunk(
                     doc_id,
                     full_text,

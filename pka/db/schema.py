@@ -138,6 +138,34 @@ reddit_items = sa.Table(
     sa.Column("body", sa.Text),  # selftext / comment body, verbatim
 )
 
+# The extracted body text of a fetched or extracted document, kept verbatim so
+# summarising, chunking and extraction can be redone without going back to the
+# network (planning/FULL_TEXT_RETENTION.md). `chunks.text` is the only other
+# copy and it is whitespace-normalised, cut into overlapping windows, and
+# missing every window shorter than `min_chunk_chars` — a lossy reconstruction,
+# which is why `ingestion/enrich.py` has to reassemble one.
+#
+# A sidecar rather than a `documents` column: `documents` is scanned by browse,
+# tag filters, progress counts and the clustering read path, and a
+# multi-hundred-KB blob on every row would slow all of them for a value almost
+# nothing reads. Same 1:1 shape as `reddit_items` and `images`.
+document_texts = sa.Table(
+    "document_texts",
+    meta,
+    sa.Column("id", sa.Integer, primary_key=True),
+    sa.Column(
+        "document_id", sa.Integer, sa.ForeignKey("documents.id"), nullable=False, unique=True
+    ),
+    sa.Column("text", sa.LargeBinary, nullable=False),  # see `encoding`
+    sa.Column("encoding", sa.Text, nullable=False, server_default="zlib"),
+    sa.Column("char_count", sa.Integer),  # uncompressed length, so counts never decompress
+    sa.Column("content_hash", sa.Text),  # sha256 of the plain text: "did the page change?"
+    # Section map for paginated sources: [{index, title, page_start, page_end,
+    # offset, length}]. NULL for fetched HTML, which arrives as one blob.
+    sa.Column("blocks_json", sa.Text),
+    sa.Column("extracted_at", sa.Integer),
+)
+
 
 # ── Overlay ──────────────────────────────────────────────────────────────────
 
