@@ -84,15 +84,9 @@ every time — the encode is the entire cost of training.
 ### 2.2 Rejected: bootstrapping from already-ingested images
 
 Ingested images carry a VLM-assigned `images.image_type` and a stored CLIP
-vector, which looks like a free labelled set. **It is not available here:**
-`GET /ingestion/status` reports `image: 0` ingested (`registered: 0`,
-`embedded: 0`) against 728 discovered-but-pending files. There is nothing to
-bootstrap from.
-
-Recorded so it is not re-proposed. Even with a populated archive it would be
-*distillation of `moondream`* — inheriting its mistakes, with its accuracy as
-the ceiling — which is the opposite of the goal in §9. Hand-labelled folders are
-the only training source.
+vector, which looks like a free labelled set. It would be *distillation of
+`moondream`* — inheriting its mistakes, with its accuracy as the ceiling — which
+defeats §9. Hand-labelled folders are the only training source.
 
 ## 3. Model
 

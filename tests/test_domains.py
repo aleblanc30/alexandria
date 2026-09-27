@@ -60,7 +60,7 @@ class TestDomainHasFetchHandler:
         assert domain_has_fetch_handler("www.bing.com") is True
 
     def test_publisher_domains_have_handlers(self):
-        # PUBLISHER_FETCH_HANDLERS.md — both APS hosts and both Elsevier hosts.
+        # Publisher handlers, including both APS hosts and both Elsevier hosts.
         for domain in (
             "doi.org",
             "dx.doi.org",

@@ -48,8 +48,7 @@ def _mock_chroma_with_docs(monkeypatch, doc_ids: list[int]) -> tuple[dict, Magic
     The chunk rows are not decoration. ``ingest_text_block`` writes the SQLite
     chunk and the Chroma vector together, so a vector with no chunk row is a
     state ingestion cannot produce, and the clustering run path now sources its
-    candidate document ids from ``chunks`` rather than by enumerating Chroma
-    (audit P-3).
+    candidate document ids from ``chunks`` rather than by enumerating Chroma.
     """
     embs = _fake_embeddings(len(doc_ids))
     store = {
@@ -421,7 +420,7 @@ class TestRunClustering:
 
 
 class TestCandidateDocumentIds:
-    """Candidate ids come from SQLite ``chunks``, not from enumerating Chroma (P-3)."""
+    """Candidate ids come from SQLite ``chunks``, not from enumerating Chroma."""
 
     def test_ids_come_from_chunks(self):
         from pka.clustering.embeddings import _candidate_document_ids
@@ -463,7 +462,7 @@ class TestCandidateDocumentIds:
         assert _candidate_document_ids(["zotero"]) == [zot]
 
     def test_chroma_is_read_only_for_documents_without_a_cached_vector(self, monkeypatch):
-        """The whole point of P-3: cached documents cost no Chroma round trip."""
+        """The whole point: cached documents cost no Chroma round trip."""
         from pka.clustering.embeddings import _load_document_embeddings
 
         doc_ids = _seed_documents(3)
@@ -475,7 +474,7 @@ class TestCandidateDocumentIds:
         for did in doc_ids:
             refresh_document_embedding(did)
 
-        # fetch_records is the wide enumeration P-3 removes, and is also what
+        # fetch_records is the wide enumeration this removes, and is also what
         # fetch_records_by_document_ids delegates to, so zero calls means Chroma
         # was not read at all. The old implementation called it unconditionally.
         calls: list = []
@@ -494,8 +493,7 @@ class TestCandidateDocumentIds:
 # ── engine.run_clustering(ClusterParams(cluster_space="agglomerative")) ─────────────────────
 #
 # Unlike HDBSCAN, agglomerative needs no mock: it's sklearn/scipy, already a
-# hard dependency, so these run the real clusterer over the fixture — see
-# planning/archive/AGGLOMERATIVE_CLUSTERING.md §7.
+# hard dependency, so these run the real clusterer over the fixture.
 
 
 @pytest.fixture()
@@ -666,7 +664,7 @@ class TestAgglomerativeKCandidates:
 
 
 class TestSplitSubtreeMatchesRebuild:
-    """§2.4's core claim: cutting the induced subtree equals rebuilding linkage
+    """The core claim: cutting the induced subtree equals rebuilding linkage
     on the group's slice. Pinned here since the whole L2 tree-reuse design rests
     on it (measured ARI 1.0 across ward/average/complete during planning).
     """
@@ -712,8 +710,9 @@ class TestSplitSubtreeMatchesRebuild:
 class TestAutoKAgglomerative:
     def test_recovers_planted_cluster_count_on_grid(self):
         """Silhouette sweep recovers a planted cluster count that is on the
-        candidate grid — see planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.2c on why
-        the count must be on the grid for this assertion to mean anything.
+        candidate grid. The sweep only tries counts on its grid, so a planted
+        count off the grid could never be recovered and the assertion would mean
+        nothing.
         """
         from pka.clustering.agglomerative import _auto_k_agglomerative, _build_linkage
 

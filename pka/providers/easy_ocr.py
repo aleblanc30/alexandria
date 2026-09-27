@@ -126,7 +126,7 @@ class EasyOcrProvider:
         # language set. Tied to the instance, which ``reset_providers`` clears.
         self._readers: dict[tuple[str, ...], object] = {}
         # The injection point for tests, which would otherwise have to patch a
-        # private method to keep torch out of the suite (audit item M-11).
+        # private method to keep torch out of the suite.
         # Called once per language set; the result is cached as above.
         self._reader_factory = reader_factory or self._load_reader
 

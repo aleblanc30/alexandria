@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { DocumentListItem } from '@/api/client'
 import DocGridCard from './DocGridCard.vue'
 
-// First component test in the suite (audit item M-10). @vue/test-utils was
+// First component test in the suite. @vue/test-utils was
 // already a dependency and unused; this is the pattern for the rest.
 
 function doc(overrides: Partial<DocumentListItem> = {}): DocumentListItem {

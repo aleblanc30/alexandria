@@ -100,7 +100,7 @@ class TestRefreshReusesVectorsItWasGiven:
     `ingest_text_block` upserts chunks to Chroma and then called
     `refresh_document_embedding`, which fetched the metadatas and the embeddings
     of those same chunks straight back out. Passing the vectors forward removes
-    both round trips for a document written in one block. Audit item P-4.
+    both round trips for a document written in one block.
     """
 
     @staticmethod

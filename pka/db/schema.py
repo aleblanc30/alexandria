@@ -32,10 +32,10 @@ documents = sa.Table(
     sa.Column("generated_summary", sa.Text),  # cached LLM summary (DESIGN.md §3.2)
     # Which enrichment run produced generated_summary. NULL means genuinely
     # unknown — every summary written before provenance shipped — and is never
-    # backfilled with a guess (PURGE_AND_PROVENANCE_PLAN.md §6.2).
+    # backfilled with a guess a provenance-filtered purge would then act on.
     sa.Column("summary_run_id", sa.Integer, sa.ForeignKey("enrichment_runs.run_id")),
-    # Structured bibliographic fields, cross-source (see DESIGN.md §3.2 and
-    # planning/DOCUMENT_METADATA_PLAN.md). Nullable, populated by whoever has
+    # Structured bibliographic fields, cross-source (see DESIGN.md §3.2).
+    # Nullable, populated by whoever has
     # the data — no per-source sidecar table.
     sa.Column("doi", sa.Text),  # bare DOI, lowercased, no doi.org/ prefix
     sa.Column("arxiv_id", sa.Text),  # normalize_arxiv_id form, no version suffix
@@ -47,7 +47,7 @@ documents = sa.Table(
     sa.UniqueConstraint("source", "source_id", name="uq_source_item"),
     # Progress/status counts filter documents by source on every poll.
     sa.Index("ix_documents_source", "source"),
-    # Join keys for cross-source dedup (planning/TODO.md).
+    # Join keys for cross-source deduplication.
     sa.Index("ix_documents_doi", "doi"),
     sa.Index("ix_documents_arxiv_id", "arxiv_id"),
     sa.Index("ix_documents_isbn", "isbn"),
@@ -140,7 +140,7 @@ reddit_items = sa.Table(
 
 # The extracted body text of a fetched or extracted document, kept verbatim so
 # summarising, chunking and extraction can be redone without going back to the
-# network (planning/FULL_TEXT_RETENTION.md). `chunks.text` is the only other
+# network. `chunks.text` is the only other
 # copy and it is whitespace-normalised, cut into overlapping windows, and
 # missing every window shorter than `min_chunk_chars` — a lossy reconstruction,
 # which is why `ingestion/enrich.py` has to reassemble one.
@@ -222,7 +222,7 @@ cluster_runs = sa.Table(
 
 # Model provenance for enrichment artifacts: which backend, which model, and
 # with which settings produced a given summary / description / OCR pass
-# (PURGE_AND_PROVENANCE_PLAN.md §6.1). Deliberately the same shape as
+# (DESIGN.md §3.2). Deliberately the same shape as
 # cluster_runs — this is its generalisation, not a new invention.
 #
 # It is NOT a job history: live job state belongs to pka/ingestion/progress/,
@@ -240,7 +240,7 @@ enrichment_runs = sa.Table(
     sa.Column("status", sa.Text, default="running"),  # running|finished|failed|cancelled
     sa.Column("notes", sa.Text),
     # Spend visibility: what this run actually cost in provider traffic, which
-    # matters once a billable chat provider is configured (see BACKLOG.md).
+    # matters once a billable chat provider is configured.
     sa.Column("calls", sa.Integer, nullable=False, server_default="0"),
     sa.Column("chars_sent", sa.Integer, nullable=False, server_default="0"),
     sa.Column("artifacts", sa.Integer, nullable=False, server_default="0"),
@@ -264,7 +264,7 @@ cluster_assignments = sa.Table(
     # (`cluster_tags.cluster_document_ids`, `routers/clusters._cluster_doc_count`).
     # The index above cannot serve these — SQLite opens it on the leading
     # ``run_id`` and then filters every assignment in the run, which
-    # ``apply_all_tags`` pays once per cluster (audit item P-9).
+    # ``apply_all_tags`` pays once per cluster.
     sa.Index("ix_cluster_assignments_run_id_cluster_id", "run_id", "cluster_id"),
 )
 

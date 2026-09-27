@@ -1,4 +1,4 @@
-"""Rate-limiter tests — patch #14.
+"""Rate-limiter tests.
 
 Verifies that:
   - ``SlotScheduler`` spaces claims per key, deterministically, on a fake clock.

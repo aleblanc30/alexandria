@@ -343,7 +343,7 @@ class TestDateParsingRejectsJunkWithoutSwallowingBugs:
 
     Calibre writes these columns freely, so a malformed value has to degrade to
     None. A `TypeError` from passing the wrong type is a caller bug and now
-    propagates instead of being reported as a missing date. Audit item M-5.
+    propagates instead of being reported as a missing date.
     """
 
     @pytest.mark.parametrize("value", [None, "", "not a date", "2019-13-45 99:99:99"])

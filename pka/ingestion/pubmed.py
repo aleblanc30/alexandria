@@ -3,8 +3,7 @@
 Scope is PubMed **abstract** pages only (``pubmed.ncbi.nlm.nih.gov/<pmid>/`` and
 the legacy ``ncbi.nlm.nih.gov/pubmed/<pmid>`` form). PubMed never hosts full
 text itself, so this handler is metadata + abstract only — no PDF fetch, unlike
-``arxiv.py`` / ``biorxiv.py``. See ``planning/FIREFOX_INGESTERS_PLAN.md`` §4 for
-the full design.
+``arxiv.py`` / ``biorxiv.py``.
 """
 
 from __future__ import annotations

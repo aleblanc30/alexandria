@@ -1383,7 +1383,7 @@ class TestMissingExtractorIsDistinguishedFromExtractionFailure:
     Each rung of `_extract_text` used to wrap its import and its extraction in
     one `try/except Exception: pass`, so a missing `trafilatura` and a page
     trafilatura could not parse produced identical silence — and the archive
-    quietly took the cruder rung's output for every document. Audit item M-5.
+    quietly took the cruder rung's output for every document.
     """
 
     @pytest.fixture(autouse=True)

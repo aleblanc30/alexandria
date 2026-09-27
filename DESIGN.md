@@ -177,8 +177,7 @@ have — a template to copy, not an exception to be argued down:
   collections, earliest add time → `date_added`), and hydrates title/channel/
   description/tags via `videos.list`. Embed text is
   `title + channel + description + tags`. Note: the Data API no longer exposes
-  *Watch Later*, so it is not included. Transcript enrichment is deferred
-  (`planning/BACKLOG.md`).
+  *Watch Later*, so it is not included. Transcript enrichment is not built.
 
 Otherwise the connector follows the standard §2 checklist and the Zotero-style
 two-phase flow (metadata import, then embed — no async fetch phase).
@@ -236,7 +235,7 @@ pre-cut length in `full_char_count`, so a reader can tell a prefix from a
 document — and the re-chunk pass refuses a prefix rather than shrinking the
 index to it. There is no backfill — documents ingested before retention shipped
 have no row, and reconstructing one from chunks would look verbatim while being
-a reconstruction. Plan: `planning/FULL_TEXT_RETENTION.md`.
+a reconstruction.
 
 Three things read it. `alexandria rechunk` / `POST /ingestion/rechunk`
 (`ingestion/rechunk.py`) re-cuts a retained body with the current chunker
@@ -278,7 +277,7 @@ is worth OCR and only the first is recorded, as `fetch_status = no_text_layer` o
 both the Calibre and the fetch route. Nothing re-queues that state: re-reading the
 same bytes cannot produce text. It exists so that "not extracted yet" and "has
 nothing to extract" stop looking identical from the database, and it is the work
-queue the OCR entry in `planning/BACKLOG.md` would consume.
+queue a future OCR pass over scanned PDFs would consume.
 
 **Page ranges travel with the chunk.** A PDF section is a group of ten
 *text-bearing* pages labelled with its real 1-based page numbers — a page with no
@@ -518,8 +517,8 @@ Three mechanisms close these, in ascending cost:
 | Calibre, no ISBN | Title/author lookup → second catalogue. Skipped entirely when Calibre already holds a description, since pass 1 embeds that | off (`external_lookup_enabled`) |
 | Calibre full text | Local map-reduce summary over the extracted sections | off (`book_summary_enabled`) |
 | Long fetched articles | Same path as bookmarks — they are the same runner | off (`bookmark_summary_enabled`) |
-| Zotero | *No summary* — the abstract already is one. The real gap is that attached PDFs are never ingested (`planning/TODO.md`). | — |
-| YouTube | *No summary* — nothing to summarise beyond uploader metadata. Transcripts (`planning/BACKLOG.md`). | — |
+| Zotero | *No summary* — the abstract already is one. The real gap is that attached PDFs are never ingested. | — |
+| YouTube | *No summary* — nothing to summarise beyond uploader metadata; transcripts are not ingested. | — |
 
 **Structured bibliographic fields.** `documents` also carries `doi`, `arxiv_id`,
 `isbn`, `year`, `authors_json`, `zotero_url`, `zotero_path` — nullable columns,
@@ -529,9 +528,9 @@ per-source sidecar table: these fields are cross-source (DOI spans Zotero and
 bioRxiv, authors span all four), so a sidecar like `reddit_items` would solve
 one source and leave the others stranded, and a cross-source dedup pass would
 have to union across sidecars that do not all exist. `doi`/`arxiv_id`/`isbn` are
-indexed as join keys for `planning/TODO.md`'s *Deduplication of items*; an arXiv
-document with no source DOI derives one (`10.48550/arXiv.<id>`) so preprints are
-not a hole in that join. See `planning/archive/DOCUMENT_METADATA_PLAN.md`.
+indexed as join keys for cross-source deduplication; an arXiv document with no
+source DOI derives one (`10.48550/arXiv.<id>`) so preprints are not a hole in that
+join.
 
 **Resolution ladder.** Covers and no-ISBN Calibre books share one cascade:
 checksum-validated ISBN → Open Library by title+author with the canonical result
@@ -601,8 +600,8 @@ Three properties are load-bearing:
   mode this exists to prevent.
 
 Only summaries are stamped today. The same shape extends to image descriptions,
-OCR and book extraction when those are wired (`planning/PURGE_AND_PROVENANCE_PLAN.md`
-§6.2). This deliberately generalises `cluster_runs`, which already worked this
+OCR and book extraction once the vision and OCR providers can report the model
+they resolved. This deliberately generalises `cluster_runs`, which already worked this
 way, and it is not a job history: live job state stays in `pka/ingestion/progress/`.
 
 ### 3.3 Image search paths (CLIP is opt-in)
@@ -687,8 +686,7 @@ exactly one L1 cluster. Neither is a strict improvement over the other —
 HDBSCAN's noise is an honest signal that a document has no good neighbourhood,
 while agglomerative's forced full coverage can dilute a cluster with documents
 that do not really belong. Both are run options to compare via `/runs`
-acceptance, not a default and a deprecated path. See
-`planning/archive/AGGLOMERATIVE_CLUSTERING.md` for the design.
+acceptance, not a default and a deprecated path.
 
 Level-2 subclusters are labelled via LLM from document titles plus content
 excerpts (`card_summary` or first chunk); level-1 labels summarize L2 child

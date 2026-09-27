@@ -1,8 +1,7 @@
 """Step 4b: agglomerative clustering — an alternative to ``hdbscan_step``.
 
-Split out of ``engine.py`` (planning/M1_CLUSTERING_ENGINE_SPLIT.md). One scipy
-linkage tree per run, cut once for L1 and cut deeper (not rebuilt) for L2; see
-planning/archive/AGGLOMERATIVE_CLUSTERING.md.
+Split out of ``engine.py``. One scipy linkage tree per run, cut once for L1 and
+cut deeper (not rebuilt) for L2.
 """
 
 from __future__ import annotations
@@ -124,7 +123,7 @@ def _auto_k_agglomerative(
     random_state: int = 42,
 ) -> tuple[int, dict[int, float]]:
     """Silhouette sweep over cuts of a prebuilt tree — cheap because cutting is
-    ~ms once ``Z`` exists (see planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.2c).
+    ~ms once ``Z`` exists.
     Returns ``(best_k, {k: silhouette_score})`` — the sweep is recorded in
     ``params`` so a bad auto-pick is diagnosable rather than invisible.
     """
@@ -168,7 +167,7 @@ def _split_subtree(Z: np.ndarray, n: int, node: int, k: int) -> list[list[int]]:
     """Split dendrogram ``node`` into ``k`` parts, by repeatedly opening the
     highest remaining merge — equivalent to ``fcluster(Z, k, "maxclust")``
     restricted to the subtree under ``node``, verified at ARI 1.0 against an
-    independent rebuild (planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.4). Each
+    independent rebuild. Each
     returned group is a list of leaf indices into the matrix ``Z`` was built on.
     """
     if node < n:
@@ -204,7 +203,7 @@ def _split_node_auto(
     """L2 for one L1 group: cut ``node``'s subtree at the silhouette-best ``k``.
 
     Returns 0-based labels aligned to ``member_doc_ids``. No tree rebuild — see
-    ``_split_subtree`` and planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.4.
+    ``_split_subtree``.
     """
     n_sub = len(member_doc_ids)
     candidates = _agglomerative_k_candidates(n_sub, k_min, k_max)

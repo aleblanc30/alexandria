@@ -1,6 +1,6 @@
 """Steps 2-3: PCA reduction and the UMAP projections.
 
-Split out of ``engine.py`` (planning/M1_CLUSTERING_ENGINE_SPLIT.md).
+Split out of ``engine.py``.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ def _run_pca(
     n_comp = min(n_components, n_docs - 1, n_features)
     n_comp = max(2, n_comp)
     # Imported here, not at module scope: sklearn costs ~1s to import and the API
-    # only ever reaches it through a clustering run (see planning audit P-2).
+    # only ever reaches it through a clustering run.
     from sklearn.decomposition import PCA
 
     log.info("Running PCA (n_components=%d)…", n_comp)

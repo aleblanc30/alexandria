@@ -1,7 +1,4 @@
-"""Tests for PubMed URL parsing, XML parsing, and fetch handler.
-
-See ``planning/FIREFOX_INGESTERS_PLAN.md`` §4 for the handler design.
-"""
+"""Tests for PubMed URL parsing, XML parsing, and fetch handler."""
 
 from __future__ import annotations
 

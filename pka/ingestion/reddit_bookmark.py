@@ -16,8 +16,6 @@ title instead of going fully ``unfetchable`` the moment Reddit blocks the
 request. The fallback only fires when both a subreddit and a slug are present
 in the URL; a bare ``redd.it`` short link or a slug-less permalink carries too
 little to guess from and falls through to ``unfetchable`` as before.
-
-See ``planning/FIREFOX_INGESTERS_PLAN.md`` §3 for the full design.
 """
 
 from __future__ import annotations

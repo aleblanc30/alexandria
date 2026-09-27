@@ -3,8 +3,7 @@
 The load-bearing ones are the round trips: purge → retrigger → the artifact is
 actually back. A purge target that deletes an expensive artifact and offers no
 way to regenerate it is a trap, and the skip gates that decide "already done"
-are keyed on a *different* artifact than the one purged
-(PURGE_AND_PROVENANCE_PLAN.md §5.2.1).
+are keyed on a *different* artifact than the one purged.
 """
 
 import time

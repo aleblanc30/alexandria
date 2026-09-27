@@ -2,7 +2,7 @@
 
 The frontend used to hand-mirror every pydantic model as a TypeScript interface,
 so a schema change had to be made twice and nothing checked the two copies still
-agreed (planning audit M-10). The snapshot this writes is the single source both
+agreed. The snapshot this writes is the single source both
 sides read: ``npm run gen:api`` turns it into ``types.gen.ts``, and
 ``tests/test_openapi_snapshot.py`` fails when the app's schema drifts from it.
 

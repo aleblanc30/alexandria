@@ -45,7 +45,7 @@ The arXiv cross-walk (nearly every APS paper has a preprint whose PDF
 ``arxiv.py`` can read in full) is deliberately *not* here: it forces the
 Semantic Scholar request on every APS URL and then adds an API call and a PDF
 download, and storing the preprint under the journal DOI is a provenance claim
-``documents`` has no column to qualify. See ``PUBLISHER_FETCH_HANDLERS.md`` §7.1.
+``documents`` has no column to qualify.
 """
 
 from __future__ import annotations

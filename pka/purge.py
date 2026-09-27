@@ -2,8 +2,7 @@
 
 Generalises :mod:`pka.cli.purge_source` (all-or-nothing, per source) and
 :mod:`pka.cli.purge_cluster_runs` (which already implements this pattern for
-clustering) into one registry, per ``planning/PURGE_AND_PROVENANCE_PLAN.md``
-§5.2. Each :class:`PurgeTarget` names an artifact, how to count it (the dry
+clustering) into one registry. Each :class:`PurgeTarget` names an artifact, how to count it (the dry
 run) and how to delete it; an optional ``source`` scopes both to one connector,
 so "purge Firefox summaries" and "purge all summaries" are the same code path.
 
@@ -492,8 +491,7 @@ def _purge_document_texts(scope: PurgeScope) -> dict[str, int]:
 
     Reclaims the disk without touching what is indexed. The cost is that
     re-chunking, re-summarising exactly and auditing the fetch all need a
-    re-fetch again for these documents until the source is re-ingested
-    (planning/FULL_TEXT_RETENTION.md §7).
+    re-fetch again for these documents until the source is re-ingested.
     """
     eng = get_engine()
     with eng.connect() as con:

@@ -6,7 +6,7 @@ import { useToastStore } from '@/stores/toast'
  * Catch clauses hand this an `unknown`, which is what a `throw` can actually
  * produce: an Error, an ApiError, or any value at all from a library that
  * throws a string. The narrowing lives here rather than at each call site so
- * the callers stay a bare `catch (e: unknown)` (audit item M-10).
+ * the callers stay a bare `catch (e: unknown)`.
  */
 export function notifyError(e: unknown): void {
   useToastStore().push(errorMessage(e), 'error')

@@ -1,7 +1,6 @@
 """Re-run an enrichment pass over already-ingested documents.
 
-The retrigger that ``purge summaries`` needs, per
-``planning/PURGE_AND_PROVENANCE_PLAN.md`` §5.2.1. Every other purge target is
+The retrigger that ``purge summaries`` needs. Every other purge target is
 self-retriggering — clearing the artifact its pipeline's skip gate checks is
 enough to make the next sync redo the work — but the summary gate is keyed on
 "does this document have any chunk at all", which a summary purge deliberately
@@ -9,7 +8,7 @@ leaves true. Without this pass, purging summaries would be a trap: the artifact
 is gone and only a full source purge and re-fetch brings it back.
 
 **Where the body text comes from.** A document ingested since retention shipped
-has it verbatim in ``document_texts`` (``planning/FULL_TEXT_RETENTION.md``), and
+has it verbatim in ``document_texts``, and
 that is what this pass summarises. Anything older has no stored row — retention
 is not backfilled, because a reassembly stored as if it were the original would
 be a lie the audit use case would then read — so for those documents the pass

@@ -1,6 +1,6 @@
 """Step 1: aggregate per-document embeddings for a clustering run.
 
-Split out of ``engine.py`` (planning/M1_CLUSTERING_ENGINE_SPLIT.md).
+Split out of ``engine.py``.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def _candidate_document_ids(source_filter: list[str] | None) -> list[int]:
 
     ``ingest_text_block`` writes the SQLite ``chunks`` row and the Chroma vector
     together, so ``chunks`` is a faithful index of what the vector store holds
-    and answers this without touching Chroma at all (audit P-3). Served by
+    and answers this without touching Chroma at all. Served by
     ``ix_chunks_document_id`` and ``ix_documents_source``.
     """
     import sqlalchemy as sa

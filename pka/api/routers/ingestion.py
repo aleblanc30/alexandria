@@ -190,9 +190,9 @@ def browse_path(source: str):
 def purge_source_endpoint(source: str, include_user_data: bool = False):
     """Delete every archived row (and vectors) for ``source``.
 
-    By default, manually-applied/learned tags and reading-list entries survive
-    (see ``PURGE_AND_PROVENANCE_PLAN.md`` §5.1); pass ``include_user_data=true``
-    to remove those too. Refuses while a sync is running so a purge can't race
+    By default, manually-applied/learned tags and reading-list entries survive:
+    they are user-authored, and no re-ingest can bring them back. Pass
+    ``include_user_data=true`` to remove those too. Refuses while a sync is running so a purge can't race
     a live worker.
     """
     require_source(source)
@@ -308,8 +308,7 @@ def enrich_endpoint(kind: str = "summary", source: str | None = None):
     """Re-run an enrichment pass over documents missing that artifact.
 
     The retrigger for ``purge summaries``: its skip gate is "has any chunk",
-    which a summary purge leaves true, so re-syncing would not regenerate it
-    (PURGE_AND_PROVENANCE_PLAN.md §5.2.1).
+    which a summary purge leaves true, so re-syncing would not regenerate it.
     """
     global _enrich_running
     if source:
@@ -351,9 +350,8 @@ _rechunk_running = False
 def rechunk_endpoint(source: str | None = None, limit: int | None = None, dry_run: bool = False):
     """Re-chunk documents from their retained body text, with no re-fetch.
 
-    What `document_texts` was retained for (planning/FULL_TEXT_RETENTION.md
-    §6.2): applying a chunker or embedding-model change to documents already in
-    the archive. It replaces body chunks and their vectors, so — like a purge —
+    What `document_texts` was retained for: applying a chunker or
+    embedding-model change to documents already in the archive. It replaces body chunks and their vectors, so — like a purge —
     it refuses to start while a sync could be writing the same rows.
     """
     global _rechunk_running

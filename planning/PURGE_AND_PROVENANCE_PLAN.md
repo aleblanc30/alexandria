@@ -1,77 +1,19 @@
 # Selective purge, pipeline re-triggers, and enrichment provenance
 
-> **Status (2026-09-03).** Phases 1 and 2 ship, bar image stamping.
->
-> **Phase 1.** §5.1's Tier-1 leak is fixed, the §5.2 registry is `pka/purge.py`
-> (eight targets), §5.2.1's enrich pass is `pka/ingestion/enrich.py`, and §5.3's
-> API, `alexandria purge` CLI and *Maintenance* panel
-> (`frontend/src/components/MaintenancePanel.vue`, on `/ingestion` below the
-> domain tables) are wired. Tests: `tests/test_purge.py`,
-> `frontend/src/api/client.test.ts`.
->
-> The panel shows a Re-trigger button only for `summaries` and `vectors`. The
-> other targets' re-triggers start a full source sync — thousands of outbound
-> fetches, for `fetched_text` — which belongs on the page that shows sync
-> progress, so those render the backend's `retrigger` string as a hint instead.
->
-> **Phase 2.** `enrichment_runs` (§6.1) and `documents.summary_run_id` (§6.2)
-> exist; `pka/enrichment_runs.py` owns the lifecycle; §6.3's `run_id` /
-> `provider` / `model` / `unknown` filters reach the purge registry, the CLI and
-> the API, alongside `GET /ingestion/enrichment-runs` and `alexandria purge
-> --runs`. Tests: `tests/test_enrichment_runs.py`.
->
-> Decisions made while implementing, beyond the plan's text:
-> - **Runs open lazily, on the first document that actually infers**, and close
->   with the pass. A sync whose summaries are all cached writes no run row, and
->   the model recorded is the one resolved for the call rather than whatever
->   config said at startup.
-> - **The ambient run is keyed by kind**, module-level, the way
->   `pka/ingestion/progress/` carries per-source job state — rather than threading
->   a `run_id` through all seven runners. Two concurrent syncs share one summary
->   run, which is correct provenance: same model, same settings.
-> - **§10's stale-`running` question:** a 24-hour reaper that skips runs the
->   process still holds. Generous on purpose — a long image pass on this hardware
->   genuinely runs for hours, and wrongly failing a live run is worse than reaping
->   late. CLI passes also close their runs through an `atexit` hook.
-> - **A target with no stamp refuses a provenance filter** (400 / `ValueError`)
->   rather than ignoring it. Not in the plan, but silently widening "purge what
->   the old model made" into "purge everything" is the failure this feature is for.
-> - **`calls` / `chars_sent` are counted at summarize.py's single `chat_json`
->   site**, not per document: a map-reduced book is many calls for one summary, so
->   counting documents would understate spend — and the run opens *before*
->   inference so a failed call is still counted.
->
-> **Still open:** image stamping — `images.description_run_id` / `ocr_run_id` /
-> `books_run_id` (§6.2) are deliberately *not* added yet. They need `resolve_model`
-> on the vision and OCR providers (neither Protocol has it today), and adding the
-> columns before their wiring would put three rows in `docs/persisted-fields.md`
-> that nothing writes, breaking the one property that file exists to guarantee.
-> Then Phase 3 (retention), which §7 says to decide only once Phase 2 has been
-> lived with.
->
-> Two decisions made while implementing, both narrower than the plan's text:
-> - **`fetched_text` re-queues only `fetch_status='fetched'` documents.** A
->   Calibre book rests at `available` and is re-read from disk; moving it to
->   `pending` would misdescribe it to the fetch dispatcher.
-> - **`image_text` deletes the image's chunks too**, not just the sidecar
->   columns. The image pipeline appends at `existing_chunk_count` without
->   deduplicating, so leaving them would double every image's searchable text
->   on the next run.
->
-> §10's `chunk_pass` concern turned out to be broader than "older rows": only
-> Calibre ever writes `chunk_pass='fulltext'`, so a body chunk is NULL for every
-> other source. `pka.purge.body_chunk_predicate()` treats NULL as body text and
-> is shared with the enrich pass so the two cannot drift.
+**Status.** Phases 1 (§5, selective purge and re-triggers) and 2 (§6,
+`enrichment_runs` + `documents.summary_run_id` + provenance filters on purge) have
+shipped; the code and `DESIGN.md` are authoritative for them, and code comments
+cite this file's section numbers for the rationale. **Still open:**
 
-Plan for the `planning/TODO.md` item under *Ingestion*:
+- **Image stamping** — `images.description_run_id` / `ocr_run_id` /
+  `books_run_id` (§6.2). Needs `resolve_model` on the vision and OCR provider
+  Protocols (neither has it). Do not add the columns before their writer: an
+  unwritten column puts rows in `docs/persisted-fields.md` that nothing writes.
+- **Phase 3, retention** (§7) — decide only after living with Phase 2.
 
-> - [ ] Add buttons to purge specific subsets of the data and to retrigger
->   various points of the ingestion pipeline.
-
-with the framing from the request that motivates it: **things should be
-selectively purgeable when swapping a backend** (embedding, summarisation),
-and — the open question — *maybe a database with lots of provenance would be
-useful to keep the result of the work rather than delete it.*
+The motivating request: things should be selectively purgeable when swapping a
+backend (embedding, summarisation), and maybe provenance should let us keep the
+result of the work rather than delete it.
 
 ## 1. The answer to the provenance question, up front
 
@@ -104,47 +46,14 @@ So: **stamp everything, retain text-valued model output, rebuild vectors.**
 That is a much smaller change than "a provenance database", and it keeps the
 part of the idea that pays.
 
-## 2. What already exists
+## 2. Where this started
 
-Worth knowing before designing anything, because one of the two backend swaps
-named in the request is **already solved**:
-
-| Capability | Where | Notes |
-|---|---|---|
-| Purge an entire source | `pka/cli/purge_source.py`, `POST /ingestion/sources/{source}/purge`, Purge button in `IngestionSourcePanel.vue` | All-or-nothing: documents, chunks, vectors, tags, fetch log |
-| Purge cluster runs | `pka/cli/purge_cluster_runs.py`, `alexandria purge-cluster-runs` | Per-run or `--all`, with `--dry-run` and an `--force` guard on the accepted run |
-| **Rebuild all vectors** | `POST /ingestion/rebuild-vectors`, `vector_store.rebuild_from_chunks()` | Drops the collection and re-embeds from `chunks.text`. **This is the embedding-swap button, and it already ships.** |
-| Clear image gate rejections | `clear_image_rejections()`, `alexandria images --reset-rejections` | Keyed by path, else rejected images stay skipped forever |
-| Re-queue unfetchable URLs | `reset_unfetchable_for_fetch()` | Runs automatically at fetch start, once the retry cooldown elapses |
-
-So the embedding-swap workflow is: change the model, hit rebuild-vectors, done.
-**The summarisation-swap workflow has nothing**, and that gap is the real
-content of this TODO item.
-
-### 2.1 Two findings that motivate the work
-
-**(a) Re-summarising currently requires nuking the source.** `attach_summary_chunk`
-(`pka/ingestion/core.py:164`) short-circuits on the `documents.generated_summary`
-cache — by design, so a re-ingest doesn't pay for inference twice. The only way
-to clear that cache today is to delete the document row, i.e. `purge_source`.
-That means **swapping the summarisation backend and re-summarising costs a full
-re-fetch of every bookmark URL over the network**, plus re-reading every Zotero
-/ Calibre database. The expensive thing (fetched text) gets destroyed to
-invalidate the cheap thing (a cached summary string).
-
-**(b) `purge_source` destroys user-authored data.** `_CHILD_TABLES`
-(`pka/cli/purge_source.py:36`) includes `overlay_tags` unfiltered, so a purge
-deletes `origin=manual` tags — hand-applied by the user — and `origin=learned`
-tags, the output of an active-learning session, alongside the machine-derived
-`origin=llm` / `cluster_*` ones. `reading_list_items` goes too. None of that is
-recoverable by re-ingesting, because the source system never had it. A user who
-purges Firefox to re-fetch some broken bookmarks silently loses every manual
-tag on every bookmark.
-
-Finding (b) is a **pre-existing bug**, not something this feature introduces,
-but it is squarely in scope: the whole point here is purging *precisely*, and
-the coarsest existing purge is imprecise in a way that costs irreplaceable
-work. Fix it as part of this (§5.1).
+Before this work, the only purges were all-or-nothing per source
+(`purge_source`) and per cluster run; `rebuild_from_chunks` already handled an
+embedding swap. A summarisation swap had no path: clearing the
+`generated_summary` cache meant deleting the document, i.e. a full re-fetch. And
+`purge_source` deleted `origin=manual` / `learned` overlay tags and reading-list
+items — irreplaceable user data (fixed by §5.1).
 
 ## 3. The data taxonomy the buttons should follow
 
@@ -319,36 +228,10 @@ unaffected either way, since the book/PDF is still on disk and re-extractable.
 
 This decision has a shelf life: see §5.2.2.
 
-### 5.2.2 Retaining raw text (future, and it retires the wrinkle)
+### 5.2.2 Retaining raw text
 
-The reassembly compromise above exists only because the raw extracted text is
-thrown away once chunked. **The intended direction is to keep it** — a little
-disk in exchange for never facing this trade-off again.
-
-Rough shape when picked up:
-
-- A separate `document_texts` table (`document_id`, `text`, `extracted_at`,
-  maybe `content_hash`), **not** a `documents.raw_text` column. `documents` is
-  scanned constantly by browse, tags, progress counts and the clustering read
-  path; hanging a multi-hundred-KB blob off every row would slow all of them
-  for a value almost nothing reads. A sidecar table keeps the hot table narrow
-  and matches the shape `reddit_items` / `images` already use.
-- Written where the text is first available — the fetcher and the extractors,
-  next to where chunking happens today.
-- Stored `zlib`-compressed. Space is the only real objection and compression
-  answers most of it; the table is a near-duplicate kept for regeneration, and
-  `chunks.text` stays plaintext for ad-hoc searching. See the `BACKLOG.md`
-  entry for why that argument does not extend to `chunks.text` itself.
-
-What it unlocks, beyond retiring §5.2.1's compromise: re-chunking with a
-different chunk size or splitter without re-fetching (today that is as
-impossible as re-summarising was), re-running extraction-quality changes over
-the existing corpus, and a genuine "what did the fetcher actually get" audit
-when a page ingests badly.
-
-Worked out in `FULL_TEXT_RETENTION.md` (the sketch above is what it grew from);
-tracked in `BACKLOG.md`. Not a prerequisite for Phase 1 — the enrich pass ships
-against reassembled chunks and simply gets more accurate when this lands.
+Shipped as `document_texts`; see `archive/FULL_TEXT_RETENTION.md`. The enrich pass
+now prefers the retained text and reassembles chunks only for older documents.
 
 ### 5.3 Surface
 
@@ -454,75 +337,17 @@ you find yourself wanting the old value back. Phase 2's stamping is what makes
 that question answerable; Phase 3 is the answer if it turns out to be yes.
 The `image_enrichments` equivalent follows the same shape if it earns its way in.
 
-## 8. Tests
-
-**Phase 1** (`tests/test_purge.py`, new; `tests/test_purge_source.py` exists
-for the source path):
-- each registry target's dry-run count matches what its purge then deletes;
-- `source=` filter scopes correctly and leaves other sources untouched;
-- **`purge_source` preserves `origin=manual` / `origin=learned` overlay tags**
-  and reading-list items (the §5.1 regression — this is the one that protects
-  irreplaceable data, write it first);
-- `--include-user-data` still removes them when explicitly asked;
-- purging `summaries` clears the `pass='summary'` chunk *and* its vector, and
-  leaves `pass='fulltext'` chunks intact;
-- purge is refused while a sync is running (409);
-- **the §5.2.1 round trip, per target: purge → re-trigger → the artifact is
-  actually back.** This is the test that would have caught the wrong-skip-gate
-  bug, and it is worth writing before the purge targets themselves. For
-  `summaries`, assert the enrich pass regenerates a summary for a document
-  whose fulltext chunks were left in place; for `image_text`, assert the purge
-  nulls `indexed_at` so the next sync re-describes the image.
-
-**Phase 2** (`tests/test_enrichment_runs.py`):
-- a summarisation pass opens a run, stamps `documents.summary_run_id`, and
-  closes the run with `status=finished`;
-- a failed pass closes with `status=failed` and stamps nothing;
-- the resolved model name is recorded, not the empty config default;
-- purge filtered by `provider`/`model` touches only matching rows;
-- `run_id IS NULL` filter selects exactly the pre-provenance rows.
-
-`tests/conftest.py` already mocks the chat/vision providers, so no new
-external boundary — no new fixture needed.
-
-## 9. Docs
-
-- `DESIGN.md` §3.2 — provenance is part of the enrichment ladder's contract
-  once artifacts are stamped; add `enrichment_runs` to the schema discussion.
-- `docs/ingestion-flows.md` — **needs updating in the same commit** for
-  Phase 2, per `CLAUDE.md`'s sync rule: opening/closing a run around the
-  summarisation call changes the shared tail (`attach_summary_chunk` is drawn
-  in several graphs). Phase 1 is a read/delete surface over rows the pipelines
-  already wrote and needs no graph change.
-- `README.md` — the new `alexandria purge` subcommand beside `purge-source`.
-
-## 10. Risks and open choices
+## 8. Standing cautions and open choices
 
 - **Scope creep into a general "job history" system.** `enrichment_runs`
   looks like the start of one, and it should be resisted: it records model
   provenance for artifacts, not a task queue. `progress/` already owns
   live job state and must not be merged into this.
-- **A purge that races an in-flight run** leaves stamped artifacts pointing at
-  a `status=running` row. The `sp.is_running()` guard covers the sync path; a
-  crashed process leaves a stale `running` row that nothing reaps. Either
-  reap on startup or treat `running` older than N hours as `failed` — decide
-  when implementing, do not leave it undefined.
-- **`chunk_pass` is nullable and unset on older rows**, so
-  `WHERE chunk_pass='summary'` will not match summary chunks written before
-  that column landed. Check the actual distribution in a real archive before
-  trusting the `summaries` target to be complete; a `NULL`-handling fallback
-  may be needed for one release.
 - **Open choice: does purging summaries also clear `card_summary`?** No — it
   is often the source-provided abstract (arXiv, bioRxiv, PubMed), not model
   output. But for a plain fetched page it *is* derived (`body_excerpt`). Tier
   boundary is genuinely blurry here; recommendation is to leave `card_summary`
   alone and revisit if it proves confusing.
-- **Chunk reassembly quality (§5.2.1).** The enrich pass joins overlapped
-  chunks back into summarisable text. The overlap is deterministic, so the
-  join is mechanical — but verify against a real multi-chunk document that the
-  result reads as prose and not as duplicated sentence fragments, since that is
-  what the summariser will be handed. Retiring this entirely is what §5.2.2 is
-  for.
 - **Deleting vectors is not free in Chroma.** `drop_document_collection` +
   `rebuild_from_chunks` is the well-trodden path; per-id `purge_vectors` on a
   large id list is slower and is already the source purge's approach. Prefer

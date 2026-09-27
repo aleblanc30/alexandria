@@ -107,8 +107,7 @@ carried as a collection instead.
 ⁴ Only text that has no other verbatim home and cost a network round trip or a
 slow extraction: Reddit's inline bodies are already in `reddit_items.body`, image
 text is already in `images`, and a Zotero abstract or YouTube description is a
-millisecond re-read from its own source — see
-`planning/FULL_TEXT_RETENTION.md` §3.
+millisecond re-read from its own source.
 
 `overlay_tags` also receives `manual` (user edits), `llm` / `cluster_l1` /
 `cluster_l2` (clustering), and `learned` (tag training) rows — none of them
@@ -128,8 +127,7 @@ ingestion-time, all of them source-agnostic.
 
 The extracted body text kept verbatim, so summarising, chunking and extraction
 can be redone without going back to the network — or, for a book, without
-re-running an extraction that costs minutes
-(`planning/FULL_TEXT_RETENTION.md`). One row per document, written by the
+re-running an extraction that costs minutes. One row per document, written by the
 runners before chunking and refreshed on a re-fetch or re-extraction.
 
 | Column | Value |

@@ -1,7 +1,6 @@
 """Retention of the extracted body text (``document_texts``).
 
-Slices 1-2 of ``planning/FULL_TEXT_RETENTION.md``: the table is written and
-read, nothing consumes it yet. The load-bearing assertions are about *what* is
+The load-bearing assertions are about *what* is
 stored — the body rather than the embedding composite, and a section map whose
 offsets still slice that body after it has been stripped — and about retention
 never costing a document its ordinary ingestion.

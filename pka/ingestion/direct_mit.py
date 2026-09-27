@@ -3,8 +3,7 @@
 MIT Press's journals-and-books gateway is a hard block: probed 2026-09-03, both
 ``/neco/article/9/8/1735/6109/Long-Short-Term-Memory`` and
 ``/books/monograph/2313/The-Alignment-Problem`` answer a non-browser client with
-``403``. So the ``citation_doi`` meta tag ``PUBLISHER_FETCH_HANDLERS.md`` §9
-floated is not a route — a tag cannot be read out of a page that never loads —
+``403``. So reading the page's ``citation_doi`` meta tag is not a route — a tag cannot be read out of a page that never loads —
 and without a handler these bookmarks stay ``unfetchable`` with no title at all.
 
 The URL still carries enough to identify the work, in two different shapes.

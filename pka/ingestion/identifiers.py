@@ -1,6 +1,6 @@
 """Shared DOI helpers, reused by every source that can populate ``documents.doi``.
 
-See ``planning/DOCUMENT_METADATA_PLAN.md``: a source-provided DOI always wins,
+A source-provided DOI always wins,
 and an arXiv document with no source DOI derives one from its arXiv ID
 (arXiv mints ``10.48550/arXiv.<id>`` for every submission). This derivation is
 reached from more than one runner (Zotero, and the arXiv fetch path), so it

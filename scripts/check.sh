@@ -2,8 +2,7 @@
 #
 # Runs every check in CLAUDE.md's "Verifying a change" table in one pass:
 # ruff lint, ruff format check, mypy, pytest with coverage, and the frontend
-# test + build. Not wired into CI yet (planning/TODO.md M-12) — this is the
-# manual all-in-one a pre-push hook or a future workflow would call.
+# test + build. Deliberately manual-run: not wired into CI or a hook.
 #
 #     ./scripts/check.sh
 #

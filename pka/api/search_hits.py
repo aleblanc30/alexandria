@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 Hits = list[tuple[int, float | None]]
 
-# Ceiling on the chunk hits one semantic query asks Chroma for (audit P-5).
+# Ceiling on the chunk hits one semantic query asks Chroma for.
 #
 # The request is over-fetched 3x because hits are chunk-level and collapse to
 # one row per document, so asking for exactly ``offset + limit`` routinely comes

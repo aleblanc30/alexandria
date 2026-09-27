@@ -1,4 +1,4 @@
-"""Calibre two-phase ingestion integration test — patch #14.
+"""Calibre two-phase ingestion integration test.
 
 Verifies that the metadata pass and the full-text pass produce non-colliding,
 strictly increasing ``chunk_index`` values.
@@ -494,7 +494,7 @@ class TestFulltextRefreshesTheEmbeddingOncePerBook:
     the fulltext pass calls it once per section. An N-section book therefore
     read every chunk vector it had so far back out of Chroma N times, and
     re-scored every accepted learned-tag model N times, to arrive at a value
-    only the last pass got right. Audit item P-4.
+    only the last pass got right.
     """
 
     @staticmethod

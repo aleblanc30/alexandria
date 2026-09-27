@@ -10,8 +10,7 @@ Default pipeline (``cluster_space=pca``):
 
 ``cluster_space=agglomerative`` swaps step 2's clusterer for scipy hierarchical
 (ward/average/complete/single) on the same PCA matrix: one linkage tree per run,
-cut once for L1 and cut deeper (not rebuilt) inside each L1 group for L2. See
-``planning/archive/AGGLOMERATIVE_CLUSTERING.md``. Unlike HDBSCAN it partitions every
+cut once for L1 and cut deeper (not rebuilt) inside each L1 group for L2. Unlike HDBSCAN it partitions every
 document — no noise label.
 
 Legacy ``cluster_space=legacy_umap`` retains the old UMAP→HDBSCAN path for comparison.
@@ -190,10 +189,9 @@ def _run_level2_pass_agglomerative(
     An ``fcluster`` flat cluster is a contiguous dendrogram node, so splitting
     that node (``_split_node_auto``) reproduces exactly what re-running linkage
     on the group's slice would return — verified at ARI 1.0 across ward/average/
-    complete. See planning/archive/AGGLOMERATIVE_CLUSTERING.md §2.4 for why this replaced
-    the rebuild-per-group first draft, and for the one case (L2 reading as
-    arbitrary slices of a coherent parent) where a local rebuild would still earn
-    its cost.
+    complete, so rebuilding a tree per group buys nothing. The one case where a
+    local rebuild would still earn its cost is L2 reading as arbitrary slices of
+    a coherent parent.
     """
     n_leaves = len(doc_ids)
     doc_id_to_idx = {d: i for i, d in enumerate(doc_ids)}
@@ -408,10 +406,7 @@ def _run_agglomerative_pipeline(
     run_id: int | None,
     timer: _StepTimer,
 ) -> PipelineOutput:
-    """PCA -> one linkage tree -> cut for L1, cut deeper for L2 -> labels -> viz UMAP.
-
-    See planning/archive/AGGLOMERATIVE_CLUSTERING.md.
-    """
+    """PCA -> one linkage tree -> cut for L1, cut deeper for L2 -> labels -> viz UMAP."""
     t0 = time.perf_counter()
     pca_matrix, var_sum = _run_pca(matrix, pca_components)
     timer.record("pca_ms", t0)
@@ -434,7 +429,7 @@ def _run_agglomerative_pipeline(
     timer.record("agglomerative_l1_ms", t0)
 
     n_l1 = len(set(l1_labels.tolist()))
-    n_noise = 0  # agglomerative partitions everything - see AGGLOMERATIVE_CLUSTERING.md 3
+    n_noise = 0  # agglomerative partitions everything: there is no noise label
     l1_cluster_docs = _build_cluster_docs(doc_ids, l1_labels)
 
     if run_id is not None:

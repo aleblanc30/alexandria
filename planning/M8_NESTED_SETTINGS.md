@@ -1,16 +1,12 @@
 # M-8: group `Settings` where the field names already say so
 
-Plan for `planning/MAINTAINABILITY_PERFORMANCE_AUDIT.md` §M-8 (item 12 of the
-§6 prioritised plan). Step 1 of the audit's recommendation — replacing the
-deprecated inner `class Config` with `model_config = SettingsConfigDict(...)` —
-**already shipped** under M-7, so this covers only the nesting.
-
-**This is a deliberately scoped version of the item.** The audit asks for a
-full nesting of all 91 fields into invented group names (`settings.paths.*`,
-`settings.providers.*`) with `env_nested_delimiter`. That version was written
-out, costed, and rejected; see *Why not the full nesting* at the end. What
-follows nests the **49 fields whose names already carry a group prefix**, which
-turns out to cost no env-var migration and no compatibility machinery at all.
+Plan for `MAINTAINABILITY_PERFORMANCE_AUDIT.md` §M-8, **deferred** to
+`BACKLOG.md` → *Configuration* after costing (see *Why not the full nesting*).
+It nests only the **49 fields whose names already carry a group prefix**, which
+costs no env-var migration and no compatibility machinery. Two prerequisites have
+shipped: `model_config = SettingsConfigDict(...)` (under M-7) and
+`SecretsFileSettingsSource` as an `EnvSettingsSource` subclass, which resolves
+secrets into submodels.
 
 ## Current state (verified against `trunk` @ `1aebf6e`)
 
@@ -135,58 +131,10 @@ Deliberately **not** grouped, with reasons:
 
 ## What still needs real work
 
-Three of the four name-driven mechanisms from the full plan **fall away
-entirely** under this scope, because every field they touch stays flat:
-
-- `api/source_paths.py` — operates on `zotero_db`, `firefox_db`,
-  `book_archive`, `youtube_client_secret`, `image_dirs`, all flat. Its
-  `f"ALEXANDRIA_{spec.field.upper()}"` env-key derivation and both `getattr`
-  sites stay correct. **Untouched.**
-- `ingestion/core.py::_SUMMARY_FLAGS` — `bookmark_summary_enabled` /
-  `book_summary_enabled`, flat. **Untouched.**
-- `ingestion/dev_limits.py::_LIMIT_ATTR` — flat unless optional step 5 runs.
-
-Two need changing:
-
-### 1. `SecretsFileSettingsSource` (`config.py:83`)
-
-Five secrets move under a submodel — `SECRET_ALEXANDRIA_OPENROUTER_API_KEY`,
-`…_OVH_API_KEY`, `…_SCALEWAY_API_KEY`, `…_OLLAMA_CLOUD_API_KEY`,
-`…_REDDIT_FEED_URL`. The current source matches parsed keys against
-`settings_cls.model_fields`, so after the move each one hits the
-`name not in fields` branch and is dropped with a "does not match any setting"
-warning. **A dropped API key is silent at import** — this is the same class of
-failure as the instance-default trap.
-
-Do not patch the lookup — **subclass `EnvSettingsSource` instead**:
-
-```python
-class SecretsFileSettingsSource(EnvSettingsSource):
-    def _load_env_vars(self) -> dict[str, str]:
-        path = _secrets_file_path()
-        if path is None or not path.is_file():
-            return {}
-        # EnvSettingsSource lowercases keys when case_sensitive is False.
-        return {k.lower(): v for k, v in parse_secrets_file(path).items()}
-```
-
-Verified: this resolves nested *and* flat secrets, preserves untouched
-defaults, and keeps env > secrets > `.env` precedence. It **deletes** the
-hand-rolled prefix matching, field lookup and `get_field_value` (~20 lines of
-mechanism) and inherits pydantic's own nested resolution, so it stays correct as
-the model grows — a genuine simplification of the file, not a patch to
-accommodate one. Note the *file* barely shrinks (3 lines): the saving goes into
-a docstring, and both warnings are worth keeping.
-
-**Shipped ahead of the rest of M-8**, as step 4 anticipated — it is a no-op
-against the flat model, so it carries none of the nesting's risk.
-
-`parse_secrets_file` is unchanged, so its three direct tests pass untouched.
-One behaviour is lost: the per-key "does not match any setting" warning. Re-add
-it explicitly in `_load_env_vars` if it is worth keeping — `test_config.py`
-asserts only that unknown keys are *ignored*, so no test forces the decision.
-
-### 2. `api/settings_view.py`
+Everything the flat fields touch stays untouched: `api/source_paths.py`,
+`ingestion/core.py::_SUMMARY_FLAGS`, and `ingestion/dev_limits.py::_LIMIT_ATTR`
+(unless optional step 5 runs). The one module that needs changing is
+`api/settings_view.py`.
 
 `GROUPS` entries for the 49 become dotted paths (`"fetch.timeout_seconds"`),
 and `_build_field` needs a resolver for both halves:
@@ -211,21 +159,15 @@ def _remote(name: str) -> RemoteBackend | None:
     return getattr(cfg, name) if name in _REMOTE_PROVIDERS else None
 ```
 
-`GROUPS` itself **survives** — it can only be deleted if every field is
-nested, which is the full version. It stays a 95-line table; the recursive
-test keeps it honest as it does today.
-
+`GROUPS` itself **survives** — it can only be deleted if every field is nested.
 Emit the **dotted path** as the wire `name`, so the panel shows where a setting
-lives. `SettingsView.vue` renders `f.name` and `g.name` generically and needs
-no change.
+lives; `SettingsView.vue` renders names generically and needs no change.
 
 ## What this pays for
 
 - **16 duplicated field declarations → 1 base model + 3 one-line subclasses**,
   and three hand-maintained parallel dicts → one accessor. This is the only
   part of M-8 that removes duplication rather than relocating it.
-- `~45` lines of hand-rolled settings-source logic deleted by inheriting
-  `EnvSettingsSource`.
 - `settings.fetch.*`, `settings.cluster.*`, `settings.reddit.*` read as
   intended in the four modules that carry the concentration —
   `ingestion/fetcher.py` (23 of its 24 settings reads are `fetch_*`),
@@ -267,14 +209,10 @@ Test patches: `test_connector_reddit.py` 11, `test_pending_metadata.py` 5,
 2. **`fetch`**, the largest single group and the one with the most concentrated
    consumer (`ingestion/fetcher.py`).
 3. **`cluster`, `reddit`, `image_gate`, `easyocr`** — one group per step.
-4. **`SecretsFileSettingsSource` → `EnvSettingsSource` subclass.** Can be done
-   before step 1 as a pure no-op refactor against the current flat model,
-   which is the safer ordering: it isolates "did the source rewrite break
-   precedence?" from "did the move break resolution?"
-5. *(Optional)* `dev_ingestion`.
-6. **`settings_view`**: dotted paths in `GROUPS`, the `_resolve` helper, the
+4. *(Optional)* `dev_ingestion`.
+5. **`settings_view`**: dotted paths in `GROUPS`, the `_resolve` helper, the
    recursive invariant test.
-7. **Docs**: `.env.example` and `DESIGN.md` §1.1 need **no changes** — every
+6. **Docs**: `.env.example` and `DESIGN.md` §1.1 need **no changes** — every
    env var name is unchanged. `CHANGELOG.md` gets a line noting the Python-side
    attribute rename for anyone scripting against `pka.config`.
 
@@ -295,7 +233,7 @@ Beyond `scripts/check.ps1` per step:
   names still resolve to their new nested location. Generate the list from the
   submodel prefixes so it cannot drift.
 - `test_config.py`'s six existing precedence tests must pass **unchanged in
-  intent** across the source rewrite (their field references become nested).
+  intent** (their field references become nested).
 - `test_settings_view.py` — the now-recursive grouping invariant.
 - `test_source_paths.py` — should pass **completely untouched**. If it needs an
   edit, the scope has leaked into flat fields; stop and re-check.
@@ -335,7 +273,7 @@ causing trouble.
 
 ## Not in scope
 
-- **Writable settings.** `SETTINGS_PANEL.md` §6's phase 2 is a separate item.
+- **Writable settings.** `SETTINGS_PANEL.md` is a separate item.
 - **Changing any default, validator, or the `.secrets` file format.** This is a
   namespace change; `parse_secrets_file`'s contract is unchanged.
 - **Any env var rename.** The scope is defined by which fields can move without

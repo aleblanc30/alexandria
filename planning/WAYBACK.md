@@ -2,7 +2,7 @@
 
 ## Requirements Specification
 
-Revision 2, 30 August 2026. Supersedes the draft of 28 August 2026.
+Revision 2, 30 August 2026.
 
 ---
 
@@ -78,8 +78,8 @@ FR-4, which is a correctness requirement, not a naming preference.
 
 ## 3. Integration With Existing Code
 
-This section is normative. The 28 August draft specified a standalone subsystem
-and consequently duplicated or contradicted machinery that already ships.
+This section is normative: the subsystem reuses machinery that already ships
+rather than duplicating it.
 
 ### 3.1 Reuse
 
@@ -280,8 +280,8 @@ that are independently preserved and least rewarding to capture: `arxiv.org`,
 `biorxiv.org`, `medrxiv.org`, `ncbi.nlm.nih.gov`, `pubmed.ncbi.nlm.nih.gov`,
 `zenodo.org`, `hal.science`, plus large commercial publisher domains.
 
-**FR-14.1.** There SHALL NOT be a scholarly host taxonomy. The 28 August draft's
-three classes collapse under their own rules: `fragile_scholarly` membership was
+**FR-14.1.** There SHALL NOT be a scholarly host taxonomy. A three-class taxonomy
+collapses under its own rules: `fragile_scholarly` membership was
 defined as "any other host serving a PDF or a document identified as a paper",
 while classification was required to use host and path alone with no network
 call. Most fragile scholarly URLs are neither `.pdf` nor carry a recorded DOI, so
@@ -326,8 +326,8 @@ it is re-evaluated.
 
 `HEAD` SHALL NOT be used. Enough origins return 403/404/405 to `HEAD` while
 serving `GET` correctly that a HEAD-first probe manufactures false rot
-classifications, and the fallback-on-405/501 rule in the previous draft does not
-cover the 403/404 cases. A range GET is one code path instead of two, is more
+classifications, and a fallback-on-405/501 rule does not cover the 403/404
+cases. A range GET is one code path instead of two, is more
 accurate, and is the only form that can supply the response body FR-20's
 heuristic needs.
 
@@ -379,8 +379,7 @@ Putting state on `documents` rather than in a keyed submission table means
 `purge-source` deletes it for free and no row can outlive its document. A
 separate table keyed by normalised URL would create rows with no owner and would
 need adding to `_CHILD_TABLES`
-([`purge_source.py:34`](pka/cli/purge_source.py:34)) — the previous draft had no
-deletion story at all.
+([`purge_source.py:34`](pka/cli/purge_source.py:34)).
 
 **FR-23.** State values:
 
@@ -443,7 +442,7 @@ the POST.
 window relative to *now*, not an absolute date: deriving it from a 2016 bookmark
 yields a ten-year window, meaning "skip if any capture exists in the last
 decade", which silently suppresses nearly every submission the subsystem exists
-to make while reporting success. The 28 August draft specified exactly this.
+to make while reporting success.
 
 **FR-29.2.** The parameter set SHALL be re-read against the current SPN2 public
 API documentation at implementation time; it is a living draft and has changed
@@ -481,8 +480,8 @@ Concurrent in-flight jobs SHALL be capped by `wayback_max_concurrent_jobs`.
 
 **NF-8.1.** There SHALL be no per-origin pacing requirement for submissions. Every
 submission request goes to `web.archive.org`; the origin fetch is performed by
-the archive's crawler on its own schedule and cannot be paced from here. The
-previous draft's NF-5 was not implementable. What remains is a scheduling hint:
+the archive's crawler on its own schedule and cannot be paced from here. What
+remains is a scheduling hint:
 the sweep SHOULD interleave hosts rather than processing a domain contiguously.
 The existing `_limiter` ([`fetch_base.py:42`](pka/ingestion/fetch_base.py:42))
 continues to pace this subsystem's *own* Gate 4 probes against origins, which is
@@ -514,8 +513,7 @@ not a scheduler (FR-10).
 
 **FR-34.** `parked` rows SHALL be listable (`alexandria wayback --parked`) and
 resettable to NULL (`alexandria wayback --unpark <id>|--unpark-all`). A state no
-operator interface can leave is a leak; the previous draft parked rows and never
-released them.
+operator interface can leave is a leak.
 
 **FR-35.** No failure of this subsystem SHALL affect the local corpus.
 Submission is advisory; ingestion SHALL succeed with archive.org unreachable, and
@@ -587,7 +585,7 @@ behaviour.
 
 | # | Criterion |
 |---|---|
-| **AC-1** | With no `.env` and no `.secrets`, a full run issues **zero** requests to any archive.org host. (Project invariant, NF-6 — absent from the previous draft.) |
+| **AC-1** | With no `.env` and no `.secrets`, a full run issues **zero** requests to any archive.org host. (Project invariant, NF-6.) |
 | **AC-2** | A dry run over the whole collection produces an outcome for every in-scope row, with per-outcome counts summing to the in-scope row count, reported per source. |
 | **AC-3** | `resolveOpenUrl()` returns the live URL for a document whose `snapshot_url` is set and whose `archive_url` is NULL. (FR-4 — the regression this revision exists to prevent.) |
 | **AC-4** | Killing the run at the single injected fault seam — between the FR-25 state write and the POST — and restarting produces no second POST for any URL. The seam is a design requirement, not just a test fixture: one function, one await point, patchable from a test. |
@@ -647,38 +645,12 @@ the locally extracted text's hash. It is not free, and it is not needed for the
 
 ---
 
-## 14. Changes From the 28 August Draft
-
-| Area | Change |
-|---|---|
-| `archive_url` | **No longer written.** Reusing it would have made Browse serve Wayback copies of live pages for the whole collection (FR-4). |
-| Recovery path | Claim removed. No dead-link recovery subsystem exists to hand rot to (FR-9). |
-| Scheduling | Deferred queue replaced by CLI sweep + per-sync drain. There is no scheduler in this project (FR-10). |
-| Per-host pacing | NF-5 deleted; it was not implementable against a single-host API (NF-8.1). |
-| `if_not_archived_within` | Fixed window instead of bookmark-date derivation, which would have silently suppressed most submissions (FR-29.1). |
-| FR-2 / FR-3 conflict | Verdict reuse dropped; the 24 h deferral exists to distrust exactly that verdict. |
-| `covered` / `excluded` terminality | `covered` is a cache entry with a TTL; `excluded` is no longer persisted at all (FR-23.1). |
-| State machine | Six states to four; `checking` removed; three overlapping crash-safety mechanisms reduced to one write-ahead point (FR-25). |
-| Storage | Submission table replaced by columns on `documents` plus a `fetch_log`-shaped log; purge works for free (FR-22). |
-| Probe | HEAD-first replaced by range GET (FR-18). |
-| Scholarly taxonomy | Three classes replaced by one host list plus a PDF size ceiling (FR-14.1). |
-| Byte budget | Demoted to a circuit breaker with stated estimation error (FR-21.1, NF-10). |
-| Rate figures | Restated as unverified, with a calibration run required first (NF-7, NF-9). |
-| Network policy | Master flag defaulting off, `.secrets` credentials, and a new §1.1 "Publication" category naming the disclosure (NF-1..NF-6). |
-| Scope | Named source set with per-source rationale, instead of "bookmark URLs" (FR-1). |
-| CDX digest | No longer requested, since nothing consumed it (FR-15); reinstating it is the drift-detection increment (§13). |
-| Parked rows | Given an operator interface (FR-34). |
-| Acceptance | Rewritten to be mock-verifiable; added the fresh-checkout, purge, migration-idempotency, `if_not_archived_within` and unpark criteria; specified the fault seam AC-4 needs. |
-| Premise | The citation question moved from §11 to §1.1, because it decides whether to build this at all. |
-
----
-
-## 15. References
+## 14. References
 
 [1] Eve, M. P. (2024). Digital Scholarly Journals Are Poorly Preserved: A Study
 of 7 Million Articles. *Journal of Librarianship and Scholarly Communication*,
-12(1), eP16288. Cited in the previous draft to argue for submitting publisher
-landing pages. It is not load-bearing here: it measures presence in preservation
+12(1), eP16288. An argument for submitting publisher landing pages, but not
+load-bearing here: it measures presence in preservation
 archives rather than current accessibility, and excludes institutional
 repositories. FR-14 excludes large publishers on the simpler ground that a
 capture would record a paywall.

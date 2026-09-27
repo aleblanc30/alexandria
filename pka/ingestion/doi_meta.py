@@ -1,7 +1,6 @@
 """Shared DOI → metadata spine for the publisher fetch handlers.
 
-Five of the seven handlers in ``planning/archive/PUBLISHER_FETCH_HANDLERS.md`` collapse
-onto the same idea: a scholarly URL carries a resolvable identifier, and that
+Five of the seven publisher handlers collapse onto the same idea: a scholarly URL carries a resolvable identifier, and that
 identifier has free structured metadata behind it, so the publisher's HTML —
 paywall, cookie wall, or ``403`` — is never needed. This module is that spine;
 ``doi_org.py``, ``nature.py``, ``aps.py``, ``springer.py`` and

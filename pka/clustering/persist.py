@@ -1,6 +1,6 @@
 """Step 6: write a clustering run to SQLite.
 
-Split out of ``engine.py`` (planning/M1_CLUSTERING_ENGINE_SPLIT.md). Owns the
+Split out of ``engine.py``. Owns the
 ``cluster_runs`` / ``clusters`` / ``cluster_assignments`` writes, including the
 per-run noise bucket.
 """

@@ -36,8 +36,8 @@ from pka.storage import vector_store
 log = logging.getLogger("purge_source")
 
 # overlay_tags is handled separately (see _delete_overlay_tags): by default a
-# purge must not destroy user-authored data (Tier 1 — CLAUDE.md /
-# PURGE_AND_PROVENANCE_PLAN.md §5.1), so it is filtered to machine origins
+# purge must not destroy user-authored data (manual and learned tags, which no
+# re-ingest can reproduce), so it is filtered to machine origins
 # unless include_user_data is set. reading_list_items is Tier 1 outright and is
 # never touched here — a purged document simply leaves a dangling id that
 # survives a later re-ingest.

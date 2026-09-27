@@ -1,9 +1,9 @@
-"""Tests for the publisher fetch handlers (``PUBLISHER_FETCH_HANDLERS.md`` §5–§10).
+"""Tests for the publisher fetch handlers.
 
-One class per handler. The URL tables in the plan turn directly into
-parametrised cases; the tests that carry an argument beyond parsing are called
-out in their own docstrings — notably the Springer no-abstract case (§8.1), the
-ScienceDirect unresolved-PII card (§8.5), and the "no GET against the publisher
+One class per handler, with the supported URL shapes as parametrised cases; the
+tests that carry an argument beyond parsing are called out in their own
+docstrings — notably the Springer no-abstract case, the ScienceDirect
+unresolved-PII card, and the "no GET against the publisher
 host" regressions that encode why these handlers exist at all.
 """
 
@@ -302,7 +302,7 @@ class TestSpringer:
 
     @pytest.mark.asyncio
     async def test_crossref_without_an_abstract_climbs_to_semantic_scholar(self):
-        """The most important test in the set — see ``PUBLISHER_FETCH_HANDLERS.md`` §8.1.
+        """The most important test in the set.
 
         Crossref has no abstract for ``10.1007`` deposits. Built "Crossref only",
         a large slice of SpringerLink bookmarks would silently land as

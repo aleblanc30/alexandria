@@ -1,6 +1,6 @@
 """Step 5: cluster labelling — LLM prompts, the TF-IDF fallback, and relabelling.
 
-Split out of ``engine.py`` (planning/M1_CLUSTERING_ENGINE_SPLIT.md). Together with
+Split out of ``engine.py``. Together with
 ``persist.py`` this is one of the two clustering modules that touch the database.
 """
 

@@ -240,8 +240,7 @@ every fetched page is embedded **inline by the fetch worker**, so there is no
 separate embedding phase to report. Everything from `fetch_and_embed_pending`
 down is shared with Reddit's link-post branch.
 
-The dispatch chain's newest arrivals are the **publisher handlers**
-(`planning/archive/PUBLISHER_FETCH_HANDLERS.md`), and they exist to remove two opposite
+The dispatch chain's newest arrivals are the **publisher handlers**, and they exist to remove two opposite
 failures. `journals.aps.org`, `mitpress.mit.edu`, `direct.mit.edu` and `researchgate.net`
 answer a non-browser client with `403`, so those bookmarks land as
 `unfetchable` with no title at all. `nature.com`, `link.springer.com`, `sciencedirect.com` and
@@ -677,7 +676,7 @@ The thinnest pipeline: it mirrors Zotero's shape exactly — no fetch phase, one
 embed pass — because the Data API returns content alongside metadata, so
 documents are inserted already `FETCHED`. The network cost sits in the
 *connector*, not in a fetch phase. No generated summary and no full text
-(transcript enrichment is deferred; see `planning/BACKLOG.md`).
+(transcript enrichment is not built).
 
 ```mermaid
 flowchart TD
@@ -926,8 +925,7 @@ each one sits in that text, so a later re-chunk can reproduce the section and
 page metadata; the fetched sources store one undifferentiated body. The sources
 marked `—` are the ones whose text already has a verbatim home
 (`reddit_items.body`, `images.ocr_text`/`description`) or is a millisecond
-re-read from the source itself (Zotero abstract, YouTube description) —
-`planning/FULL_TEXT_RETENTION.md` §3.
+re-read from the source itself (Zotero abstract, YouTube description).
 
 The genuinely source-specific surface is always the same two things: **how the
 corpus is read** (`pka/connectors/<source>.py`) and **what text is handed to

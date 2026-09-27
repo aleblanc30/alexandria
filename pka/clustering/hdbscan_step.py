@@ -1,6 +1,6 @@
 """Step 4: HDBSCAN clustering and its adaptive parameter heuristic.
 
-Split out of ``engine.py`` (planning/M1_CLUSTERING_ENGINE_SPLIT.md). A pure-numpy
+Split out of ``engine.py``. A pure-numpy
 sibling of ``agglomerative.py``; neither imports the other.
 """
 
@@ -24,8 +24,7 @@ def adaptive_cluster_params(n_docs: int) -> tuple[int, int, int]:
     earlier version derived it from a *target cluster count* capped at 12, which
     made ``min_cluster_size`` scale roughly linearly with ``n_docs`` instead —
     744 (with ``min_samples=372``) on an 18k-document archive, dense enough that
-    HDBSCAN called ~83% of it noise. See planning/TODO.md's
-    "adaptive_cluster_params manufactures the clustering noise" entry.
+    HDBSCAN called ~83% of it noise.
     """
     if n_docs < 8:
         return max(2, n_docs // 3), 2, max(2, n_docs - 1)

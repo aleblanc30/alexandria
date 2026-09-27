@@ -327,8 +327,8 @@ class Settings(BaseSettings):
     chunk_overlap: int = 1  # sentences of overlap between windows
     min_chunk_chars: int = 80  # discard chunks shorter than this
     # Keep the extracted body text verbatim in `document_texts`, so summarising,
-    # chunking and extraction can be redone without re-fetching
-    # (planning/FULL_TEXT_RETENTION.md). Local retention only — no outbound call
+    # chunking and extraction can be redone without re-fetching. Local
+    # retention only — no outbound call
     # depends on it, so DESIGN.md §1.1's default-off rule does not apply; the
     # flag is here for disk, and off means the pre-retention behaviour.
     retain_document_text: bool = True

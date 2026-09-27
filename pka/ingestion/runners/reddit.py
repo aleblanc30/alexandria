@@ -166,7 +166,7 @@ def embed_fetched_text(
             title = document_titles([doc_id]).get(doc_id, "")
         summary = card_summary or body_excerpt(text)
         # Retain the fetched body verbatim before chunking, as the Firefox path
-        # does (planning/FULL_TEXT_RETENTION.md §5). The inline path below needs
+        # does. The inline path below needs
         # no equivalent: a self-post's or comment's body is already stored
         # verbatim in `reddit_items.body`.
         store_document_text(doc_id, text, dry_run=dry_run)
@@ -196,7 +196,7 @@ def embed_fetched_text(
         if not dry_run:
             # One refresh for both blocks. Not left to the summary chunk: it is
             # flag-gated and returns early when off, which would leave the
-            # document with no embedding at all (audit item P-4).
+            # document with no embedding at all.
             from pka.clustering.doc_embeddings import refresh_document_embedding
 
             refresh_document_embedding(doc_id)
@@ -272,7 +272,7 @@ def ingest_reddit_embed(
         if not dry_run:
             # One refresh for both blocks. Not left to the summary chunk: it is
             # flag-gated and returns early when off, which would leave the
-            # document with no embedding at all (audit item P-4).
+            # document with no embedding at all.
             from pka.clustering.doc_embeddings import refresh_document_embedding
 
             refresh_document_embedding(doc_id)

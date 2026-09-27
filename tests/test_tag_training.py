@@ -627,7 +627,7 @@ class TestDeserializedModelsAreCached:
     `apply_learned_tags_for_document` rebuilds a `LogisticRegression` from JSON
     for every accepted model, for every document ingested. The blob is its own
     cache key: a retrained model serialises differently, so a stale entry can
-    never be returned and no invalidation hook is needed. Audit item P-4.
+    never be returned and no invalidation hook is needed.
     """
 
     @pytest.fixture(autouse=True)

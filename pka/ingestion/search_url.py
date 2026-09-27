@@ -6,8 +6,6 @@ part is already in the URL's query string. This module recognizes that shape
 and builds a ``FetchResult`` directly from the decoded query, so the fetch
 pool never issues a request for it (no rate-limit slot, no scrape of a
 JS-rendered SERP, no false ``unfetchable`` from a bot check).
-
-See ``planning/SEARCH_URL_CARDS.md`` for the full design and rollout order.
 """
 
 from __future__ import annotations

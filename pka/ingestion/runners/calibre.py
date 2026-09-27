@@ -199,7 +199,7 @@ def ingest_calibre_books(
         if not dry_run:
             # Both blocks above deferred it; this is the only refresh on the
             # metadata path, so an early return between them would strand the
-            # book without an embedding (audit item P-4).
+            # book without an embedding.
             from pka.clustering.doc_embeddings import refresh_document_embedding
 
             refresh_document_embedding(doc_id)
@@ -253,7 +253,7 @@ def ingest_calibre_fulltext(
                     # A scan: the file is readable, it just has no text to read.
                     # Recorded rather than silently counted as "skipped", which
                     # is also what an un-run phase 2 looks like — this is the
-                    # OCR-candidate set (planning/BACKLOG.md).
+                    # OCR-candidate set.
                     log.info(
                         "No text layer in %s (%d pages) — marking %s",
                         book.title,
@@ -266,14 +266,13 @@ def ingest_calibre_fulltext(
                 stats["skipped"] += 1
                 continue
             sections = report.sections
-            # Retain the extraction before chunking (FULL_TEXT_RETENTION.md §5).
+            # Retain the extraction before chunking.
             # The file is still on disk, but re-extracting a library costs
             # minutes per book, which is what makes a re-chunk impractical
             # without this. `blocks` maps each section back into `full_text`, so
             # a re-chunk can reproduce the section and page metadata below.
             full_text, full_blocks = section_blocks(sections)
-            # Books are capped; fetched pages are not (FULL_TEXT_RETENTION.md
-            # §8). A few hundred pages of retained prose per book is the only
+            # Books are capped; fetched pages are not. A few hundred pages of retained prose per book is the only
             # way this sidecar gets expensive, and the opening is what the
             # retention is actually used for. The summary below still sees the
             # whole book — only what is *stored* is cut.
@@ -329,13 +328,13 @@ def ingest_calibre_fulltext(
                 )
                 # Once, here, rather than once per section: the mean-pool is
                 # over every chunk the book has, so every earlier pass computed
-                # a value this one supersedes (audit item P-4). Deferred blocks
+                # a value this one supersedes. Deferred blocks
                 # above make this call the only thing keeping the embedding
                 # current — it must stay on this path.
                 if not dry_run:
                     # Function-level, like the one in ``ingest_text_block``:
                     # ingestion reaches clustering lazily so the import cycle
-                    # the audit records under M-6 stays broken at module scope.
+                    # through tag training stays broken at module scope.
                     from pka.clustering.doc_embeddings import refresh_document_embedding
 
                     refresh_document_embedding(doc_id)

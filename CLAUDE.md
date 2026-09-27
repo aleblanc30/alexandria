@@ -36,6 +36,15 @@ work, not what the code does. Once a `planning/<NAME>.md` plan's corresponding
 `TODO.md` line(s) are checked off with nothing left proposed, move the file to
 `planning/archive/<NAME>.md` and repoint whatever still references it.
 
+**Nothing outside `planning/` may cite it.** Code, comments, docstrings, tests,
+config, scripts, `README.md`, `DESIGN.md` and `docs/` must not reference a
+planning file, a section of one, or an audit item id (`M-14`, `P-9`). Plans get
+condensed, renumbered and archived, so those citations rot, and they send the
+reader to a proposal to understand shipped code. State the reason in the comment
+itself, in a sentence or two; a decision that outlives its plan belongs in
+`DESIGN.md`. `CHANGELOG.md` is exempt as a historical record, and within
+`planning/` the files may cite each other freely.
+
 ## Boundaries
 
 - **Do not run real ingestion.** `alexandria zotero|firefox|calibre|images|reddit|youtube`
@@ -88,8 +97,8 @@ loop — a single failing test, a quick re-lint — then finish with the script.
 `npm run test` and `npm run build` after TypeScript/Vue changes. `mypy pka` is
 baseline-ratcheted (`pyproject.toml`'s `[[tool.mypy.overrides]]`): modules with pre-existing errors are listed there with
 `ignore_errors = true`, so the gate is "no new errors" outside that list, not a
-clean `mypy` across the whole tree. None of this runs in CI yet — see
-`planning/TODO.md`'s M-12 item.
+clean `mypy` across the whole tree. None of this runs in CI or a hook — the
+check scripts are deliberately manual-run.
 
 Two configuration facts that otherwise read as bugs:
 

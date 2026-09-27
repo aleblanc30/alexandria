@@ -15,7 +15,7 @@ instead, with no request at all — the same shape as ``search_url.py`` and
 ``researchgate.py``.
 Deliberately decoupled from the Data-API connector's credentials — per
 ``DESIGN.md`` §1.1, enabling one outbound path must never be a prerequisite
-for another. See ``planning/FIREFOX_INGESTERS_PLAN.md`` §2 for the full design.
+for another.
 """
 
 from __future__ import annotations

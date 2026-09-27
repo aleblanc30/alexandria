@@ -318,7 +318,7 @@ def regenerate_cluster_label(cluster_id: int, engine=Depends(get_engine)):
             raise HTTPException(400, "The noise bucket has no topic to label")
 
     # Imported here, not at module scope: the engine pulls in sklearn/scipy, which
-    # would otherwise cost ~1.7s on every API start (see planning audit P-2).
+    # would otherwise cost ~1.7s on every API start.
     from pka.clustering.labelling import relabel_single_cluster
 
     try:

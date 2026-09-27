@@ -78,7 +78,7 @@ def init_db() -> None:
             con.execute(sa.text("ALTER TABLE documents ADD COLUMN note TEXT"))
         if "doc_embedding" not in cols:
             con.execute(sa.text("ALTER TABLE documents ADD COLUMN doc_embedding BLOB"))
-        # Migration: structured bibliographic fields (DOCUMENT_METADATA_PLAN.md)
+        # Migration: structured bibliographic fields (DESIGN.md §3.2)
         if "doi" not in cols:
             con.execute(sa.text("ALTER TABLE documents ADD COLUMN doi TEXT"))
         if "arxiv_id" not in cols:
@@ -94,8 +94,8 @@ def init_db() -> None:
         if "zotero_path" not in cols:
             con.execute(sa.text("ALTER TABLE documents ADD COLUMN zotero_path TEXT"))
 
-        # Migration: model provenance for the cached summary
-        # (PURGE_AND_PROVENANCE_PLAN.md §6.2). Left NULL on existing rows — a
+        # Migration: model provenance for the cached summary. Left NULL on
+        # existing rows — a
         # summary made before this shipped has genuinely unknown provenance,
         # and "whatever is configured now" would be a lie a purge would act on.
         if "summary_run_id" not in cols:
@@ -114,8 +114,8 @@ def init_db() -> None:
             if chunk_cols and col not in chunk_cols:
                 con.execute(sa.text(f"ALTER TABLE chunks ADD COLUMN {col} INTEGER"))
 
-        # Migration: how long the text was before a retention cap truncated it
-        # (planning/FULL_TEXT_RETENTION.md §8). Rows written before the cap
+        # Migration: how long the text was before a retention cap truncated it.
+        # Rows written before the cap
         # existed were stored whole, so NULL there reads as "not truncated" —
         # which is true, and not a guess.
         dt_cols = [
@@ -205,8 +205,7 @@ def init_db() -> None:
         con.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_documents_isbn ON documents(isbn)"))
 
         # Migration: indexes for the previously-unindexed foreign keys behind
-        # correlated EXISTS filters and browse/search joins (audit
-        # planning/MAINTAINABILITY_PERFORMANCE_AUDIT.md P-1).
+        # correlated EXISTS filters and browse/search joins.
         con.execute(
             sa.text(
                 "CREATE INDEX IF NOT EXISTS ix_source_tags_document_id_tag_string "
@@ -381,7 +380,7 @@ def refresh_zotero_metadata(by_source_id: dict[str, dict]) -> int:
     ``url_or_path`` (written unconditionally, already recomputed by the
     caller). The unconditional ``url_or_path`` write is what reconciles a row
     written by the old DOI-in-url_or_path ladder with one written by the new
-    one — see ``planning/DOCUMENT_METADATA_PLAN.md``'s "split-brain" analysis.
+    one; otherwise the two rows would disagree about where the DOI lives.
     """
     if not by_source_id:
         return 0
@@ -1322,7 +1321,7 @@ def list_tags(
 
         # ORDER BY / LIMIT belong in SQL: the two GROUP BYs are over the whole
         # of source_tags and overlay_tags, so ranking in Python meant building
-        # every distinct tag in the archive to return `limit` of them (audit P-7).
+        # every distinct tag in the archive to return `limit` of them.
         combined = sa.union_all(*parts).subquery() if len(parts) > 1 else parts[0].subquery()
         stmt = (
             sa.select(combined.c.tag, combined.c.origin, combined.c.n)

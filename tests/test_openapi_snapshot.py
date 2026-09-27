@@ -3,9 +3,9 @@
 The frontend's `src/api/types.gen.ts` is generated from
 `frontend/src/api/openapi.json`, which `scripts/dump_openapi.py` writes from the
 FastAPI app. Nothing at runtime notices when a pydantic model changes and the
-snapshot does not, so this is the check that does — the whole point of audit
-item M-10, which found 48 hand-written interfaces mirroring 39 models with no
-gate keeping the two copies honest.
+snapshot does not, so this is the check that does. The frontend once had 48
+hand-written interfaces mirroring 39 models with no gate keeping the two copies
+honest.
 
 No server is started: `app.openapi()` builds the document in-process.
 """

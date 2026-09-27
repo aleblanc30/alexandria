@@ -1,7 +1,6 @@
 """Tests for the shared DOI metadata spine.
 
-See ``planning/archive/PUBLISHER_FETCH_HANDLERS.md`` §2 and §4. The point of most of
-these is the *request count*, not just the result: the ladder's whole cost
+The point of most of these is the *request count*, not just the result: the ladder's whole cost
 argument is that the Semantic Scholar rung fires only when the primary record
 carried no abstract.
 """

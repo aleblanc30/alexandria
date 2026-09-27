@@ -165,7 +165,7 @@ def isolated_settings(tmp_path, monkeypatch, _schema_template):
     monkeypatch.setattr(vs, "_client", None)
     monkeypatch.setattr(vs, "_collection", None)
 
-    # Reset cached CLIP collection (patch #9)
+    # Reset cached CLIP collection
     import pka.ingestion.image_pipeline as ip
 
     monkeypatch.setattr(ip, "_clip_client", None)
@@ -236,8 +236,8 @@ def client(empty_vector_store):
     """A TestClient over a fresh DB with an empty (mocked) vector store.
 
     Here rather than in one test module because the ``test_api_*`` modules all
-    need it: the old single ``test_api.py`` was split per router under audit
-    item M-11, and this fixture is what they share.
+    need it: the old single ``test_api.py`` was split per router, and this
+    fixture is what they share.
     """
     from fastapi.testclient import TestClient
 
@@ -667,7 +667,7 @@ def mock_chroma(monkeypatch):
     class _FakeEmbeddingFunction:
         """Stands in for Chroma's DefaultEmbeddingFunction.
 
-        ``upsert_chunks`` embeds in-process now (audit item P-4), so without
+        ``upsert_chunks`` embeds in-process, so without
         this the mocked path would load the real MiniLM model.
         """
 

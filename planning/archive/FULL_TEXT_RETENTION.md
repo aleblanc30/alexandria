@@ -1,15 +1,8 @@
 # Full-text retention — `document_texts`
 
-**Status:** **shipped** — all three slices. The table and `text_store.py`, the
-Firefox / Reddit / Calibre write sites with `blocks_json`, purge wiring,
-`retain_document_text`, and the consumers: the `enrich` ladder, the `rechunk`
-pass (`alexandria rechunk`, `POST /ingestion/rechunk`) and
-`GET /documents/{id}/text`. One follow-up is deliberately left open — the size
-measurement in §9 against the installed archive, which decides whether §8 needs
-a cap. Supersedes the sketches it grew from:
-`BACKLOG.md` → *Ingestion → Retain the raw extracted text alongside the chunks*,
-and `PURGE_AND_PROVENANCE_PLAN.md` §5.2.2. Both stay as pointers; this file is
-the worked-out version.
+**Status:** **shipped** — all three slices, plus the size question §9 left open:
+books are capped at their opening pages (`book_retain_max_pages` /
+`book_retain_max_chars`, `document_texts.full_char_count`), fetched pages are not.
 
 **One sentence:** keep the extracted body text of anything Alexandria *fetched
 or extracted* in a compressed sidecar table, so summarising, chunking and

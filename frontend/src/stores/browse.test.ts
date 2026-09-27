@@ -2,8 +2,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBrowseStore } from './browse'
 
-// First store test in the suite (audit item M-10: vitest covered lib/ and
-// client.ts only). Every reducer here calls back into the API to refresh the
+// First store test in the suite (vitest had covered lib/ and client.ts
+// only). Every reducer here calls back into the API to refresh the
 // list, so the client module is stubbed at the boundary — the pattern any
 // further store test should follow.
 vi.mock('@/api/client', () => ({

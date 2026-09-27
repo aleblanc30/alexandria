@@ -97,9 +97,9 @@ skip_empty   = true
 fail_under   = 85
 
 # ── mypy ──────────────────────────────────────────────────────────────────────
-# Not run in CI yet (planning/TODO.md M-12); `mypy pka` is a manual step in the
-# CLAUDE.md verify table. Baseline-ratcheted, not strict: the modules below had
-# pre-existing errors when this config was added (audit M-7) and are frozen via
+# Not run in CI; `mypy pka` is a manual step in the CLAUDE.md verify table and
+# scripts/check.*. Baseline-ratcheted, not strict: the modules below had
+# pre-existing errors when this config was added and are frozen via
 # `ignore_errors` so the gate is "no new errors", not "fix 89 errors first".
 # Shrink this list as a module gets cleaned up; do not add to it.
 [tool.mypy]
@@ -139,7 +139,7 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-# BLE001/S110/S112 are the audit's M-5 ratchet: a blind `except Exception`, and
+# BLE001/S110/S112 are a ratchet: a blind `except Exception`, and
 # especially a silent `pass` or `continue` under one, is allowed only where it
 # is deliberate and says so. Every existing site was reviewed and carries either
 # a narrowed exception type, a log line, or a `# noqa: BLE001 - <why>`, so a new

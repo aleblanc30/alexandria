@@ -43,7 +43,7 @@ class PdfTextLayer(StrEnum):
 
 
 class EnrichmentKind(StrEnum):
-    """What an ``enrichment_runs`` row produced (PURGE_AND_PROVENANCE_PLAN.md §6).
+    """What an ``enrichment_runs`` row produced.
 
     One kind per artifact, not per backend: swapping the chat provider does not
     change that a summary is a summary, and the run row records which backend

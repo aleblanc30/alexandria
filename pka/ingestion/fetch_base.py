@@ -39,8 +39,8 @@ class FetchResult:
     title: str | None = None  # when set, overrides documents.title on persist
     card_summary: str | None = None  # when set, overrides documents.card_summary on persist
     # Structured bibliographic fields, set by the identifier-resolving fetch
-    # handlers (arXiv, bioRxiv, PubMed, and the DOI/ISBN publisher handlers —
-    # DOCUMENT_METADATA_PLAN.md). Written when present, never blanked.
+    # handlers (arXiv, bioRxiv, PubMed, and the DOI/ISBN publisher handlers).
+    # Written when present, never blanked.
     doi: str | None = None
     arxiv_id: str | None = None
     year: int | None = None
@@ -255,7 +255,7 @@ def _fetch_pdf_result(
         if report.status == PdfTextLayer.NONE:
             # Readable, paginated, and not one page carries text: a scan. Kept
             # apart from "unfetchable" so re-fetching never retries it and the
-            # OCR-candidate set stays queryable (planning/BACKLOG.md).
+            # OCR-candidate set stays queryable.
             return FetchResult(
                 doc_id,
                 url,

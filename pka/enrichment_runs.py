@@ -2,8 +2,7 @@
 
 Records *which backend, which model, with which settings* produced a summary,
 description or OCR pass, so a purge can target "the work the old model did" and
-leave the work you are keeping alone (``planning/PURGE_AND_PROVENANCE_PLAN.md``
-§6). Without this, "purge the summaries made by the old model" is not hard but
+leave the work you are keeping alone. Without this, "purge the summaries made by the old model" is not hard but
 unimplementable: nothing in the schema records who made any artifact.
 
 **A run spans a pass, not a document.** One row per source sync (or per enrich

@@ -49,7 +49,7 @@ def _doi_url(doi: str | None) -> str | None:
 
 # Exactly the ``documents`` columns the card builder below reads. Selecting the
 # whole table instead would carry the 1.5 KB ``doc_embedding`` blob and
-# ``generated_summary`` for every row on the page (audit P-5).
+# ``generated_summary`` for every row on the page.
 #
 # Keep this in step with the builder. A column read but missing from here comes
 # back from ``row.get(...)`` as ``None`` rather than raising, so the symptom is a

@@ -431,7 +431,7 @@ class TestUpdateCardSummary:
 
 # ── DocumentWrite / _write_document ─────────────────────────────────────────
 #
-# These pin the write-path collapse (planning/DOCUMENT_WRITE_PATH_PLAN.md):
+# These pin the single-writer write path:
 # every writable column round-trips, the overwrite/COALESCE split matches the
 # pre-refactor ON CONFLICT clause exactly, and DocumentWrite's field set stays
 # in sync with the documents table.
@@ -601,7 +601,7 @@ class TestEnumAndStringFormsAgree:
 
 
 class TestListTags:
-    """``list_tags`` ranks and limits in SQL (audit P-7)."""
+    """``list_tags`` ranks and limits in SQL."""
 
     @staticmethod
     def _seed(counts: dict[str, int], *, origin=TagOrigin.MANUAL) -> None:

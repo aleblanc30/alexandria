@@ -25,7 +25,7 @@ const props = defineProps<{ points: UmapPoint[]; clusters: ClusterOut[] }>()
 const canvas  = ref<HTMLCanvasElement>()
 const tooltip = ref<{ x: number; y: number; title: string } | null>(null)
 
-// Component-scoped axis bounds — see audit patch #12.
+// Component-scoped axis bounds, so two plots never share one set.
 const bounds = ref({ xMin: 0, xMax: 10, yMin: 0, yMax: 10 })
 
 function clusterColor(cid: number | null) {
@@ -105,7 +105,7 @@ watch(() => [props.points, props.clusters], draw, { deep: false })
 
 <style scoped>
 /* Fixed-height wrapper prevents the canvas from inflating its container
-   on each render (companion to the patch #12 reactive-bounds fix). */
+   on each render. */
 .scatter-wrap { position: relative; height: 320px; width: 100% }
 .scatter      { width: 100%; height: 100%; display: block; cursor: crosshair }
 .tooltip      {

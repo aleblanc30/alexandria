@@ -1,6 +1,6 @@
 """Row builders shared by the ``test_api_*`` modules.
 
-Split out of the old 2,400-line ``tests/test_api.py`` (audit item M-11), whose
+Split out of the old 2,400-line ``tests/test_api.py``, whose
 section banners became one module per router. These build the SQLite rows an
 endpoint test needs; the ``client`` fixture that serves them lives in
 ``conftest.py`` so every module gets it without an import.

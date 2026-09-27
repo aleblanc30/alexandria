@@ -1,7 +1,7 @@
 """``mitpress.mit.edu`` → ISBN, not DOI. A bookstore, not a journal.
 
 This is the handler most likely to be built wrong by analogy with its six
-neighbours in ``planning/archive/PUBLISHER_FETCH_HANDLERS.md``. ``mitpress.mit.edu``
+publisher-handler neighbours. ``mitpress.mit.edu``
 serves book *product* pages, with no DOI anywhere::
 
     https://mitpress.mit.edu/9780262369466/advanced-microeconomics-…/

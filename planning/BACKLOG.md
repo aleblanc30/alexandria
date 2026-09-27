@@ -2,9 +2,9 @@
 
 Nice-to-haves: wanted, but not competing for the next slot.
 
-High-priority work lives in `TODO.md` instead. A brief line is enough here — some
-entries below carry a fuller what/why/shape sketch, but none is required. Move an
-entry between the two when its priority changes; do not duplicate it in both.
+High-priority work lives in `TODO.md`. A brief line is enough; a what/why/shape
+sketch is optional. Move an entry between the two when its priority changes rather
+than listing it in both, and delete it when it ships.
 
 ## YouTube connector
 
@@ -73,6 +73,8 @@ Takeout's YouTube playlist CSVs; verify before relying on it.
 ## Retrieval enrichment
 
 ### Topical tags from the summarisation pass
+
+*Prioritised in `TODO.md`; this section is its sketch.*
 
 **What:** Generate a handful of topical tags per document (`overlay_tags`, machine
 origin) from the same local chat call that already produces the `pass="summary"`
@@ -169,14 +171,6 @@ does not — `ChatProvider` in `pka/providers/base.py` is only `resolve_model` +
   large budget and assert the single-call path, alongside the existing map-reduce
   cases.
 
-## Ingestion
-
-### Retain the raw extracted text alongside the chunks
-
-**Moved to `TODO.md` (priority 1).** The worked-out version — schema, write path,
-purge wiring, slices, measured size budget — is `FULL_TEXT_RETENTION.md`; this
-heading stays only so older references land somewhere.
-
 ## PDF ingestion
 
 ### OCR the documents that have no text layer
@@ -215,117 +209,37 @@ budget question gets answered.
 
 ### Wayback Machine submission
 
-**What:** Submit live bookmark URLs to the Internet Archive's Save Page Now, so each
-keeps a durable public second address alongside the local extracted text. Full
-requirements — scope, gates, state model, rate and quota handling, acceptance
-criteria — are in [`WAYBACK.md`](WAYBACK.md); nothing needs restating here.
-
-**Why deferred:** The subsystem only pays for itself if Alexandria's entries are
-expected to be cited by people other than their owner (`WAYBACK.md` §1.1). For any
-document already in the corpus the text is on disk, so a capture protects nobody's
-local access; what it buys is a publicly resolvable address someone else can follow
-after the origin is gone. Until that premise is settled the work cannot be sized —
-it is the difference between sweeping the whole collection and capturing a handful
-of fragile non-scholarly pages.
-
-It is also the first outbound path in the project that **publishes**: it discloses
-collection membership to a third party permanently and irrevocably, and triggers
-third-party crawls that show up in the origin sites' access logs. `DESIGN.md` §1.1
-gains a fourth category row before any of this ships.
-
-**Open choices when picked up** (`WAYBACK.md` §13, both changing the state model and
-the acceptance criteria): whether 401/403 URLs are submitted — archiving a paywall
-page still records that the URL existed and what it claimed to be — and whether
-coverage is judged against the bookmark date alone or additionally against a maximum
-snapshot age.
+Submit live bookmark URLs to Save Page Now so each gains a durable public second
+address. Requirements in [`WAYBACK.md`](WAYBACK.md). Blocked on its §1.1 premise —
+whether entries will be cited by anyone but their owner, which decides whether
+this sweeps the collection or a handful of fragile pages. It would be the first
+outbound path that **publishes** (collection membership, irrevocably), so
+`DESIGN.md` §1.1 gains a category row before it ships. Open choices in its §13.
 
 ## Configuration
 
 ### Editable settings panel (the write half)
 
-**What:** Let the `/settings` view *set* the operational tier — provider and model
-selection per capability, base URLs, and the `DESIGN.md` §1.1 outbound flags —
-persisting to `.env` and dropping the cached provider instances so the switch
-takes effect without a restart.
-
-**Why deferred:** The read-only report (`TODO.md`, *UI*) carries most of the value
-and none of the risk, and it is the thing that is missing outright — the write
-machinery already exists in `pka/api/source_paths.py` (`_persist_env_var`, live
-`setattr` on the singleton, tests that redirect `ENV_FILE_PATH`), so this slice is
-generalising a working pattern rather than inventing one. Shipping the report first
-also reveals which fields actually get re-set often enough to deserve a control.
-
-**Rough shape when picked up:** see `SETTINGS_PANEL.md` §6. Key constraints: an
-allowlist of the operational tier only (400 on anything else); credentials stay in
-`.secrets` and are never accepted over HTTP; validate by constructing a throwaway
-`Settings(**{field: value})` so the field's own validators run before persisting;
-call `reset_providers()` after a provider/model/base-URL change; and label the
-fields whose effect is *not* live (the EasyOCR reader caches independently, and the
-Chroma collection is dimension-locked, so an embedding-model change needs
-`rebuild_from_chunks`, not a toggle). Lift `_persist_env_var` and `ENV_FILE_PATH`
-into a shared `pka/api/env_file.py` that `source_paths.py` re-imports.
+Let `/settings` *set* the operational tier — provider and model per capability,
+base URLs, the `DESIGN.md` §1.1 outbound flags — persisting to `.env` and
+resetting the cached providers so a switch is live. The read-only report ships;
+this is its phase 2, sketched in `SETTINGS_PANEL.md`.
 
 ### M-8: group `Settings` into submodels
 
-**What:** Nest the 49 `Settings` fields that already carry a group prefix
-(`fetch_*`, `cluster_*`, `reddit_*`, `image_gate_*`, `easyocr_*`, and the four
-remote backends) into submodels named for that prefix. Plan, fully costed, in
-`M8_NESTED_SETTINGS.md`.
-
-**Why deferred:** The value did not survive costing. The audit ranks M-8 on
-"most-churned file in the repo", but that churn is *growth*, not rework — 613
-lines added against 96 deleted across 45 commits, median 8 lines each, a config
-file gaining one setting per feature. Nesting removes none of it. It also leaves
-two of the item's three stated complaints standing: the class is still 42 fields
-plus 9 submodels, and `settings` is still a process-wide singleton imported by 31
-modules. Most of the remaining 110 read-site edits buy readability only.
-
-**The two pieces that are worth doing on their own,** if someone is already in
-these files — neither needs the nesting:
-
-- ~~**`SecretsFileSettingsSource` → subclass `EnvSettingsSource`**~~ — **done**,
-  shipped separately since it was independent of the rest of M-8. `__init__`,
-  `get_field_value`, `__call__` and the by-hand field lookup (~20 lines of
-  mechanism) gave way to inheriting pydantic's own resolution; the file is only
-  3 lines shorter, because the saving went into a docstring and both warnings
-  were kept. `test_config.py::TestSecretsFileSourceResolvesNestedFields` pins
-  the nested-resolution guarantee, and was confirmed to fail against the old
-  implementation.
-- **A shared `RemoteBackend` model** for `ollama_cloud` / `openrouter` / `ovh` /
-  `scaleway`, which declare the same four fields each. Replaces 16 duplicated
-  declarations and collapses `settings_view`'s three parallel provider dicts to
-  one accessor. This *is* nesting, but only for those 16 fields, and
-  `env_nested_max_split=1` keeps every legacy env var working.
-
-**Two traps recorded in the plan, verified against pydantic-settings 2.14.1** —
-read them before touching any of this:
-
-- A submodel default given as an *instance*
-  (`openrouter: RemoteBackend = RemoteBackend(base_url=...)`) is **discarded**
-  the moment env sets any field of that submodel; pydantic rebuilds from
-  class-level defaults. Setting `ALEXANDRIA_OPENROUTER_API_KEY` alone silently
-  empties `base_url`. Use a one-line subclass per backend instead.
-- ~~Nesting a field breaks its `SECRET_ALEXANDRIA_*` lookup silently~~ — fixed
-  by the source rewrite above; a secret now resolves into a submodel. Left here
-  because it is why that rewrite is a prerequisite, not an optional tidy-up.
+Deferred after costing: `config.py`'s churn is growth (one setting per feature),
+which nesting does not reduce. Plan and the reasoning in `M8_NESTED_SETTINGS.md`.
+The piece still worth doing on its own is a shared **`RemoteBackend`** model for
+`ollama_cloud` / `openrouter` / `ovh` / `scaleway` (16 duplicated declarations,
+three parallel dicts in `settings_view`) — read the plan's instance-default trap
+first.
 
 ## Tooling
 
 ### M-16: draw down the mypy override list
 
-**What:** `pyproject.toml`'s `[[tool.mypy.overrides]]` freezes **20** modules with
-`ignore_errors = true`. `mypy pka` is clean under the project config; with the
-overrides removed it is **76 errors in 19 files**, down from 89 in 22 when M-7
-shipped the ratchet a week ago.
-
-**Why here rather than `TODO.md`:** this is not a discrete task and should not be
-scheduled as one. The ratchet is working exactly as M-7 designed it — "no new
-errors" rather than "fix 89 first" — and the cheap moment to take a module off the
-list is while editing it for some other reason, which is how `pka.clustering.engine`
-came off during M-1. The finding is only that nothing gives the drawdown a
-direction, so the list is load-bearing indefinitely and a listed module silently
-loses type checking for unrelated future edits.
-
-**Next step:** name a target release (v0.1.0, say) by which the list is empty, and
-take one or two modules off it with each item that touches them. See
-`MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md` §3, M-16.
+`pyproject.toml`'s `[[tool.mypy.overrides]]` freezes 20 modules with
+`ignore_errors = true` (76 errors in 19 files with it removed, as of the
+2026-09-09 audit). Not a discrete task: take a module off the list whenever an
+item edits it anyway, as M-1 did for `pka.clustering.engine`. Open decision: a
+target release (v0.1.0?) by which the list is empty.

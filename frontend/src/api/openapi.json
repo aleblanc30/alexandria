@@ -2872,7 +2872,7 @@
     },
     "/documents/{doc_id}/text": {
       "get": {
-        "description": "The body text retained at ingestion, verbatim.\n\nThe audit surface for \"what did the fetcher actually get\" \u2014 the question\nthat could previously only be guessed at from the chunks a document\nproduced (planning/FULL_TEXT_RETENTION.md \u00a76.3). 404 when the document has\nno retained text, which is the ordinary case for anything ingested before\nretention shipped: there is no backfill.",
+        "description": "The body text retained at ingestion, verbatim.\n\nThe audit surface for \"what did the fetcher actually get\" \u2014 the question\nthat could previously only be guessed at from the chunks a document\nproduced. 404 when the document has\nno retained text, which is the ordinary case for anything ingested before\nretention shipped: there is no backfill.",
         "operationId": "get_document_text_documents__doc_id__text_get",
         "parameters": [
           {
@@ -3197,7 +3197,7 @@
     },
     "/ingestion/enrich": {
       "post": {
-        "description": "Re-run an enrichment pass over documents missing that artifact.\n\nThe retrigger for ``purge summaries``: its skip gate is \"has any chunk\",\nwhich a summary purge leaves true, so re-syncing would not regenerate it\n(PURGE_AND_PROVENANCE_PLAN.md \u00a75.2.1).",
+        "description": "Re-run an enrichment pass over documents missing that artifact.\n\nThe retrigger for ``purge summaries``: its skip gate is \"has any chunk\",\nwhich a summary purge leaves true, so re-syncing would not regenerate it.",
         "operationId": "enrich_endpoint_ingestion_enrich_post",
         "parameters": [
           {
@@ -3506,7 +3506,7 @@
     },
     "/ingestion/rechunk": {
       "post": {
-        "description": "Re-chunk documents from their retained body text, with no re-fetch.\n\nWhat `document_texts` was retained for (planning/FULL_TEXT_RETENTION.md\n\u00a76.2): applying a chunker or embedding-model change to documents already in\nthe archive. It replaces body chunks and their vectors, so \u2014 like a purge \u2014\nit refuses to start while a sync could be writing the same rows.",
+        "description": "Re-chunk documents from their retained body text, with no re-fetch.\n\nWhat `document_texts` was retained for: applying a chunker or\nembedding-model change to documents already in the archive. It replaces body chunks and their vectors, so \u2014 like a purge \u2014\nit refuses to start while a sync could be writing the same rows.",
         "operationId": "rechunk_endpoint_ingestion_rechunk_post",
         "parameters": [
           {
@@ -3820,7 +3820,7 @@
     },
     "/ingestion/sources/{source}/purge": {
       "post": {
-        "description": "Delete every archived row (and vectors) for ``source``.\n\nBy default, manually-applied/learned tags and reading-list entries survive\n(see ``PURGE_AND_PROVENANCE_PLAN.md`` \u00a75.1); pass ``include_user_data=true``\nto remove those too. Refuses while a sync is running so a purge can't race\na live worker.",
+        "description": "Delete every archived row (and vectors) for ``source``.\n\nBy default, manually-applied/learned tags and reading-list entries survive:\nthey are user-authored, and no re-ingest can bring them back. Pass\n``include_user_data=true`` to remove those too. Refuses while a sync is running so a purge can't race\na live worker.",
         "operationId": "purge_source_endpoint_ingestion_sources__source__purge_post",
         "parameters": [
           {

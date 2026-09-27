@@ -58,9 +58,10 @@ Two further arguments point the same way, and would carry even without Chroma:
   the sentence-transformers stack; the tool layer instead needs `mcp` + `httpx`,
   both small.
 - **No second copy of the query logic.** `/search`'s merge of semantic hits,
-  fulltext fallback, CLIP folding, and the browse-filter passes is ~180 lines of
-  ordering decisions. Reimplementing it against the library for the MCP path
-  gives two search behaviours that drift.
+  fulltext fallback, CLIP folding, and the browse-filter passes
+  (`pka/api/search_hits.py`) is a chain of ordering decisions. Reimplementing
+  it against the library for the MCP path gives two search behaviours that
+  drift.
 
 **This assumption is the thing to verify first.** If multi-process
 `PersistentClient` reads turn out to be safe in the installed configuration, a
@@ -113,9 +114,10 @@ ingestion" boundary by construction.
 
 ## The one backend addition: `GET /documents/{doc_id}/chunks`
 
-Nothing today serves chunk *text* over HTTP. `DocumentDetail` carries
-`chunks_count` and the enrichment chunks, but not the body — the frontend never
-needed it. `get_passages` does.
+Nothing serves chunk *text* over HTTP. `GET /documents/{id}/text` returns the
+retained body, but only for documents with a `document_texts` row (fetched and
+Calibre documents ingested since retention shipped), with no chunk boundaries or
+page ranges. `get_passages` needs the indexed chunks.
 
 ```
 GET /documents/{doc_id}/chunks?offset=0&limit=20&chunk_pass=fulltext
@@ -148,17 +150,9 @@ the difference between a model that hedges correctly and one that claims to have
 read a PDF it has not seen. When the pending "Ingest Zotero PDF attachments"
 TODO lands, this note changes and `chunk_pass=fulltext` starts returning body.
 
-**Zotero authors, DOI, and year are not columns** — *until
-`planning/DOCUMENT_METADATA_PLAN.md` lands.* `_zotero_document_kwargs` persists
-source, id, title, url, date, fetch status, attachment key, item type, and that
-is all; authors and DOI survive only inside `zotero_embed_text`'s blob
-(`"Title\n\nby A, B\n\nAbstract"`), i.e. inside the metadata chunk. So today a
-bibliographic answer must come from `get_passages`, not from `get_document`.
-
-Whichever ships first, `get_passages` stays in v1 — it is what lets the client
-quote abstract and article text at all. But if the metadata plan lands first,
-`get_document` should return `doi` / `year` / `authors` directly and this note
-becomes one line rather than a caveat in a tool description.
+**Bibliographic fields are columns.** `documents.doi` / `arxiv_id` / `isbn` /
+`year` / `authors_json` exist, so `get_document` returns them directly rather
+than leaving the client to parse them out of the metadata chunk.
 
 **Firefox `fetch_status` is load-bearing.** A bookmark that has not been fetched
 (or was `unfetchable`, or is `no_text_layer`) has only title + card summary

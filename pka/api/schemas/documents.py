@@ -26,7 +26,7 @@ class DocumentOut(BaseModel):
     similarity: float | None = None  # only present in search results
     description: str = ""
     note: str | None = None
-    # Structured bibliographic fields (DESIGN.md §3.2, DOCUMENT_METADATA_PLAN.md).
+    # Structured bibliographic fields (DESIGN.md §3.2).
     doi: str | None = None
     doi_url: str | None = None  # https://doi.org/<doi>, computed
     arxiv_id: str | None = None

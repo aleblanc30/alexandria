@@ -68,7 +68,7 @@ def deserialize_model(blob: str) -> LogisticRegression:
     read-only; nothing in the scoring path mutates it.
     """
     # Imported here, not at module scope: sklearn costs ~1s to import and the API
-    # only ever reaches it through a training session (see planning audit P-2).
+    # only ever reaches it through a training session.
     from sklearn.linear_model import LogisticRegression
 
     data = json.loads(blob)

@@ -208,7 +208,7 @@ def upsert_chunks(
     otherwise run the same model over the same texts. Nothing about the stored
     vectors changes — it is the collection's own embedding function — but the
     caller now holds them, so the document mean-pool no longer has to read them
-    straight back out (audit item P-4).
+    straight back out.
     """
     if not ids:
         return []

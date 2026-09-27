@@ -1,5 +1,5 @@
-// Flat config (ESLint 9+). The point of this file is `no-explicit-any`: audit
-// item M-10 found 14 `any` annotations, all of them on caught errors funnelling
+// Flat config (ESLint 9+). The point of this file is `no-explicit-any`: the
+// codebase had 14 `any` annotations, all of them on caught errors funnelling
 // into notifyError, where `unknown` plus one narrowing in that single helper
 // says the same thing without switching type checking off.
 //

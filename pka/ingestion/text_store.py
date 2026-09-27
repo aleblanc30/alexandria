@@ -1,6 +1,6 @@
 """Verbatim retention of extracted body text (``document_texts``).
 
-Why this exists, per ``planning/FULL_TEXT_RETENTION.md``: after ingestion the
+Why this exists: after ingestion the
 body text survives only as ``chunks.text``, which is whitespace-normalised, cut
 into overlapping sentence windows, and missing every window shorter than
 ``min_chunk_chars``. Re-summarising, re-chunking, re-running an extraction fix

@@ -1,6 +1,6 @@
 """Shared clustering data structures and constants.
 
-Split out of ``engine.py`` (planning/M1_CLUSTERING_ENGINE_SPLIT.md): every other
+Split out of ``engine.py``: every other
 ``pka.clustering`` module imports from here, and this module imports nothing from
 them, so there are no cycles.
 """

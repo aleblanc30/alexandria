@@ -1,4 +1,4 @@
-"""Re-chunking from retained text (``planning/FULL_TEXT_RETENTION.md`` §6.2).
+"""Re-chunking from retained text.
 
 This is the pass retention exists for, so the assertions that matter are the
 ones about *not losing anything*: the summary chunk that costs inference stays,

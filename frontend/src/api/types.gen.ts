@@ -226,7 +226,7 @@ export interface paths {
          *
          *     The audit surface for "what did the fetcher actually get" — the question
          *     that could previously only be guessed at from the chunks a document
-         *     produced (planning/FULL_TEXT_RETENTION.md §6.3). 404 when the document has
+         *     produced. 404 when the document has
          *     no retained text, which is the ordinary case for anything ingested before
          *     retention shipped: there is no backfill.
          */
@@ -353,8 +353,7 @@ export interface paths {
          * @description Re-run an enrichment pass over documents missing that artifact.
          *
          *     The retrigger for ``purge summaries``: its skip gate is "has any chunk",
-         *     which a summary purge leaves true, so re-syncing would not regenerate it
-         *     (PURGE_AND_PROVENANCE_PLAN.md §5.2.1).
+         *     which a summary purge leaves true, so re-syncing would not regenerate it.
          */
         post: operations["enrich_endpoint_ingestion_enrich_post"];
         delete?: never;
@@ -464,9 +463,8 @@ export interface paths {
          * Rechunk Endpoint
          * @description Re-chunk documents from their retained body text, with no re-fetch.
          *
-         *     What `document_texts` was retained for (planning/FULL_TEXT_RETENTION.md
-         *     §6.2): applying a chunker or embedding-model change to documents already in
-         *     the archive. It replaces body chunks and their vectors, so — like a purge —
+         *     What `document_texts` was retained for: applying a chunker or
+         *     embedding-model change to documents already in the archive. It replaces body chunks and their vectors, so — like a purge —
          *     it refuses to start while a sync could be writing the same rows.
          */
         post: operations["rechunk_endpoint_ingestion_rechunk_post"];
@@ -560,9 +558,9 @@ export interface paths {
          * Purge Source Endpoint
          * @description Delete every archived row (and vectors) for ``source``.
          *
-         *     By default, manually-applied/learned tags and reading-list entries survive
-         *     (see ``PURGE_AND_PROVENANCE_PLAN.md`` §5.1); pass ``include_user_data=true``
-         *     to remove those too. Refuses while a sync is running so a purge can't race
+         *     By default, manually-applied/learned tags and reading-list entries survive:
+         *     they are user-authored, and no re-ingest can bring them back. Pass
+         *     ``include_user_data=true`` to remove those too. Refuses while a sync is running so a purge can't race
          *     a live worker.
          */
         post: operations["purge_source_endpoint_ingestion_sources__source__purge_post"];

@@ -137,7 +137,7 @@ class TestClusterScopedReadUsesItsOwnIndex:
     largest table in a clustered archive. Its only index was
     `(run_id, document_id)`, which SQLite can open on the leading `run_id` and
     then has to filter every assignment in the run to find one cluster's.
-    `apply_all_tags` pays that once per cluster. Audit item P-9.
+    `apply_all_tags` pays that once per cluster.
     """
 
     @staticmethod

@@ -185,8 +185,7 @@ def _throttle_key(url: str) -> str | None:
 
     Blind spot it shares with the limiter itself: the key is the host in the
     *bookmarked* URL, so a redirect is spaced against the host that redirected
-    rather than the one that answers (see
-    ``planning/archive/PUBLISHER_FETCH_HANDLERS.md``).
+    rather than the one that answers.
     """
     from pka.ingestion.aps import parse_aps_url
     from pka.ingestion.arxiv import parse_arxiv_url
@@ -412,7 +411,7 @@ async def _fetch_one_impl(
         if result is not None:
             return result
 
-    # Identifier-carrying publisher URLs (PUBLISHER_FETCH_HANDLERS.md). Order
+    # Identifier-carrying publisher URLs. Order
     # within this block is free — the host checks are disjoint — but it must
     # stay after arXiv: doi.org/10.48550/arXiv.… is a valid arXiv DOI, and
     # doi_org.py hands that cross-walk back to fetch_arxiv_paper itself.

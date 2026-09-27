@@ -1,4 +1,4 @@
-"""Tests for enrichment provenance (PURGE_AND_PROVENANCE_PLAN.md §6).
+"""Tests for enrichment provenance.
 
 The point of stamping is that a purge can say "what the old model made" and
 mean it. So the tests that matter are: the stamp records the *resolved* backend,

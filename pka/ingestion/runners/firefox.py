@@ -108,7 +108,7 @@ def embed_fetched_text(
         summary = card_summary or body_excerpt(text)
         # Retain the body before chunking: the network round trip is the
         # expensive half, and a chunker or Chroma failure should not also cost
-        # the text (planning/FULL_TEXT_RETENTION.md §5). The *body*, not the
+        # the text. The *body*, not the
         # composite below — title and card summary already live on `documents`
         # and would come back doubled on a re-chunk.
         store_document_text(doc_id, text, dry_run=dry_run)
@@ -138,7 +138,7 @@ def embed_fetched_text(
         if not dry_run:
             # One refresh for both blocks. Not left to the summary chunk: it is
             # flag-gated and returns early when off, which would leave the
-            # document with no embedding at all (audit item P-4).
+            # document with no embedding at all.
             from pka.clustering.doc_embeddings import refresh_document_embedding
 
             refresh_document_embedding(doc_id)

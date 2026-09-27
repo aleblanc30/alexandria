@@ -191,7 +191,7 @@ def get_json(path: str, params: dict[str, str] | None = None) -> Any | None:
     Public because it is this module's only outbound call and therefore its
     seam: tests replace it rather than reaching the network. It was `_get_json`,
     which made 21 test sites depend on a private name a refactor was free to
-    rename (audit item M-11).
+    rename.
     """
     url = f"{cfg.openlibrary_base_url.rstrip('/')}{path}"
     _limiter.wait(url)

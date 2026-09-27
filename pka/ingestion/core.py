@@ -117,7 +117,7 @@ def ingest_text_block(
 
         # The vectors just written are handed on rather than read back. They
         # cover the whole document only when this block is its only one; a
-        # second block makes the refresh fall back to Chroma (audit item P-4).
+        # second block makes the refresh fall back to Chroma.
         refresh_document_embedding(doc_id, known=dict(zip(vector_ids, embeddings, strict=True)))
     return {"chunks_added": len(chunk_texts), "skipped": False}
 
@@ -188,7 +188,7 @@ def attach_summary_chunk(
 
             # Open the run *before* inferring, not after: a call that fails
             # still cost the provider, and a spend surface that only counts
-            # successes is worse than none (PURGE_AND_PROVENANCE_PLAN.md §6.3).
+            # successes is worse than none.
             run_id = current_run_id(EnrichmentKind.SUMMARY)
             summary = summarize_text(text, material=material, context=context)
             if not summary:
