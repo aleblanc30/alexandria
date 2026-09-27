@@ -83,7 +83,7 @@ The problems are again concentrated, and in fewer places than last time:
    fed grew. (M-14)
 2. **Half the test suite's wall time is a real sleep.** The per-domain rate
    limiter has no test hook, so the fetch-handler tests wait on it: 82 s becomes
-   41 s with the gap collapsed. (M-15)
+   41 s with the gap collapsed. (M-15 — **since closed on trunk**, `79ebfaa`)
 3. **One missing composite index turns a bulk tag apply into a per-cluster scan
    of the whole run.** (P-9)
 4. **The mypy ratchet still freezes 20 modules**, which is the shape M-7 chose
@@ -155,7 +155,16 @@ what stops `fetcher` pulling every handler at module scope); build the table on
 first use rather than at import. The duplicated blocks above are separate work,
 absorbed by a shared `fetch_base` template, and worth doing second.
 
-### M-15: the test suite sleeps 41 seconds on the rate limiter (S, highest ratio)
+### M-15: **closed** — the test suite slept on the rate limiter (was S, highest ratio)
+
+*Fixed on trunk in `79ebfaa` (2026-09-07), found independently by re-measuring the previous
+audit's §5 rather than from this document. Annotated rather than deleted: the `M-n` numbers
+are referenced from `TODO.md`. The shipped fix is `SlotScheduler.reset()` called from
+`conftest.py` across all three module-level limiters, which is better than the
+recommendation below — it clears the reservations and leaves production spacing intact,
+where patching `claim` to return 0 would also have hidden the gap a test genuinely owes when
+it hits one domain twice. The two measurements agree on the shape and differ on the share:
+35% of 151.5 s on Windows over 1,781 tests, 50% of 82.2 s in this container over 1,568.*
 
 Evidence, and this one is measured rather than argued. `AsyncRateLimiter` /
 `SyncRateLimiter` (`pka/ingestion/rate_limit.py:87,109`) are instantiated at
@@ -358,8 +367,8 @@ main plus a lazily loaded 168 KB `TrendsView`; unchanged and fine.
 
 Quick wins (an afternoon each, no design change):
 
-1. **M-15** rate-limiter fixture in `conftest.py`. Halves suite wall time; the
-   measurement is already done, so this is implementation only.
+1. ~~**M-15** rate-limiter fixture in `conftest.py`.~~ **Done on trunk** in
+   `79ebfaa`, by clearing the scheduler's reservations rather than zeroing the gap.
 2. **P-9** `(run_id, cluster_id)` index plus the `init_db` line.
 3. **M-18** hygiene batch: delete `schemas/common.py`, triage the `ARG001` list.
 
