@@ -52,6 +52,17 @@
   audit surface for "what did the fetcher actually get", which previously could
   only be guessed at from the chunks a document produced. 404 when there is no
   retained text.
+- **Books are capped at 20 pages of retained text** (`book_retain_max_pages`,
+  with `book_retain_max_chars` as the EPUB equivalent), cut on a section
+  boundary so every surviving block still slices the stored text exactly. A
+  several-hundred-page PDF was the one input that made the sidecar cost real
+  disk, and the file is still on disk; the opening is what retention is actually
+  used for. Fetched pages stay uncapped on purpose — they are small, and they
+  are the copies that cannot be re-read from anywhere. A capped row records its
+  pre-cut length in the new `document_texts.full_char_count`, so a prefix is
+  distinguishable from a document, and `rechunk` refuses a prefix rather than
+  re-cutting it and silently shrinking that document's index to its first pages.
+  The summary pass still sees the whole book: only what is *stored* is cut.
 
 ## v0.0.11
 

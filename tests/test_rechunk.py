@@ -264,6 +264,7 @@ class TestGuards:
             "candidates": 1,
             "rechunked": 0,
             "skipped": 1,
+            "skipped_truncated": 0,
             "chunks_added": 0,
             "chunks_removed": 0,
             "vectors_purged": 0,
@@ -286,6 +287,33 @@ class TestGuards:
         )
 
         assert rechunk_documents()["candidates"] == 0
+
+    def test_a_truncated_book_is_refused_rather_than_shrunk(self, db, mock_chroma):
+        """Re-cutting a prefix would delete the chunks covering the rest of the book."""
+        doc_id = make_document("calibre", "C1", "A long book", "/books/a.pdf", None)
+        insert_chunks(
+            [
+                {
+                    "document_id": doc_id,
+                    "chunk_index": i,
+                    "text": f"Chunk {i} from somewhere deep in the book.",
+                    "token_count": 8,
+                    "vector_id": f"vec-{i}",
+                    "chunk_pass": "fulltext",
+                }
+                for i in range(4)
+            ]
+        )
+        store_document_text(
+            doc_id, "Only the opening pages were retained.", full_char_count=500_000
+        )
+
+        stats = rechunk_documents()
+
+        assert stats["candidates"] == 1
+        assert stats["skipped_truncated"] == 1
+        assert stats["rechunked"] == 0
+        assert len(_chunk_rows(doc_id)) == 4
 
     def test_a_failing_document_does_not_stop_the_pass(self, db, mock_chroma, monkeypatch):
         first = _fetched_doc("F1")

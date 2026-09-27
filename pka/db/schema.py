@@ -159,6 +159,11 @@ document_texts = sa.Table(
     sa.Column("text", sa.LargeBinary, nullable=False),  # see `encoding`
     sa.Column("encoding", sa.Text, nullable=False, server_default="zlib"),
     sa.Column("char_count", sa.Integer),  # uncompressed length, so counts never decompress
+    # Length of the text *before* any retention cap. Equal to char_count for
+    # anything stored whole (every fetched body); larger for a book kept to its
+    # first pages, which is how a reader — and the re-chunk pass — can tell that
+    # this row is a prefix and not the document.
+    sa.Column("full_char_count", sa.Integer),
     sa.Column("content_hash", sa.Text),  # sha256 of the plain text: "did the page change?"
     # Section map for paginated sources: [{index, title, page_start, page_end,
     # offset, length}]. NULL for fetched HTML, which arrives as one blob.

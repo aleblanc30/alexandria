@@ -188,6 +188,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "chunk_overlap",
         "min_chunk_chars",
         "retain_document_text",
+        "book_retain_max_pages",
+        "book_retain_max_chars",
     ),
     "Clustering": (
         "cluster_space",

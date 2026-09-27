@@ -180,7 +180,14 @@ alexandria rechunk --source firefox   # re-cut with the current chunker settings
 It replaces body chunks and their vectors only; a generated summary, an external
 synopsis and Calibre's metadata pass are left alone. Documents ingested before
 retention shipped have no stored text — there is no backfill — so they are
-skipped until something re-fetches them. `GET /documents/{id}/text` serves a
+skipped until something re-fetches them.
+
+Books are the exception to keeping text whole: Calibre full text is retained
+only to its first `ALEXANDRIA_BOOK_RETAIN_MAX_PAGES` pages (20), since a
+several-hundred-page PDF is the only thing that makes this cost real disk and
+the file is still on disk anyway. Those documents are skipped by `rechunk` —
+re-cutting a prefix would shrink the index to it — so re-run the full-text pass
+for them instead. Fetched pages are never capped. `GET /documents/{id}/text` serves a
 retained body back, which is also how to see what the fetcher actually got when
 a page ingests badly.
 

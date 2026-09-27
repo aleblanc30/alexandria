@@ -332,6 +332,17 @@ class Settings(BaseSettings):
     # depends on it, so DESIGN.md §1.1's default-off rule does not apply; the
     # flag is here for disk, and off means the pre-retention behaviour.
     retain_document_text: bool = True
+    # Retention cap for **books only** (Calibre full text, and the Zotero PDF
+    # pass when it lands). A several-hundred-page PDF is the one input that
+    # makes the sidecar cost real disk, and the value of keeping it falls off
+    # after the opening — enough to summarise, audit and search. Cut on a
+    # section boundary: pages for a PDF, the character equivalent (~2.5k/page)
+    # for EPUB chapters, which carry no page numbers. None disables the cap.
+    #
+    # Fetched pages are deliberately **not** capped: they are small, and they
+    # are the copies that cannot be re-read from disk if lost.
+    book_retain_max_pages: int | None = 20
+    book_retain_max_chars: int | None = 50_000
 
     # ── Firefox fetch ───────────────────────────────────────────────────────
     fetch_timeout_seconds: float = 10.0  # max seconds to read response body

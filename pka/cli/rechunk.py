@@ -69,4 +69,11 @@ def main(argv: list[str] | None = None) -> int:
         stats["vectors_purged"],
         stats["skipped"],
     )
+    if stats["skipped_truncated"]:
+        log.info(
+            "%d book(s) skipped: their retained text is only the first pages"
+            " (ALEXANDRIA_BOOK_RETAIN_MAX_PAGES). Re-run the full-text pass to"
+            " re-chunk those from the file.",
+            stats["skipped_truncated"],
+        )
     return 0

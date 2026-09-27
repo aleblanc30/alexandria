@@ -227,7 +227,14 @@ out — so a re-chunk can reproduce the per-section chunk metadata. Reddit's inl
 bodies (`reddit_items.body`) and image text (`images`) are already kept, and a
 Zotero abstract or YouTube description is a re-read from its own source.
 Local-only, so it is not a §1.1 gate; `retain_document_text` (default on) exists
-for disk. There is no backfill — documents ingested before retention shipped
+for disk, and `book_retain_max_pages` (20) caps **books only** — Calibre's text
+is kept to its opening pages, cut on a section boundary, because a
+several-hundred-page PDF is the one input that makes the sidecar expensive and
+the file is still on disk. A fetched body is never capped: it is small, and it
+is the copy that cannot be re-read from anywhere. A capped row records its
+pre-cut length in `full_char_count`, so a reader can tell a prefix from a
+document — and the re-chunk pass refuses a prefix rather than shrinking the
+index to it. There is no backfill — documents ingested before retention shipped
 have no row, and reconstructing one from chunks would look verbatim while being
 a reconstruction. Plan: `planning/FULL_TEXT_RETENTION.md`.
 

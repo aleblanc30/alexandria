@@ -136,7 +136,8 @@ runners before chunking and refreshed on a re-fetch or re-extraction.
 |--------|-------|
 | `text` | the body, zlib-compressed UTF-8 — **not** the title + card-summary composite that gets embedded |
 | `encoding` | `zlib`; the column exists so a codec change is a migration, not archaeology |
-| `char_count` | uncompressed length, so counts and dry runs never decompress |
+| `char_count` | uncompressed length of what is stored, so counts and dry runs never decompress |
+| `full_char_count` | length *before* the retention cap. Larger than `char_count` means this row is a **prefix**: a book kept to its first `book_retain_max_pages` pages. Equal for everything stored whole, which is every fetched body |
 | `content_hash` | sha256 of the plain text — "did the page change?" on a re-fetch. Recorded; nothing reads it yet |
 | `blocks_json` | section map for Calibre — `index`, `title`, `page_start`, `page_end`, and the `offset`/`length` that slice the section back out of `text` verbatim, so a re-chunk can reproduce the per-section chunk metadata. NULL for a fetched body, which arrives as one blob |
 | `extracted_at` | unix ts of the write |
@@ -146,9 +147,17 @@ nothing reconstructs one from its chunks — a reconstruction that looked verbat
 would defeat the point. Off under `retain_document_text=false`.
 
 Read by `ingestion/rechunk.py` (which rewrites this document's **body** chunks
-from it, leaving the summary / external-synopsis / metadata passes alone),
-`ingestion/enrich.py` (which prefers it over a chunk reassembly), and
-`GET /documents/{id}/text`.
+from it, leaving the summary / external-synopsis / metadata passes alone —
+and which refuses a truncated row outright, since re-cutting a prefix would
+shrink the index to it), `ingestion/enrich.py` (which prefers it over a chunk
+reassembly), and `GET /documents/{id}/text`.
+
+**Books are capped, fetched pages are not.** Calibre's full text is kept to its
+first `book_retain_max_pages` pages (20 by default, cut on a section boundary;
+`book_retain_max_chars` is the equivalent for EPUB chapters, which carry no page
+numbers) — a several-hundred-page PDF is the only input that makes this table
+expensive, and the file is still on disk. A fetched body is stored whole: it is
+small, and it is the copy that cannot be re-read from anywhere.
 
 ### `images` (Images only)
 

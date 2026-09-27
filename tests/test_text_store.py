@@ -359,6 +359,33 @@ class TestCalibre:
 
         assert load_document_text(doc_id) is None
 
+    def test_a_long_book_is_kept_to_its_opening_pages(self, db, mock_chroma, tmp_path, monkeypatch):
+        """The cap that keeps a 600-page PDF from dominating the sidecar."""
+        long_sections = [
+            {
+                "title": f"Pages {i * 10 + 1}–{i * 10 + 10}",
+                "text": (
+                    f"Section {i} opens the discussion at a reasonable length."
+                    f" It continues for a second sentence of similar size."
+                ),
+                "index": i,
+                "page_start": i * 10 + 1,
+                "page_end": i * 10 + 10,
+            }
+            for i in range(8)
+        ]
+        monkeypatch.setattr(type(self), "_sections", lambda _self: long_sections)
+
+        doc_id = self._run(tmp_path, monkeypatch)
+
+        meta = document_text_meta(doc_id)
+        assert meta["truncated"] is True
+        assert [b["page_start"] for b in meta["blocks"]] == [1, 11]
+        assert meta["full_char_count"] > meta["char_count"]
+        # The summary still sees the whole book; only what is stored is cut.
+        joined = "\n\n".join(sec["text"] for sec in long_sections[:2])
+        assert load_document_text(doc_id) == joined
+
 
 class TestReddit:
     def _sync(self, monkeypatch, reddit_saved_items):
@@ -398,3 +425,100 @@ class TestReddit:
                 .where(chunks.c.document_id == index["t3_selfpost"])
             ).scalar()
         assert embedded > 0
+
+
+class TestRetentionCap:
+    """Books are capped, fetched pages are not (plan §8)."""
+
+    def _blocks(self, pages_per_section: int = 10, sections: int = 6) -> list[dict]:
+        return [
+            {
+                "title": f"Pages {i * pages_per_section + 1}",
+                "text": f"Section {i} text, long enough to be worth keeping around.",
+                "index": i,
+                "page_start": i * pages_per_section + 1,
+                "page_end": (i + 1) * pages_per_section,
+            }
+            for i in range(sections)
+        ]
+
+    def test_pages_cap_cuts_on_a_section_boundary(self):
+        from pka.ingestion.text_store import section_blocks, truncate_blocks
+
+        text, blocks = section_blocks(self._blocks())
+
+        kept_text, kept = truncate_blocks(text, blocks, max_pages=20)
+
+        assert [b["page_start"] for b in kept] == [1, 11]
+        # Every surviving block still slices the returned text exactly.
+        assert [kept_text[b["offset"] : b["offset"] + b["length"]] for b in kept] == [
+            b["text"] for b in self._blocks()[:2]
+        ]
+        assert kept_text == text[: len(kept_text)]
+
+    def test_chars_cap_is_the_epub_equivalent(self):
+        """EPUB chapters carry no page numbers, so length is the only measure."""
+        from pka.ingestion.text_store import section_blocks, truncate_blocks
+
+        sections = [
+            {"title": f"Ch{i}", "text": f"Chapter {i} body text of a known length.", "index": i}
+            for i in range(5)
+        ]
+        text, blocks = section_blocks(sections)
+
+        kept_text, kept = truncate_blocks(text, blocks, max_chars=90)
+
+        assert len(kept) == 2
+        assert len(kept_text) <= 90
+
+    def test_the_first_section_is_always_kept(self):
+        """A cap that could return nothing would retain no text at all."""
+        from pka.ingestion.text_store import section_blocks, truncate_blocks
+
+        text, blocks = section_blocks(
+            [{"title": "One long chapter", "text": "x" * 500, "index": 0, "page_start": 1}]
+        )
+
+        kept_text, kept = truncate_blocks(text, blocks, max_pages=20, max_chars=10)
+
+        assert len(kept) == 1
+        assert kept_text == text
+
+    def test_an_uncapped_text_is_returned_unchanged(self):
+        from pka.ingestion.text_store import section_blocks, truncate_blocks
+
+        text, blocks = section_blocks(self._blocks(sections=2))
+
+        assert truncate_blocks(text, blocks, max_pages=20, max_chars=None) == (text, blocks)
+        assert truncate_blocks(text, blocks) == (text, blocks)
+
+    def test_truncation_is_recorded_not_inferred(self, db):
+        doc_id = _new_doc("calibre", "C9")
+
+        store_document_text(doc_id, "The first pages only.", full_char_count=90_000)
+
+        meta = document_text_meta(doc_id)
+        assert meta["char_count"] == len("The first pages only.")
+        assert meta["full_char_count"] == 90_000
+        assert meta["truncated"] is True
+
+    def test_a_whole_document_is_not_marked_truncated(self, db):
+        doc_id = _new_doc()
+
+        store_document_text(doc_id, "The whole page, as fetched.")
+
+        meta = document_text_meta(doc_id)
+        assert meta["truncated"] is False
+        assert meta["full_char_count"] == meta["char_count"]
+
+    def test_a_fetched_body_is_never_capped(self, db, mock_chroma):
+        """The copy that cannot be re-read from disk is the one kept whole."""
+        from pka.ingestion.runners.firefox import embed_fetched_text
+
+        doc_id = _new_doc("firefox", "F300", "A very long page")
+        body = "A sentence of ordinary length in a very long page. " * 4000
+
+        embed_fetched_text(doc_id, body, skip_existing=False)
+
+        assert load_document_text(doc_id) == body.strip()
+        assert document_text_meta(doc_id)["truncated"] is False

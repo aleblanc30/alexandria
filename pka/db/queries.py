@@ -114,6 +114,16 @@ def init_db() -> None:
             if chunk_cols and col not in chunk_cols:
                 con.execute(sa.text(f"ALTER TABLE chunks ADD COLUMN {col} INTEGER"))
 
+        # Migration: how long the text was before a retention cap truncated it
+        # (planning/FULL_TEXT_RETENTION.md §8). Rows written before the cap
+        # existed were stored whole, so NULL there reads as "not truncated" —
+        # which is true, and not a guess.
+        dt_cols = [
+            r[1] for r in con.execute(sa.text("PRAGMA table_info(document_texts)")).fetchall()
+        ]
+        if dt_cols and "full_char_count" not in dt_cols:
+            con.execute(sa.text("ALTER TABLE document_texts ADD COLUMN full_char_count INTEGER"))
+
         # Migration: link images to their unified documents row
         img_cols = [r[1] for r in con.execute(sa.text("PRAGMA table_info(images)")).fetchall()]
         if img_cols and "document_id" not in img_cols:

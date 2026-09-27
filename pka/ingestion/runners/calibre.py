@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 
+from pka.config import settings as cfg
 from pka.connectors.calibre import CalibreBook, split_calibre_tags
 from pka.constants import FetchStatus, PdfTextLayer, Source
 from pka.db.queries import (
@@ -23,7 +24,7 @@ from pka.ingestion.core import attach_summary_chunk, ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 from pka.ingestion.openlibrary import isbn_checksum_valid, normalize_isbn
 from pka.ingestion.progress import should_stop, tick
-from pka.ingestion.text_store import section_blocks, store_document_text
+from pka.ingestion.text_store import section_blocks, store_document_text, truncate_blocks
 
 log = logging.getLogger(__name__)
 
@@ -270,8 +271,25 @@ def ingest_calibre_fulltext(
             # minutes per book, which is what makes a re-chunk impractical
             # without this. `blocks` maps each section back into `full_text`, so
             # a re-chunk can reproduce the section and page metadata below.
-            full_text, blocks = section_blocks(sections)
-            store_document_text(doc_id, full_text, blocks=blocks, dry_run=dry_run)
+            full_text, full_blocks = section_blocks(sections)
+            # Books are capped; fetched pages are not (FULL_TEXT_RETENTION.md
+            # §8). A few hundred pages of retained prose per book is the only
+            # way this sidecar gets expensive, and the opening is what the
+            # retention is actually used for. The summary below still sees the
+            # whole book — only what is *stored* is cut.
+            kept_text, kept_blocks = truncate_blocks(
+                full_text,
+                full_blocks,
+                max_pages=cfg.book_retain_max_pages,
+                max_chars=cfg.book_retain_max_chars,
+            )
+            store_document_text(
+                doc_id,
+                kept_text,
+                blocks=kept_blocks,
+                full_char_count=len(full_text),
+                dry_run=dry_run,
+            )
 
             chunk_offset = existing_chunk_count(doc_id)
             total_added = 0

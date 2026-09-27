@@ -148,10 +148,13 @@ def rechunk_documents(
 ) -> dict[str, int]:
     """Re-cut every retained document's body with the current chunker settings.
 
-    Returns ``{"candidates", "rechunked", "skipped", "chunks_added",
-    "chunks_removed", "vectors_purged"}``. ``skipped`` counts documents whose
-    stored text produced no chunks at all — an empty or unreadable row — which
-    are left exactly as they were rather than stripped of the chunks they have.
+    Returns ``{"candidates", "rechunked", "skipped", "skipped_truncated",
+    "chunks_added", "chunks_removed", "vectors_purged"}``. ``skipped`` counts
+    documents whose stored text produced no chunks at all — an empty or
+    unreadable row — which are left exactly as they were rather than stripped of
+    the chunks they have. ``skipped_truncated`` counts books whose retained text
+    is only the opening (the ``book_retain_max_pages`` cap): re-cutting a prefix
+    would shrink the index to it.
     """
     eng = get_engine()
     with eng.connect() as con:
@@ -161,6 +164,7 @@ def rechunk_documents(
         "candidates": len(candidates),
         "rechunked": 0,
         "skipped": 0,
+        "skipped_truncated": 0,
         "chunks_added": 0,
         "chunks_removed": 0,
         "vectors_purged": 0,
@@ -175,6 +179,15 @@ def rechunk_documents(
                 stats["skipped"] += 1
                 continue
             meta = document_text_meta(row.id) or {}
+            if meta.get("truncated"):
+                # A book kept to its first pages (the §8 cap). Re-cutting the
+                # prefix would delete body chunks covering the rest of the book
+                # and replace them with chunks covering only the opening — a
+                # silent shrink of the index. Re-run the source's full-text pass
+                # instead: the file is on disk, which is why the cap is safe to
+                # apply to books and not to fetched pages.
+                stats["skipped_truncated"] += 1
+                continue
             blocks = meta.get("blocks")
 
             with eng.connect() as con:
