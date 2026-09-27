@@ -43,7 +43,16 @@ run_step() {
 run_step "ruff check"        "$app"             "$python" -m ruff check pka tests scripts
 run_step "ruff format check" "$app"             "$python" -m ruff format --check pka tests scripts
 run_step "mypy"               "$app"             "$python" -m mypy pka
-run_step "pytest --cov"       "$app"             "$python" -m pytest --cov=pka --cov-report=term-missing
+# -n 4: the suite parallelises cleanly (fully mocked, every test in its own
+# tmp_path), and 4 workers take it from ~96s to ~34s. Deliberately not `-n auto`
+# — 4, 8 and 12 workers all land in the same 34-38s band on a 12-core box, so
+# the extra workers buy contention rather than speed and leave nothing free to
+# work in while the gate runs. Coverage is unaffected: pytest-cov combines the
+# per-worker data, and the whole per-file table is identical to a serial run.
+# Lives here rather than in pyproject's addopts so a single-test inner loop
+# stays serial, where worker startup and interleaved tracebacks only get in
+# the way.
+run_step "pytest --cov"       "$app"             "$python" -m pytest -n 4 --cov=pka --cov-report=term-missing
 run_step "npm run lint"       "$app/frontend"    npm run lint
 run_step "npm run test"       "$app/frontend"    npm run test
 run_step "npm run build"      "$app/frontend"    npm run build

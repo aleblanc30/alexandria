@@ -610,9 +610,31 @@ autouse fixture's monkeypatching. The fixture's own reset block
 (`reset_providers`, `reset_gate`, probes, enrichment runs) benchmarks at
 effectively 0 ms, so it is not the cost; M-8 will not help here.
 
-Unmeasured third lever: `pytest-xdist`. The suite is fully mocked and
-`tmp_path`-isolated, and this machine has 12 cores, so it should parallelise
-cleanly — but it needs a new dev dependency and has not been tried.
+Third lever, now shipped: `pytest-xdist`. The suite is fully mocked and
+`tmp_path`-isolated, so it parallelises cleanly — measured 2026-09-27 against a
+grown suite (1,822 collected, ~96 s serial):
+
+| workers | wall |
+|---|---|
+| serial | 96 s |
+| `-n 4` | 34 s |
+| `-n 6` | 38 s |
+| `-n 8` | 35–38 s |
+| `-n 12` / `-n auto` | 37–38 s |
+
+Everything past 4 lands in the same 34–38 s band on a 12-core box, so the extra
+workers buy contention rather than speed and leave nothing free to work in while
+the gate runs. `scripts/check.*` therefore pins **`-n 4`**, not `-n auto`.
+
+It is in the check scripts rather than pyproject's `addopts` so a single-test
+inner loop stays serial, where worker startup and interleaved tracebacks only
+get in the way.
+
+Coverage is unaffected — the concern worth checking, since `fail_under = 85`
+would trip for the wrong reason if per-worker data were dropped. `pytest-cov`
+combines it: with `--cov=pka --cov-report=term-missing`, serial and `-n 4` both
+report 11,498 statements / 1,043 missing / 90.93%, and the whole 135-line
+per-file table is identical. That step goes 131 s → 62 s.
 
 ### 5.4 What the original audit said, and what became of it
 
