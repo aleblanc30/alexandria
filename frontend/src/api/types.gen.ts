@@ -441,7 +441,10 @@ export interface paths {
         put?: never;
         /**
          * Rebuild Vectors
-         * @description Rebuild the Chroma chunk index from SQLite chunk text.
+         * @description Rebuild every vector from SQLite chunk text with the configured model.
+         *
+         *     The chunk index, the document vectors and the tag models; see
+         *     :mod:`pka.reembed`.
          */
         post: operations["rebuild_vectors_ingestion_rebuild_vectors_post"];
         delete?: never;

@@ -409,6 +409,22 @@ its index over every stored chunk, which takes minutes on a large archive; later
 runs skip the step. Run it before starting the server, so the build is not
 holding up the server's startup.
 
+An upgrade that makes the embedding model a setting leaves an existing archive
+on the model it was built with, `all-MiniLM-L6-v2`, and the server logs one
+warning saying so. `pip install .` brings in `sentence-transformers` (and with
+it PyTorch, a large download). Moving the archive to the new default is one
+command, run with the server stopped:
+
+```powershell
+alexandria reembed
+```
+
+It re-embeds every stored chunk, which takes about as long as the embed phases
+of the original syncs, then recomputes document vectors and retrains the
+learned-tag models; nothing is fetched again. The first run downloads the model
+(`intfloat/multilingual-e5-small`) from the Hugging Face Hub once. Re-run
+clustering afterwards (`DESIGN.md` §3.6).
+
 The same `init_db()` runs from the API's startup hook, so an upgrade that skips
 the explicit `alexandria init` still migrates once the task restarts. The script
 runs it as its own step anyway, because that way a failed migration is reported

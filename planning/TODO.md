@@ -9,8 +9,7 @@ record.
 
 In order; everything below this section is unordered.
 
-1. **Multilingual embedding model** — *Search / vectors*.
-2. **Zotero collection names as tags** — *Ingestion*.
+1. **Zotero collection names as tags** — *Ingestion*.
 
 ## Maintainability & performance
 
@@ -25,7 +24,7 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 
 ## Ingestion
 
-- [ ] **Use Zotero collection names as tags** *(priority 2)* — plan in
+- [ ] **Use Zotero collection names as tags** *(priority 1)* — plan in
   `COLLECTION_TAGS.md`, which extends it to Firefox bookmark folders.
 - [ ] **OCR scanned PDFs** — Calibre books, Zotero attachments and fetched PDFs
   with no text layer are marked `no_text_layer` and get no body chunks; run
@@ -53,15 +52,6 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 - [ ] **Train a classifier for the image gate instead of the VLM** — plan in
   `IMAGE_GATE_CLASSIFIER.md`.
 - [ ] **Investigate whether backfill for Reddit is actually useful.**
-
-## Search / vectors
-
-- [ ] **Swap the embedding model** *(priority 1)* — Chroma's default
-  `all-MiniLM-L6-v2` is used as-is (`storage/vector_store.py`). Benchmark
-  multilingual candidates (`bge-m3`, `multilingual-e5-small`,
-  `paraphrase-multilingual-MiniLM-L12-v2`) before committing: collections are
-  dimension-locked, so the swap is a full reindex — `alexandria rechunk`, then
-  `rebuild_from_chunks`.
 
 ## Clustering
 

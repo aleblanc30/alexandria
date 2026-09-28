@@ -41,6 +41,18 @@ def _inserted_id(res: Any) -> int:
     return int(pk[0])
 
 
+def _with_vector_space(params: dict) -> dict:
+    """``params`` plus the embedding model the run's vectors came from.
+
+    Centroids are only comparable with document vectors from the same model, so
+    a run records it and ``lifecycle.assign_new_docs`` refuses to file new
+    documents into a run from another model.
+    """
+    from pka.storage.vector_store import active_model_name
+
+    return {**params, "embedding_model": active_model_name()}
+
+
 def create_run_placeholder(algorithm: str = ALGORITHM_PCA, parameters: dict | None = None) -> int:
     """Insert a run row immediately so the UI can show status=running.
 
@@ -279,7 +291,7 @@ def _finalize_run(
             .values(
                 timestamp=now,
                 algorithm=algorithm,
-                parameters=json.dumps(params),
+                parameters=json.dumps(_with_vector_space(params)),
                 accepted=False,
                 status="finished",
                 umap_points=json.dumps(umap_records),
@@ -319,7 +331,7 @@ def _persist_run(
             cluster_runs.insert().values(
                 timestamp=now,
                 algorithm=algorithm,
-                parameters=json.dumps(params),
+                parameters=json.dumps(_with_vector_space(params)),
                 accepted=False,
                 status="finished",
                 umap_points=json.dumps(umap_records),

@@ -209,8 +209,10 @@ it is written on the way there.
 
 Zotero's title + abstract chunks written before the PDF pass existed carried no
 `pass`. The `chunks.zotero_metadata_pass` migration step sets their
-`chunk_pass` to `metadata` in SQLite; their Chroma payload keeps no `pass` key,
-since nothing rewrites existing vectors.
+`chunk_pass` to `metadata` in SQLite; their Chroma payload has no `pass` key
+until `alexandria reembed` rebuilds the index, which carries every chunk's
+metadata across and adds `pass` and the page range from SQLite where Chroma
+lacks them.
 
 Chroma carries `document_id`, `source`, `chunk_index` and `title` on every chunk,
 plus whatever the caller adds:
@@ -226,6 +228,10 @@ plus whatever the caller adds:
 Images additionally get a vector in the separate `alexandria_clip` collection,
 whose metadata is `document_id`, `image_id`, `image_type`, `filename`, `path`,
 `modality=clip` (`DESIGN.md` §3.3).
+
+The `alexandria_chunks` collection itself records `hnsw:space=cosine` and
+`embedding_model`, the model its vectors came from; a collection without the
+key predates it and holds `all-MiniLM-L6-v2` vectors (`DESIGN.md` §3.6).
 
 ---
 
@@ -255,6 +261,10 @@ Plus, when the flag is on:
 
 Summaries are cached in `documents.generated_summary`, so a purge-and-reingest
 replays them without paying for inference twice. See `DESIGN.md` §3.2.
+
+The model may see more than the stored text: E5 models embed a chunk as
+`passage: <text>` and a query as `query: <text>`. `chunks.text` never carries
+the prefix (`DESIGN.md` §3.6).
 
 ---
 

@@ -95,7 +95,7 @@ const RETRIGGERS: Record<string, { label: string; run: () => Promise<unknown>; n
   vectors: {
     label: 'Rebuild',
     run: () => api.rebuildVectors(),
-    note: 'Re-embedding every chunk. Runs in the background.',
+    note: 'Re-embedding every chunk, then document vectors and tag models. Runs in the background.',
   },
 }
 

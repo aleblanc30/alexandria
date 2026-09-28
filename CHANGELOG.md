@@ -4,6 +4,23 @@
 
 ### Search
 
+- **The embedding model is a setting, and defaults to a multilingual one.**
+  Chunks and queries were embedded by Chroma's built-in `all-MiniLM-L6-v2`,
+  trained on English data. `embedding_model` (default
+  `intfloat/multilingual-e5-small`, run through the new `sentence-transformers`
+  dependency) now names the model, with E5's `query:` / `passage:` prefixes.
+  The chunk collection records the model it was built with and keeps using
+  it: **an existing archive stays on `all-MiniLM-L6-v2`**, with one warning
+  at startup, until `alexandria reembed` (or the Maintenance panel's
+  *Rebuild*) re-embeds every chunk, recomputes document vectors, and
+  retrains and re-applies the learned-tag models. Re-run clustering
+  afterwards: an accepted run from the old model no longer takes new
+  documents. The model downloads once from the Hugging Face Hub on first use
+  (`DESIGN.md` §3.6).
+- **A vector rebuild keeps chunk metadata.** Rebuilding the index used to
+  write only `document_id`, `source`, `title` and `chunk_index`, dropping
+  `pass`, page ranges, sections and synopsis provenance. Each chunk now keeps
+  what it had, and gains `pass` and pages from SQLite where Chroma lacked them.
 - **French and Spanish sentences split correctly, and no run is unbounded.**
   The sentence splitter needed an ASCII capital after `.!?`, so a sentence
   opening on `É`, `Á`, `Ñ`, or after `¿`, `¡` or `«`, ran into the one

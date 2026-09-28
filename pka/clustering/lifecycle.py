@@ -59,6 +59,32 @@ def reject_run(run_id: int, notes: str = "") -> None:
     log.info("Run #%d rejected.", run_id)
 
 
+def run_embedding_model(run_id: int) -> str:
+    """The embedding model a run was clustered with.
+
+    Runs from before runs recorded it were all clustered with the legacy model.
+    """
+    import json
+
+    from pka.storage.embedding import LEGACY_MODEL
+
+    with get_engine().connect() as con:
+        raw = con.execute(
+            sa.select(cluster_runs.c.parameters).where(cluster_runs.c.run_id == run_id)
+        ).scalar()
+    try:
+        params = json.loads(raw) if raw else {}
+    except ValueError:
+        params = {}
+    return params.get("embedding_model") or LEGACY_MODEL
+
+
+def _current_embedding_model() -> str:
+    from pka.storage.vector_store import active_model_name
+
+    return active_model_name()
+
+
 def get_active_run_id() -> int | None:
     eng = get_engine()
     with eng.connect() as con:
@@ -264,6 +290,17 @@ def assign_new_docs(run_id: int | None = None) -> dict:
     if active_run is None:
         log.warning("No active run — run clustering first.")
         return {"assigned": 0}
+    if (stale := run_embedding_model(active_run)) != _current_embedding_model():
+        # Its centroids are in another model's vector space: similarity to
+        # them means nothing for a document embedded with the current one.
+        log.warning(
+            "Run #%d was clustered with %s; the index now uses %s. Re-run "
+            "clustering before new documents can be filed into it.",
+            active_run,
+            stale,
+            _current_embedding_model(),
+        )
+        return {"assigned": 0, "stale_run": True}
 
     eng = get_engine()
 

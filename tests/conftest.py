@@ -172,6 +172,14 @@ def isolated_settings(tmp_path, monkeypatch, _schema_template):
 
     monkeypatch.setattr(vs, "_client", None)
     monkeypatch.setattr(vs, "_collection", None)
+    monkeypatch.setattr(vs, "_warned_mismatch", False)
+
+    # No test loads a real embedding model: every name gets the deterministic
+    # fake, whether through mock_chroma or a fixture that mocks only the
+    # collection. tests/test_embedding.py exercises the real wiring on stubs.
+    import pka.storage.embedding as embedding
+
+    monkeypatch.setattr(embedding, "get_embedder", lambda name: FakeEmbedder(name))
 
     # Reset cached CLIP collection
     import pka.ingestion.image_pipeline as ip
@@ -585,7 +593,27 @@ def fake_embedding(text: str) -> list[float]:
     return [(total % (i + 2)) / 100.0 for i in range(FAKE_DIM)]
 
 
+class FakeEmbedder:
+    """Stands in for every model in :mod:`pka.storage.embedding`."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [fake_embedding(t) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return fake_embedding(text)
+
+
 # ── Mock Chroma ───────────────────────────────────────────────────────────────
+
+
+def _collection_metadata() -> dict:
+    """What a collection built with the configured model records."""
+    from pka.config import settings
+
+    return {"hnsw:space": "cosine", "embedding_model": settings.embedding_model}
 
 
 @pytest.fixture()
@@ -593,6 +621,7 @@ def empty_vector_store(monkeypatch):
     """Mocked Chroma collection returning no results — default for API tests."""
     col = MagicMock()
     col.count.return_value = 0
+    col.metadata = _collection_metadata()
     col.query.return_value = {
         "ids": [[]],
         "documents": [[]],
@@ -671,19 +700,9 @@ def mock_chroma(monkeypatch):
     col.query.side_effect = _query
     col.get.side_effect = _get
     col.count.return_value = 0
-
-    class _FakeEmbeddingFunction:
-        """Stands in for Chroma's DefaultEmbeddingFunction.
-
-        ``upsert_chunks`` embeds in-process, so without
-        this the mocked path would load the real MiniLM model.
-        """
-
-        def __call__(self, input):  # noqa: A002 - Chroma's own parameter name
-            return [fake_embedding(text) for text in input]
+    col.metadata = _collection_metadata()
 
     import pka.storage.vector_store as vs
 
     monkeypatch.setattr(vs, "get_collection", lambda: col)
-    monkeypatch.setattr(vs, "_embedding_fn", _FakeEmbeddingFunction())
     return store, col

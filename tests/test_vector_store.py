@@ -50,6 +50,8 @@ class TestVectorStore:
         call_sizes: list[int] = []
 
         class FakeCollection:
+            metadata: dict = {}
+
             def upsert(self, ids, documents, metadatas, embeddings):
                 # ``embeddings`` is passed positionally-by-keyword alongside the
                 # rest; it is sliced by the same window, so it belongs in the

@@ -75,8 +75,9 @@ proxies — that route needs no `ollama_cloud` settings at all.
 Callers use the accessors in `pka/providers/__init__.py`
 (`get_chat_provider()` etc.); the historical `pka.ollama_chat.chat_json` and
 `image_extractor.classify_and_describe` / `ocr_image` / `clip_embed_*` are thin
-shims over these. **Text-chunk** embeddings are intentionally *not* here — they
-stay inside ChromaDB's built-in function (see `pka/storage/vector_store.py`).
+shims over these. **Text-chunk** embeddings are intentionally *not* here: they
+run in-process through `pka/storage/embedding.py`, with the model named by
+`embedding_model` (§3.6).
 
 ### 1.1 Network access policy
 
@@ -111,9 +112,11 @@ more than the on/off state:
 | Enrichment lookups | `external_lookup_enabled`, `cover_search_fallback`, `doi_metadata_lookup` | **Derived identifiers** — an ISBN, a title+author string, or a DOI derived from a bookmarked publisher URL. Reveals *library inventory* (what is on the shelf) rather than content. |
 | Source connectors | `ALEXANDRIA_YOUTUBE_*`, `ALEXANDRIA_REDDIT_*` (OAuth credentials or `reddit_feed_url`), Firefox phase-2 fetch | **Nothing new** — these read back your own data from a service you already gave it to, or fetch a URL you bookmarked. |
 
-Text-chunk embeddings are the one capability with no remote option: they stay
-inside ChromaDB's built-in function, so the embedding of every document is
-computed locally regardless of configuration.
+Text-chunk embeddings have no remote option: they run in-process (§3.6), so
+the embedding of every document is computed locally regardless of
+configuration. The model's weights are downloaded once from the Hugging Face
+Hub when they are not cached, which sends no document content, and Hub
+telemetry is switched off before the library loads.
 
 The outbound flags above are surfaced read-only in the UI at `/settings`
 (`pka/api/settings_view.py`), alongside every other config field and a
@@ -618,7 +621,8 @@ browse card stays truthful about the artifact itself, and a bad batch is
 purgeable and auditable without re-ingesting. CLIP vectors are untouched —
 they are visual, and a synopsis has no business in them. Generated summaries are
 cached in a column so purge-and-reingest does not re-run inference, and are kept
-to 2–4 sentences because MiniLM truncates in the low hundreds of word-pieces.
+to 2–4 sentences because the embedding model truncates its input at a few
+hundred tokens (§3.6).
 A multi-book cover attaches one chunk per book; note that a shelf photo with a
 dozen synopses will dominate that document's mean-pooled `doc_embedding`.
 
@@ -661,7 +665,7 @@ distinct because they fail differently:
 | Path | Function | Space | Matches |
 |------|----------|-------|---------|
 | Visual | `search_images_by_text` | CLIP (`alexandria_clip`) | the query against the **picture** |
-| Inferred text | `search_images_by_inferred_text` | MiniLM (`alexandria_chunks`) | the query against the text read **out of** the picture |
+| Inferred text | `search_images_by_inferred_text` | text embedding model (`alexandria_chunks`) | the query against the text read **out of** the picture |
 
 The second path needs nothing image-specific: §3.2's per-type content
 extraction, the description, and OCR are already assembled by
@@ -752,6 +756,41 @@ still split only at the cap. Keyword search (§3.4) finds text in them
 regardless. Changing these settings applies to existing documents through
 `alexandria rechunk` (retained text) or a re-ingest.
 
+### 3.6 Embedding model
+
+Every chunk and every search query is embedded by one model, named by
+`embedding_model` (default `intfloat/multilingual-e5-small`), and run
+in-process through `sentence-transformers` (`pka/storage/embedding.py`).
+E5 was trained with instruction prefixes, so chunks are embedded as
+`passage: …` and queries as `query: …`, and vectors are L2-normalised. The
+archive's languages (§3.5) are English, French and Spanish; the previous model,
+`all-MiniLM-L6-v2`, was trained on English data.
+
+- **The collection records its model.** Vectors from two models are not
+  comparable, even at the same dimension (both shipped models are 384-d, so
+  nothing would fail loudly). The `alexandria_chunks` collection is created
+  with the model's name in its metadata (`embedding_model`), and every upsert
+  and query uses the recorded model, whatever the setting says. A collection
+  with no recorded model predates the setting and was built with
+  `all-MiniLM-L6-v2`, which still runs through Chroma's ONNX function so its
+  query vectors match the stored ones. A mismatch with the setting logs one
+  warning per process and changes nothing.
+- **Moving to another model is explicit.** `alexandria reembed` (or `POST
+  /ingestion/rebuild-vectors`) rebuilds the collection from SQLite chunk text
+  with the configured model, keeping each chunk's Chroma metadata; then
+  recomputes every `documents.doc_embedding`; then retrains each tag model
+  from its labels and re-applies the accepted ones (§5). A tag model that can
+  no longer be trained loses its model rather than score new vectors with old
+  weights. Nothing is fetched or re-chunked.
+- **Clustering is re-run by hand.** Each finished run records the model in its
+  `parameters`; `assign_new_docs` refuses to place documents into a run from
+  another model, since its centroids are in the old space. The run stays
+  browsable until a new one is accepted.
+- **Truncation.** The model reads the first 512 tokens of a chunk. A window of
+  `chunk_sentences` ordinary sentences fits; a window of capped runs
+  (`max_sentence_chars`) can exceed it, and its tail is not embedded, though
+  keyword search (§3.4) still finds it.
+
 ## 4. Cluster lifecycle
 
 Every clustering run is stored regardless of acceptance. The UI surfaces
@@ -765,7 +804,9 @@ When an ingest or full sync finishes cleanly and a run is accepted,
 clusters by nearest centroid, so the archive stays browsable between runs. That
 assignment is the only automatic clustering step: it adds documents to clusters
 that already exist and never creates, relabels, or re-clusters a run. Producing
-a new run stays an explicit action (`/runs/trigger`).
+a new run stays an explicit action (`/runs/trigger`). A run records the
+embedding model it clustered, and one from another model than the chunk
+index's takes no new documents (§3.6).
 
 Clustering is two-level hierarchical, over a selectable clusterer. The default
 is **HDBSCAN** (PCA space): density-based, so it leaves low-density documents as
@@ -817,7 +858,7 @@ Alexandria already has several tagging mechanisms that do not overlap with this 
 | Rule-based classification | `pka/classification.py` | Fixed tags `{academic, paper, preprint}` at ingest; `TagOrigin.INFERRED` |
 | Manual / cluster overlay tags | `overlay_tags`, `pka/clustering/cluster_tags.py` | User edits or cluster-label overlays (`cluster_l1` / `cluster_l2`) |
 | Unsupervised structure | `pka/clustering/engine.py` (+ its step modules) | HDBSCAN groups; no per-tag classifier |
-| Document vectors | `documents.doc_embedding`, `pka/clustering/doc_embeddings.py` | 384-d MiniLM mean-pool — reuse as classifier features |
+| Document vectors | `documents.doc_embedding`, `pka/clustering/doc_embeddings.py` | 384-d mean-pool of the chunk vectors — reuse as classifier features |
 
 Active learning fills the gap: **user-defined, semantic tags** learned from
 examples, not hard-coded rules or unsupervised cluster labels.
@@ -1013,6 +1054,10 @@ Mirror §4 cluster patterns in `pka/clustering/lifecycle.py`:
 - **Resume training:** `POST /tag-training/sessions/{id}/resume` sets an
   accepted session back to `labeling` (model and labels kept). Re-accept after
   more labeling to refresh archive-wide tags.
+- **Embedding model change:** `alexandria reembed` retrains every session
+  that has a model from its labels and re-applies the accepted ones; it skips
+  the ingest hook while document vectors are recomputed, since the models it
+  would call are still fitted to the old vectors (§3.6).
 - **Stale models:** optional drift flag when mean embedding of recent false
   positives diverges from the positive centroid (reuse drift pattern from §4).
 

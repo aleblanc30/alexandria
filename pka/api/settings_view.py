@@ -183,6 +183,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "reddit_archive_enabled",
         "ingestion_probe_cache_ttl_seconds",
     ),
+    "Embedding": ("embedding_model",),
     "Chunking": (
         "chunk_sentences",
         "chunk_overlap",

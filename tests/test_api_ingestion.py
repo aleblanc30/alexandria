@@ -453,7 +453,7 @@ class TestIngestion:
 
         ing._rebuild_running = False
         monkeypatch.setattr(
-            "pka.storage.vector_store.rebuild_from_chunks",
+            "pka.reembed.reembed",
             lambda **kw: {"chunks": 0, "processed": 0},
         )
         r = client.post("/ingestion/rebuild-vectors")

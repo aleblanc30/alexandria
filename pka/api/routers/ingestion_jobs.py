@@ -358,7 +358,11 @@ _rebuild_running = False
 
 @router.post("/rebuild-vectors", status_code=202)
 async def rebuild_vectors():
-    """Rebuild the Chroma chunk index from SQLite chunk text."""
+    """Rebuild every vector from SQLite chunk text with the configured model.
+
+    The chunk index, the document vectors and the tag models; see
+    :mod:`pka.reembed`.
+    """
     global _rebuild_running
     with _rebuild_lock:
         if _rebuild_running:
@@ -367,10 +371,10 @@ async def rebuild_vectors():
 
     def _run() -> None:
         global _rebuild_running
-        from pka.storage.vector_store import rebuild_from_chunks
+        from pka.reembed import reembed
 
         try:
-            stats = rebuild_from_chunks()
+            stats = reembed()
             log.info("Vector rebuild finished: %s", stats)
         except Exception:
             log.exception("Vector rebuild failed")

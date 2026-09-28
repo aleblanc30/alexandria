@@ -74,6 +74,7 @@ def _mock_chroma_with_docs(monkeypatch, doc_ids: list[int]) -> tuple[dict, Magic
     )
 
     col = MagicMock()
+    col.metadata = {}
     col.count.return_value = len(store)
 
     col.get.return_value = {
@@ -408,6 +409,7 @@ class TestRunClustering:
 
     def test_empty_vector_store_raises(self, monkeypatch):
         col = MagicMock()
+        col.metadata = {}
         col.count.return_value = 0
         col.get.return_value = {"ids": [], "embeddings": [], "metadatas": [], "documents": []}
         import pka.storage.vector_store as vs
@@ -1204,6 +1206,28 @@ class TestAssignNewDocs:
         from pka.clustering.lifecycle import assign_new_docs
 
         assert assign_new_docs() == {"assigned": 0}
+
+    def test_a_run_records_its_embedding_model(self, populated, monkeypatch):
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.lifecycle import run_embedding_model
+        from pka.clustering.types import ClusterParams
+
+        monkeypatch.setattr("pka.storage.vector_store.active_model_name", lambda: "model-a")
+        result = run_clustering(ClusterParams(min_cluster_size=2))
+        assert run_embedding_model(result.run_id) == "model-a"
+
+    def test_a_run_from_another_model_takes_no_new_docs(self, populated, monkeypatch):
+        """Its centroids are in the old vector space: placing new vectors there is noise."""
+        from pka.clustering.engine import run_clustering
+        from pka.clustering.lifecycle import accept_run, assign_new_docs
+        from pka.clustering.types import ClusterParams
+
+        monkeypatch.setattr("pka.storage.vector_store.active_model_name", lambda: "model-a")
+        result = run_clustering(ClusterParams(min_cluster_size=2))
+        accept_run(result.run_id)
+
+        monkeypatch.setattr("pka.storage.vector_store.active_model_name", lambda: "model-b")
+        assert assign_new_docs(result.run_id) == {"assigned": 0, "stale_run": True}
 
     def test_noise_docs_are_never_refiled_into_real_clusters(
         self,

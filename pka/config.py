@@ -322,6 +322,12 @@ class Settings(BaseSettings):
     # start/finish/purge. Set to 0 to disable caching (always recompute).
     ingestion_probe_cache_ttl_seconds: float = 30.0
 
+    # ── Embedding ───────────────────────────────────────────────────────────
+    # The model that embeds chunks and queries. An archive keeps the model its
+    # chunk index was built with until `alexandria reembed` rebuilds it with
+    # this one (DESIGN.md §3.6); downloaded once from the Hugging Face Hub.
+    embedding_model: str = "intfloat/multilingual-e5-small"
+
     # ── Chunking ────────────────────────────────────────────────────────────
     chunk_sentences: int = 5  # sentence-window size
     chunk_overlap: int = 1  # sentences of overlap between windows
