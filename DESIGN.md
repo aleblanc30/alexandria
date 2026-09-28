@@ -798,6 +798,54 @@ archive's languages (§3.5) are English, French and Spanish; the previous model,
   embeds whole when the body yields no chunk can exceed it; its tail is not
   embedded, though keyword search (§3.4) still finds it.
 
+### 3.7 Collection tags
+
+The folders a user filed things into, Zotero collections and Firefox bookmark
+folders, become browsable tags with `origin=collection` in `overlay_tags`
+(`ingestion/collection_tags.py`). The Browse sidebar lists them in their own
+group, and every browse, search and tag listing takes a `collection_tags`
+filter.
+
+- **Derived, not stored twice.** `source_collections` keeps what the source
+  said, one slash-joined path per row; the tags are a projection of it. The
+  runners write them next to the collections, and `alexandria collection-tags`
+  rewrites them from `source_collections` alone, so a change to these rules
+  reaches the whole archive without a sync. Both are an add-missing,
+  delete-stale sync scoped to the origin (`db.tags.sync_overlay_tags`), so a
+  renamed folder loses its old tag and a manual tag with the same text is
+  untouched.
+- **A tag per path segment.** `Research/Distributed Systems` gives `Research`
+  and `Distributed Systems`, so filtering on a parent folder finds what is
+  filed in its subfolders. Zotero paths are rebuilt from
+  `collections.parentCollectionID` by the connector, and every metadata sync
+  rewrites the collections of items already archived
+  (`refresh_zotero_collections`), so a moved item follows its collection.
+  Firefox writes a bookmark's folder when it is first archived only. At most
+  `collection_tag_max_depth` (4) segments are kept from the top of a path;
+  empty and single-character segments are skipped; a tag that repeats an
+  earlier one of the same document in another case is dropped. A folder name
+  containing `/` splits into two tags.
+- **Firefox roots are not tags.** `menu`, `toolbar`, `unfiled` and `mobile`,
+  the names places.sqlite stores the built-in folders under, are dropped when
+  they head a path; a user folder of the same name deeper down is kept.
+- **Noise is cut two ways.** A bookmark tree gathers folders that say nothing
+  about their contents. `collection_tag_exclude` lists names never to tag
+  (case-insensitive; the folder's subfolders are still tagged), and a tag on
+  more than `collection_tag_max_documents` (1000) documents is dropped, since
+  a folder holding that much of the library filters like a source. The cap is
+  counted across both sources from `source_collections`, by the backfill and,
+  through a five-minute cache, by ingestion, so the two agree; `alexandria
+  collection-tags --dry-run` lists what it drops.
+- **Zotero and Firefox only.** Calibre series, subreddits and YouTube
+  playlists are in `source_collections` too but are not tagged.
+- **Local, and on by default.** A derivation of data already in the archive,
+  with no outbound call, so §1.1's default-off rule does not apply.
+  `collection_tags_enabled` off stops new ones, and `alexandria
+  collection-tags` then removes the existing ones.
+- **Outside tag training and clustering.** Neither reads `collection` rows:
+  tag training trains on its labels and writes `learned`, clustering writes
+  `cluster_l1` / `cluster_l2`.
+
 ## 4. Cluster lifecycle
 
 Every clustering run is stored regardless of acceptance. The UI surfaces

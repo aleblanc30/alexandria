@@ -225,6 +225,7 @@ export const listDocuments = (params?: {
   cluster_l1_tags?: string[]
   cluster_l2_tags?: string[]
   learned_tags?: string[]
+  collection_tags?: string[]
   wayback_only?: boolean
   limit?: number
   offset?: number
@@ -237,6 +238,7 @@ export const listDocuments = (params?: {
   params?.cluster_l1_tags?.forEach(t => qs.append('cluster_l1_tags', t))
   params?.cluster_l2_tags?.forEach(t => qs.append('cluster_l2_tags', t))
   params?.learned_tags?.forEach(t => qs.append('learned_tags', t))
+  params?.collection_tags?.forEach(t => qs.append('collection_tags', t))
   if (params?.wayback_only) qs.set('wayback_only', 'true')
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.offset != null) qs.set('offset', String(params.offset))
@@ -288,6 +290,7 @@ export const listTags = (params?: {
   source_tags?: string[]
   cluster_l1_tags?: string[]
   cluster_l2_tags?: string[]
+  collection_tags?: string[]
   wayback_only?: boolean
   q?: string
   limit?: number
@@ -298,6 +301,7 @@ export const listTags = (params?: {
   params?.source_tags?.forEach(t => qs.append('source_tags', t))
   params?.cluster_l1_tags?.forEach(t => qs.append('cluster_l1_tags', t))
   params?.cluster_l2_tags?.forEach(t => qs.append('cluster_l2_tags', t))
+  params?.collection_tags?.forEach(t => qs.append('collection_tags', t))
   if (params?.wayback_only) qs.set('wayback_only', 'true')
   if (params?.q) qs.set('q', params.q)
   if (params?.limit != null) qs.set('limit', String(params.limit))

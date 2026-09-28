@@ -15,12 +15,13 @@ router = APIRouter(prefix="/tags", tags=["tags"])
 def list_tags(
     origin: str | None = Query(
         None,
-        description="source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned",
+        description="source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned | collection",
     ),
     sources: Annotated[list[Source] | None, Query()] = None,
     source_tags: Annotated[list[str] | None, Query()] = None,
     cluster_l1_tags: Annotated[list[str] | None, Query()] = None,
     cluster_l2_tags: Annotated[list[str] | None, Query()] = None,
+    collection_tags: Annotated[list[str] | None, Query()] = None,
     wayback_only: bool = Query(default=False),
     q: str | None = Query(None),
     limit: int = 100,
@@ -34,6 +35,7 @@ def list_tags(
         source_tag_filter=source_tags,
         cluster_l1_tag_filter=cluster_l1_tags,
         cluster_l2_tag_filter=cluster_l2_tags,
+        collection_tag_filter=collection_tags,
         wayback_only=wayback_only,
         q=q,
         limit=limit,

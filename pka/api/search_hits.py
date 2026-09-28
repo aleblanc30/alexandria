@@ -171,6 +171,7 @@ def apply_browse_filters(con, results: Hits, req: SearchRequest) -> Hits:
         or req.general_tags
         or req.cluster_l1_tags
         or req.cluster_l2_tags
+        or req.collection_tags
         or req.wayback_only
     )
     if not results or not wanted:
@@ -184,6 +185,7 @@ def apply_browse_filters(con, results: Hits, req: SearchRequest) -> Hits:
         general_tag_filter=req.general_tags or None,
         cluster_l1_tag_filter=req.cluster_l1_tags or None,
         cluster_l2_tag_filter=req.cluster_l2_tags or None,
+        collection_tag_filter=req.collection_tags or None,
         wayback_only=req.wayback_only,
     )
     return [(doc_id, sim) for doc_id, sim in results if doc_id in allowed]

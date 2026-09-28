@@ -13,6 +13,7 @@ export interface BrowseFilterState {
   sourceTags: string[]
   level1Tags: string[]
   level2Tags: string[]
+  collectionTags: string[]
   academicFilter: boolean
   academicKinds: AcademicKind[]
   waybackOnly: boolean
@@ -32,6 +33,7 @@ export function buildDocumentFilters(
     general_tags: resolveGeneralTags(s.academicFilter, s.academicKinds),
     cluster_l1_tags: s.level1Tags.length ? s.level1Tags : undefined,
     cluster_l2_tags: s.level2Tags.length ? s.level2Tags : undefined,
+    collection_tags: s.collectionTags.length ? s.collectionTags : undefined,
     wayback_only: s.waybackOnly || undefined,
   }
   if (includeSources) {

@@ -172,7 +172,7 @@ flowchart TD
 
     COPY["ensure_zotero_copy()<br/>snapshot zotero.sqlite (dev: reuse)"]
     ZDB[("zotero.sqlite<br/>read-only copy")]
-    LOAD["load_items()<br/>items + tags + collections + annotations"]
+    LOAD["load_items()<br/>items + tags + collection paths + annotations"]
     TAKE["take(items, ZOTERO)"]
 
     MRUN["ingest_zotero_metadata()<br/>runners/zotero.py"]
@@ -180,12 +180,13 @@ flowchart TD
     KW["_zotero_document_kwargs()<br/>fetch_status = AVAILABLE if pdf_path else PENDING"]
     INSDOC["insert_document_if_new()"]
     TAGS["insert_source_tags()<br/>insert_source_collections()"]
+    COLLTAG["sync_collection_tags()<br/>ingestion/collection_tags.py — a tag per path segment"]
     CLS["classify_document(ZOTERO, item_type, url_or_path)<br/>sync_classification_tags()"]
     CARD["update_card_summary(zotero_card_summary(item))<br/>highlight, else abstract"]
-    ATTK["refresh_zotero_metadata()"]
+    ATTK["refresh_zotero_metadata()<br/>refresh_zotero_collections() — archived items:<br/>collections + collection tags rewritten"]
 
     START --> INIT --> BASE --> BEGIN --> COPY --> ZDB --> LOAD --> TAKE --> MRUN
-    MRUN --> MLOOP --> KW --> INSDOC --> TAGS --> CLS --> CARD --> ATTK
+    MRUN --> MLOOP --> KW --> INSDOC --> TAGS --> COLLTAG --> CLS --> CARD --> ATTK
 
     ATTK --> FULL{"run_full_sync()"}
     FULL --> ING["sync_zotero_ingest()"]
@@ -235,6 +236,7 @@ flowchart TD
     CHROMA[("ChromaDB: alexandria_chunks")]
     INSDOC --> SQLITE
     TAGS --> SQLITE
+    COLLTAG --> SQLITE
     INSC --> SQLITE
     KEEP --> SQLITE
     SCAN --> SQLITE
@@ -247,7 +249,7 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,BASE,BEGIN,TAKE,MLOOP,INSDOC,TAGS,CLS,CARD,FULL,ING,HAVE,DIFF,SKIPF,SETE,ELOOP,UPD,BLOCK,CHUNK,UPSC,INSC,DOCEMB,SETF2,EXTR,SCAN,KEEP,FBLOCK,FREF shared
+    class START,INIT,BASE,BEGIN,TAKE,MLOOP,INSDOC,TAGS,COLLTAG,CLS,CARD,FULL,ING,HAVE,DIFF,SKIPF,SETE,ELOOP,UPD,BLOCK,CHUNK,UPSC,INSC,DOCEMB,SETF2,EXTR,SCAN,KEEP,FBLOCK,FREF shared
     class COPY,LOAD,MRUN,KW,ATTK,PLAN,KEYS,RELOAD,ERUN,TEXT,NOSUM,FTPLAN,FRUN specific
     class ZDB,SQLITE,CHROMA,PDF store
 ```
@@ -295,12 +297,13 @@ flowchart TD
     SU["fetch_status = UNFETCHABLE"]
     INSDOC["insert_document_if_new()"]
     TAGS["insert_source_tags()<br/>insert_source_collections(folder_path)"]
+    COLLTAG["sync_collection_tags()<br/>a tag per folder, Firefox roots dropped"]
     CLS["classify_document(FIREFOX, url)<br/>sync_classification_tags()"]
 
     START --> INIT --> LOADBM --> PLACES --> TAKE --> BEGIN --> MRUN --> MLOOP --> UNF --> STATUS
     STATUS -->|yes| SP --> INSDOC
     STATUS -->|no| SU --> INSDOC
-    INSDOC --> TAGS --> CLS
+    INSDOC --> TAGS --> COLLTAG --> CLS
 
     CLS --> FULL{"run_full_sync()"}
     FULL --> ING["sync_firefox_ingest()"]
@@ -441,7 +444,7 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,KEY,DQ,SLEEP,LIM,ONE,DISPATCH,EXT,PDF,HTML,GATE,REJECT,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,STORE,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
+    class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,COLLTAG,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,KEY,DQ,SLEEP,LIM,ONE,DISPATCH,EXT,PDF,HTML,GATE,REJECT,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,STORE,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
     class LOADBM,MRUN,QUEUE,EMBED specific
     class NET,GET,WIKI,ARX,BIO,AMZ,DOIO external
     class RG,YTP specific
@@ -914,6 +917,7 @@ Reading the six graphs together, the shared surface is:
 | `sync_shared.run_full_sync` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `sync_shared.unavailable_metadata` | — | — | ✅ | — | ✅ | ✅ |
 | `classification.classify_document` | ✅ | ✅ | — | — | ✅ | — ² |
+| `collection_tags.sync_collection_tags` (`collection_tags_enabled`) | ✅ | ✅ | — | — | — | — |
 | `fetcher.fetch_and_embed_pending` (async pool, per-domain limiter, handler dispatch) | — | ✅ | — | ✅ ³ | — | — |
 | `core.fetched_embed_text` + `card_summary.body_excerpt` | — | ✅ | — | ✅ ³ | — | — |
 | `text_store.store_document_text` (`retain_document_text`) | ✅ ⁶ | ✅ | ✅ ⁶ | ✅ ³ | — | — |

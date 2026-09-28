@@ -1,5 +1,7 @@
 """Source tags and collections written at ingestion, and the tag listing."""
 
+import time
+from collections.abc import Collection, Iterable
 from typing import Any
 
 import sqlalchemy as sa
@@ -32,8 +34,11 @@ def insert_source_collections(
     cols: list[str],
     source: Source | str,
 ) -> None:
-    if not cols:
-        return
+    """Replace a document's collections from *source*; an empty list clears them.
+
+    Clearing matters: an item taken out of its last collection must lose the
+    old rows, or collection tags derived from them would come back.
+    """
     eng = engine.get_engine()
     with eng.begin() as con:
         con.execute(
@@ -42,10 +47,51 @@ def insert_source_collections(
                 & (source_collections.c.source == str(source))
             )
         )
-        con.execute(
-            source_collections.insert(),
-            [{"document_id": document_id, "collection": c, "source": str(source)} for c in cols],
-        )
+        if cols:
+            con.execute(
+                source_collections.insert(),
+                [
+                    {"document_id": document_id, "collection": c, "source": str(source)}
+                    for c in cols
+                ],
+            )
+
+
+def sync_overlay_tags(
+    document_id: int,
+    desired: Iterable[str],
+    origin: TagOrigin | str,
+    *,
+    within: Collection[str] | None = None,
+) -> None:
+    """Make one document's overlay tags of *origin* exactly *desired*.
+
+    Adds the missing tags and deletes the stale ones, so a re-run converges
+    instead of accumulating. With *within*, only tags in that set are read or
+    deleted: an origin shared with other writers keeps theirs.
+    """
+    wanted = set(desired)
+    if within is not None:
+        wanted &= set(within)
+    origin = str(origin)
+    scope = (overlay_tags.c.document_id == document_id) & (overlay_tags.c.origin == origin)
+    if within is not None:
+        scope = scope & overlay_tags.c.tag.in_(sorted(within))
+    now = int(time.time())
+    with engine.get_engine().begin() as con:
+        existing = {r[0] for r in con.execute(sa.select(overlay_tags.c.tag).where(scope))}
+        for tag in sorted(wanted - existing):
+            con.execute(
+                sa.text("""
+                    INSERT OR IGNORE INTO overlay_tags
+                        (document_id, tag, origin, confidence, created_at)
+                    VALUES (:did, :tag, :origin, 1.0, :now)
+                """),
+                {"did": document_id, "tag": tag, "origin": origin, "now": now},
+            )
+        stale = existing - wanted
+        if stale:
+            con.execute(overlay_tags.delete().where(scope & overlay_tags.c.tag.in_(sorted(stale))))
 
 
 def list_tags(
@@ -54,6 +100,7 @@ def list_tags(
     source_tag_filter: list[str] | None = None,
     cluster_l1_tag_filter: list[str] | None = None,
     cluster_l2_tag_filter: list[str] | None = None,
+    collection_tag_filter: list[str] | None = None,
     wayback_only: bool = False,
     q: str | None = None,
     limit: int = 100,
@@ -63,12 +110,14 @@ def list_tags(
     source_tag_filter = norm_filter(source_tag_filter)
     cluster_l1_tag_filter = norm_filter(cluster_l1_tag_filter)
     cluster_l2_tag_filter = norm_filter(cluster_l2_tag_filter)
+    collection_tag_filter = norm_filter(collection_tag_filter)
     filter_kwargs = {
         "source_filter": source_filter,
         "source_tag_filter": source_tag_filter,
         "overlay_tag_filter": None,
         "cluster_l1_tag_filter": cluster_l1_tag_filter,
         "cluster_l2_tag_filter": cluster_l2_tag_filter,
+        "collection_tag_filter": collection_tag_filter,
         "wayback_only": wayback_only,
     }
     has_doc_scope = any(
@@ -77,6 +126,7 @@ def list_tags(
             source_tag_filter,
             cluster_l1_tag_filter,
             cluster_l2_tag_filter,
+            collection_tag_filter,
             wayback_only,
         )
     )
@@ -130,6 +180,7 @@ def list_tags(
             str(TagOrigin.CLUSTER_L1),
             str(TagOrigin.CLUSTER_L2),
             str(TagOrigin.LEARNED),
+            str(TagOrigin.COLLECTION),
         }
         parts = []
         if not origin or origin == "source":

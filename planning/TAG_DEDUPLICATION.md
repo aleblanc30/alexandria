@@ -105,7 +105,7 @@ browse EXISTS, on `(document_id, tag_key)` alongside the existing
 `ix_source_tags_document_id_tag_string`.
 
 - `tag_string` is untouched and remains the record of what the source said, the
-  same rule `COLLECTION_TAGS.md` §1 states for `source_collections` and
+  same rule `archive/COLLECTION_TAGS.md` §1 states for `source_collections` and
   `ITEM_DEDUPLICATION.md` §1 states for `documents.isbn`.
 - Because the key is derived, changing the normalisation rule is a backfill
   (`alexandria dedupe-tags rekey`), never a resync. This is the reason to store

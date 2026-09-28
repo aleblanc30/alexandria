@@ -174,6 +174,11 @@ def isolated_settings(tmp_path, monkeypatch, _schema_template):
     monkeypatch.setattr(vs, "_collection", None)
     monkeypatch.setattr(vs, "_warned_mismatch", False)
 
+    # The collection-tag cap is counted per archive; one test's must not leak.
+    import pka.ingestion.collection_tags as ct
+
+    monkeypatch.setattr(ct, "_cap_cache", None)
+
     # No test loads a real embedding model: every name gets the deterministic
     # fake, whether through mock_chroma or a fixture that mocks only the
     # collection. tests/test_embedding.py exercises the real wiring on stubs.
@@ -324,7 +329,7 @@ def _make_zotero_db(path: Path) -> Path:
         CREATE TABLE itemCreators(itemID INTEGER, creatorID INTEGER,
                                   creatorTypeID INTEGER, orderIndex INTEGER);
         CREATE TABLE collections (collectionID INTEGER PRIMARY KEY,
-                                  collectionName TEXT);
+                                  collectionName TEXT, parentCollectionID INTEGER);
         CREATE TABLE collectionItems(collectionID INTEGER, itemID INTEGER);
         CREATE TABLE tags        (tagID INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE itemTags    (itemID INTEGER, tagID INTEGER);
@@ -348,8 +353,12 @@ def _make_zotero_db(path: Path) -> Path:
                                     (1,4,'2023');
         INSERT INTO creators VALUES (1,'Diego','Ongaro');
         INSERT INTO itemCreators VALUES (1,1,1,0);
-        INSERT INTO collections VALUES (1,'Distributed Systems');
-        INSERT INTO collectionItems VALUES (1,1);
+        -- "Distributed Systems" nested under "Computer Science"; item 1 is in
+        -- the subcollection and in a top-level "Reading list" too.
+        INSERT INTO collections VALUES (1,'Distributed Systems',2),
+                                       (2,'Computer Science',NULL),
+                                       (3,'Reading list',NULL);
+        INSERT INTO collectionItems VALUES (1,1),(3,1);
         INSERT INTO tags VALUES (1,'consensus');
         INSERT INTO itemTags VALUES (1,1);
         -- PDF attachment for item 1

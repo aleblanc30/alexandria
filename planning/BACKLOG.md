@@ -210,6 +210,18 @@ budget question gets answered.
 - Cross-check the numbers: VLMs invent plausible text on degraded regions, so
   anything numeric coming out of a scan should be treated as unverified.
 
+## Tags
+
+### Collection tags for the other sources
+
+Zotero collections and Firefox folders are `collection` tags (`DESIGN.md` §3.7).
+Calibre series, `r/<subreddit>` and YouTube playlists sit in
+`source_collections` too; each is one `TAGGED_SOURCES` entry plus a call next
+to its `insert_source_collections`. Each has its own noise profile: a subreddit
+tag repeats `reddit_items.subreddit`, and a series name is often a single
+book's. Run `alexandria collection-tags --dry-run` first and judge by its
+top-tag counts. Background in `archive/COLLECTION_TAGS.md` §3.
+
 ## Archiving
 
 ### Wayback Machine submission

@@ -142,6 +142,7 @@ input:focus { border-color: rgba(0,0,0,.3) }
 .tag-pill--cluster_l1 { background: #E8F1FA; color: #1E4D72 }
 .tag-pill--cluster_l2 { background: #F3E8FA; color: #5A2D82 }
 .tag-pill--learned  { background: #E8F4E1; color: #2D5A1E }
+.tag-pill--collection { background: #FBEAE6; color: #7A3322 }
 .badge-learned      { background: #E8F4E1; color: #2D5A1E }
 .tag--learned       { background: #E8F4E1; color: #2D5A1E }
 .badge-source   { background: #E6F1FB; color: #185FA5; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 500 }

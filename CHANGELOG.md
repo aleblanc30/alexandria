@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Tags
+
+- **Zotero collections and Firefox bookmark folders are tags.** Each segment
+  of a document's collection path becomes an `overlay_tags` row with the new
+  origin `collection`, so filtering on a parent folder also finds its
+  subfolders' contents. Firefox's built-in `menu` / `toolbar` / `unfiled` /
+  `mobile` roots are dropped, and at most `collection_tag_max_depth` (4)
+  segments are kept. Two settings cut noise: `collection_tag_exclude` names
+  folders never to tag, and a tag on more than `collection_tag_max_documents`
+  (1000) documents is left out. The Browse sidebar has a *Collections* group, and
+  `/documents`, `/tags` and search take a `collection_tags` filter. Zotero
+  collections are now read with their parents (`Thesis/Chapter 2`, where only
+  `Chapter 2` was stored before), and every metadata sync rewrites the
+  collections of items already archived, which it never did. An item taken out
+  of its last collection now loses the old `source_collections` rows.
+  `alexandria collection-tags` derives the tags for an existing archive from
+  `source_collections`, with `--dry-run` listing the most used ones; the
+  setting `collection_tags_enabled` (default on) turns the feature off
+  (`DESIGN.md` §3.7).
+
 ### Search
 
 - **Chunks are sized in tokens of the embedding model, by off-the-shelf

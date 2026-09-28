@@ -90,8 +90,9 @@ was written, not when the user saved it.
 | Table | Zotero | Firefox | Calibre | Reddit | YouTube | Images |
 |-------|:------:|:-------:|:-------:|:------:|:-------:|:------:|
 | `source_tags` | Zotero tags | bookmark tags | Calibre tags ¹ | — ² | the video's own tags | — |
-| `source_collections` | collection names | folder path | series name | `r/<subreddit>` | playlist titles | — |
+| `source_collections` | collection paths (`Parent/Child`) | folder path | series name | `r/<subreddit>` | playlist titles | — |
 | `overlay_tags` (`origin=inferred`) | `academic` + `paper`/`preprint` by item type | `academic` + `paper`/`preprint` by host | — | — | `video` | vision `image_type` ³ |
+| `overlay_tags` (`origin=collection`) ⁵ | one per collection path segment | one per folder, roots dropped | — | — | — | — |
 | `chunks` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `fetch_log` | — | one row per fetch attempt | — | link posts only | — | — |
 | `reddit_items` | — | — | — | ✅ 1:1 | — | — |
@@ -108,6 +109,10 @@ carried as a collection instead.
 slow extraction: Reddit's inline bodies are already in `reddit_items.body`, image
 text is already in `images`, and a Zotero abstract or YouTube description is a
 millisecond re-read from its own source.
+⁵ Derived from `source_collections` by `sync_collection_tags`
+(`pka/ingestion/collection_tags.py`, `DESIGN.md` §3.7) and gated by
+`collection_tags_enabled` (default on). `alexandria collection-tags` rewrites
+them from the stored rows, so the ingestion-time write and the backfill agree.
 
 `overlay_tags` also receives `manual` (user edits), `llm` / `cluster_l1` /
 `cluster_l2` (clustering), and `learned` (tag training) rows — none of them

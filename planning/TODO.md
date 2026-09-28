@@ -9,7 +9,7 @@ record.
 
 In order; everything below this section is unordered.
 
-1. **Zotero collection names as tags** — *Ingestion*.
+None ranked at the moment.
 
 ## Maintainability & performance
 
@@ -24,8 +24,6 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 
 ## Ingestion
 
-- [ ] **Use Zotero collection names as tags** *(priority 1)* — plan in
-  `COLLECTION_TAGS.md`, which extends it to Firefox bookmark folders.
 - [ ] **OCR scanned PDFs** — Calibre books, Zotero attachments and fetched PDFs
   with no text layer are marked `no_text_layer` and get no body chunks; run
   their pages through the OCR provider instead. Sketch in `BACKLOG.md` →
@@ -73,6 +71,19 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 - [ ] **Make the top-unfetchable-domains list collapsible** (`DomainTopLists.vue`).
 - [ ] **Learned tags are not displayed in the browse view.**
 - [ ] **Delete tags in the UI** — with API support and confirmation.
+
+## Discovery
+
+- [ ] **Favourites** — mark a document as a favourite from the browse card and
+  the detail panel, filter browse by it, and keep it as a signal the
+  recommender below can weight. Nothing like it exists yet; reading lists
+  (`reading_lists` / `reading_list_items`) are the closest structure.
+- [ ] **Recommend items from a topic and the reading history** — given a topic
+  (a query, a tag or a cluster), rank documents not yet read by similarity to
+  what has been read and favourited on it, using `documents.doc_embedding`.
+  Needs a reading history first: nothing records which documents were opened
+  today, so decide what counts as read (opened in the detail panel, opened at
+  the source, marked by hand) before building the ranking.
 
 ## CLI & assistant
 

@@ -16,6 +16,7 @@ Installed as the ``alexandria`` console script::
     alexandria purge-source firefox --dry-run
     alexandria purge-cluster-runs --all --dry-run
     alexandria backfill-classification
+    alexandria collection-tags --dry-run
     alexandria dev
 
 Each subcommand delegates to a ``pka.cli.<module>.main(argv)`` that owns its
@@ -53,6 +54,10 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "backfill-classification": (
         "backfill_classification",
         "Backfill item types and classification tags",
+    ),
+    "collection-tags": (
+        "collection_tags",
+        "Tag documents with their Zotero collections and Firefox folders",
     ),
     "dev": ("dev", "Run backend + frontend together for local development (opens browser)"),
 }

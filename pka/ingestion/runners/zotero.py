@@ -34,6 +34,7 @@ from pka.db.documents import (
 from pka.db.tags import insert_source_collections, insert_source_tags
 from pka.ingestion.arxiv import parse_arxiv_url
 from pka.ingestion.book_extractor import extract_book_report, section_page_range
+from pka.ingestion.collection_tags import sync_collection_tags
 from pka.ingestion.core import ingest_text_block
 from pka.ingestion.identifiers import resolve_doi
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
@@ -98,6 +99,7 @@ def ingest_zotero_items(
             doc_id = upsert_document(_zotero_document_write(item))
             insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
             insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
+            sync_collection_tags(doc_id, item.collections, Source.ZOTERO)
             _sync_zotero_classification(doc_id, item)
             _sync_zotero_card_summary(doc_id, item, dry_run=dry_run)
 
@@ -145,6 +147,7 @@ def ingest_zotero_metadata(
             return "skipped"
         insert_source_tags(doc_id, item.tags, source=Source.ZOTERO)
         insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
+        sync_collection_tags(doc_id, item.collections, Source.ZOTERO)
         _sync_zotero_classification(doc_id, item)
         _sync_zotero_card_summary(doc_id, item, dry_run=dry_run)
         known[item.source_id] = doc_id
@@ -157,6 +160,26 @@ def ingest_zotero_metadata(
         persist=_persist,
         progress_key=progress_key,
     )
+
+
+def refresh_zotero_collections(items: list[ZoteroItem]) -> int:
+    """Rewrite the collections and collection tags of items already archived.
+
+    The metadata loop persists new items only, so without this an item moved
+    to another collection, or one archived before collection paths were read,
+    would keep what it had when it was first seen. Returns the documents
+    rewritten.
+    """
+    known = document_index(Source.ZOTERO)
+    n = 0
+    for item in items:
+        doc_id = known.get(item.source_id)
+        if doc_id is None:
+            continue
+        insert_source_collections(doc_id, item.collections, source=Source.ZOTERO)
+        sync_collection_tags(doc_id, item.collections, Source.ZOTERO)
+        n += 1
+    return n
 
 
 def ingest_zotero_embed(

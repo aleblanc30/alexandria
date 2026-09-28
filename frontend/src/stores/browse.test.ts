@@ -129,6 +129,27 @@ describe('useBrowseStore tag filters', () => {
     expect(s.level1Tags).toEqual([])
     expect(s.sourceTags).toEqual(['physics'])
   })
+
+  it('sends collection tags with the list request and asks for their facet', async () => {
+    const api = await import('@/api/client')
+    const s = store()
+    vi.clearAllMocks()
+
+    s.toggleCollectionTag('Thesis')
+
+    expect(s.collectionTags).toEqual(['Thesis'])
+    await vi.waitFor(() =>
+      expect(api.listDocuments).toHaveBeenCalledWith(
+        expect.objectContaining({ collection_tags: ['Thesis'] }),
+      ),
+    )
+    expect(api.listTags).toHaveBeenCalledWith(
+      expect.objectContaining({ origin: 'collection', collection_tags: ['Thesis'] }),
+    )
+
+    s.toggleCollectionTag('Thesis')
+    expect(s.collectionTags).toEqual([])
+  })
 })
 
 describe('useBrowseStore selection', () => {

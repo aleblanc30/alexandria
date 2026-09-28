@@ -1549,6 +1549,14 @@
             "title": "Cluster L2 Tags",
             "type": "array"
           },
+          "collection_tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Collection Tags",
+            "type": "array"
+          },
           "date_from": {
             "anyOf": [
               {
@@ -2669,6 +2677,25 @@
                 }
               ],
               "title": "Learned Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "collection_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Collection Tags"
             }
           },
           {
@@ -5418,7 +5445,7 @@
         "operationId": "list_tags_tags_get",
         "parameters": [
           {
-            "description": "source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned",
+            "description": "source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned | collection",
             "in": "query",
             "name": "origin",
             "required": false,
@@ -5431,7 +5458,7 @@
                   "type": "null"
                 }
               ],
-              "description": "source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned",
+              "description": "source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned | collection",
               "title": "Origin"
             }
           },
@@ -5509,6 +5536,25 @@
                 }
               ],
               "title": "Cluster L2 Tags"
+            }
+          },
+          {
+            "in": "query",
+            "name": "collection_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Collection Tags"
             }
           },
           {

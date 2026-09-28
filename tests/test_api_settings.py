@@ -25,6 +25,7 @@ class TestSettings:
                 "Fetch",
                 "Embedding",
                 "Chunking",
+                "Tags",
                 "Clustering",
                 "Storage",
                 "Dev",

@@ -17,6 +17,7 @@ from pka.db.documents import (
     update_card_summary,
 )
 from pka.db.tags import insert_source_collections, insert_source_tags
+from pka.ingestion.collection_tags import sync_collection_tags
 from pka.ingestion.core import (
     attach_summary_chunk,
     fetched_embed_text,
@@ -66,6 +67,7 @@ def ingest_firefox_bookmarks(
         insert_source_tags(doc_id, bm.tags, source=Source.FIREFOX)
         if bm.folder_path:
             insert_source_collections(doc_id, [bm.folder_path], source=Source.FIREFOX)
+            sync_collection_tags(doc_id, [bm.folder_path], Source.FIREFOX)
         _sync_firefox_classification(doc_id, bm)
         known[bm.source_id] = doc_id
         return "processed"

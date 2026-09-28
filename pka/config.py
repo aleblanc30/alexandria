@@ -361,6 +361,26 @@ class Settings(BaseSettings):
     book_retain_max_pages: int | None = 20
     book_retain_max_chars: int | None = 50_000
 
+    # ── Collection tags ─────────────────────────────────────────────────────
+    # Zotero collections and Firefox bookmark folders become `collection`
+    # overlay tags, one per path segment (DESIGN.md §3.7). A local derivation
+    # of data already in the archive, with no outbound call, so §1.1's
+    # default-off rule does not apply. Off stops new ones and makes
+    # `alexandria collection-tags` remove the existing ones.
+    collection_tags_enabled: bool = True
+    # Segments kept from the top of each path, so a deep tree does not put a
+    # tag per level on every document in it.
+    collection_tag_max_depth: int = 4
+    # Folder names never to tag, compared without regard to case: the dumping
+    # grounds a bookmark tree accumulates ("Imported", "Misc"). A JSON array
+    # or a comma-separated list in `.env`.
+    collection_tag_exclude: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # A collection tag on more documents than this is dropped: a folder holding
+    # a large share of the library filters like a source, not like a tag.
+    # Applied by `alexandria collection-tags`, which sees the whole archive.
+    # 0 disables the cap.
+    collection_tag_max_documents: int = 1000
+
     # ── Firefox fetch ───────────────────────────────────────────────────────
     fetch_timeout_seconds: float = 10.0  # max seconds to read response body
     fetch_connect_timeout_seconds: float = 5.0  # max seconds to establish connection
@@ -532,6 +552,22 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_image_dirs(cls, v: object) -> list[Path]:
         return _parse_path_list(v)
+
+    @field_validator("collection_tag_exclude", mode="before")
+    @classmethod
+    def _parse_name_list(cls, v: object) -> list[str]:
+        """A list, a JSON array string, or a comma-separated string of names."""
+        if v is None or v == "":
+            return []
+        if isinstance(v, str):
+            text = v.strip()
+            if text.startswith("["):
+                v = json.loads(text)
+            else:
+                v = text.split(",")
+        if not isinstance(v, list | tuple):
+            raise ValueError("expected a list of names")
+        return [str(s).strip() for s in v if str(s).strip()]
 
     # ── Sources ─────────────────────────────────────────────────────────────
     @classmethod

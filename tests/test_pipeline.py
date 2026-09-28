@@ -84,10 +84,13 @@ class TestIngestZoteroItems:
                 r[0]
                 for r in con.execute(
                     sa.select(overlay_tags.c.tag).where(
-                        overlay_tags.c.document_id
-                        == con.execute(
-                            sa.select(documents.c.id).where(documents.c.source_id == "Z001")
-                        ).scalar()
+                        (overlay_tags.c.origin == "inferred")
+                        & (
+                            overlay_tags.c.document_id
+                            == con.execute(
+                                sa.select(documents.c.id).where(documents.c.source_id == "Z001")
+                            ).scalar()
+                        )
                     )
                 ).fetchall()
             }
@@ -104,7 +107,11 @@ class TestIngestZoteroItems:
             tags = {
                 r[0]
                 for r in con.execute(
-                    sa.select(overlay_tags.c.tag).where(overlay_tags.c.document_id == doc_id)
+                    # Classification only: the item's collections are tags too.
+                    sa.select(overlay_tags.c.tag).where(
+                        (overlay_tags.c.document_id == doc_id)
+                        & (overlay_tags.c.origin == "inferred")
+                    )
                 ).fetchall()
             }
         assert tags == {"academic", "preprint"}
@@ -243,7 +250,11 @@ class TestIngestFirefoxBookmarks:
             tags = {
                 r[0]
                 for r in con.execute(
-                    sa.select(overlay_tags.c.tag).where(overlay_tags.c.document_id == doc_id)
+                    # Classification only: the item's collections are tags too.
+                    sa.select(overlay_tags.c.tag).where(
+                        (overlay_tags.c.document_id == doc_id)
+                        & (overlay_tags.c.origin == "inferred")
+                    )
                 ).fetchall()
             }
         assert tags == {"academic", "preprint"}

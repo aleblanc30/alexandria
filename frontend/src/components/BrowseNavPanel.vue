@@ -102,6 +102,41 @@
             <polyline points="4,6 8,10 12,6" />
           </svg>
         </span>
+        <span class="browse-nav-summary-title">Collections</span>
+      </summary>
+      <div class="browse-nav-section-body">
+        <input
+          v-model="collectionQ"
+          type="search"
+          class="browse-nav-search"
+          placeholder="Filter collections…"
+        />
+        <div v-if="store.loadingTags" class="browse-nav-hint">Loading…</div>
+        <div v-else class="browse-nav-tags">
+          <button
+            v-for="t in filteredCollectionTags"
+            :key="t.tag"
+            type="button"
+            class="browse-nav-tag-btn tag-pill tag-pill--collection"
+            :class="{ active: store.collectionTags.includes(t.tag) }"
+            title="Zotero collection or Firefox bookmark folder"
+            @click="store.toggleCollectionTag(t.tag)"
+          >
+            <span class="browse-nav-tag-label">{{ t.tag }}</span>
+            <span class="browse-nav-tag-count">{{ t.count }}</span>
+          </button>
+          <p v-if="!filteredCollectionTags.length" class="browse-nav-hint">No collections</p>
+        </div>
+      </div>
+    </details>
+
+    <details class="browse-nav-section" open>
+      <summary class="browse-nav-summary">
+        <span class="browse-nav-chevron" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <polyline points="4,6 8,10 12,6" />
+          </svg>
+        </span>
         <span class="browse-nav-summary-title">Level 1 topics</span>
       </summary>
       <div class="browse-nav-section-body">
@@ -174,6 +209,7 @@ import { useUiStore } from '@/stores/ui'
 const store = useBrowseStore()
 const ui = useUiStore()
 const sourceQ = ref('')
+const collectionQ = ref('')
 const level1Q = ref('')
 const level2Q = ref('')
 
@@ -181,6 +217,12 @@ const filteredSourceTags = computed(() => {
   const q = sourceQ.value.trim().toLowerCase()
   if (!q) return store.tagRows.source
   return store.tagRows.source.filter(t => t.tag.toLowerCase().includes(q))
+})
+
+const filteredCollectionTags = computed(() => {
+  const q = collectionQ.value.trim().toLowerCase()
+  if (!q) return store.tagRows.collection
+  return store.tagRows.collection.filter(t => t.tag.toLowerCase().includes(q))
 })
 
 const filteredLevel1Tags = computed(() => {

@@ -14,9 +14,10 @@ What changed, and what each change needs from an existing archive:
 | Duplicate Calibre full-text and summary chunks from earlier runs | `alexandria purge duplicate_chunks` | 5 |
 | Embedding model `all-MiniLM-L6-v2` → `multilingual-e5-small` | `alexandria reembed` | 6 |
 | Token-sized chunker | `alexandria rechunk` | 7 |
-| Zotero PDF full text | one `alexandria zotero` sync | 8 |
-| Calibre books whose retained text is only the first 20 pages | optional re-extraction | 9 |
-| Clustering runs from the old model stop taking new documents | a new run, accepted | 10 |
+| Zotero PDF full text; Zotero collections read with their parents | one `alexandria zotero` sync | 8 |
+| Collection tags for documents already archived | `alexandria collection-tags` | 9 |
+| Calibre books whose retained text is only the first 20 pages | optional re-extraction | 10 |
+| Clustering runs from the old model stop taking new documents | a new run, accepted | 11 |
 
 The fetch-queue fix, the module splits and the layering contract need
 nothing.
@@ -122,7 +123,7 @@ tokenizer instead.
 It covers documents with retained body text: Firefox and Reddit link posts
 fetched since retention shipped, and Calibre books. Anything older keeps its
 old chunks, which still work. The final log line counts books skipped because
-only their first pages are retained (step 9).
+only their first pages are retained (step 10).
 
 ## 8. Pull in Zotero PDF full text
 
@@ -136,7 +137,38 @@ are skipped, so a later sync adds nothing. After steps 6 and 7, so these chunks
 are cut and embedded once, the new way. A scanned PDF is marked
 `no_text_layer` and waits on the OCR item in `TODO.md`.
 
-## 9. (Optional) Re-extract truncated Calibre books
+The same sync rewrites every archived item's collections as paths with their
+parents (`Thesis/Chapter 2`, where only `Chapter 2` was stored), and tags the
+items with them.
+
+## 9. Tag documents with their collections
+
+```powershell
+alexandria collection-tags --dry-run
+alexandria collection-tags
+```
+
+Derives `collection` tags from the stored collections, for Firefox bookmarks
+(whose folders are written only when first archived) and anything step 8 did
+not touch. SQLite only, seconds. After step 8, so Zotero tags come from the
+full paths.
+
+Firefox folders are the noisy part. Read the dry run's two lists: the most used
+tags per source, and the tags already left out for sitting on more than 1000
+documents. Then tune in `.env` and dry-run again until the list reads like
+topics:
+
+```
+ALEXANDRIA_COLLECTION_TAG_EXCLUDE=Imported,Misc,Other Bookmarks
+ALEXANDRIA_COLLECTION_TAG_MAX_DOCUMENTS=300
+ALEXANDRIA_COLLECTION_TAG_MAX_DEPTH=3
+```
+
+An excluded name drops only that folder; its subfolders are still tagged.
+`ALEXANDRIA_COLLECTION_TAGS_ENABLED=false` turns the whole feature off, and
+the next run removes the tags. Re-running after any change converges.
+
+## 10. (Optional) Re-extract truncated Calibre books
 
 Books retain only their first 20 pages, so `rechunk` skips them, and their
 full text keeps the old chunks. Search still works on those. To re-cut them,
@@ -154,7 +186,7 @@ re-cut. With `book_summary_enabled` on, the re-extraction appends a second copy
 of each cached summary chunk, which the last command should report; run it
 without `--dry-run` if it does.
 
-## 10. Re-cluster
+## 11. Re-cluster
 
 The accepted clustering run was built from MiniLM vectors, and new documents
 are no longer assigned to it. Run clustering again, from the Clusters page or:
@@ -165,15 +197,17 @@ alexandria clustering
 
 Review the run and accept it (`--accept` skips the review).
 
-## 11. Start the server and check
+## 12. Start the server and check
 
 Start the scheduled task, then:
 
 - `server.log` has no "chunk index was built with all-MiniLM-L6-v2" warning.
 - A French or Spanish query finds documents in that language.
 - Keyword (`fulltext`) search finds a phrase from a PDF body, not only titles.
-- The Settings page lists the Embedding and Chunking groups with the new
+- The Settings page lists the Embedding, Chunking and Tags groups with the new
   fields.
+- The Browse sidebar has a Collections group; picking a parent folder also
+  shows its subfolders' documents.
 
 If step 6 or 7 failed partway, stop the server, restore the step 1 copy and
 rerun from the failed step.

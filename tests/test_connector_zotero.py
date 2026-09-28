@@ -47,10 +47,26 @@ class TestLoadItems:
         raft = next(i for i in items if i.title == "Raft Consensus")
         assert "Diego Ongaro" in raft.authors
 
-    def test_collections_extracted(self, zotero_db, tmp_path):
+    def test_collections_extracted_with_their_parents(self, zotero_db, tmp_path):
         items = load_items(zotero_db=zotero_db, copy_path=tmp_path / "copy.sqlite")
         raft = next(i for i in items if i.title == "Raft Consensus")
-        assert "Distributed Systems" in raft.collections
+        assert raft.collections == ["Computer Science/Distributed Systems", "Reading list"]
+
+    def test_an_item_in_no_collection_has_none(self, zotero_db, tmp_path):
+        items = load_items(zotero_db=zotero_db, copy_path=tmp_path / "copy.sqlite")
+        bare = next(i for i in items if i.title == "Bare Article")
+        assert bare.collections == []
+
+    def test_a_parent_cycle_ends_the_path_instead_of_looping(self, zotero_db, tmp_path):
+        import sqlite3
+
+        con = sqlite3.connect(zotero_db)
+        con.execute("UPDATE collections SET parentCollectionID = 1 WHERE collectionID = 2")
+        con.commit()
+        con.close()
+        items = load_items(zotero_db=zotero_db, copy_path=tmp_path / "copy.sqlite")
+        raft = next(i for i in items if i.title == "Raft Consensus")
+        assert raft.collections[0] == "Computer Science/Distributed Systems"
 
     def test_tags_extracted_verbatim(self, zotero_db, tmp_path):
         items = load_items(zotero_db=zotero_db, copy_path=tmp_path / "copy.sqlite")

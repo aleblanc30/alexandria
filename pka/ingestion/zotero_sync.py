@@ -28,6 +28,7 @@ from pka.ingestion.runners.zotero import (
     ingest_zotero_embed,
     ingest_zotero_fulltext,
     ingest_zotero_metadata,
+    refresh_zotero_collections,
 )
 from pka.ingestion.sync_shared import run_full_sync
 
@@ -108,6 +109,7 @@ def sync_zotero_metadata(
         n_refreshed = refresh_zotero_metadata(by_source_id)
         if n_refreshed:
             log.info("Zotero metadata refreshed on %d row(s)", n_refreshed)
+        refresh_zotero_collections(items)
     log.info("Zotero metadata: %s", stats)
     return {"metadata": stats, "stopped": stats.get("stopped")}
 

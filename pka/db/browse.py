@@ -42,6 +42,7 @@ def apply_document_browse_filters(
     cluster_l1_tag_filter: list[str] | None = None,
     cluster_l2_tag_filter: list[str] | None = None,
     learned_tag_filter: list[str] | None = None,
+    collection_tag_filter: list[str] | None = None,
     wayback_only: bool = False,
 ) -> sa.Select:
     if source_filter:
@@ -62,6 +63,8 @@ def apply_document_browse_filters(
         q = _where_overlay_tag(q, tag, TagOrigin.CLUSTER_L2)
     for tag in learned_tag_filter or []:
         q = _where_overlay_tag(q, tag, TagOrigin.LEARNED)
+    for tag in collection_tag_filter or []:
+        q = _where_overlay_tag(q, tag, TagOrigin.COLLECTION)
     return q
 
 
@@ -93,6 +96,7 @@ def filter_document_ids(
     general_tag_filter: list[str] | None = None,
     cluster_l1_tag_filter: list[str] | None = None,
     cluster_l2_tag_filter: list[str] | None = None,
+    collection_tag_filter: list[str] | None = None,
     wayback_only: bool = False,
 ) -> set[int]:
     """Return document ids from ``doc_ids`` that match browse-style filters."""
@@ -105,6 +109,7 @@ def filter_document_ids(
             general_tag_filter,
             cluster_l1_tag_filter,
             cluster_l2_tag_filter,
+            collection_tag_filter,
             wayback_only,
         )
     )
@@ -119,6 +124,7 @@ def filter_document_ids(
         general_tag_filter=general_tag_filter,
         cluster_l1_tag_filter=cluster_l1_tag_filter,
         cluster_l2_tag_filter=cluster_l2_tag_filter,
+        collection_tag_filter=collection_tag_filter,
         wayback_only=wayback_only,
     )
     return {row[0] for row in con.execute(q).fetchall()}
@@ -168,6 +174,7 @@ def list_documents(
     cluster_l1_tags: list[str] | None = None,
     cluster_l2_tags: list[str] | None = None,
     learned_tags: list[str] | None = None,
+    collection_tags: list[str] | None = None,
     wayback_only: bool = False,
     limit: int = 48,
     offset: int = 0,
@@ -181,6 +188,7 @@ def list_documents(
         "cluster_l1_tag_filter": norm_filter(cluster_l1_tags),
         "cluster_l2_tag_filter": norm_filter(cluster_l2_tags),
         "learned_tag_filter": norm_filter(learned_tags),
+        "collection_tag_filter": norm_filter(collection_tags),
         "wayback_only": wayback_only,
     }
 

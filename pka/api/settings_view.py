@@ -192,6 +192,12 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "book_retain_max_pages",
         "book_retain_max_chars",
     ),
+    "Tags": (
+        "collection_tags_enabled",
+        "collection_tag_max_depth",
+        "collection_tag_exclude",
+        "collection_tag_max_documents",
+    ),
     "Clustering": (
         "cluster_space",
         "cluster_pca_components",

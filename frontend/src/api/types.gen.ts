@@ -1756,6 +1756,11 @@ export interface components {
              * @default []
              */
             cluster_l2_tags: string[];
+            /**
+             * Collection Tags
+             * @default []
+             */
+            collection_tags: string[];
             /** Date From */
             date_from?: number | null;
             /** Date To */
@@ -2233,6 +2238,7 @@ export interface operations {
                 cluster_l1_tags?: string[] | null;
                 cluster_l2_tags?: string[] | null;
                 learned_tags?: string[] | null;
+                collection_tags?: string[] | null;
                 wayback_only?: boolean;
                 limit?: number;
                 offset?: number;
@@ -4116,12 +4122,13 @@ export interface operations {
     list_tags_tags_get: {
         parameters: {
             query?: {
-                /** @description source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned */
+                /** @description source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned | collection */
                 origin?: string | null;
                 sources?: components["schemas"]["Source"][] | null;
                 source_tags?: string[] | null;
                 cluster_l1_tags?: string[] | null;
                 cluster_l2_tags?: string[] | null;
+                collection_tags?: string[] | null;
                 wayback_only?: boolean;
                 q?: string | null;
                 limit?: number;
