@@ -12,9 +12,8 @@ In order; everything below this section is unordered.
 1. **Multilingual chunking** — *Search / vectors*.
 2. **Multilingual embedding model** — *Search / vectors*; settles the model half
    of (1).
-3. **Zotero PDF full text** — *Ingestion*.
-4. **Full-text search** — *Search / vectors*.
-5. **Zotero collection names as tags** — *Ingestion*.
+3. **Full-text search** — *Search / vectors*.
+4. **Zotero collection names as tags** — *Ingestion*.
 
 ## Maintainability & performance
 
@@ -29,11 +28,12 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 
 ## Ingestion
 
-- [ ] **Ingest Zotero PDF attachments** *(priority 3)* — `item.pdf_path` is
-  recorded and never read, so Zotero indexes title + abstract only. A phase-2
-  pass mirroring `ingest_calibre_fulltext`, offset by `existing_chunk_count()`,
-  writing `document_texts` from day one.
-- [ ] **Use Zotero collection names as tags** *(priority 5)* — plan in
+- [ ] **Calibre full text re-runs duplicate every book's chunks** —
+  `sync_calibre_ingest` hands every book with a file to `ingest_calibre_fulltext`,
+  which never checks for existing `fulltext` chunks, so each ingest job appends
+  another copy (10 → 20 in a two-run test). Filter as Zotero's
+  `_load_zotero_items_for_fulltext` does, then dedupe existing archives.
+- [ ] **Use Zotero collection names as tags** *(priority 4)* — plan in
   `COLLECTION_TAGS.md`, which extends it to Firefox bookmark folders.
 - [ ] **Deduplication of tags** — plan in `TAG_DEDUPLICATION.md`.
 - [ ] **Deduplication of items** — plan in `ITEM_DEDUPLICATION.md` (link rather
@@ -73,7 +73,7 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
   `paraphrase-multilingual-MiniLM-L12-v2`) before committing: collections are
   dimension-locked, so the swap is a full reindex — `alexandria rechunk`, then
   `rebuild_from_chunks`.
-- [ ] **Full-text search** *(priority 4)* — `mode="fulltext"` is an unbounded
+- [ ] **Full-text search** *(priority 3)* — `mode="fulltext"` is an unbounded
   `title ILIKE '%q%'` scan (`api/search_hits.py::fulltext_hits`), so there is no
   keyword index anywhere. Add an external-content FTS5 table over `title` +
   `card_summary` (and later `document_texts`), kept in sync by the

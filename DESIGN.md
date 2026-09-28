@@ -241,12 +241,17 @@ Calibre and Firefox follow a two-phase pattern:
   performs.
 
 - **Phase 2** is slow and side-effecting. It pulls full-text from PDFs/EPUBs
-  (Calibre) or fetches and extracts HTML and remote PDFs (Firefox) and embeds
-  the result.
+  (Calibre) or attached PDFs (Zotero), or fetches and extracts HTML and remote
+  PDFs (Firefox), and embeds the result. Calibre and Zotero tag their phase-1
+  chunk `pass="metadata"` and their full-text chunks `pass="fulltext"`, so a
+  re-chunk or a body purge, which treats untagged chunks as body, leaves the
+  metadata chunk alone.
   Chunk indices are offset past the phase-1 chunks via `existing_chunk_count()`
   so the two passes coexist in a single document.
 
-Phase-2 work is gated behind `--fulltext` (Calibre) or runs through
+Phase-2 work is gated behind `--fulltext` (Calibre), runs as a second
+`embedding` pass of the ingest job (Zotero, which skips items that already have
+`fulltext` chunks or were found to be scans), or runs through
 `pka.ingestion.fetcher.fetch_and_embed_pending()` (Firefox). Each worker
 fetches one URL, persists fetch metadata, embeds immediately, then moves on—
 extracted text is not batched in RAM. Docs marked `fetched` but missing
@@ -261,15 +266,16 @@ is whitespace-normalised, overlapped and missing every window under
 `min_chunk_chars`, so re-summarising, re-chunking, re-running an extraction fix
 or auditing what the fetcher actually got would otherwise all mean re-fetching.
 Retention covers text with no other verbatim home that cost a round trip or a
-slow extraction: fetched bodies (Firefox, Reddit link posts) and Calibre's
-phase-2 sections, joined into one body with a `blocks_json` map — `index`,
-`title`, `page_start`/`page_end`, and the offset that slices each section back
-out — so a re-chunk can reproduce the per-section chunk metadata. Reddit's inline
+slow extraction: fetched bodies (Firefox, Reddit link posts) and the phase-2
+sections of Calibre books and Zotero PDFs, joined into one body with a
+`blocks_json` map — `index`, `title`, `page_start`/`page_end`, and the offset
+that slices each section back out — so a re-chunk can reproduce the per-section
+chunk metadata. Reddit's inline
 bodies (`reddit_items.body`) and image text (`images`) are already kept, and a
 Zotero abstract or YouTube description is a re-read from its own source.
 Local-only, so it is not a §1.1 gate; `retain_document_text` (default on) exists
-for disk, and `book_retain_max_pages` (20) caps **books only** — Calibre's text
-is kept to its opening pages, cut on a section boundary, because a
+for disk, and `book_retain_max_pages` (20) caps **extracted files only** — a
+Calibre book's or Zotero PDF's text is kept to its opening pages, cut on a section boundary, because a
 several-hundred-page PDF is the one input that makes the sidecar expensive and
 the file is still on disk. A fetched body is never capped: it is small, and it
 is the copy that cannot be re-read from anywhere. A capped row records its
@@ -559,7 +565,7 @@ Three mechanisms close these, in ascending cost:
 | Calibre, no ISBN | Title/author lookup → second catalogue. Skipped entirely when Calibre already holds a description, since pass 1 embeds that | off (`external_lookup_enabled`) |
 | Calibre full text | Local map-reduce summary over the extracted sections | off (`book_summary_enabled`) |
 | Long fetched articles | Same path as bookmarks — they are the same runner | off (`bookmark_summary_enabled`) |
-| Zotero | *No summary* — the abstract already is one. The real gap is that attached PDFs are never ingested. | — |
+| Zotero | *No summary* — the abstract already is one. Attached PDFs are ingested in phase 2 but not summarised. | — |
 | YouTube | *No summary* — nothing to summarise beyond uploader metadata; transcripts are not ingested. | — |
 
 **Structured bibliographic fields.** `documents` also carries `doi`, `arxiv_id`,

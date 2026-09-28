@@ -75,7 +75,7 @@ it. A summary written before provenance shipped keeps `NULL`, which means
 | `title` | item title | bookmark title | book title | thread / comment title | video title | filename |
 | `url_or_path` | `url` → PDF path fallback | bookmark URL | preferred format path | external target, else permalink | watch URL | file path |
 | `date_added` | `dateAdded` | bookmark date (µs→s) | `timestamp` | item creation ¹ | earliest playlist add | EXIF `DateTimeOriginal` → mtime |
-| `fetch_status` | `available` (PDF on disk) / `pending` | `pending` / `unfetchable` → `fetched` | `available` / `missing` → `no_text_layer` | `available` (self-post, comment), `pending` / `unfetchable` (link post) | `fetched` (no fetch phase) | `available` |
+| `fetch_status` | `available` (PDF on disk) / `pending` → `no_text_layer` (scanned PDF) | `pending` / `unfetchable` → `fetched` | `available` / `missing` → `no_text_layer` | `available` (self-post, comment), `pending` / `unfetchable` (link post) | `fetched` (no fetch phase) | `available` |
 | `item_type` | Zotero `itemType` | — | — | `post` \| `comment` | — | — |
 | `card_summary` | abstract, or the highlight for an annotation | `body_excerpt` of the fetched text; `Saved <engine> search for "<query>"` for a search URL | — | `body_excerpt` of the body | video description | vision description |
 | `note` | — | — | over-long Calibre tags, newline-joined | — | — | — |
@@ -96,7 +96,7 @@ was written, not when the user saved it.
 | `fetch_log` | — | one row per fetch attempt | — | link posts only | — | — |
 | `reddit_items` | — | — | — | ✅ 1:1 | — | — |
 | `images` | — | — | — | — | — | ✅ 1:1 |
-| `document_texts` | — | fetched body ⁴ | joined pass-2 sections ⁴ | link posts only ⁴ | — | — |
+| `document_texts` | attached PDF's joined sections ⁴ | fetched body ⁴ | joined pass-2 sections ⁴ | link posts only ⁴ | — | — |
 
 ¹ Only the short ones — a tag over `MAX_TAG_WORDS` words is diverted to
 `documents.note` by `split_calibre_tags`.
@@ -126,11 +126,11 @@ ingestion-time, all of them source-agnostic.
 | `external_url` | link-post target, else NULL |
 | `body` | selftext / comment body, **verbatim** — neither the 280-char card excerpt nor the overlapped, whitespace-normalised chunks can reproduce it |
 
-### `document_texts` (fetched documents and books)
+### `document_texts` (fetched documents, books and Zotero PDFs)
 
 The extracted body text kept verbatim, so summarising, chunking and extraction
-can be redone without going back to the network — or, for a book, without
-re-running an extraction that costs minutes. One row per document, written by the
+can be redone without going back to the network — or, for a book or a Zotero
+PDF, without re-running an extraction that costs minutes. One row per document, written by the
 runners before chunking and refreshed on a re-fetch or re-extraction.
 
 | Column | Value |
@@ -140,7 +140,7 @@ runners before chunking and refreshed on a re-fetch or re-extraction.
 | `char_count` | uncompressed length of what is stored, so counts and dry runs never decompress |
 | `full_char_count` | length *before* the retention cap. Larger than `char_count` means this row is a **prefix**: a book kept to its first `book_retain_max_pages` pages. Equal for everything stored whole, which is every fetched body |
 | `content_hash` | sha256 of the plain text — "did the page change?" on a re-fetch. Recorded; nothing reads it yet |
-| `blocks_json` | section map for Calibre — `index`, `title`, `page_start`, `page_end`, and the `offset`/`length` that slice the section back out of `text` verbatim, so a re-chunk can reproduce the per-section chunk metadata. NULL for a fetched body, which arrives as one blob |
+| `blocks_json` | section map for Calibre and Zotero PDFs — `index`, `title`, `page_start`, `page_end`, and the `offset`/`length` that slice the section back out of `text` verbatim, so a re-chunk can reproduce the per-section chunk metadata. NULL for a fetched body, which arrives as one blob |
 | `extracted_at` | unix ts of the write |
 
 No backfill: a document ingested before retention shipped has no row, and
@@ -153,8 +153,8 @@ and which refuses a truncated row outright, since re-cutting a prefix would
 shrink the index to it), `ingestion/enrich.py` (which prefers it over a chunk
 reassembly), and `GET /documents/{id}/text`.
 
-**Books are capped, fetched pages are not.** Calibre's full text is kept to its
-first `book_retain_max_pages` pages (20 by default, cut on a section boundary;
+**Books are capped, fetched pages are not.** Calibre's full text, and a Zotero
+PDF's under the same settings, is kept to its first `book_retain_max_pages` pages (20 by default, cut on a section boundary;
 `book_retain_max_chars` is the equivalent for EPUB chapters, which carry no page
 numbers) — a several-hundred-page PDF is the only input that makes this table
 expensive, and the file is still on disk. A fetched body is stored whole: it is
@@ -197,20 +197,25 @@ it is written on the way there.
 | `chunks` column | Filled for | From |
 |-----------------|-----------|------|
 | `document_id`, `chunk_index`, `text`, `token_count`, `vector_id` | every source | always |
-| `chunk_pass` | Calibre, Images, plus any summary chunk | the Chroma metadata key `pass` |
+| `chunk_pass` | Zotero, Calibre, Images, plus any summary chunk | the Chroma metadata key `pass` |
 | `resolved_by` | external-synopsis chunks only | which rung of the lookup ladder resolved the book |
 | `source_ref` | external-synopsis chunks only | ISBN or Open Library work key |
 | `ref_title` | external-synopsis chunks only | resolved book title (a shelf photo carries several) |
-| `page_start`, `page_end` | Calibre full text only | real 1-based PDF pages; NULL for EPUB and every non-paginated source |
+| `page_start`, `page_end` | Calibre and Zotero full text | real 1-based PDF pages; NULL for EPUB and every non-paginated source |
+
+Zotero's title + abstract chunks written before the PDF pass existed carried no
+`pass`. The `chunks.zotero_metadata_pass` migration step sets their
+`chunk_pass` to `metadata` in SQLite; their Chroma payload keeps no `pass` key,
+since nothing rewrites existing vectors.
 
 Chroma carries `document_id`, `source`, `chunk_index` and `title` on every chunk,
 plus whatever the caller adds:
 
 | Pass (`pass=`) | Written by | Extra Chroma metadata |
 |----------------|-----------|-----------------------|
-| *(unset)* | Zotero, Firefox, Reddit, YouTube, Images | `modality=image` for images |
-| `metadata` | Calibre phase 1 | — |
-| `fulltext` | Calibre phase 2 | `section_title`, `section_index`, `page_start`, `page_end` |
+| *(unset)* | Firefox, Reddit, YouTube, Images | `modality=image` for images |
+| `metadata` | Zotero and Calibre phase 1 | — |
+| `fulltext` | Zotero and Calibre phase 2 | `section_title`, `section_index`, `page_start`, `page_end` |
 | `external_synopsis` 🟪 | Calibre, Images | `book_title`, `resolved_by`, `isbn`, `work_key` |
 | `summary` 🟪 | Firefox, Reddit, Calibre | — |
 
@@ -227,7 +232,8 @@ The one genuinely source-specific thing after the connector: what gets handed to
 
 | Source | Embedded text | Fallback when it yields no chunks |
 |--------|---------------|-----------------------------------|
-| Zotero | title + `by <authors>` + abstract; for an `annotation`, the highlight alone | — |
+| Zotero ph. 1 | title + `by <authors>` + abstract; for an `annotation`, the highlight alone | — |
+| Zotero ph. 2 | one block per page group of the attached PDF | — |
 | Firefox | title + card summary + fetched body (`fetched_embed_text`) | the composed blob |
 | Calibre ph. 1 | title + `by <authors>` + description (HTML stripped) | title |
 | Calibre ph. 2 | one block per extracted section — chapter or page group | — |

@@ -1,9 +1,14 @@
-"""Zotero sync — metadata and embed as separate jobs."""
+"""Zotero sync — metadata and embed as separate jobs.
+
+The embed job has two passes: title + abstract for every item, then the full
+text of each attached PDF not yet in the archive.
+"""
 
 import json
 import logging
 
 from pka.connectors.zotero import (
+    ZoteroItem,
     ensure_zotero_copy,
     load_item_keys,
     load_items,
@@ -11,15 +16,19 @@ from pka.connectors.zotero import (
     zotero_path,
     zotero_url,
 )
-from pka.constants import Source
-from pka.db.chunks import source_ids_with_chunks
-from pka.db.documents import refresh_zotero_metadata
+from pka.constants import FetchStatus, Source
+from pka.db.chunks import source_ids_with_chunk_pass, source_ids_with_chunks
+from pka.db.documents import refresh_zotero_metadata, source_ids_with_fetch_status
 from pka.ingestion import progress as sp
 from pka.ingestion.arxiv import parse_arxiv_url
 from pka.ingestion.dev_limits import take
 from pka.ingestion.identifiers import resolve_doi
 from pka.ingestion.pending_metadata import archive_document_count, count_pending_metadata
-from pka.ingestion.runners.zotero import ingest_zotero_embed, ingest_zotero_metadata
+from pka.ingestion.runners.zotero import (
+    ingest_zotero_embed,
+    ingest_zotero_fulltext,
+    ingest_zotero_metadata,
+)
 from pka.ingestion.sync_shared import run_full_sync
 
 log = logging.getLogger(__name__)
@@ -44,6 +53,27 @@ def _load_zotero_items_for_embed(skip_existing: bool = True) -> tuple[list, int,
         items = load_items(copy_path=dst, skip_copy=True, keys=pending)
         return items, total, skipped
     return take(load_items(copy_path=dst, skip_copy=True), Source.ZOTERO), total, 0
+
+
+def _load_zotero_items_for_fulltext() -> list[ZoteroItem]:
+    """Items with a readable attached PDF whose full text is not archived yet.
+
+    Done means the document already has ``fulltext`` chunks, or its PDF was
+    found to be a scan (``no_text_layer``): re-reading a scan on every sync
+    would find nothing new. This filter is what stops a second sync from
+    appending a second copy of every PDF's chunks, so it applies even to a
+    ``--force-reindex`` run.
+    """
+    dst = ensure_zotero_copy()
+    all_keys = set(take(sorted(load_item_keys(copy_path=dst, skip_copy=True)), Source.ZOTERO))
+    done = source_ids_with_chunk_pass(Source.ZOTERO, "fulltext") | source_ids_with_fetch_status(
+        Source.ZOTERO, FetchStatus.NO_TEXT_LAYER
+    )
+    pending = all_keys - done
+    if not pending:
+        return []
+    items = load_items(copy_path=dst, skip_copy=True, keys=pending)
+    return [i for i in items if i.pdf_path and i.pdf_path.exists()]
 
 
 def sync_zotero_metadata(
@@ -95,16 +125,31 @@ def sync_zotero_ingest(
     if not items:
         stats = {"processed": 0, "skipped": pre_skipped, "failed": 0, "chunks": 0}
         log.info("Zotero embed: nothing to do (%d already embedded)", pre_skipped)
-        return {"embed": stats}
-    stats = ingest_zotero_embed(
-        items,
-        skip_existing=skip_existing,
-        dry_run=dry_run,
-        progress_key=key,
-    )
-    stats["skipped"] += pre_skipped
-    log.info("Zotero embed: %s", stats)
-    return {"embed": stats, "stopped": stats.get("stopped")}
+    else:
+        stats = ingest_zotero_embed(
+            items,
+            skip_existing=skip_existing,
+            dry_run=dry_run,
+            progress_key=key,
+        )
+        stats["skipped"] += pre_skipped
+        log.info("Zotero embed: %s", stats)
+    out: dict = {"embed": stats}
+    if stats.get("stopped"):
+        out["stopped"] = stats["stopped"]
+        return out
+
+    # Pass 2 runs after every item has its abstract chunk, like Calibre's full
+    # text after its metadata embed; a second run over the same progress phase.
+    pdf_items = _load_zotero_items_for_fulltext()
+    if not pdf_items:
+        return out
+    sp.set_phase(key, "embedding", len(pdf_items))
+    out["fulltext"] = ingest_zotero_fulltext(pdf_items, dry_run=dry_run, progress_key=key)
+    log.info("Zotero full text: %s", out["fulltext"])
+    if out["fulltext"].get("stopped"):
+        out["stopped"] = out["fulltext"]["stopped"]
+    return out
 
 
 def sync_zotero(

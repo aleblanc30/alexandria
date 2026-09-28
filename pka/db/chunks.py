@@ -97,6 +97,18 @@ def source_ids_with_chunks(source: Source | str) -> set[str]:
     return {row[0] for row in rows}
 
 
+def source_ids_with_chunk_pass(source: Source | str, chunk_pass: str) -> set[str]:
+    """Source ids whose documents have at least one chunk from ``chunk_pass``."""
+    with engine.get_engine().connect() as con:
+        rows = con.execute(
+            sa.select(documents.c.source_id)
+            .select_from(documents.join(chunks, chunks.c.document_id == documents.c.id))
+            .where((documents.c.source == str(source)) & (chunks.c.chunk_pass == chunk_pass))
+            .distinct()
+        ).fetchall()
+    return {row[0] for row in rows}
+
+
 def document_ids_with_chunks(source: Source | str | None = None) -> set[int]:
     """Return document ids that already have at least one chunk."""
     with engine.get_engine().connect() as con:

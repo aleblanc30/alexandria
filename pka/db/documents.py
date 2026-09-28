@@ -288,6 +288,17 @@ def firefox_ingest_queue(limit: int | None = None) -> list[tuple[int, str]]:
     return source_ingest_queue(Source.FIREFOX, limit)
 
 
+def source_ids_with_fetch_status(source: Source | str, status: FetchStatus | str) -> set[str]:
+    """Source ids of ``source``'s documents whose ``fetch_status`` is ``status``."""
+    with engine.get_engine().connect() as con:
+        rows = con.execute(
+            sa.select(documents.c.source_id).where(
+                (documents.c.source == str(source)) & (documents.c.fetch_status == str(status))
+            )
+        ).fetchall()
+    return {row[0] for row in rows}
+
+
 def set_fetch_status(doc_id: int, status: FetchStatus | str) -> None:
     """Record the outcome of trying to get text for a document."""
     with engine.get_engine().begin() as con:

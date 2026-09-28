@@ -1,4 +1,10 @@
-"""Zotero document ingestion."""
+"""Zotero document ingestion.
+
+Two embedding passes, like Calibre's: the title + abstract (``pass="metadata"``),
+then the attached PDF's full text (``pass="fulltext"``). The metadata chunk is
+tagged so that re-chunking or purging the PDF body, which treats untagged
+chunks as body, leaves the abstract alone.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +12,7 @@ import json
 import logging
 
 from pka.classification import classify_document, sync_classification_tags
+from pka.config import settings as cfg
 from pka.connectors.zotero import (
     ZoteroItem,
     zotero_card_summary,
@@ -14,21 +21,24 @@ from pka.connectors.zotero import (
     zotero_path,
     zotero_url,
 )
-from pka.constants import FetchStatus, Source
-from pka.db.chunks import document_has_chunks, source_ids_with_chunks
+from pka.constants import FetchStatus, PdfTextLayer, Source
+from pka.db.chunks import document_has_chunks, existing_chunk_count, source_ids_with_chunks
 from pka.db.documents import (
     DocumentWrite,
     document_index,
     insert_document_if_new,
+    set_fetch_status,
     update_card_summary,
     upsert_document,
 )
 from pka.db.tags import insert_source_collections, insert_source_tags
 from pka.ingestion.arxiv import parse_arxiv_url
+from pka.ingestion.book_extractor import extract_book_report, section_page_range
 from pka.ingestion.core import ingest_text_block
 from pka.ingestion.identifiers import resolve_doi
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 from pka.ingestion.progress import should_stop, tick
+from pka.ingestion.text_store import section_blocks, store_document_text, truncate_blocks
 
 log = logging.getLogger(__name__)
 
@@ -99,7 +109,7 @@ def ingest_zotero_items(
                 doc_id,
                 zotero_embed_text(item),
                 Source.ZOTERO,
-                extra_metadata={"title": item.title},
+                extra_metadata={"title": item.title, "pass": "metadata"},
                 min_chars=1,
                 dry_run=dry_run,
             )
@@ -175,7 +185,7 @@ def ingest_zotero_embed(
             doc_id,
             zotero_embed_text(item),
             Source.ZOTERO,
-            extra_metadata={"title": item.title},
+            extra_metadata={"title": item.title, "pass": "metadata"},
             min_chars=1,
             dry_run=dry_run,
         )
@@ -195,3 +205,111 @@ def ingest_zotero_embed(
             exc,
         ),
     )
+
+
+def ingest_zotero_fulltext(
+    items: list[ZoteroItem],
+    dry_run: bool = False,
+    progress_key: str | None = None,
+) -> dict:
+    """Second pass: extract and embed the full text of each item's attached PDF.
+
+    The Zotero counterpart of ``ingest_calibre_fulltext``, and deliberately the
+    same shape: text retained in ``document_texts`` before chunking, one block
+    per page group carrying its page range, a scan marked ``no_text_layer``
+    rather than silently skipped, and one embedding refresh once every block is
+    in. No generated summary: a Zotero item already has its abstract.
+
+    Callers pass only items still missing their full text (see
+    ``zotero_sync``); this does not re-check, and re-running it on an item
+    appends a second copy of its chunks.
+    """
+    stats = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0, "no_text_layer": 0}
+    known = document_index(Source.ZOTERO)
+
+    for item in items:
+        if stop := should_stop(progress_key):
+            stats["stopped"] = stop
+            break
+        failed = False
+        try:
+            doc_id = known.get(item.source_id)
+            if doc_id is None or not item.pdf_path or not item.pdf_path.exists():
+                # Not archived yet (the metadata pass runs first), or the
+                # attachment is a link to a file that is no longer there.
+                stats["skipped"] += 1
+                continue
+
+            report = extract_book_report(item.pdf_path)
+            if not report.sections:
+                if report.status == PdfTextLayer.NONE:
+                    log.info(
+                        "No text layer in %s (%d pages) — marking %s",
+                        item.pdf_path.name,
+                        report.page_count,
+                        FetchStatus.NO_TEXT_LAYER,
+                    )
+                    if not dry_run:
+                        set_fetch_status(doc_id, FetchStatus.NO_TEXT_LAYER)
+                    stats["no_text_layer"] += 1
+                stats["skipped"] += 1
+                continue
+
+            full_text, full_blocks = section_blocks(report.sections)
+            # The book caps: most attachments are papers well under them, but a
+            # Zotero library can hold whole books, and the retained text is only
+            # ever read from its opening.
+            kept_text, kept_blocks = truncate_blocks(
+                full_text,
+                full_blocks,
+                max_pages=cfg.book_retain_max_pages,
+                max_chars=cfg.book_retain_max_chars,
+            )
+            store_document_text(
+                doc_id,
+                kept_text,
+                blocks=kept_blocks,
+                full_char_count=len(full_text),
+                dry_run=dry_run,
+            )
+
+            chunk_offset = existing_chunk_count(doc_id)
+            total_added = 0
+            for section in report.sections:
+                result = ingest_text_block(
+                    doc_id,
+                    section["text"],
+                    Source.ZOTERO,
+                    extra_metadata={
+                        "title": item.title,
+                        "pass": "fulltext",
+                        "section_title": section.get("title", ""),
+                        "section_index": section.get("index", 0),
+                        **section_page_range(section),
+                    },
+                    chunk_offset=chunk_offset + total_added,
+                    dry_run=dry_run,
+                    refresh=False,
+                )
+                if not result["skipped"]:
+                    total_added += result["chunks_added"]
+
+            if total_added == 0:
+                stats["skipped"] += 1
+                continue
+            if not dry_run:
+                # Every block above deferred the refresh; this is the only one.
+                from pka.clustering.doc_embeddings import refresh_document_embedding
+
+                refresh_document_embedding(doc_id)
+            stats["processed"] += 1
+            stats["chunks"] += total_added
+
+        except Exception as exc:
+            log.exception("Zotero full text failed for %s: %s", item.source_id, exc)
+            stats["failed"] += 1
+            failed = True
+        finally:
+            tick(progress_key, failed=failed)
+
+    return stats

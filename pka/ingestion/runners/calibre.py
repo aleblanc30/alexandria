@@ -17,7 +17,7 @@ from pka.db.documents import (
     upsert_document,
 )
 from pka.db.tags import insert_source_collections, insert_source_tags
-from pka.ingestion.book_extractor import extract_book_report, metadata_text
+from pka.ingestion.book_extractor import extract_book_report, metadata_text, section_page_range
 from pka.ingestion.core import attach_summary_chunk, ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 from pka.ingestion.openlibrary import isbn_checksum_valid, normalize_isbn
@@ -36,15 +36,6 @@ def _calibre_isbn(book: CalibreBook) -> str | None:
 
 def _calibre_authors_json(book: CalibreBook) -> str | None:
     return json.dumps(book.authors) if book.authors else None
-
-
-def _page_range(section: dict) -> dict:
-    """Page numbers for a PDF section; ``{}`` for EPUB chapters, which have none.
-
-    Omitted rather than passed as ``None`` — Chroma metadata values must be
-    scalars, so a ``None`` here fails the whole upsert.
-    """
-    return {key: section[key] for key in ("page_start", "page_end") if section.get(key) is not None}
 
 
 def _attach_book_synopsis(book: CalibreBook, doc_id: int, *, dry_run: bool) -> int:
@@ -300,7 +291,7 @@ def ingest_calibre_fulltext(
                         "pass": "fulltext",
                         "section_title": section.get("title", ""),
                         "section_index": section.get("index", 0),
-                        **_page_range(section),
+                        **section_page_range(section),
                     },
                     chunk_offset=chunk_offset + total_added,
                     dry_run=dry_run,

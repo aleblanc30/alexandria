@@ -105,7 +105,7 @@ def _rechunk_blocks(row: sa.Row, text: str, blocks: list[dict], offset: int) -> 
         }
         for key in ("page_start", "page_end"):
             # Chroma metadata values must be scalars, so a None is omitted
-            # rather than passed — same rule as runners/calibre.py::_page_range.
+            # rather than passed — same rule as book_extractor.section_page_range.
             if block.get(key) is not None:
                 meta[key] = block[key]
         result = ingest_text_block(

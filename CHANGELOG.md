@@ -4,6 +4,16 @@
 
 ### Ingestion
 
+- **Zotero ingests the full text of attached PDFs.** A second embedding pass
+  in the Zotero ingest job (`ingest_zotero_fulltext`) extracts each attached
+  PDF's page groups, retains the joined text in `document_texts` with its page
+  map, and embeds one block per group (`pass="fulltext"`, with `page_start` /
+  `page_end`), offset past the abstract chunk. A scanned PDF is marked
+  `no_text_layer`. Items that already have `fulltext` chunks or were found to be
+  scans are not re-read, so a second sync adds nothing. The title + abstract
+  chunk is now tagged `pass="metadata"`, as Calibre's is, and a migration step
+  tags the existing ones, so `rechunk` and the `fetched_text` purge treat only
+  the PDF text as body. Until now Zotero indexed title + abstract only.
 - **Fetched body text is retained verbatim** in a new `document_texts` sidecar
   (`pka/ingestion/text_store.py`), zlib-compressed, one row per document,
   written before chunking. Until now `chunks.text` was the only copy — normalised,

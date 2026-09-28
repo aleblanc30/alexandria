@@ -155,10 +155,13 @@ flowchart TD
 
 ## 1. Zotero
 
-Two phases, no fetch phase: the library is already on disk and the embeddable
-text is `title + creators + abstract + annotations`, so `fetching` is skipped
-outright. Zotero is the only source whose read starts by **snapshotting** the
-upstream SQLite file. No generated summary — an item already carries its abstract.
+Two phases, no fetch phase: the library is already on disk, so `fetching` is
+skipped outright. The embedding phase runs twice, like Calibre's: first
+`title + creators + abstract + annotations` for every item (`pass="metadata"`),
+then the full text of each attached PDF not yet archived (`pass="fulltext"`),
+retained in `document_texts` with its page map. Zotero is the only source whose
+read starts by **snapshotting** the upstream SQLite file. No generated summary —
+an item already carries its abstract.
 
 ```mermaid
 flowchart TD
@@ -201,7 +204,7 @@ flowchart TD
     ELOOP["run_embed_loop()"]
     UPD["upsert_document() when the row is missing"]
     TEXT["zotero_embed_text(item)<br/>title + creators + abstract + annotations"]
-    BLOCK["ingest_text_block(min_chars=1)"]
+    BLOCK["ingest_text_block(min_chars=1, pass='metadata')"]
     CHUNK["sentence_window_chunks()"]
     UPSC["upsert_chunks() → embedding model<br/>returns the vectors it stored"]
     INSC["insert_chunks()"]
@@ -212,12 +215,31 @@ flowchart TD
     NOSUM["no attach_summary_chunk:<br/>ZOTERO is absent from _SUMMARY_FLAGS"]
     BLOCK -.-> NOSUM
 
-    SQLITE[("SQLite: documents, tags,<br/>collections, chunks")]
+    FTPLAN["_load_zotero_items_for_fulltext()<br/>readable PDF · no fulltext chunks ·<br/>not no_text_layer"]
+    SETF2["sp.set_phase('zotero', 'embedding', n_pdfs)<br/>second pass over the same phase"]
+    FRUN["ingest_zotero_fulltext()<br/>runners/zotero.py"]
+    EXTR["extract_book_report(pdf_path)<br/>book_extractor.py — page groups"]
+    SCAN["set_fetch_status(NO_TEXT_LAYER)<br/>a scan: nothing to chunk"]
+    KEEP["store_document_text()<br/>truncate_blocks(book caps) + blocks map"]
+    FBLOCK["ingest_text_block(pass='fulltext',<br/>section + page range, refresh=False)<br/>offset by existing_chunk_count()"]
+    FREF["refresh_document_embedding()<br/>once, after the last block"]
+
+    DOCEMB --> FTPLAN --> SETF2 --> FRUN --> EXTR
+    EXTR -->|no text layer| SCAN
+    EXTR -->|sections| KEEP --> FBLOCK --> FREF
+
+    PDF[("attached PDF<br/>Zotero storage/, read-only")]
+    EXTR --> PDF
+
+    SQLITE[("SQLite: documents, tags, collections,<br/>chunks, document_texts")]
     CHROMA[("ChromaDB: alexandria_chunks")]
     INSDOC --> SQLITE
     TAGS --> SQLITE
     INSC --> SQLITE
+    KEEP --> SQLITE
+    SCAN --> SQLITE
     UPSC --> CHROMA
+    FBLOCK --> CHROMA
 
     classDef shared   fill:#1f6feb,stroke:#0b3d91,stroke-width:1px,color:#ffffff
     classDef specific fill:#f59e0b,stroke:#b45309,stroke-width:1px,color:#1a1a1a
@@ -225,9 +247,9 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,BASE,BEGIN,TAKE,MLOOP,INSDOC,TAGS,CLS,CARD,FULL,ING,HAVE,DIFF,SKIPF,SETE,ELOOP,UPD,BLOCK,CHUNK,UPSC,INSC,DOCEMB shared
-    class COPY,LOAD,MRUN,KW,ATTK,PLAN,KEYS,RELOAD,ERUN,TEXT,NOSUM specific
-    class ZDB,SQLITE,CHROMA store
+    class START,INIT,BASE,BEGIN,TAKE,MLOOP,INSDOC,TAGS,CLS,CARD,FULL,ING,HAVE,DIFF,SKIPF,SETE,ELOOP,UPD,BLOCK,CHUNK,UPSC,INSC,DOCEMB,SETF2,EXTR,SCAN,KEEP,FBLOCK,FREF shared
+    class COPY,LOAD,MRUN,KW,ATTK,PLAN,KEYS,RELOAD,ERUN,TEXT,NOSUM,FTPLAN,FRUN specific
+    class ZDB,SQLITE,CHROMA,PDF store
 ```
 
 ---
@@ -887,16 +909,17 @@ Reading the six graphs together, the shared surface is:
 | `loops.run_metadata_loop` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `loops.run_embed_loop` | ✅ | — ¹ | ✅ | ✅ | ✅ | ✅ |
 | `core.ingest_text_block` + chunk/embed/persist tail | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| deferred `refresh_document_embedding` (`refresh=False`) ⁵ | — | ✅ | ✅ | ✅ | — | — |
+| deferred `refresh_document_embedding` (`refresh=False`) ⁵ | ✅ | ✅ | ✅ | ✅ | — | — |
 | `sync_shared.run_full_sync` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `sync_shared.unavailable_metadata` | — | — | ✅ | — | ✅ | ✅ |
 | `classification.classify_document` | ✅ | ✅ | — | — | ✅ | — ² |
 | `fetcher.fetch_and_embed_pending` (async pool, per-domain limiter, handler dispatch) | — | ✅ | — | ✅ ³ | — | — |
 | `core.fetched_embed_text` + `card_summary.body_excerpt` | — | ✅ | — | ✅ ³ | — | — |
-| `text_store.store_document_text` (`retain_document_text`) | — | ✅ | ✅ ⁶ | ✅ ³ | — | — |
+| `text_store.store_document_text` (`retain_document_text`) | ✅ ⁶ | ✅ | ✅ ⁶ | ✅ ³ | — | — |
 | `core.attach_summary_chunk` (`_SUMMARY_FLAGS`) | — | ✅ | ✅ | ✅ | — | — |
 | `enrichment_runs` provenance around the summary call ⁴ | — | ✅ | ✅ | ✅ | — | — |
 | `openlibrary.lookup_book` ladder | — | — | ✅ | — | — | ✅ |
+| `book_extractor.extract_book_report` (page groups, scan detection) | ✅ | — | ✅ | — | — | — |
 
 ¹ Firefox embeds inline inside the fetch worker (`tracks_embedding=False`). It
 uses `run_embed_loop` only on the batch path `ingest_fetched_texts`, which
@@ -914,15 +937,15 @@ ends — so a sync whose summaries are all cached opens no run at all.
 than one block per document ran it once per block and threw away all but the
 last result. Those sources pass `refresh=False` and call
 `refresh_document_embedding` themselves once the last block is in: Calibre after
-its section loop and after its synopsis block, Firefox and Reddit after the
-generated-summary block. Zotero, YouTube and Images write one block per document
-and keep the default, which now costs no Chroma read at all because
+its section loop and after its synopsis block, Zotero after its PDF section
+loop, Firefox and Reddit after the generated-summary block. Zotero's abstract
+pass, YouTube and Images write one block per document and keep the default, which now costs no Chroma read at all because
 `upsert_chunks` hands the vectors back. A source that adopts `refresh=False`
 without adding that trailing call leaves its documents with a stale
 `doc_embedding`, invisible to clustering, learned tags and semantic search.
-⁶ Calibre stores the *joined* pass-2 sections plus a `blocks_json` map of where
-each one sits in that text, so a later re-chunk can reproduce the section and
-page metadata; the fetched sources store one undifferentiated body. The sources
+⁶ Calibre and Zotero (its PDF pass) store the *joined* pass-2 sections plus a
+`blocks_json` map of where each one sits in that text, so a later re-chunk can
+reproduce the section and page metadata; the fetched sources store one undifferentiated body. The sources
 marked `—` are the ones whose text already has a verbatim home
 (`reddit_items.body`, `images.ocr_text`/`description`) or is a millisecond
 re-read from the source itself (Zotero abstract, YouTube description).

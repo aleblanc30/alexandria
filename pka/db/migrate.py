@@ -90,6 +90,24 @@ def _overlay_tags_unique(con: sa.Connection) -> None:
     )(con)
 
 
+def _zotero_metadata_pass(con: sa.Connection) -> None:
+    """Tag Zotero's existing title + abstract chunks ``pass='metadata'``.
+
+    They were written untagged, and an untagged chunk counts as body text to
+    ``rechunk`` and the ``fetched_text`` purge. Once Zotero also retains PDF
+    text, a re-chunk would replace the abstract chunk with PDF blocks. Before
+    the PDF pass existed every Zotero chunk was a title + abstract chunk, so
+    every untagged one is tagged; ``fulltext`` chunks carry their own pass.
+    """
+    con.execute(
+        sa.text(
+            "UPDATE chunks SET chunk_pass = 'metadata' "
+            "WHERE chunk_pass IS NULL AND document_id IN "
+            "(SELECT id FROM documents WHERE source = 'zotero')"
+        )
+    )
+
+
 MIGRATIONS: list[tuple[str, Step]] = [
     ("documents.ingested_at", _documents_ingested_at),
     # Cache generated summaries so a re-ingest never re-infers (DESIGN.md §3.2).
@@ -216,6 +234,7 @@ MIGRATIONS: list[tuple[str, Step]] = [
         "chunks.ix_chunks_document_id_chunk_index",
         _create_index("ix_chunks_document_id_chunk_index", "chunks", "document_id, chunk_index"),
     ),
+    ("chunks.zotero_metadata_pass", _zotero_metadata_pass),
 ]
 
 

@@ -80,6 +80,8 @@ class TestSyncZoteroIngest:
             "pka.ingestion.zotero_sync._load_zotero_items_for_embed",
             lambda **kw: ([], 0, 0),
         )
+        # No attached PDFs: this test is about the abstract pass alone.
+        monkeypatch.setattr("pka.ingestion.zotero_sync._load_zotero_items_for_fulltext", lambda: [])
         embed_mock = MagicMock()
         monkeypatch.setattr(
             "pka.ingestion.zotero_sync.ingest_zotero_embed",
@@ -97,6 +99,8 @@ class TestSyncZoteroIngest:
             "pka.ingestion.zotero_sync._load_zotero_items_for_embed",
             lambda **kw: ([item], 1, 0),
         )
+        # No attached PDFs: this test is about the abstract pass alone.
+        monkeypatch.setattr("pka.ingestion.zotero_sync._load_zotero_items_for_fulltext", lambda: [])
         monkeypatch.setattr(
             "pka.ingestion.zotero_sync.ingest_zotero_embed",
             lambda items, **kw: {
