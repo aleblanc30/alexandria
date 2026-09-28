@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 import httpx
 
 from pka.card_summary import SUMMARY_MAX_LEN, truncate_summary
-from pka.ingestion.fetch_base import FetchResult, _http_timeout, _limiter
+from pka.ingestion.fetch_base import FetchResult, rate_limited_get
 
 _YOUTUBE_HOST = re.compile(r"^(?:www\.|m\.)?youtube\.com$", re.IGNORECASE)
 _YOUTU_BE_HOST = re.compile(r"^(?:www\.)?youtu\.be$", re.IGNORECASE)
@@ -171,20 +171,9 @@ async def _fetch_youtube_metadata(
     video_id: str,
 ) -> tuple[YoutubeVideo | None, int | None, str | None]:
     api_url = youtube_oembed_url(video_id)
-    await _limiter.wait(api_url)
-    try:
-        resp = await client.get(
-            api_url,
-            follow_redirects=True,
-            timeout=_http_timeout(),
-        )
-    except httpx.TimeoutException:
-        return None, None, "timeout"
-    except httpx.RequestError as exc:
-        return None, None, str(exc)
-
-    if resp.status_code >= 400:
-        return None, resp.status_code, f"HTTP {resp.status_code}"
+    resp, status, err = await rate_limited_get(client, api_url)
+    if resp is None:
+        return None, status, err
 
     try:
         data = resp.json()

@@ -21,11 +21,6 @@ In order; everything below this section is unordered.
 `M-n` / `P-n` ids: M-1…M-13 and P-1…P-8 are `MAINTAINABILITY_PERFORMANCE_AUDIT.md`;
 M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 
-- [ ] **M-14: table-drive `_fetch_one_impl`** — CC 51, 19 predicate rungs
-  (`ingestion/fetcher.py`). A handler table shaped like `registry.py`'s
-  `PHASE_SPECS`, imports still lazy, order preserved verbatim (the publisher block
-  stays after arXiv). Then fold the 6 duplicated publisher blocks into a shared
-  `fetch_base` template.
 - [ ] **M-17: split `tag_training/lifecycle.py`** — move the scoring half
   (`apply_learned_tags_for_document`, run for every ingested document) into
   `tag_training/scoring.py`, leaving session lifecycle to the API. Sequence with

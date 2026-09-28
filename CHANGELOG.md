@@ -83,6 +83,12 @@
   `ingestion_jobs.py`, with shared helpers in `pka/api/ingestion_common.py`.
   Every route keeps its path, method and handler name, so the OpenAPI schema is
   unchanged.
+- **Per-site fetch dispatch is a handler table.** `_fetch_one_impl` walks
+  `_fetch_handlers()`, an ordered tuple of `FetchHandler`s, and falls back to
+  `_fetch_generic()` for the plain GET; its cyclomatic complexity drops from 51
+  to 7. The rate-limited GET and error mapping that eight handler helpers
+  copied is `fetch_base.rate_limited_get`, and the arXiv/bioRxiv PDF leg is
+  `fetch_base.fetch_pdf_text`. Dispatch order and every result are unchanged.
 
 ### Fixes
 

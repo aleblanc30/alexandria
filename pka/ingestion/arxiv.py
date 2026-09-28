@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -15,9 +14,8 @@ import httpx
 from pka.card_summary import preprint_card_summary
 from pka.ingestion.fetch_base import (
     FetchResult,
-    _fetch_pdf_result,
-    _http_timeout,
-    _limiter,
+    fetch_pdf_text,
+    rate_limited_get,
 )
 from pka.ingestion.identifiers import derive_arxiv_doi
 from pka.ingestion.preprint_text import build_preprint_text
@@ -149,20 +147,9 @@ async def _fetch_arxiv_metadata(
     arxiv_id: str,
 ) -> tuple[ArxivMetadata | None, int | None, str | None]:
     api_url = arxiv_api_url(arxiv_id)
-    await _limiter.wait(api_url)
-    try:
-        resp = await client.get(
-            api_url,
-            follow_redirects=True,
-            timeout=_http_timeout(),
-        )
-    except httpx.TimeoutException:
-        return None, None, "timeout"
-    except httpx.RequestError as exc:
-        return None, None, str(exc)
-
-    if resp.status_code >= 400:
-        return None, resp.status_code, f"HTTP {resp.status_code}"
+    resp, status, err = await rate_limited_get(client, api_url)
+    if resp is None:
+        return None, status, err
 
     meta = parse_arxiv_atom(resp.text)
     if meta is None:
@@ -174,32 +161,7 @@ async def _fetch_arxiv_pdf_text(
     client: httpx.AsyncClient,
     arxiv_id: str,
 ) -> tuple[str | None, int | None, str | None]:
-    pdf_url = arxiv_pdf_url(arxiv_id)
-    await _limiter.wait(pdf_url)
-    try:
-        resp = await client.get(
-            pdf_url,
-            follow_redirects=True,
-            timeout=_http_timeout(pdf=True),
-        )
-    except httpx.TimeoutException:
-        return None, None, "pdf timeout"
-    except httpx.RequestError as exc:
-        return None, None, str(exc)
-
-    if resp.status_code >= 400:
-        return None, resp.status_code, f"pdf HTTP {resp.status_code}"
-
-    result = await asyncio.to_thread(
-        _fetch_pdf_result,
-        0,
-        pdf_url,
-        resp.content,
-        resp.status_code,
-    )
-    if result.status != "fetched" or not result.text:
-        return None, resp.status_code, result.error_msg or "pdf extraction failed"
-    return result.text, resp.status_code, None
+    return await fetch_pdf_text(client, arxiv_pdf_url(arxiv_id))
 
 
 async def fetch_arxiv_paper(

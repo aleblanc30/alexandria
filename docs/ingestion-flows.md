@@ -302,7 +302,7 @@ flowchart TD
     SETF --> ASYNC --> POOL --> KEY --> DQ --> SLEEP --> ONE
 
     subgraph handlers["_fetch_one_impl dispatch — shared fetcher"]
-        DISPATCH{"URL shape?"}
+        DISPATCH{"URL shape?<br/>_fetch_handlers(), in order —<br/>first handler returning a result wins"}
         SRCH["search_url_result()<br/>query decoded from the URL — no request"]
         WIKI["fetch_wikipedia_with_retries()<br/>MediaWiki Action API"]
         YT["fetch_youtube_video()<br/>oEmbed — title + channel, no key"]
@@ -316,7 +316,7 @@ flowchart TD
         DMIT["fetch_direct_mit()<br/>article-pdf: filename is the DOI suffix → direct lookup ·<br/>article: crossref bibliographic query · both accepted only if<br/>volume/issue/page round-trip · book: openlibrary by title<br/>gates: doi_metadata_lookup / external_lookup_enabled"]
         DOIO["fetch_doi_url()<br/>doi.org content negotiation (CSL-JSON)<br/>— the bookmarked host, so no flag"]
         PUB["fetch_nature / springer / aps / sciencedirect_article()<br/>DOI (or Elsevier PII) from the URL → api.crossref.org,<br/>+ Semantic Scholar when the record has no abstract<br/>gate: doi_metadata_lookup"]
-        EXT["non-HTML extension → skipped"]
+        EXT["_fetch_generic(): no handler returned a result<br/>non-HTML extension → skipped"]
         LIM["_limiter.wait(url)<br/>per-domain slot, 1 req/s —<br/>skipped when the pool already claimed it"]
         GET["httpx GET, follow_redirects"]
         WB["fetch_via_wayback()<br/>gate: fetch_wayback_fallback"]

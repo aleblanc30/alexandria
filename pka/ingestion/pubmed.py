@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 import httpx
 
 from pka.card_summary import preprint_card_summary
-from pka.ingestion.fetch_base import FetchResult, _http_timeout, _limiter
+from pka.ingestion.fetch_base import FetchResult, rate_limited_get
 from pka.ingestion.identifiers import normalize_doi
 from pka.ingestion.preprint_text import build_preprint_text
 
@@ -128,20 +128,9 @@ async def _fetch_pubmed_metadata(
     pmid: str,
 ) -> tuple[PubmedMetadata | None, int | None, str | None]:
     api_url = pubmed_efetch_url(pmid)
-    await _limiter.wait(api_url)
-    try:
-        resp = await client.get(
-            api_url,
-            follow_redirects=True,
-            timeout=_http_timeout(),
-        )
-    except httpx.TimeoutException:
-        return None, None, "timeout"
-    except httpx.RequestError as exc:
-        return None, None, str(exc)
-
-    if resp.status_code >= 400:
-        return None, resp.status_code, f"HTTP {resp.status_code}"
+    resp, status, err = await rate_limited_get(client, api_url)
+    if resp is None:
+        return None, status, err
 
     meta = parse_pubmed_xml(resp.text)
     if meta is None:

@@ -105,7 +105,25 @@ is a finding here.
 
 Ordered by expected payoff. "Effort" is a rough S/M/L.
 
-### M-14: `_fetch_one_impl` is a 212-line dispatch chain, CC 51 (M)
+### M-14: `_fetch_one_impl` is a 212-line dispatch chain, CC 51 (M) — **done**
+
+Shipped: `_fetch_handlers()` returns an ordered tuple of `FetchHandler(name,
+fetch, matches, awaits)`, and `_fetch_one_impl` is the unfetchable guard, a loop
+over it, then `_fetch_generic()` for the plain GET tail. CC 51 became 7 for the
+dispatcher and 21 for `_fetch_generic` (the PDF / content-type / Wayback /
+Amazon branches, unchanged). One departure: the table is rebuilt on every call
+rather than cached on first use, because caching froze the handler functions
+and a `monkeypatch` of a handler module stopped reaching dispatch — a test pins
+that. Tests also pin the arXiv-before-publisher order.
+
+The duplicated blocks: the rate-limited GET with its timeout / request-error /
+4xx mapping, copied eight times (arXiv ×2, bioRxiv ×2, doi_meta, PubMed, Reddit,
+YouTube), is now `fetch_base.rate_limited_get`, and the arXiv/bioRxiv PDF leg is
+`fetch_base.fetch_pdf_text`. pylint's duplicate-code report went from six pairs
+to two, both left on purpose: the arXiv/bioRxiv abstract-or-PDF result tail
+(folding it needs a helper with a dozen parameters, and the two differ in author
+format and identifier fields), and `runners/firefox.py` ≡ `runners/reddit.py`,
+which is runner code outside the fetch family.
 
 Evidence: `pka/ingestion/fetcher.py:338-549`. Cyclomatic complexity **51 (F)**,
 the highest in the tree; the function holds **19 predicate rungs** and **16
