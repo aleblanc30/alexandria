@@ -471,7 +471,11 @@ Recommendations, independently adoptable:
   batch at the end of the sync phase (`refresh_document_embeddings(ids)` with a
   single `fetch_records_by_document_ids`).
 
-### P-5: search: unbounded title scan and over-wide row fetch (S) — **2 of 3 done**
+### P-5: search: unbounded title scan and over-wide row fetch (S) — **done**
+
+The FTS5 index shipped with keyword search (`DESIGN.md` §3.4): trigram indexes
+over `documents(title, card_summary)` and `chunks(text)`, trigger-synced rather
+than kept by the `DocumentWrite` path, so every writer is covered.
 
 Both column projections and the over-fetch ceiling shipped with M-3. The row
 filter now selects `id` / `fetch_status` / `date_added`, and `documents_out_batch`

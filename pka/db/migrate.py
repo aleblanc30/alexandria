@@ -108,6 +108,52 @@ def _zotero_metadata_pass(con: sa.Connection) -> None:
     )
 
 
+def _fts_index(table: str, columns: tuple[str, ...]) -> Step:
+    """Step creating ``<table>_fts``, the trigram FTS5 index over ``columns``.
+
+    External-content: the index stores no copy of the text and reads it from
+    ``table`` itself, so those columns must stay plain text. Three triggers keep
+    it current on every insert, delete and update of an indexed column, which
+    covers every writer, including purges and raw SQL, without any of them
+    knowing the index exists. ``rebuild`` fills it from rows already there. It is
+    the slow part: on a large archive the chunk index takes minutes to build.
+    """
+    fts = f"{table}_fts"
+    cols = ", ".join(columns)
+    new = ", ".join(f"new.{c}" for c in columns)
+    old = ", ".join(f"old.{c}" for c in columns)
+
+    def step(con: sa.Connection) -> None:
+        con.execute(
+            sa.text(
+                f"CREATE VIRTUAL TABLE IF NOT EXISTS {fts} USING fts5("
+                f"{cols}, content='{table}', content_rowid='id', tokenize='trigram')"
+            )
+        )
+        con.execute(
+            sa.text(
+                f"CREATE TRIGGER IF NOT EXISTS {fts}_ai AFTER INSERT ON {table} BEGIN "
+                f"INSERT INTO {fts}(rowid, {cols}) VALUES (new.id, {new}); END"
+            )
+        )
+        con.execute(
+            sa.text(
+                f"CREATE TRIGGER IF NOT EXISTS {fts}_ad AFTER DELETE ON {table} BEGIN "
+                f"INSERT INTO {fts}({fts}, rowid, {cols}) VALUES ('delete', old.id, {old}); END"
+            )
+        )
+        con.execute(
+            sa.text(
+                f"CREATE TRIGGER IF NOT EXISTS {fts}_au AFTER UPDATE OF {cols} ON {table} BEGIN "
+                f"INSERT INTO {fts}({fts}, rowid, {cols}) VALUES ('delete', old.id, {old}); "
+                f"INSERT INTO {fts}(rowid, {cols}) VALUES (new.id, {new}); END"
+            )
+        )
+        con.execute(sa.text(f"INSERT INTO {fts}({fts}) VALUES ('rebuild')"))
+
+    return step
+
+
 MIGRATIONS: list[tuple[str, Step]] = [
     ("documents.ingested_at", _documents_ingested_at),
     # Cache generated summaries so a re-ingest never re-infers (DESIGN.md §3.2).
@@ -235,6 +281,10 @@ MIGRATIONS: list[tuple[str, Step]] = [
         _create_index("ix_chunks_document_id_chunk_index", "chunks", "document_id, chunk_index"),
     ),
     ("chunks.zotero_metadata_pass", _zotero_metadata_pass),
+    # Keyword search (pka.db.fulltext). Not declared in schema.py: create_all
+    # cannot make a virtual table, so a fresh archive gets them from here too.
+    ("documents_fts.create", _fts_index("documents", ("title", "card_summary"))),
+    ("chunks_fts.create", _fts_index("chunks", ("text",))),
 ]
 
 

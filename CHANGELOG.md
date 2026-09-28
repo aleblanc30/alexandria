@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Search
+
+- **Keyword search covers bodies, and is indexed.** `fulltext` mode (and the
+  keyword half of `hybrid`) used to be an unbounded `title ILIKE '%q%'` scan.
+  It now queries two FTS5 trigram indexes, over titles + card summaries and
+  over every chunk, so a phrase is found in PDF full text, fetched pages,
+  abstracts and OCR, in any script. Title matches rank ahead of body-only
+  ones. Triggers keep both indexes current for every writer. A query under
+  three characters still uses the title scan. The first `alexandria init`
+  after upgrading builds the chunk index, which takes minutes on a large
+  archive. `chunks.text`, `documents.title` and `card_summary` must now stay
+  plain text (`DESIGN.md` §3.4).
+
 ### Ingestion
 
 - **Calibre's full text is embedded once.** Every Calibre ingest used to hand

@@ -404,6 +404,11 @@ built, recording every step it runs in the `schema_migrations` table so the next
 start skips it. What the backup covers is the case it cannot — a schema change for which no migration
 step was written.
 
+The first `alexandria init` after an upgrade that adds keyword search builds
+its index over every stored chunk, which takes minutes on a large archive; later
+runs skip the step. Run it before starting the server, so the build is not
+holding up the server's startup.
+
 The same `init_db()` runs from the API's startup hook, so an upgrade that skips
 the explicit `alexandria init` still migrates once the task restarts. The script
 runs it as its own step anyway, because that way a failed migration is reported

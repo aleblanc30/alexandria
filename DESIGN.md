@@ -696,6 +696,36 @@ That merge compares scores from two embedding spaces, which is an approximation
 — the same one `/search` already makes — and it decides ordering only: both
 paths return their results either way.
 
+### 3.4 Keyword search (FTS5)
+
+`mode="fulltext"`, the keyword half of `hybrid`, and the fallback when semantic
+search returns nothing all run through two FTS5 indexes in `archive.db`:
+`documents_fts` over `documents.title` + `card_summary`, and `chunks_fts` over
+`chunks.text`, so a phrase is found in a PDF's full text, a fetched page, an
+abstract or an image's OCR, not only in a title (`pka/db/fulltext.py`).
+
+- **Trigram tokenizer.** A query matches as one case-insensitive substring,
+  the semantics of the title `ILIKE '%q%'` it replaced, and works in scripts
+  without word boundaries (CJK, Thai). Words out of order do not match. A
+  query under three characters cannot use a trigram index and falls back to
+  that title scan.
+- **Ranking.** Title and card-summary matches first, by BM25; documents
+  matched only in a chunk body after them, by their best chunk's BM25. The two
+  are not merged into one score: a title containing the phrase says more about
+  a document than one paragraph of its body. Ties go to the lower document id.
+  Results carry no similarity (`None`), as before.
+- **External content, synced by triggers.** Neither index stores the text; each
+  reads it from its table, and `AFTER INSERT / DELETE / UPDATE` triggers keep
+  it current for every writer, purges and raw SQL included, without any writer
+  knowing the index exists. The consequence is a constraint: **`chunks.text`,
+  `documents.title` and `documents.card_summary` stay plain text.** Compressing
+  or moving them breaks keyword search silently.
+- **Built by migrations.** create_all cannot make a virtual table, so both
+  indexes, their triggers and the initial `rebuild` are `MIGRATIONS` steps,
+  run for a new archive as for an old one. The rebuild over `chunks` is the
+  slow step on a large archive. SQLite 3.35 or later is required
+  (`MATERIALIZED` CTEs; the trigram tokenizer needs 3.34).
+
 ## 4. Cluster lifecycle
 
 Every clustering run is stored regardless of acceptance. The UI surfaces

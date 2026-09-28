@@ -12,8 +12,7 @@ In order; everything below this section is unordered.
 1. **Multilingual chunking** — *Search / vectors*.
 2. **Multilingual embedding model** — *Search / vectors*; settles the model half
    of (1).
-3. **Full-text search** — *Search / vectors*.
-4. **Zotero collection names as tags** — *Ingestion*.
+3. **Zotero collection names as tags** — *Ingestion*.
 
 ## Maintainability & performance
 
@@ -28,7 +27,7 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 
 ## Ingestion
 
-- [ ] **Use Zotero collection names as tags** *(priority 4)* — plan in
+- [ ] **Use Zotero collection names as tags** *(priority 3)* — plan in
   `COLLECTION_TAGS.md`, which extends it to Firefox bookmark folders.
 - [ ] **OCR scanned PDFs** — Calibre books, Zotero attachments and fetched PDFs
   with no text layer are marked `no_text_layer` and get no body chunks; run
@@ -72,12 +71,6 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
   `paraphrase-multilingual-MiniLM-L12-v2`) before committing: collections are
   dimension-locked, so the swap is a full reindex — `alexandria rechunk`, then
   `rebuild_from_chunks`.
-- [ ] **Full-text search** *(priority 3)* — `mode="fulltext"` is an unbounded
-  `title ILIKE '%q%'` scan (`api/search_hits.py::fulltext_hits`), so there is no
-  keyword index anywhere. Add an external-content FTS5 table over `title` +
-  `card_summary` (and later `document_texts`), kept in sync by the
-  `DocumentWrite` path, with a migration and backfill. Until it ships,
-  `chunks.text` must stay plaintext: it is the only greppable copy.
 
 ## Clustering
 

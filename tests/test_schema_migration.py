@@ -222,6 +222,17 @@ def _normalise_default(dflt):
     return dflt
 
 
+# The keyword-search indexes are FTS5 virtual tables, which create_all cannot
+# make, so a ``_head_schema`` archive never has them: they (and the shadow
+# tables FTS5 keeps beside them) are left out of the comparison and checked by
+# ``TestKeywordIndexes`` instead.
+_FTS_TABLES = ("documents_fts", "chunks_fts")
+
+
+def _is_fts(name: str) -> bool:
+    return any(name == t or name.startswith(f"{t}_") for t in _FTS_TABLES)
+
+
 def _snapshot(db_path) -> dict:
     """Tables → columns and indexes, in a form two archives can be compared by."""
     con = sqlite3.connect(db_path)
@@ -232,6 +243,7 @@ def _snapshot(db_path) -> dict:
             for r in con.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )
+            if not _is_fts(r[0])
         ]
         for t in tables:
             # Column order is not compared: ALTER appends, CREATE TABLE declares.
@@ -411,6 +423,11 @@ class TestMigratedColumns:
         init_db()
         con = sqlite3.connect(settings.archive_db)
         try:
+            # The keyword-index triggers read indexed columns, and SQLite will not
+            # drop a column a trigger names. Their migration step recreates them,
+            # since the record is cleared below.
+            for (name,) in con.execute("SELECT name FROM sqlite_master WHERE type='trigger'"):
+                con.execute(f"DROP TRIGGER {name}")
             con.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
             con.commit()
         except sqlite3.OperationalError as exc:
@@ -499,3 +516,57 @@ class TestMigrationRecord:
 
         assert "test.ok" in _recorded_migrations()
         assert "test.boom" not in _recorded_migrations()
+
+
+class TestKeywordIndexes:
+    """The FTS5 indexes a v1 archive gains, and the triggers that keep them current."""
+
+    def _names(self, kind: str) -> set[str]:
+        con = sqlite3.connect(settings.archive_db)
+        try:
+            return {
+                r[0] for r in con.execute(f"SELECT name FROM sqlite_master WHERE type='{kind}'")
+            }
+        finally:
+            con.close()
+
+    def test_v1_archive_gets_both_indexes_and_their_triggers(self):
+        _write_v1_archive()
+        _seed_v1_rows()
+
+        init_db()
+
+        assert {"documents_fts", "chunks_fts"} <= self._names("table")
+        assert {
+            f"{t}_{op}" for t in ("documents_fts", "chunks_fts") for op in ("ai", "ad", "au")
+        } <= self._names("trigger")
+
+    def test_rows_already_archived_are_indexed(self):
+        _write_v1_archive()
+        _seed_v1_rows()
+
+        init_db()
+
+        with get_engine().connect() as con:
+            doc = con.execute(
+                sa.text("SELECT rowid FROM documents_fts WHERE documents_fts MATCH '\"eeded do\"'")
+            ).fetchall()
+            chunk = con.execute(
+                sa.text("SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH '\"chunk tex\"'")
+            ).fetchall()
+        assert len(doc) == 1
+        assert len(chunk) == 1
+
+    def test_dropped_triggers_are_restored(self):
+        init_db()
+        con = sqlite3.connect(settings.archive_db)
+        try:
+            con.execute("DROP TRIGGER chunks_fts_ai")
+            con.commit()
+        finally:
+            con.close()
+        _forget_migrations()
+
+        init_db()
+
+        assert "chunks_fts_ai" in self._names("trigger")

@@ -138,10 +138,34 @@ class TestFulltextHits:
         ((_, sim),) = fulltext_hits(con, _req())
         assert sim is None
 
-    def test_ordered_by_document_id(self, con):
+    def test_equally_ranked_matches_keep_document_id_order(self, con):
         first = make_document("zotero", "K1", "Alpha one")
         second = make_document("firefox", "K2", "Alpha two")
         assert [d for d, _ in fulltext_hits(con, _req())] == sorted([first, second])
+
+    def test_a_title_match_ranks_ahead_of_a_body_only_match(self, con):
+        from pka.db.chunks import insert_chunks
+
+        body_only = make_document("zotero", "K1", "Unrelated title")
+        insert_chunks(
+            [
+                {
+                    "document_id": body_only,
+                    "chunk_index": 0,
+                    "text": "The alpha particle appears here.",
+                    "token_count": 5,
+                    "vector_id": "v1",
+                }
+            ]
+        )
+        titled = make_document("zotero", "K2", "Alpha particles")
+        assert [d for d, _ in fulltext_hits(con, _req())] == [titled, body_only]
+
+    def test_a_short_query_falls_back_to_the_title_scan(self, con):
+        """Trigram cannot match under three characters."""
+        hit = make_document("zotero", "K1", "Go programming")
+        make_document("zotero", "K2", "Rust")
+        assert fulltext_hits(con, _req(query="go")) == [(hit, None)]
 
     def test_source_filter_applied(self, con):
         keep = make_document("zotero", "K1", "Alpha one")
