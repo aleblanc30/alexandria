@@ -405,8 +405,7 @@ local DB, with **one loader** producing `RedditSaved`:
 
    **Every poll is archived** (`pka/connectors/reddit_archive.py`,
    `reddit_archive_enabled`, default **on** — a local disk write, not an
-   outbound path). Reddit is the only source with no local original: Firefox,
-   Zotero and Calibre keep their own databases, whereas the saved list lives on
+   outbound path). Reddit has no local original: the saved list lives on
    a server behind a token that can be rotated, a bot filter that can start
    refusing us, and a feed that serves only the newest slice. A poll is in
    practice unrepeatable, so it is written down before it is parsed:

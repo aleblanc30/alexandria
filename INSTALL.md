@@ -105,10 +105,9 @@ In `.env`, set `ALEXANDRIA_DATA_DIR` to an absolute path:
 ALEXANDRIA_DATA_DIR=C:\Users\<you>\AppData\Local\Alexandria\data
 ```
 
-That is the only storage setting there is. The SQLite file (`archive.db`), the
-Chroma directory (`chroma`), the cached OAuth token and the Zotero/Firefox
-source snapshots are all derived from it, so nothing else needs pointing at the
-data directory. Its default is the relative path `data`, which resolves against
+The SQLite file (`archive.db`), the Chroma directory (`chroma`), the cached
+OAuth token and the Zotero/Firefox source snapshots are all derived from it.
+Its default is the relative path `data`, which resolves against
 the process working directory and would therefore move the library depending on
 where the server was started from; an absolute path removes that dependency.
 
@@ -368,8 +367,7 @@ path that could be wrong is written down: the app directory comes from the
 script's own location, and the library from `ALEXANDRIA_DATA_DIR` in `.env` —
 the same setting the server reads (§4) — falling back to that setting's own
 relative `data` default. Both are printed for confirmation before anything is
-stopped, and `$Port` and `$Task` at the top of the file are the only settings
-left to edit.
+stopped. `$Port` and `$Task`, at the top of the file, are set by hand.
 
 That the script sits inside the tree it checks out is deliberate rather than
 overlooked. PowerShell parses a script file in full before executing any of it,
@@ -432,8 +430,8 @@ row it sees, which is deliberate: an item whose only locator was a bare DOI
 string now keeps the DOI in its own column and is served as a
 `https://doi.org/...` link instead.
 
-No other source does. Calibre's metadata phase inserts only what is absent and
-its embed phase writes documents missing from the index, so books archived
+Calibre does not: its metadata phase inserts only what is absent and its embed
+phase writes documents missing from the index, so books archived
 before the upgrade keep empty `isbn`, `year` and `authors_json`. Bookmarked
 preprints take their identifiers from the fetcher, so only newly fetched ones
 carry them.

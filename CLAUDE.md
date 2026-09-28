@@ -213,6 +213,17 @@ Two configuration facts that otherwise read as bugs:
   `runners/<source>.py` and `image_pipeline.py` for who writes what,
   `ingestion/core.py` for the chunk tail, `ingestion/fetcher.py` for the
   fetch-time writes.
+- **No uniqueness claims about sets the code can grow.** In docs, comments and
+  docstrings, do not call something *the only* / *the sole* / *the first*
+  source, pipeline, caller, setting or target, say *no other* one does
+  something, or rank it against the others (*the furthest from the shared
+  shape*). The next addition makes the sentence false and nothing flags it: a
+  flow-graph intro kept calling Calibre the only source with two embedding
+  passes after Zotero gained one. Describe the thing's own property instead
+  ("Firefox's `PhaseSpec` is …", "Zotero's read starts by snapshotting …"). A
+  uniqueness that is a deliberate constraint belongs in `DESIGN.md`, stated as
+  the rule, so changing it is a design decision; elsewhere, cite that section.
+  Facts about external systems (what Reddit's feed serves) are not covered.
 - Keep diffs minimal; do not refactor unrelated code.
 
 ## Where things live

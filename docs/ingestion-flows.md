@@ -159,8 +159,8 @@ Two phases, no fetch phase: the library is already on disk, so `fetching` is
 skipped outright. The embedding phase runs twice, like Calibre's: first
 `title + creators + abstract + annotations` for every item (`pass="metadata"`),
 then the full text of each attached PDF not yet archived (`pass="fulltext"`),
-retained in `document_texts` with its page map. Zotero is the only source whose
-read starts by **snapshotting** the upstream SQLite file. No generated summary —
+retained in `document_texts` with its page map. Zotero's read starts by
+**snapshotting** the upstream SQLite file. No generated summary —
 an item already carries its abstract.
 
 ```mermaid
@@ -256,7 +256,7 @@ flowchart TD
 
 ## 2. Firefox
 
-The only pipeline with `plans_own_phases=True, tracks_embedding=False`
+Firefox's `PhaseSpec` is `plans_own_phases=True, tracks_embedding=False`
 (`registry.PHASE_SPECS`): its work is unknown until the fetch queue is built, and
 every fetched page is embedded **inline by the fetch worker**, so there is no
 separate embedding phase to report. Everything from `fetch_and_embed_pending`
@@ -573,9 +573,9 @@ flowchart TD
 
 The hybrid. Metadata comes from the private Atom feed; the ingest phase then
 **forks on `external_url`** — link posts go through the shared Firefox fetcher,
-self-posts and comments are embedded from their inline body. It is the only
-source that archives every upstream response before parsing it, and the only one
-that passes `material` / `context` to the summariser. That archive also feeds
+self-posts and comments are embedded from their inline body. It archives every
+upstream response before parsing it, and passes `material` / `context` to the
+summariser. That archive also feeds
 ingestion: every metadata sync replays the items `saved.jsonl` holds but the
 database does not *before* the walk, and those ids stop the walk too, so the
 feed is asked only for what neither store has.
@@ -785,11 +785,11 @@ flowchart TD
 
 ## 6. Images
 
-The furthest from the shared shape. It still uses `run_metadata_loop`,
-`run_embed_loop` and `ingest_text_block`, but the "text" being embedded is
+It uses the shared `run_metadata_loop`, `run_embed_loop` and
+`ingest_text_block`, but the "text" being embedded is
 *inferred from pixels* by four extraction passes, and it writes a second vector
-collection (CLIP) that no other pipeline touches. It is also the only pipeline
-with an **admission gate** that can delete rows an earlier pass wrote.
+collection (CLIP). It also has an **admission gate** that can delete rows an
+earlier pass wrote.
 
 ```mermaid
 flowchart TD
