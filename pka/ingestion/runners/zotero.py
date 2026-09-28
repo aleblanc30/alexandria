@@ -15,17 +15,15 @@ from pka.connectors.zotero import (
     zotero_url,
 )
 from pka.constants import FetchStatus, Source
-from pka.db.queries import (
+from pka.db.chunks import document_has_chunks, source_ids_with_chunks
+from pka.db.documents import (
     DocumentWrite,
-    document_has_chunks,
     document_index,
     insert_document_if_new,
-    insert_source_collections,
-    insert_source_tags,
-    source_ids_with_chunks,
     update_card_summary,
     upsert_document,
 )
+from pka.db.tags import insert_source_collections, insert_source_tags
 from pka.ingestion.arxiv import parse_arxiv_url
 from pka.ingestion.core import ingest_text_block
 from pka.ingestion.identifiers import resolve_doi

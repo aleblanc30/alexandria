@@ -400,9 +400,10 @@ each upgrade; copy it elsewhere first if you want to keep more than the last.
 
 `alexandria init` is idempotent and does migrate a populated database in place
 rather than only creating absent tables:
-`init_db` in `pka/db/queries.py` runs `create_all`, then a sequence of guarded
-`ALTER TABLE` steps for the columns added since the archive was built. What the
-backup covers is the case it cannot — a schema change for which no migration
+`init_db` in `pka/db/migrate.py` runs `create_all`, then each guarded
+`ALTER TABLE` / `CREATE INDEX` step for what was added since the archive was
+built, recording every step it runs in the `schema_migrations` table so the next
+start skips it. What the backup covers is the case it cannot — a schema change for which no migration
 step was written.
 
 The same `init_db()` runs from the API's startup hook, so an upgrade that skips

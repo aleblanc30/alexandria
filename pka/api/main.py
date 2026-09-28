@@ -23,7 +23,7 @@ from pka.api.routers import (
 )
 from pka.cli._logging import setup_logging
 from pka.clustering.run_progress import reconcile_interrupted_runs
-from pka.db.queries import init_db
+from pka.db.migrate import init_db
 
 # Configure logging as soon as the app is imported. uvicorn configures only its
 # own loggers and leaves the root handler-less, so every ``pka.*`` INFO log —

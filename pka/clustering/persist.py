@@ -22,7 +22,7 @@ from pka.clustering.types import (
     NOISE_CLUSTER_LABEL,
     L2ClusterBatch,
 )
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import cluster_assignments, cluster_runs, clusters
 
 log = logging.getLogger(__name__)

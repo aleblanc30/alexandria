@@ -9,7 +9,7 @@ job, so status polling never touches the YouTube Data API (see
 import logging
 
 from pka.constants import Source
-from pka.db.queries import document_index
+from pka.db.documents import document_index
 from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.pending_metadata import archive_document_count
@@ -26,7 +26,7 @@ def sync_youtube_metadata(
     progress_key: str | None = None,
     dry_run: bool = False,
 ) -> dict:
-    from pka.db.queries import init_db
+    from pka.db.migrate import init_db
 
     init_db()
     key = progress_key or "youtube"

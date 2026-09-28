@@ -14,7 +14,7 @@ from pka.clustering.doc_embeddings import (
     embedding_to_blob,
     load_cached_embeddings,
 )
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import documents, tag_training_labels
 
 if TYPE_CHECKING:

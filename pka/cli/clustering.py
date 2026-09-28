@@ -33,7 +33,7 @@ from pka.clustering.lifecycle import (
     run_incremental_clustering,
 )
 from pka.clustering.types import ClusterParams
-from pka.db.queries import init_db
+from pka.db.migrate import init_db
 
 log = logging.getLogger("run_clustering")
 

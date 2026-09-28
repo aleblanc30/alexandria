@@ -26,7 +26,7 @@ from dataclasses import dataclass
 import sqlalchemy as sa
 
 from pka.constants import EnrichmentKind, FetchStatus, Source, TagOrigin
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import (
     chunks,
     document_texts,

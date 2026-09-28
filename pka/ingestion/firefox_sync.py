@@ -5,7 +5,7 @@ import logging
 from functools import partial
 
 from pka.constants import Source
-from pka.db.queries import firefox_ingest_queue
+from pka.db.documents import firefox_ingest_queue
 from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.fetcher import fetch_and_embed_pending, reset_unfetchable_for_fetch
@@ -33,7 +33,7 @@ def sync_firefox_metadata(
     progress_key: str | None = None,
     dry_run: bool = False,
 ) -> dict:
-    from pka.db.queries import init_db
+    from pka.db.migrate import init_db
 
     init_db()
     key = progress_key or "firefox"

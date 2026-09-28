@@ -7,7 +7,7 @@ import time
 import sqlalchemy as sa
 
 from pka.constants import Source, TagOrigin
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import overlay_tags
 from pka.domains import extract_domain
 

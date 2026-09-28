@@ -53,7 +53,7 @@ def _candidate_document_ids(source_filter: list[str] | None) -> list[int]:
     """
     import sqlalchemy as sa
 
-    from pka.db.queries import get_engine
+    from pka.db.engine import get_engine
     from pka.db.schema import chunks, documents
 
     q = sa.select(chunks.c.document_id).select_from(chunks).distinct()
@@ -69,7 +69,7 @@ def _archive_has_chunks() -> bool:
     """Whether anything has been ingested at all, for the empty-archive message."""
     import sqlalchemy as sa
 
-    from pka.db.queries import get_engine
+    from pka.db.engine import get_engine
     from pka.db.schema import chunks
 
     with get_engine().connect() as con:

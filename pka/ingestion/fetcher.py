@@ -54,7 +54,7 @@ import sqlalchemy as sa
 
 from pka.config import settings as cfg
 from pka.constants import FetchStatus, Source
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import documents, fetch_log
 from pka.ingestion.content_gate import interstitial_reason
 from pka.ingestion.fetch_base import (  # re-exported: shared primitives live one layer down
@@ -802,7 +802,7 @@ async def fetch_and_embed_pending(
 
     Work queue includes pending URLs and fetched docs missing chunks (orphan backfill).
     """
-    from pka.db.queries import source_ingest_queue
+    from pka.db.documents import source_ingest_queue
 
     reset_unfetchable_for_fetch(source)
 

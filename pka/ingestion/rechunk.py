@@ -25,7 +25,7 @@ import logging
 import sqlalchemy as sa
 
 from pka.constants import Source
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import chunks, documents
 from pka.ingestion.core import fetched_embed_text, ingest_text_block
 from pka.ingestion.text_store import document_text_meta, load_document_text

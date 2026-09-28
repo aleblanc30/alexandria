@@ -198,7 +198,7 @@ Two configuration facts that otherwise read as bugs:
     note, not leaving a warning about code that no longer exists.
 
   Read the source of truth in this order: `db/schema.py` for columns,
-  `db/queries.py::DocumentWrite` for what an ingestion upsert may touch,
+  `db/documents.py::DocumentWrite` for what an ingestion upsert may touch,
   `runners/<source>.py` and `image_pipeline.py` for who writes what,
   `ingestion/core.py` for the chunk tail, `ingestion/fetcher.py` for the
   fetch-time writes.

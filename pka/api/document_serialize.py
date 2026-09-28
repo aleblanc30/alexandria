@@ -19,13 +19,9 @@ from pka.api.schemas.documents import (
     RedditDetail,
 )
 from pka.constants import Source
-from pka.db.queries import (
-    _batch_first_chunk_map,
-    document_description,
-    document_enrichment,
-    reddit_item,
-    resolve_description,
-)
+from pka.db.cards import document_description, first_chunk_map, resolve_description
+from pka.db.chunks import document_enrichment
+from pka.db.reddit import reddit_item
 from pka.db.schema import (
     chunks,
     cluster_assignments,
@@ -136,7 +132,7 @@ def documents_out_batch(
         if did in doc_rows
         and not (doc_rows[did].get("card_summary") and str(doc_rows[did]["card_summary"]).strip())
     ]
-    chunk_map = _batch_first_chunk_map(con, needs_chunk)
+    chunk_map = first_chunk_map(con, needs_chunk)
 
     out: list[DocumentOut] = []
     for doc_id, sim in doc_ids_with_sim:
@@ -187,7 +183,7 @@ _ENRICHMENT_FALLBACK_LABEL = "External source"
 
 
 def enrichment_out(rows: list[dict]) -> list[EnrichmentOut]:
-    """Turn :func:`pka.db.queries.document_enrichment` rows into API models.
+    """Turn :func:`pka.db.chunks.document_enrichment` rows into API models.
 
     A ``summary`` chunk stores no ``resolved_by`` — it is normalised to
     ``local_model`` so the frontend gets one uniform shape for every rung.

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from pka.api.dependencies import get_engine
 from pka.constants import Source
-from pka.db.queries import list_tags as query_list_tags
+from pka.db.tags import list_tags as query_list_tags
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 

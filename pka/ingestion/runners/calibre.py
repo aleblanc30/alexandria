@@ -8,17 +8,15 @@ import logging
 from pka.config import settings as cfg
 from pka.connectors.calibre import CalibreBook, split_calibre_tags
 from pka.constants import FetchStatus, PdfTextLayer, Source
-from pka.db.queries import (
+from pka.db.chunks import existing_chunk_count, source_ids_with_chunks
+from pka.db.documents import (
     DocumentWrite,
     document_index,
-    existing_chunk_count,
     insert_document_if_new,
-    insert_source_collections,
-    insert_source_tags,
     set_fetch_status,
-    source_ids_with_chunks,
     upsert_document,
 )
+from pka.db.tags import insert_source_collections, insert_source_tags
 from pka.ingestion.book_extractor import extract_book_report, metadata_text
 from pka.ingestion.core import attach_summary_chunk, ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop

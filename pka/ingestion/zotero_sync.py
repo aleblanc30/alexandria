@@ -12,7 +12,8 @@ from pka.connectors.zotero import (
     zotero_url,
 )
 from pka.constants import Source
-from pka.db.queries import refresh_zotero_metadata, source_ids_with_chunks
+from pka.db.chunks import source_ids_with_chunks
+from pka.db.documents import refresh_zotero_metadata
 from pka.ingestion import progress as sp
 from pka.ingestion.arxiv import parse_arxiv_url
 from pka.ingestion.dev_limits import take
@@ -49,7 +50,7 @@ def sync_zotero_metadata(
     progress_key: str | None = None,
     dry_run: bool = False,
 ) -> dict:
-    from pka.db.queries import init_db
+    from pka.db.migrate import init_db
 
     init_db()
     key = progress_key or "zotero"

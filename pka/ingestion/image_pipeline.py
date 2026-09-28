@@ -22,16 +22,10 @@ from pka.clustering.cluster_tags import insert_overlay_tags
 from pka.config import settings as cfg
 from pka.connectors.images import ImageFile
 from pka.constants import FetchStatus, Source, TagOrigin
-from pka.db.queries import (
-    DocumentWrite,
-    delete_image_document,
-    existing_chunk_count,
-    get_engine,
-    get_rejected_paths,
-    record_image_rejection,
-    update_card_summary,
-    upsert_document,
-)
+from pka.db.chunks import existing_chunk_count
+from pka.db.documents import DocumentWrite, update_card_summary, upsert_document
+from pka.db.engine import get_engine
+from pka.db.images import delete_image_document, get_rejected_paths, record_image_rejection
 from pka.db.schema import images
 from pka.ingestion.core import ingest_text_block
 from pka.ingestion.image_extractor import (

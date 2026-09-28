@@ -17,7 +17,7 @@ from pathlib import Path
 
 from pka.cli._logging import setup_logging
 from pka.connectors.calibre import load_books
-from pka.db.queries import init_db
+from pka.db.migrate import init_db
 from pka.ingestion.calibre_sync import sync_calibre, sync_calibre_metadata
 from pka.ingestion.runners.calibre import ingest_calibre_books
 

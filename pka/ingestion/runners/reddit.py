@@ -14,18 +14,17 @@ import logging
 from pka.card_summary import body_excerpt
 from pka.connectors.reddit import RedditSaved
 from pka.constants import FetchStatus, Source
-from pka.db.queries import (
+from pka.db.chunks import document_ids_with_chunks, source_ids_with_chunks
+from pka.db.documents import (
     DocumentWrite,
-    document_ids_with_chunks,
     document_index,
     document_titles,
     insert_document_if_new,
-    insert_source_collections,
-    source_ids_with_chunks,
     update_card_summary,
     upsert_document,
-    upsert_reddit_item,
 )
+from pka.db.reddit import upsert_reddit_item
+from pka.db.tags import insert_source_collections
 from pka.ingestion.core import (
     attach_summary_chunk,
     fetched_embed_text,

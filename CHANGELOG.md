@@ -64,6 +64,21 @@
   re-cutting it and silently shrinking that document's index to its first pages.
   The summary pass still sees the whole book: only what is *stored* is cut.
 
+### Maintenance
+
+- **`pka/db/queries.py` is split by aggregate** into `engine.py`, `migrate.py`,
+  `documents.py`, `chunks.py`, `cards.py`, `clusters.py`, `tags.py`,
+  `browse.py`, `reddit.py` and `images.py` under `pka/db/`. `queries.py` stays
+  as a deprecated re-export shim; code under `pka/` imports from the new
+  modules. Four helpers that were already imported across modules lost their
+  underscore: `doc_title_excerpts`, `first_chunk_map` (was
+  `_batch_first_chunk_map`), `apply_document_browse_filters`, `norm_filter`.
+- **Migrations are an ordered `(name, step)` list** (`pka.db.migrate.MIGRATIONS`)
+  in place of one 200-line `init_db`. Each step still checks before it alters,
+  and each one `init_db` runs is recorded in a new `schema_migrations` table and
+  skipped on later starts. An existing archive has no record yet, so its first
+  start after upgrading runs every step once (each a no-op) and records them.
+
 ## v0.0.11
 
 ### Ingestion

@@ -32,7 +32,7 @@ import zlib
 import sqlalchemy as sa
 
 from pka.config import settings as cfg
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import document_texts
 
 log = logging.getLogger(__name__)

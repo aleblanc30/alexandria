@@ -8,7 +8,8 @@ import random
 import sqlalchemy as sa
 
 from pka.config import settings as cfg
-from pka.db.queries import _doc_title_excerpts, get_engine
+from pka.db.cards import doc_title_excerpts
+from pka.db.engine import get_engine
 from pka.db.schema import documents, tag_training_labels
 from pka.ollama_chat import chat_json
 from pka.tag_training.engine import _session_labeled_doc_ids
@@ -46,7 +47,7 @@ def seed_collection_samples(session_id: int, *, n_max: int = 8) -> list[DocSampl
         pos_ids = [r[0] for r in rows][:n_max]
         if not pos_ids:
             return []
-        by_id = _doc_title_excerpts(con, pos_ids)
+        by_id = doc_title_excerpts(con, pos_ids)
     return [by_id[d] for d in pos_ids if d in by_id]
 
 
@@ -66,7 +67,7 @@ def user_negative_prompt_samples(session_id: int, *, n_max: int = 5) -> list[Doc
         neg_ids = [r[0] for r in rows][:n_max]
         if not neg_ids:
             return []
-        by_id = _doc_title_excerpts(con, neg_ids)
+        by_id = doc_title_excerpts(con, neg_ids)
     return [by_id[d] for d in neg_ids if d in by_id]
 
 
@@ -81,7 +82,7 @@ def random_negative_prompt_samples(session_id: int, *, n: int = 5) -> list[DocSa
         if not pool:
             return []
         sample_ids = random.sample(pool, min(n, len(pool)))
-        by_id = _doc_title_excerpts(con, sample_ids)
+        by_id = doc_title_excerpts(con, sample_ids)
     return [by_id[d] for d in sample_ids if d in by_id]
 
 

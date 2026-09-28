@@ -367,3 +367,15 @@ tag_training_labels = sa.Table(
     sa.Column("created_at", sa.Integer, nullable=False),
     sa.UniqueConstraint("session_id", "document_id", name="uq_tag_train_session_doc"),
 )
+
+# ── Schema migrations ─────────────────────────────────────────────────────────
+
+# One row per step of ``pka.db.migrate.MIGRATIONS`` that has run against this
+# archive, so ``init_db`` skips it on the next start. Every step is idempotent
+# on its own; the record only saves re-checking it.
+schema_migrations = sa.Table(
+    "schema_migrations",
+    meta,
+    sa.Column("name", sa.Text, primary_key=True),
+    sa.Column("applied_at", sa.Integer, nullable=False),
+)

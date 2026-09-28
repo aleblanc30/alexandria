@@ -946,7 +946,7 @@ router `pka/api/routers/tag_training.py`, Vite proxy `/tag-training`.
 summary, label counts, uncertainty queue (Yes/No), pseudo-label actions (model +
 LLM), accept / resume. Reuse `DocDetailPanel` for context while labeling.
 
-Browse filter: extend `list_documents()` in `pka/db/queries.py` with
+Browse filter: extend `list_documents()` in `pka/db/browse.py` with
 `learned_tags` (same pattern as `overlay_tags` / `cluster_l1_tags`).
 
 ### 5.8 Non-goals and open questions

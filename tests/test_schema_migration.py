@@ -3,10 +3,10 @@ Forward-migration tests for ``init_db``.
 
 ``meta.create_all()`` creates missing *tables* but never touches a table that
 already exists, so every column and index added to ``pka/db/schema.py`` after a
-table shipped needs a hand-written ``ALTER TABLE`` / ``CREATE INDEX`` in
-``init_db``. Nothing enforces that pairing: omit the ALTER and ``init_db`` still
-exits 0 against an existing archive, which then fails at query time with
-``no such column``. These tests are that enforcement.
+table shipped needs an ``ALTER TABLE`` / ``CREATE INDEX`` step in
+``pka.db.migrate.MIGRATIONS``. Nothing enforces that pairing: omit the step and
+``init_db`` still exits 0 against an existing archive, which then fails at query
+time with ``no such column``. These tests are that enforcement.
 
 ``_V1_SCHEMA_SQL`` is a frozen snapshot of the schema as first committed. It is
 deliberately never updated — it is the oldest archive ``alexandria init`` claims
@@ -20,6 +20,7 @@ import pytest
 import sqlalchemy as sa
 
 from pka.config import settings
+from pka.db import migrate
 from pka.db.queries import get_engine, init_db
 from pka.db.schema import meta
 
@@ -159,8 +160,8 @@ CREATE TABLE image_tags (
 """
 
 # Every column ``init_db`` claims to add to a pre-existing table. Dropping one
-# and re-running init must put it back; a migration deleted or mis-guarded here
-# leaves a populated archive stale.
+# and re-running init on an archive with no migration record must put it back;
+# a step deleted or mis-guarded here leaves a populated archive stale.
 _MIGRATED_COLUMNS = [
     ("documents", "ingested_at"),
     ("documents", "generated_summary"),
@@ -313,6 +314,30 @@ def _seed_v1_rows() -> None:
         con.close()
 
 
+def _forget_migrations() -> None:
+    """Empty the migration record, as on an archive that predates it.
+
+    Every archive built before ``schema_migrations`` existed starts this way,
+    so its first ``init_db`` runs every step against a schema that already has
+    most of their changes. That is the case the drop-and-restore tests below
+    exercise: with the record intact, ``init_db`` skips a recorded step by
+    design, and a dropped column stays dropped.
+    """
+    con = sqlite3.connect(settings.archive_db)
+    try:
+        con.execute("DELETE FROM schema_migrations")
+        con.commit()
+    finally:
+        con.close()
+
+
+def _recorded_migrations() -> list[str]:
+    with get_engine().connect() as con:
+        return [
+            r[0] for r in con.execute(sa.text("SELECT name FROM schema_migrations ORDER BY name"))
+        ]
+
+
 class TestForwardMigration:
     """A first-commit archive must reach today's schema through ``init_db`` alone."""
 
@@ -379,7 +404,7 @@ class TestForwardMigration:
 
 
 class TestMigratedColumns:
-    """Each ALTER in ``init_db`` must actually restore its column."""
+    """Each ALTER step in ``MIGRATIONS`` must actually restore its column."""
 
     @pytest.mark.parametrize(("table", "column"), _MIGRATED_COLUMNS)
     def test_dropped_column_is_restored(self, table, column):
@@ -394,6 +419,7 @@ class TestMigratedColumns:
             pytest.skip(f"{table}.{column} is not droppable in SQLite: {exc}")
         finally:
             con.close()
+        _forget_migrations()
 
         init_db()
 
@@ -413,9 +439,63 @@ class TestMigratedColumns:
             con.commit()
         finally:
             con.close()
+        _forget_migrations()
 
         init_db()
 
         with get_engine().connect() as con:
             names = [r[1] for r in con.execute(sa.text(f"PRAGMA index_list({table})"))]
         assert index in names, f"init_db did not recreate {index} on an existing archive"
+
+
+class TestMigrationRecord:
+    """``init_db`` records each step it runs and skips the ones already recorded."""
+
+    def test_step_names_are_unique(self):
+        names = [name for name, _ in migrate.MIGRATIONS]
+        assert len(names) == len(set(names)), "two MIGRATIONS steps share a name"
+
+    def test_fresh_archive_records_every_step(self):
+        init_db()
+        assert _recorded_migrations() == sorted(name for name, _ in migrate.MIGRATIONS)
+
+    def test_v1_archive_records_every_step(self):
+        _write_v1_archive()
+        _seed_v1_rows()
+
+        init_db()
+
+        assert _recorded_migrations() == sorted(name for name, _ in migrate.MIGRATIONS)
+
+    def test_archive_without_record_runs_every_step_once(self):
+        init_db()
+        _forget_migrations()
+
+        init_db()
+
+        assert _recorded_migrations() == sorted(name for name, _ in migrate.MIGRATIONS)
+
+    def test_recorded_step_is_skipped(self, monkeypatch):
+        calls: list[str] = []
+        monkeypatch.setattr(
+            migrate, "MIGRATIONS", [("test.probe", lambda con: calls.append("ran"))]
+        )
+
+        init_db()
+        init_db()
+
+        assert calls == ["ran"]
+
+    def test_failing_step_is_not_recorded_and_earlier_steps_are(self, monkeypatch):
+        def boom(con):
+            raise RuntimeError("step failed")
+
+        monkeypatch.setattr(
+            migrate, "MIGRATIONS", [("test.ok", lambda con: None), ("test.boom", boom)]
+        )
+
+        with pytest.raises(RuntimeError, match="step failed"):
+            init_db()
+
+        assert "test.ok" in _recorded_migrations()
+        assert "test.boom" not in _recorded_migrations()

@@ -200,7 +200,7 @@ def purge_source_endpoint(source: str, include_user_data: bool = False):
         raise HTTPException(409, f"Stop the running sync for {source} before purging")
 
     from pka.cli.purge_source import purge_source
-    from pka.db.queries import init_db
+    from pka.db.migrate import init_db
 
     init_db()
     counts = purge_source(source, include_user_data=include_user_data)
@@ -225,7 +225,7 @@ def purge_targets(source: str | None = None):
     """The purge registry with live dry-run counts — one row per button."""
     if source:
         require_source(source)
-    from pka.db.queries import init_db
+    from pka.db.migrate import init_db
     from pka.purge import describe_targets
 
     init_db()
@@ -239,7 +239,7 @@ def enrichment_runs_list(kind: str | None = None, limit: int = 100):
     The provenance surface behind the purge filters below: a run listed here is
     a `run_id` a purge can target.
     """
-    from pka.db.queries import init_db
+    from pka.db.migrate import init_db
     from pka.enrichment_runs import list_runs
 
     if not 1 <= limit <= 500:
@@ -267,7 +267,7 @@ def purge_target_endpoint(
     """
     if source:
         require_source(source)
-    from pka.db.queries import init_db
+    from pka.db.migrate import init_db
     from pka.purge import purge_target
 
     if not dry_run:
@@ -325,7 +325,7 @@ def enrich_endpoint(kind: str = "summary", source: str | None = None):
 
     def _run() -> None:
         global _enrich_running
-        from pka.db.queries import init_db
+        from pka.db.migrate import init_db
         from pka.ingestion.enrich import enrich
 
         try:
@@ -358,7 +358,7 @@ def rechunk_endpoint(source: str | None = None, limit: int | None = None, dry_ru
     if source:
         require_source(source)
 
-    from pka.db.queries import init_db
+    from pka.db.migrate import init_db
     from pka.ingestion.rechunk import rechunk_documents
 
     if dry_run:
@@ -463,7 +463,7 @@ def _finish_job(src: str, stats: dict | None, *, error: str | None = None) -> No
 
 
 def _seed_baselines(src: str) -> None:
-    from pka.db.queries import get_engine
+    from pka.db.engine import get_engine
     from pka.ingestion.pending_metadata import invalidate_source_probes
 
     # Source/archive state just changed (job start, finish, or purge); drop the
@@ -504,7 +504,8 @@ def _run_ingestion_job(
     assign_after: bool = False,
 ) -> None:
     """Shared metadata/ingest/full job skeleton: init, begin, run handler, finish."""
-    from pka.db.queries import get_engine, init_db
+    from pka.db.engine import get_engine
+    from pka.db.migrate import init_db
     from pka.enrichment_runs import close_all
 
     init_db()

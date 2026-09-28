@@ -9,7 +9,7 @@ complement to `docs/ingestion-flows.md`, which draws *how* it gets there.
 > they disagree this file is what's wrong. Sources of truth, in order:
 > `pka/db/schema.py` (columns), `pka/ingestion/runners/<source>.py` and
 > `pka/ingestion/image_pipeline.py` (what writes them),
-> `pka/db/queries.py::DocumentWrite` (which columns an ingestion upsert may
+> `pka/db/documents.py::DocumentWrite` (which columns an ingestion upsert may
 > touch at all), `pka/ingestion/core.py` (the shared chunk tail).
 
 Legend: ✅ always written · ⬛ written when the source has the value ·
@@ -112,6 +112,9 @@ millisecond re-read from its own source.
 `overlay_tags` also receives `manual` (user edits), `llm` / `cluster_l1` /
 `cluster_l2` (clustering), and `learned` (tag training) rows — none of them
 ingestion-time, all of them source-agnostic.
+
+`schema_migrations` is absent from the matrix because no source writes it:
+`init_db` (`pka/db/migrate.py`) adds one row per migration step it has applied.
 
 ### `reddit_items` (Reddit only)
 

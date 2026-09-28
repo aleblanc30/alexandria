@@ -19,7 +19,7 @@ from pka.api.schemas.documents import (
     TagPatchRequest,
 )
 from pka.constants import Source, TagOrigin
-from pka.db.queries import list_documents as query_list_documents
+from pka.db.browse import list_documents as query_list_documents
 from pka.db.schema import documents as documents_tbl
 from pka.db.schema import overlay_tags
 

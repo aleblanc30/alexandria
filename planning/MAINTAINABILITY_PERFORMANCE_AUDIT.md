@@ -101,7 +101,16 @@ The file already has the seams drawn: the `# ── Step N` banners at lines 84,
   `TriggerRunRequest` maps onto once; the API schema and the CLI then stop
   hand-mirroring the same defaults.
 
-### M-2: `pka/db/queries.py` mixes engine lifecycle, migrations, and every query (M)
+### M-2: `pka/db/queries.py` mixes engine lifecycle, migrations, and every query (M) — **done**
+
+Shipped as recommended, with three departures. Applied steps are recorded in a
+new `schema_migrations` table: there is no `meta` table, only the SQLAlchemy
+`MetaData` object of that name, and a name-keyed record survives reordering in a
+way `PRAGMA user_version` would not. Card text (`resolve_description`,
+`first_chunk_map`, `doc_title_excerpts`) got its own `cards.py`, and Reddit and
+image-rejection helpers got `reddit.py` / `images.py`, since they fit none of the
+five named aggregates. The drop-and-restore migration tests now clear the record
+first, because a recorded step is skipped by design.
 
 Evidence: 1,233 lines, 46 top-level definitions, MI 14.7, second-highest churn
 (34 commits). `init_db` (CC 28, 69 statements) is 45 hand-written

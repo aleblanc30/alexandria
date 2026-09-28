@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 from pka.clustering.cluster_tags import slugify_tag
 from pka.constants import TagOrigin
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import (
     documents,
     overlay_tags,
@@ -531,7 +531,7 @@ def apply_pseudo_labels_llm(
 
     neg_samples, neg_source = negative_prompt_samples(session_id, n_max=neg_n)
 
-    from pka.db.queries import _doc_title_excerpts
+    from pka.db.cards import doc_title_excerpts
 
     pool = unlabeled_doc_ids(session_id)
     if not pool:
@@ -553,7 +553,7 @@ def apply_pseudo_labels_llm(
     pairs: list[tuple[int, int]] = []
 
     with eng.connect() as con:
-        by_id = _doc_title_excerpts(con, doc_ids)
+        by_id = doc_title_excerpts(con, doc_ids)
 
     for doc_id in doc_ids:
         title, excerpt = by_id.get(doc_id, ("Untitled", ""))

@@ -30,10 +30,6 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
   (`apply_learned_tags_for_document`, run for every ingested document) into
   `tag_training/scoring.py`, leaving session lifecycle to the API. Sequence with
   M-6's `ingestion → tag_training` edge.
-- [ ] **M-2: split `db/queries.py`** — 1,332 lines. Move `get_engine` / `init_db`
-  (CC 47) into their own modules, with migrations as an ordered `(name, fn)` list
-  recorded in `meta` (still idempotent); split the query helpers by aggregate
-  (documents, chunks, tags, browse, clusters).
 - [ ] **M-6: layering contract** — write the intended import layering down and
   enforce it with import-linter; break the `ingestion → tag_training` edge with a
   post-ingest hook registry. Comment the lazy imports that only defer heavy

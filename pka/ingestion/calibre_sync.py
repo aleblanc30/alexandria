@@ -42,7 +42,7 @@ def sync_calibre_metadata(
     progress_key: str | None = None,
     dry_run: bool = False,
 ) -> dict:
-    from pka.db.queries import init_db
+    from pka.db.migrate import init_db
 
     init_db()
     key = progress_key or "calibre"

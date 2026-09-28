@@ -28,7 +28,7 @@ import logging
 import sqlalchemy as sa
 
 from pka.constants import EnrichmentKind, Source
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import chunks, documents
 from pka.enrichment_runs import run_scope
 from pka.ingestion.chunker import _split_sentences

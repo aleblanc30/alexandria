@@ -16,11 +16,8 @@ import sqlalchemy as sa
 from pka.clustering.run_progress import ClusterRunCancelled, raise_if_cancelled
 from pka.clustering.types import L2ClusterBatch
 from pka.config import settings as cfg
-from pka.db.queries import (
-    get_engine,
-    sample_cluster_documents,
-    sample_cluster_documents_for_clusters,
-)
+from pka.db.clusters import sample_cluster_documents, sample_cluster_documents_for_clusters
+from pka.db.engine import get_engine
 from pka.db.schema import cluster_assignments, clusters
 
 log = logging.getLogger(__name__)

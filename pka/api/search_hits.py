@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from pka.api.db_rows import fetchall_mappings
 from pka.api.schemas.search import SearchRequest
 from pka.constants import Source
-from pka.db.queries import filter_document_ids
+from pka.db.browse import filter_document_ids
 from pka.db.schema import cluster_assignments, documents
 
 log = logging.getLogger(__name__)

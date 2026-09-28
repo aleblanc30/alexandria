@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from pka.clustering.types import ClusterParams
 from pka.clustering.vectors import l2_normalize_rows
 from pka.config import settings as cfg
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import (
     chunks,
     cluster_assignments,

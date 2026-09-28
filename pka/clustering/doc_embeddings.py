@@ -7,7 +7,7 @@ import logging
 import numpy as np
 import sqlalchemy as sa
 
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import chunks, documents
 
 log = logging.getLogger(__name__)

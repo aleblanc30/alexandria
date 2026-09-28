@@ -119,7 +119,7 @@ def vector_count() -> int:
         log.warning("Chroma count failed (%s); using chunk table", exc)
         import sqlalchemy as sa
 
-        from pka.db.queries import get_engine
+        from pka.db.engine import get_engine
         from pka.db.schema import chunks
 
         with get_engine().connect() as con:
@@ -142,7 +142,7 @@ def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
 
     import sqlalchemy as sa
 
-    from pka.db.queries import get_engine
+    from pka.db.engine import get_engine
     from pka.db.schema import chunks, documents
 
     drop_document_collection()
@@ -341,7 +341,7 @@ def purge_vectors(vector_ids: list[str]) -> int:
     """Remove vectors from Chroma and their ``chunks`` rows."""
     if not vector_ids:
         return 0
-    from pka.db.queries import get_engine
+    from pka.db.engine import get_engine
     from pka.db.schema import chunks
 
     col = get_collection()

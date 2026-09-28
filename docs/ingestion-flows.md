@@ -18,7 +18,7 @@ across pipelines:
 
 | Colour | Meaning |
 |--------|---------|
-| 🟦 **blue** | **Shared machinery** — code every (or nearly every) pipeline runs: `pka/ingestion/core.py`, `loops.py`, `progress/`, `sync_shared.py`, `registry.py`, `fetcher.py`, `db/queries.py` |
+| 🟦 **blue** | **Shared machinery** — code every (or nearly every) pipeline runs: `pka/ingestion/core.py`, `loops.py`, `progress/`, `sync_shared.py`, `registry.py`, `fetcher.py`, `db/` (`documents.py`, `chunks.py`, `tags.py`) |
 | 🟧 **amber** | **Source-specific** — the connector and runner written for this source alone |
 | 🟥 **red** | **Outbound network** — a call that leaves `localhost` |
 | 🟩 **green** | **Persistence** — SQLite (`documents`, `alexandria_chunks`, sidecar tables) and ChromaDB |

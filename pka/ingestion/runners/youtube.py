@@ -17,16 +17,15 @@ from pka.connectors.youtube import (
     youtube_embed_text,
 )
 from pka.constants import FetchStatus, Source
-from pka.db.queries import (
+from pka.db.chunks import source_ids_with_chunks
+from pka.db.documents import (
     DocumentWrite,
     document_index,
     insert_document_if_new,
-    insert_source_collections,
-    insert_source_tags,
-    source_ids_with_chunks,
     update_card_summary,
     upsert_document,
 )
+from pka.db.tags import insert_source_collections, insert_source_tags
 from pka.ingestion.core import ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 

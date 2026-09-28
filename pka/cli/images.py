@@ -22,7 +22,7 @@ from pathlib import Path
 from pka.cli._logging import setup_logging
 from pka.config import settings as cfg
 from pka.connectors.images import scan_image_dirs
-from pka.db.queries import init_db
+from pka.db.migrate import init_db
 from pka.ingestion.image_pipeline import (
     ingest_images,
     search_images_by_inferred_text,
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     init_db()
 
     if args.reset_rejections:
-        from pka.db.queries import clear_image_rejections
+        from pka.db.images import clear_image_rejections
 
         removed = clear_image_rejections()
         log.info("Cleared %d entries from the gate rejection cache", removed)

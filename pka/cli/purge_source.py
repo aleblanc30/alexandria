@@ -16,7 +16,7 @@ import sqlalchemy as sa
 
 from pka.cli._logging import setup_logging
 from pka.constants import ALL_SOURCES, Source, TagOrigin
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import (
     chunks,
     cluster_assignments,
@@ -188,7 +188,7 @@ def _purge_images(*, dry_run: bool = False, include_user_data: bool = False) -> 
     ``image_tags`` sidecar rows and the CLIP vectors, which live in a separate
     Chroma collection (``alexandria_clip``) rather than the chunk collection.
     """
-    from pka.db.queries import clear_image_rejections
+    from pka.db.images import clear_image_rejections
     from pka.ingestion import image_pipeline
 
     eng = get_engine()

@@ -35,16 +35,17 @@ def _schema_template(tmp_path_factory) -> Path:
     monkeypatching applies, and calling ``init_db`` against a developer's real
     ``data_dir`` is not something to leave to fixture ordering.
     """
-    import pka.db.queries as q
+    import pka.db.engine as db_engine
     from pka import config
+    from pka.db.migrate import init_db
 
     target = tmp_path_factory.mktemp("schema_template")
-    saved_dir, saved_engine = config.settings.data_dir, q._engine
+    saved_dir, saved_engine = config.settings.data_dir, db_engine._engine
     try:
         config.settings.data_dir = target
-        q._engine = None
-        q.init_db()
-        q.get_engine().dispose()
+        db_engine._engine = None
+        init_db()
+        db_engine.get_engine().dispose()
         # Fold the WAL back in so the .db file alone is a complete archive —
         # the copy below does not carry -wal/-shm.
         con = sqlite3.connect(config.settings.archive_db)
@@ -54,7 +55,7 @@ def _schema_template(tmp_path_factory) -> Path:
             con.close()
         return target / "archive.db"
     finally:
-        config.settings.data_dir, q._engine = saved_dir, saved_engine
+        config.settings.data_dir, db_engine._engine = saved_dir, saved_engine
 
 
 # ── Settings override ─────────────────────────────────────────────────────────
@@ -130,34 +131,34 @@ def isolated_settings(tmp_path, monkeypatch, _schema_template):
     monkeypatch.setattr(s, "search_provider", "google_books")
 
     # Reset cached SQLAlchemy engine so each test gets a fresh DB
-    import pka.db.queries as q
+    import pka.db.engine as db_engine
 
-    monkeypatch.setattr(q, "_engine", None)
+    monkeypatch.setattr(db_engine, "_engine", None)
 
     # Hand that fresh DB its schema as a file copy instead of 33 CREATE
     # statements. ``init_db`` still runs in full on top — ``create_all`` finds
     # every table present and each migration branch no-ops — so this changes
     # what the setup costs, not what it produces.
     #
-    # ``get_engine`` is the hook because ``init_db`` and every query helper look
-    # it up as a module global at *call* time. Patching ``init_db`` itself would
-    # not work: a hundred test modules did ``from pka.db.queries import init_db``
-    # at import time and hold the original function object, which this reaches
-    # and a rebind of the name does not.
+    # ``get_engine`` is the hook because ``init_db`` and every ``pka.db`` helper
+    # look it up on ``pka.db.engine`` at *call* time. Patching ``init_db`` itself
+    # would not work: a hundred test modules did ``from pka.db.queries import
+    # init_db`` at import time and hold the original function object, which
+    # this reaches and a rebind of the name does not.
     #
     # Seeding only when no archive exists yet is what keeps
     # ``test_schema_migration.py`` honest: it writes a first-commit archive to
     # this same path before anything opens an engine, so it finds its own file
     # here and migrates that, never a modern schema dropped underneath it.
-    real_get_engine = q.get_engine
+    real_get_engine = db_engine.get_engine
 
     def seeded_get_engine():
-        if q._engine is None and not s.archive_db.exists():
+        if db_engine._engine is None and not s.archive_db.exists():
             s.archive_db.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(_schema_template, s.archive_db)
         return real_get_engine()
 
-    monkeypatch.setattr(q, "get_engine", seeded_get_engine)
+    monkeypatch.setattr(db_engine, "get_engine", seeded_get_engine)
 
     # Reset cached Chroma client/collection
     import pka.storage.vector_store as vs

@@ -7,7 +7,7 @@ import uuid
 
 from pka.config import settings as cfg
 from pka.constants import Source
-from pka.db.queries import insert_chunks
+from pka.db.chunks import insert_chunks
 from pka.ingestion.chunker import sentence_window_chunks
 from pka.storage.vector_store import upsert_chunks
 
@@ -173,11 +173,8 @@ def attach_summary_chunk(
     if not getattr(cfg, _SUMMARY_FLAGS.get(str(source), ""), False):
         return 0
 
-    from pka.db.queries import (
-        existing_chunk_count,
-        get_generated_summary,
-        set_generated_summary,
-    )
+    from pka.db.chunks import existing_chunk_count
+    from pka.db.documents import get_generated_summary, set_generated_summary
 
     try:
         summary = get_generated_summary(doc_id)

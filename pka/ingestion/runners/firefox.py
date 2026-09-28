@@ -8,16 +8,15 @@ from pka.card_summary import body_excerpt
 from pka.classification import classify_document, sync_classification_tags
 from pka.connectors.firefox import FirefoxBookmark
 from pka.constants import FetchStatus, Source
-from pka.db.queries import (
+from pka.db.chunks import document_ids_with_chunks
+from pka.db.documents import (
     DocumentWrite,
-    document_ids_with_chunks,
     document_index,
     document_titles,
     insert_document_if_new,
-    insert_source_collections,
-    insert_source_tags,
     update_card_summary,
 )
+from pka.db.tags import insert_source_collections, insert_source_tags
 from pka.ingestion.core import (
     attach_summary_chunk,
     fetched_embed_text,
