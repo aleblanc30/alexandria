@@ -726,40 +726,31 @@ abstract or an image's OCR, not only in a title (`pka/db/fulltext.py`).
   slow step on a large archive. SQLite 3.35 or later is required
   (`MATERIALIZED` CTEs; the trigram tokenizer needs 3.34).
 
-### 3.5 Chunking in any script
+### 3.5 Sentence boundaries
 
 Every text reaches the index through `sentence_window_chunks`
 (`ingestion/chunker.py`): overlapping windows of `chunk_sentences` sentences.
-The sentence boundaries are what make it work outside English:
+The archive's languages are English, French and Spanish, and the splitter is
+built for those.
 
-- **Punctuation.** `.!?…` end a sentence before whitespace and a letter that
-  starts one, in any script: an uppercase letter in a cased script (Latin with
-  its accents, Cyrillic, Greek) or any letter of a script without case
-  (Arabic, Hebrew, Devanagari), with the English abbreviation list kept. `。`,
-  `।`, `؟` and similar end a sentence with or without a following space, as
-  does `.!?` straight after a CJK or Thai character (NFKC in `clean_text`
-  folds the full-width `！？` into ASCII).
-- **spaCy**, when installed, splits text in spaced scripts only. It tokenises
-  with English rules and cannot split inside a run of CJK text, so text whose
-  letters are mostly from dense scripts always takes the punctuation scan.
-- **A length cap.** A run longer than `max_sentence_chars` (1000) with no
-  boundary is cut, at whitespace where it has any (Thai marks no sentence ends
-  but spaces its clauses) and by characters where it has none. Without it, a
-  document with no recognised boundary became one chunk and was effectively
-  unsearchable.
-- **Weighted lengths.** `min_chunk_chars` and `max_sentence_chars` count a
-  CJK, kana, Hangul, Thai, Lao, Khmer or Myanmar character as three, roughly
-  what it carries next to a Latin one, so both settings mean about the same
-  amount of text in every script.
+- **Punctuation.** `.!?…` end a sentence before whitespace and a capital in
+  any alphabet, so `É`, `Á` and `Ñ` start sentences as `A` does. The capital
+  may follow `¿`, `¡` or `«`, which open Spanish questions and exclamations
+  and French quotations. English quotes and brackets do not count as openers,
+  as the original ASCII-only splitter never broke before them. A closing quote
+  or bracket may sit between the stop and the space (`.)`, `."`, `. »`), which
+  the original splitter did not allow; otherwise English splits as before. The English abbreviation list stops `Dr.`, `e.g.` and similar
+  from ending a sentence.
+- **spaCy**, when installed, replaces the punctuation scan.
+- **A length cap.** A run longer than `max_sentence_chars` (1000 characters)
+  with no boundary in it, such as unpunctuated OCR or a list with no full
+  stops, is cut between words. Without it, a document with no recognised
+  boundary became one chunk.
 
-Windows are joined with a space only where the source had whitespace, so CJK
-sentences stay unspaced; English chunks are byte-for-byte what the
-ASCII-only splitter produced whenever no run hits the cap. Chunks are still
-bounded in characters, not model tokens: a window of dense text can exceed the
-current embedding model's 256-token input and be truncated there, which the
-embedding-model choice has to account for. Changing any of these settings
-applies to existing documents through `alexandria rechunk` (retained text) or
-a re-ingest.
+Scripts without spaces or capitals (CJK, Thai) are not handled: they would
+still split only at the cap. Keyword search (§3.4) finds text in them
+regardless. Changing these settings applies to existing documents through
+`alexandria rechunk` (retained text) or a re-ingest.
 
 ## 4. Cluster lifecycle
 

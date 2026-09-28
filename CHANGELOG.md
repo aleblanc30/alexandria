@@ -4,15 +4,16 @@
 
 ### Search
 
-- **Chunking works in any script.** The sentence splitter needed an ASCII
-  capital after `.!?`, so text in CJK, Thai, or any script without one was a
-  single sentence and every such document a single chunk. It now splits on
-  capitals and uncased letters in any script and on `。।؟`-style terminators
-  with or without a following space, sends dense-script text past spaCy,
-  cuts any run with no boundary at `max_sentence_chars` (new, 1000), and
-  weighs a CJK/Thai character as three in both length settings. English
-  chunks are unchanged unless a run reaches the cap. Existing documents pick
-  it up through `alexandria rechunk` or a re-ingest (`DESIGN.md` §3.5).
+- **French and Spanish sentences split correctly, and no run is unbounded.**
+  The sentence splitter needed an ASCII capital after `.!?`, so a sentence
+  opening on `É`, `Á`, `Ñ`, or after `¿`, `¡` or `«`, ran into the one
+  before it. It now splits before a capital in any alphabet, allowing those
+  opening marks, and after a stop followed by a closing quote or bracket
+  (`.)`, `."`, `. »`). A run with no boundary longer than `max_sentence_chars`
+  (new, 1000) is cut between words, so an unpunctuated document is no longer
+  a single chunk. Otherwise English splits as before.
+  Existing documents pick it up through `alexandria rechunk` or a re-ingest
+  (`DESIGN.md` §3.5).
 - **Keyword search covers bodies, and is indexed.** `fulltext` mode (and the
   keyword half of `hybrid`) used to be an unbounded `title ILIKE '%q%'` scan.
   It now queries two FTS5 trigram indexes, over titles + card summaries and
