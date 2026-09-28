@@ -5,15 +5,22 @@
 ### Search
 
 - **Chunks are sized in tokens of the embedding model, by off-the-shelf
-  libraries.** The in-house sentence-window chunker (and its optional spaCy
-  backend) is replaced by `semantic-text-splitter`, which packs whole
-  sentences, by Unicode's boundaries, into chunks of up to `chunk_tokens`
-  (256) tokens counted by the embedding model's tokenizer, never more than
-  the model reads, overlapping by up to `chunk_overlap_tokens` (32).
+  libraries, and French and Spanish sentences split correctly.** The in-house
+  sentence-window chunker (and its optional spaCy backend) is replaced by
+  `semantic-text-splitter`, which packs whole sentences, by Unicode's
+  boundaries, into chunks of up to `chunk_tokens` (256) tokens counted by the
+  embedding model's tokenizer, never more than the model reads, overlapping by
+  up to `chunk_overlap_tokens` (32). The old splitter needed an ASCII capital
+  after `.!?`, so a sentence opening on `É`, `Á`, `Ñ`, or after `¿`, `¡` or
+  `«`, ran into the one before it; Unicode's boundaries need no language and
+  split these as English ones. A run with no boundary (unpunctuated OCR) is
+  cut between words, so such a document is no longer a single chunk. Unicode
+  knows no abbreviations, so a chunk may now break after `Dr.`; trimming a
+  summary or synopsis to whole sentences uses `pysbd`, which does.
   `chunk_sentences`, `chunk_overlap` and `max_sentence_chars` are gone: a
-  `.env` still setting one logs a warning and is otherwise ignored. Trimming a
-  summary or synopsis to whole sentences uses `pysbd`. Existing documents keep
-  their chunks until `alexandria rechunk` or a re-ingest (`DESIGN.md` §3.5).
+  `.env` still setting one logs a warning and is otherwise ignored. Existing
+  documents keep their chunks until `alexandria rechunk` or a re-ingest
+  (`DESIGN.md` §3.5).
 - **The embedding model is a setting, and defaults to a multilingual one.**
   Chunks and queries were embedded by Chroma's built-in `all-MiniLM-L6-v2`,
   trained on English data. `embedding_model` (default
@@ -31,16 +38,6 @@
   write only `document_id`, `source`, `title` and `chunk_index`, dropping
   `pass`, page ranges, sections and synopsis provenance. Each chunk now keeps
   what it had, and gains `pass` and pages from SQLite where Chroma lacked them.
-- **French and Spanish sentences split correctly, and no run is unbounded.**
-  The sentence splitter needed an ASCII capital after `.!?`, so a sentence
-  opening on `É`, `Á`, `Ñ`, or after `¿`, `¡` or `«`, ran into the one
-  before it. It now splits before a capital in any alphabet, allowing those
-  opening marks, and after a stop followed by a closing quote or bracket
-  (`.)`, `."`, `. »`). A run with no boundary longer than `max_sentence_chars`
-  (new, 1000) is cut between words, so an unpunctuated document is no longer
-  a single chunk. Otherwise English splits as before.
-  Existing documents pick it up through `alexandria rechunk` or a re-ingest
-  (`DESIGN.md` §3.5).
 - **Keyword search covers bodies, and is indexed.** `fulltext` mode (and the
   keyword half of `hybrid`) used to be an unbounded `title ILIKE '%q%'` scan.
   It now queries two FTS5 trigram indexes, over titles + card summaries and
