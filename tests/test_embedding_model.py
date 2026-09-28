@@ -20,6 +20,23 @@ from tests.conftest import make_document
 E5 = "intfloat/multilingual-e5-small"
 
 
+def _bert_like():
+    """A word-level tokenizer wrapped in [CLS] … [SEP], padded and truncated as a model's is."""
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from tokenizers.pre_tokenizers import Whitespace
+    from tokenizers.processors import TemplateProcessing
+
+    tok = Tokenizer(WordLevel({"[UNK]": 0, "[CLS]": 1, "[SEP]": 2, "[PAD]": 3}, unk_token="[UNK]"))
+    tok.pre_tokenizer = Whitespace()
+    tok.post_processor = TemplateProcessing(
+        single="[CLS] $A [SEP]", special_tokens=[("[CLS]", 1), ("[SEP]", 2)]
+    )
+    tok.enable_padding(pad_id=3, pad_token="[PAD]", length=64)
+    tok.enable_truncation(max_length=64)
+    return tok
+
+
 class _Recorder:
     """Stands in for ``SentenceTransformer``; records what it was asked to encode."""
 
@@ -30,6 +47,8 @@ class _Recorder:
 
         _Recorder.loads.append((name, os.environ.get("HF_HUB_OFFLINE")))
         self.calls: list[tuple[list[str], bool]] = []
+        self.tokenizer = types.SimpleNamespace(backend_tokenizer=_bert_like())
+        self.max_seq_length = 512
 
     def encode(self, texts, normalize_embeddings=False):
         self.calls.append((list(texts), normalize_embeddings))
@@ -61,6 +80,18 @@ class TestEmbedders:
         # Native floats, which Chroma requires.
         assert docs == [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
         assert type(query[0]) is float
+
+    def test_the_chunk_budget_leaves_room_for_the_prefix_and_special_tokens(self, fake_st):
+        emb = embedding.get_embedder(E5)
+        # "passage" and ":" plus [CLS] and [SEP].
+        assert emb.max_chunk_tokens == 512 - 4
+
+    def test_the_counting_tokenizer_neither_pads_nor_truncates(self, fake_st):
+        emb = embedding.get_embedder(E5)
+        assert len(emb.tokenizer.encode("one two").ids) == 4
+        assert len(emb.tokenizer.encode(" ".join(["w"] * 100)).ids) == 102
+        # The model's own tokenizer keeps its settings.
+        assert len(emb._model.tokenizer.backend_tokenizer.encode("one").ids) == 64
 
     def test_a_model_without_prefixes_embeds_the_text_as_is(self, fake_st):
         emb = embedding.get_embedder("sentence-transformers/all-mpnet-base-v2")
@@ -98,6 +129,11 @@ class TestEmbedders:
         class Onnx:
             def __init__(self):
                 self.seen = []
+                self.tokenizer = _bert_like()
+                self.downloaded = False
+
+            def _download_model_if_not_exists(self):
+                self.downloaded = True
 
             def __call__(self, texts):
                 self.seen.append(texts)
@@ -105,11 +141,15 @@ class TestEmbedders:
 
         fn = Onnx()
         monkeypatch.setattr(
-            "chromadb.utils.embedding_functions.DefaultEmbeddingFunction", lambda: fn
+            "chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2.ONNXMiniLM_L6_V2", lambda: fn
         )
         emb = embedding.get_embedder(embedding.LEGACY_MODEL)
         assert emb.embed_query("q") == [0.5, 0.25]
         assert fn.seen == [["q"]]  # no prefix: the vectors must match old archives
+        # The archive holding the tokenizer is fetched before it is read, and
+        # 256 tokens less [CLS] and [SEP] is what a chunk may hold.
+        assert fn.downloaded
+        assert emb.max_chunk_tokens == 254
         assert fake_st.loads == []
 
 

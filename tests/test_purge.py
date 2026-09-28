@@ -15,10 +15,10 @@ from fastapi.testclient import TestClient
 from pka.config import settings as cfg
 from pka.db.queries import get_engine, init_db, insert_chunks
 from pka.db.schema import chunks, document_texts, documents, images, overlay_tags
-from pka.ingestion.chunker import sentence_window_chunks
+from pka.ingestion.chunker import chunk_text
 from pka.ingestion.text_store import load_document_text, store_document_text
 from pka.purge import TARGETS, purge_target
-from tests.conftest import make_document
+from tests.conftest import FakeEmbedder, make_document
 
 
 def _sentences(n: int, word: str = "Bees") -> str:
@@ -46,11 +46,12 @@ def _seed_fetched_doc(
     )
     body = _sentences(sentences)
     store_document_text(doc_id, body)
-    texts = sentence_window_chunks(
+    # Small chunks, so a reassembly has several overlaps to undo.
+    texts = chunk_text(
         body,
-        window=cfg.chunk_sentences,
-        overlap=cfg.chunk_overlap,
-        min_chars=cfg.min_chunk_chars,
+        max_tokens=40,
+        overlap_tokens=cfg.chunk_overlap_tokens // 2,
+        embedder=FakeEmbedder("words"),
     )
     insert_chunks(
         [
@@ -467,7 +468,9 @@ class TestReassembly:
         from pka.ingestion.enrich import reassemble_chunk_text
 
         text = _sentences(30)
-        pieces = sentence_window_chunks(text, window=5, overlap=1, min_chars=1)
+        pieces = chunk_text(
+            text, max_tokens=30, overlap_tokens=8, min_chars=1, embedder=FakeEmbedder("words")
+        )
         assert len(pieces) > 3
 
         assert reassemble_chunk_text(pieces) == clean_text(text)

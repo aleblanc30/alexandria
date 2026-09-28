@@ -98,7 +98,7 @@ flowchart TD
 
     subgraph tail["Shared tail — ingestion/core.py"]
         TAIL["ingest_text_block(doc_id, text, source, …)"]
-        CHUNK["sentence_window_chunks()<br/>ingestion/chunker.py"]
+        CHUNK["chunk_text()<br/>ingestion/chunker.py"]
         FB{"no chunks and<br/>fallback_text given?"}
         FBUSE["embed fallback as one chunk"]
         UPS["upsert_chunks() → embedding model<br/>storage/vector_store.py<br/>returns the vectors it stored"]
@@ -205,7 +205,7 @@ flowchart TD
     UPD["upsert_document() when the row is missing"]
     TEXT["zotero_embed_text(item)<br/>title + creators + abstract + annotations"]
     BLOCK["ingest_text_block(min_chars=1, pass='metadata')"]
-    CHUNK["sentence_window_chunks()"]
+    CHUNK["chunk_text()"]
     UPSC["upsert_chunks() → embedding model<br/>returns the vectors it stored"]
     INSC["insert_chunks()"]
     DOCEMB["refresh_document_embedding(known=…)<br/>one block per document, so no Chroma read"]
@@ -421,7 +421,7 @@ flowchart TD
     BLOCK --> SUM --> LLM --> BLOCK
     BLOCK --> CARD2
 
-    CHUNK["sentence_window_chunks()"]
+    CHUNK["chunk_text()"]
     UPSC["upsert_chunks() → embedding model<br/>returns the vectors it stored"]
     INSC["insert_chunks()"]
     DOCEMB["refresh_document_embedding()<br/>once, after the body and summary blocks<br/>(both pass refresh=False)"]
@@ -541,7 +541,7 @@ flowchart TD
     STOP1 -->|yes| ENDE
     STOP1 -->|no| SETE2 --> P2
 
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
+    TAIL["chunk_text() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
     B1 --> TAIL
     B2 --> TAIL
     SECT --> TAIL
@@ -661,7 +661,7 @@ flowchart TD
     NETX(["Internet — target sites"])
     POOL --> NETX
 
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
+    TAIL["chunk_text() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
     BF --> TAIL
     BI --> TAIL
     SUMF --> TAIL
@@ -755,7 +755,7 @@ flowchart TD
     HAVE["skip when source_id in source_ids_with_chunks(YOUTUBE)"]
     TEXT["youtube_embed_text(video)<br/>title + channel + description + tags"]
     BLOCK["ingest_text_block(min_chars=1,<br/>fallback_text=title)"]
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
+    TAIL["chunk_text() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
 
     SETE --> ERUN --> ELOOP --> UPD --> HAVE --> TEXT --> BLOCK --> TAIL
 
@@ -868,7 +868,7 @@ flowchart TD
     CLIPUP["CLIP collection upsert<br/>ids, embeddings, metadata(document_id, image_id, path)"]
     P4A --> CLIPUP
 
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
+    TAIL["chunk_text() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
     BLOCK --> TAIL
 
     NOSUM["no attach_summary_chunk:<br/>IMAGE is absent from _SUMMARY_FLAGS"]

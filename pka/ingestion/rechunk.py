@@ -1,7 +1,7 @@
 """Re-chunk documents from their retained text, without going back to the source.
 
-The pass that ``document_texts`` exists for. Changing ``chunk_sentences``, ``chunk_overlap``, ``min_chunk_chars`` or
-the splitter itself used to be unappliable to an archive already ingested: the
+The pass that ``document_texts`` exists for. Changing ``chunk_tokens``,
+``chunk_overlap_tokens``, ``min_chunk_chars`` or the splitter itself used to be unappliable to an archive already ingested: the
 only copy of the body was ``chunks.text``, so re-cutting it meant re-fetching
 every URL and re-extracting every book. With the text retained, it is a local
 read.

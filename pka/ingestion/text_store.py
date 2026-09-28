@@ -2,7 +2,7 @@
 
 Why this exists: after ingestion the
 body text survives only as ``chunks.text``, which is whitespace-normalised, cut
-into overlapping sentence windows, and missing every window shorter than
+into overlapping chunks, and missing every chunk shorter than
 ``min_chunk_chars``. Re-summarising, re-chunking, re-running an extraction fix
 or auditing what the fetcher actually got therefore all require going back to
 the network. Keeping the text costs a little disk and retires that.

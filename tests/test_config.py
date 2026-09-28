@@ -237,3 +237,19 @@ class TestSecretsFileSourceResolvesNestedFields:
         secrets_file("SECRET_ALEXANDRIA_OPENROUTER_API_KEY=from-secrets\n")
         monkeypatch.setenv("ALEXANDRIA_OPENROUTER_API_KEY", "from-env")
         assert self._nested_settings_cls()().openrouter.api_key == "from-env"
+
+
+class TestRetiredSettings:
+    def test_a_retired_key_in_dotenv_warns_instead_of_failing(self, tmp_path, caplog):
+        dotenv = tmp_path / ".env"
+        dotenv.write_text("ALEXANDRIA_CHUNK_SENTENCES=5\nALEXANDRIA_CHUNK_TOKENS=100\n")
+        with caplog.at_level(logging.WARNING, logger="pka.config"):
+            s = Settings(_env_file=dotenv)
+        assert s.chunk_tokens == 100
+        assert not hasattr(s, "chunk_sentences")
+        assert "ALEXANDRIA_CHUNK_SENTENCES is no longer a setting" in caplog.text
+
+    def test_a_retired_keyword_is_dropped_too(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="pka.config"):
+            Settings(_env_file=None, max_sentence_chars=1000)
+        assert "ALEXANDRIA_MAX_SENTENCE_CHARS" in caplog.text

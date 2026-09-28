@@ -66,8 +66,9 @@ class BookSynopsis:
     def embed_text(self, max_sentences: int | None = None) -> str:
         """Description trimmed for embedding.
 
-        MiniLM truncates in the low hundreds of word-pieces, so a long synopsis
-        silently loses its tail; §3.2 caps this at ``summary_max_sentences``.
+        The synopsis is embedded as one chunk, and the embedding model reads
+        only its first few hundred tokens, so a long one would silently lose
+        its tail; §3.2 caps this at ``summary_max_sentences``.
         """
         limit = max_sentences if max_sentences is not None else cfg.summary_max_sentences
         return trim_to_sentences(self.description, limit)

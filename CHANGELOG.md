@@ -4,6 +4,16 @@
 
 ### Search
 
+- **Chunks are sized in tokens of the embedding model, by off-the-shelf
+  libraries.** The in-house sentence-window chunker (and its optional spaCy
+  backend) is replaced by `semantic-text-splitter`, which packs whole
+  sentences, by Unicode's boundaries, into chunks of up to `chunk_tokens`
+  (256) tokens counted by the embedding model's tokenizer, never more than
+  the model reads, overlapping by up to `chunk_overlap_tokens` (32).
+  `chunk_sentences`, `chunk_overlap` and `max_sentence_chars` are gone: a
+  `.env` still setting one logs a warning and is otherwise ignored. Trimming a
+  summary or synopsis to whole sentences uses `pysbd`. Existing documents keep
+  their chunks until `alexandria rechunk` or a re-ingest (`DESIGN.md` §3.5).
 - **The embedding model is a setting, and defaults to a multilingual one.**
   Chunks and queries were embedded by Chroma's built-in `all-MiniLM-L6-v2`,
   trained on English data. `embedding_model` (default

@@ -167,7 +167,7 @@ Function-level imports are common in `pka/` and are checked like any other:
 import-linter reads them, so moving an import into a function does not get it
 past the contract. They exist to keep module import cheap, deferring heavy
 libraries (sklearn, hdbscan, umap, torch, transformers) and optional extras
-(spaCy, EasyOCR, the YouTube client) until the code that needs them runs.
+(EasyOCR, the YouTube client) until the code that needs them runs.
 
 ## 2. Adding a new source connector
 
@@ -339,7 +339,7 @@ cut from that section carries its `page_start` / `page_end` into both the Chroma
 metadata and the `chunks` table, so a retrieved passage can be cited back to the
 pages it was read from. The section is the finest unit available: the chunker
 receives it as one block, so per-chunk page attribution would need
-`sentence_window_chunks` to return a sentence→page map. The fetch route drops the
+`chunk_text` to return a chunk→page map. The fetch route drops the
 range — it embeds a fetched document as a single block and has nowhere to hang it.
 
 **Reddit saved posts** are a *network* source (no filesystem path) rather than a
@@ -730,31 +730,38 @@ abstract or an image's OCR, not only in a title (`pka/db/fulltext.py`).
   slow step on a large archive. SQLite 3.35 or later is required
   (`MATERIALIZED` CTEs; the trigram tokenizer needs 3.34).
 
-### 3.5 Sentence boundaries
+### 3.5 Chunking
 
-Every text reaches the index through `sentence_window_chunks`
-(`ingestion/chunker.py`): overlapping windows of `chunk_sentences` sentences.
-The archive's languages are English, French and Spanish, and the splitter is
-built for those.
+Every text reaches the index through `chunk_text` (`ingestion/chunker.py`),
+which is `semantic-text-splitter` over the cleaned text. It packs the largest
+units that fit, paragraphs, then sentences, then words, into chunks of at most
+`chunk_tokens` (256) tokens, and repeats up to `chunk_overlap_tokens` (32) from
+the end of one chunk at the start of the next. Chunks shorter than
+`min_chunk_chars` are dropped, as before.
 
-- **Punctuation.** `.!?…` end a sentence before whitespace and a capital in
-  any alphabet, so `É`, `Á` and `Ñ` start sentences as `A` does. The capital
-  may follow `¿`, `¡` or `«`, which open Spanish questions and exclamations
-  and French quotations. English quotes and brackets do not count as openers,
-  as the original ASCII-only splitter never broke before them. A closing quote
-  or bracket may sit between the stop and the space (`.)`, `."`, `. »`), which
-  the original splitter did not allow; otherwise English splits as before. The English abbreviation list stops `Dr.`, `e.g.` and similar
-  from ending a sentence.
-- **spaCy**, when installed, replaces the punctuation scan.
-- **A length cap.** A run longer than `max_sentence_chars` (1000 characters)
-  with no boundary in it, such as unpunctuated OCR or a list with no full
-  stops, is cut between words. Without it, a document with no recognised
-  boundary became one chunk.
+- **Tokens of the embedding model.** Tokens are counted by the tokenizer of
+  the model the chunk index uses (§3.6), and the budget is capped at what that
+  model reads after its passage prefix and special tokens (254 for
+  `all-MiniLM-L6-v2`; a few under 512 for `multilingual-e5-small`). A chunk is therefore
+  never truncated when it is embedded. A run with no boundary in it, such as
+  unpunctuated OCR, is cut between words.
+- **Unicode sentence boundaries.** Sentences are UAX #29's, which need no
+  language: `É`, `Á`, `Ñ`, `¿`, `¡` and `«` open a sentence as `A` does, for
+  the archive's English, French and Spanish alike. They know no
+  abbreviations, so a chunk may break after `Dr.` or inside `« … ? »`.
+- **Overlap is whole units.** A sentence that fits in the overlap budget is
+  repeated; a longer one is not, and the chunks then meet without overlap.
+- **Sentences for trimming.** A summary, a synopsis or a short body trimmed to
+  `summary_max_sentences` is split by `pysbd`'s English rules
+  (`split_sentences`), which do know `Dr.` and `e.g.`, and split the French
+  and Spanish examples in the tests correctly.
 
-Scripts without spaces or capitals (CJK, Thai) are not handled: they would
-still split only at the cap. Keyword search (§3.4) finds text in them
+Scripts without spaces (CJK, Thai) chunk at Unicode's word boundaries, which
+for them are single characters; keyword search (§3.4) finds text in them
 regardless. Changing these settings applies to existing documents through
-`alexandria rechunk` (retained text) or a re-ingest.
+`alexandria rechunk` (retained text) or a re-ingest. `alexandria reembed` does
+not re-chunk: chunks cut for the legacy model's 254 tokens stay that size under
+a model that reads more, until a rechunk.
 
 ### 3.6 Embedding model
 
@@ -786,10 +793,10 @@ archive's languages (§3.5) are English, French and Spanish; the previous model,
   `parameters`; `assign_new_docs` refuses to place documents into a run from
   another model, since its centroids are in the old space. The run stays
   browsable until a new one is accepted.
-- **Truncation.** The model reads the first 512 tokens of a chunk. A window of
-  `chunk_sentences` ordinary sentences fits; a window of capped runs
-  (`max_sentence_chars`) can exceed it, and its tail is not embedded, though
-  keyword search (§3.4) still finds it.
+- **Truncation.** The model reads the first 512 tokens of a chunk, and the
+  chunker sizes chunks to fit (§3.5). The fallback text `ingest_text_block`
+  embeds whole when the body yields no chunk can exceed it; its tail is not
+  embedded, though keyword search (§3.4) still finds it.
 
 ## 4. Cluster lifecycle
 

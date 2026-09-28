@@ -425,6 +425,11 @@ learned-tag models; nothing is fetched again. The first run downloads the model
 (`intfloat/multilingual-e5-small`) from the Hugging Face Hub once. Re-run
 clustering afterwards (`DESIGN.md` §3.6).
 
+The same upgrade replaces the chunker (`DESIGN.md` §3.5). Documents already in
+the archive keep their chunks, which still work; `alexandria rechunk` re-cuts
+the ones with retained text. Run it after `alexandria reembed`, so the new
+chunks are sized for the new model's tokenizer.
+
 The same `init_db()` runs from the API's startup hook, so an upgrade that skips
 the explicit `alexandria init` still migrates once the task restarts. The script
 runs it as its own step anyway, because that way a failed migration is reported

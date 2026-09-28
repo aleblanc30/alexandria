@@ -88,7 +88,8 @@ def active_model_name() -> str:
     return name
 
 
-def _embedder() -> embedding.Embedder:
+def active_embedder() -> embedding.Embedder:
+    """The model every chunk and query is embedded with, and the chunker sizes for."""
     # Looked up on the module at call time, so the suite's fake reaches it.
     return embedding.get_embedder(active_model_name())
 
@@ -270,7 +271,7 @@ def upsert_chunks(
     if not ids:
         return []
     col = get_collection()
-    embeddings = _embedder().embed_documents(texts)
+    embeddings = active_embedder().embed_documents(texts)
     for i in range(0, len(ids), _UPSERT_BATCH_SIZE):
         window = slice(i, i + _UPSERT_BATCH_SIZE)
         col.upsert(
@@ -414,7 +415,7 @@ def query(
 ) -> list[dict]:
     """Return the top-n most similar chunks for a natural-language query."""
     kwargs: dict = {
-        "query_embeddings": [_embedder().embed_query(query_text)],
+        "query_embeddings": [active_embedder().embed_query(query_text)],
         "n_results": n_results,
     }
     if where:

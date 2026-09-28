@@ -185,10 +185,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     ),
     "Embedding": ("embedding_model",),
     "Chunking": (
-        "chunk_sentences",
-        "chunk_overlap",
+        "chunk_tokens",
+        "chunk_overlap_tokens",
         "min_chunk_chars",
-        "max_sentence_chars",
         "retain_document_text",
         "book_retain_max_pages",
         "book_retain_max_chars",

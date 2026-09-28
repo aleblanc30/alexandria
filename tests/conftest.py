@@ -593,11 +593,32 @@ def fake_embedding(text: str) -> list[float]:
     return [(total % (i + 2)) / 100.0 for i in range(FAKE_DIM)]
 
 
+_WORD_TOKENIZER = None
+
+
+def word_tokenizer():
+    """A ``tokenizers.Tokenizer`` that counts words, needing no download."""
+    global _WORD_TOKENIZER
+    if _WORD_TOKENIZER is None:
+        from tokenizers import Tokenizer
+        from tokenizers.models import WordLevel
+        from tokenizers.pre_tokenizers import Whitespace
+
+        _WORD_TOKENIZER = Tokenizer(WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
+        _WORD_TOKENIZER.pre_tokenizer = Whitespace()
+    return _WORD_TOKENIZER
+
+
 class FakeEmbedder:
     """Stands in for every model in :mod:`pka.storage.embedding`."""
 
+    #: One token per whitespace-separated word or punctuation run, built
+    #: offline; the chunker counts with it exactly as with a real model's.
+    max_chunk_tokens = 510
+
     def __init__(self, name: str) -> None:
         self.name = name
+        self.tokenizer = word_tokenizer()
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [fake_embedding(t) for t in texts]

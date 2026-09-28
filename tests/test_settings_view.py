@@ -47,15 +47,15 @@ class TestBuildSettingsReport:
 
     def test_is_default_true_for_stock_settings(self):
         report = sv.build_settings_report()
-        field = _find_field(report, "chunk_sentences")
+        field = _find_field(report, "chunk_tokens")
         assert field["is_default"] is True
 
     def test_is_default_false_for_override(self):
         from pka.config import settings
 
-        settings.chunk_sentences = 99
+        settings.chunk_tokens = 99
         report = sv.build_settings_report()
-        field = _find_field(report, "chunk_sentences")
+        field = _find_field(report, "chunk_tokens")
         assert field["is_default"] is False
         assert field["value"] == 99
 

@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     EnvSettingsSource,
@@ -26,6 +26,14 @@ from pydantic_settings import (
 )
 
 log = logging.getLogger(__name__)
+
+# Settings that were removed. A `.env` still naming one would otherwise stop the
+# app from starting (unknown keys are rejected), so each is dropped with a warning.
+RETIRED_SETTINGS = {
+    "chunk_sentences": "chunks are sized in tokens: see chunk_tokens",
+    "chunk_overlap": "see chunk_overlap_tokens",
+    "max_sentence_chars": "chunks are sized in tokens: see chunk_tokens",
+}
 
 FORBIDDEN_PATH_PREFIXES = (Path("/etc"), Path("/usr"), Path("/var"), Path("/sys"))
 
@@ -329,12 +337,12 @@ class Settings(BaseSettings):
     embedding_model: str = "intfloat/multilingual-e5-small"
 
     # ── Chunking ────────────────────────────────────────────────────────────
-    chunk_sentences: int = 5  # sentence-window size
-    chunk_overlap: int = 1  # sentences of overlap between windows
+    # Chunks are packed from whole sentences up to this many tokens of the
+    # embedding model's tokenizer, and never past what the model reads
+    # (DESIGN.md §3.5).
+    chunk_tokens: int = 256
+    chunk_overlap_tokens: int = 32  # tokens repeated from the end of the previous chunk
     min_chunk_chars: int = 80  # discard chunks shorter than this
-    # Cut any run longer than this with no sentence boundary in it (unpunctuated
-    # OCR, a list with no full stops), between words. 0 disables the cut.
-    max_sentence_chars: int = 1000
     # Keep the extracted body text verbatim in `document_texts`, so summarising,
     # chunking and extraction can be redone without re-fetching. Local
     # retention only — no outbound call
@@ -507,6 +515,18 @@ class Settings(BaseSettings):
         if v is None:
             return v
         return reject_system_path(v)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_retired(cls, data):
+        if not isinstance(data, dict):
+            return data
+        for name, instead in RETIRED_SETTINGS.items():
+            for key in (name, f"alexandria_{name}"):
+                if key in data:
+                    data.pop(key)
+                    log.warning("ALEXANDRIA_%s is no longer a setting (%s)", name.upper(), instead)
+        return data
 
     @field_validator("image_dirs", mode="before")
     @classmethod

@@ -142,8 +142,8 @@ reddit_items = sa.Table(
 # The extracted body text of a fetched or extracted document, kept verbatim so
 # summarising, chunking and extraction can be redone without going back to the
 # network. `chunks.text` is the only other
-# copy and it is whitespace-normalised, cut into overlapping windows, and
-# missing every window shorter than `min_chunk_chars` — a lossy reconstruction,
+# copy and it is whitespace-normalised, cut into overlapping chunks, and
+# missing every chunk shorter than `min_chunk_chars` — a lossy reconstruction,
 # which is why `ingestion/enrich.py` has to reassemble one.
 #
 # A sidecar rather than a `documents` column: `documents` is scanned by browse,

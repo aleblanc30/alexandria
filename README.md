@@ -53,7 +53,6 @@ frontend/                     # Vue 3 + Vite + Pinia
 pip install -e .
 # Optional extras
 pip install -e '.[dev]'    # pytest, ruff, mypy
-pip install -e '.[spacy]'  # better sentence splitting
 
 # Database — idempotent, safe to re-run
 alexandria init            # or: python scripts/init_db.py
