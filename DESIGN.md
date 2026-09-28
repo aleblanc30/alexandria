@@ -228,11 +228,11 @@ two-phase flow (metadata import, then embed — no async fetch phase).
 
 > Drawn per source in [`docs/ingestion-flows.md`](docs/ingestion-flows.md),
 > including where each pipeline departs from the pattern below — Firefox
-> interleaving phase 2 with its fetch, Calibre running the embedding phase
-> twice, Reddit forking on `external_url`, and Images substituting four
+> interleaving phase 2 with its fetch, Calibre and Zotero running the embedding
+> phase twice, Reddit forking on `external_url`, and Images substituting four
 > extraction passes for a fetch. Keep those graphs in step with this section.
 
-Calibre and Firefox follow a two-phase pattern:
+Calibre, Zotero and Firefox follow a two-phase pattern:
 
 - **Phase 1** is fast and deterministic. It writes document rows and
   embeds whatever cheap text is immediately available (title + abstract
@@ -725,6 +725,41 @@ abstract or an image's OCR, not only in a title (`pka/db/fulltext.py`).
   run for a new archive as for an old one. The rebuild over `chunks` is the
   slow step on a large archive. SQLite 3.35 or later is required
   (`MATERIALIZED` CTEs; the trigram tokenizer needs 3.34).
+
+### 3.5 Chunking in any script
+
+Every text reaches the index through `sentence_window_chunks`
+(`ingestion/chunker.py`): overlapping windows of `chunk_sentences` sentences.
+The sentence boundaries are what make it work outside English:
+
+- **Punctuation.** `.!?…` end a sentence before whitespace and a letter that
+  starts one, in any script: an uppercase letter in a cased script (Latin with
+  its accents, Cyrillic, Greek) or any letter of a script without case
+  (Arabic, Hebrew, Devanagari), with the English abbreviation list kept. `。`,
+  `।`, `؟` and similar end a sentence with or without a following space, as
+  does `.!?` straight after a CJK or Thai character (NFKC in `clean_text`
+  folds the full-width `！？` into ASCII).
+- **spaCy**, when installed, splits text in spaced scripts only. It tokenises
+  with English rules and cannot split inside a run of CJK text, so text whose
+  letters are mostly from dense scripts always takes the punctuation scan.
+- **A length cap.** A run longer than `max_sentence_chars` (1000) with no
+  boundary is cut, at whitespace where it has any (Thai marks no sentence ends
+  but spaces its clauses) and by characters where it has none. Without it, a
+  document with no recognised boundary became one chunk and was effectively
+  unsearchable.
+- **Weighted lengths.** `min_chunk_chars` and `max_sentence_chars` count a
+  CJK, kana, Hangul, Thai, Lao, Khmer or Myanmar character as three, roughly
+  what it carries next to a Latin one, so both settings mean about the same
+  amount of text in every script.
+
+Windows are joined with a space only where the source had whitespace, so CJK
+sentences stay unspaced; English chunks are byte-for-byte what the
+ASCII-only splitter produced whenever no run hits the cap. Chunks are still
+bounded in characters, not model tokens: a window of dense text can exceed the
+current embedding model's 256-token input and be truncated there, which the
+embedding-model choice has to account for. Changing any of these settings
+applies to existing documents through `alexandria rechunk` (retained text) or
+a re-ingest.
 
 ## 4. Cluster lifecycle
 

@@ -9,10 +9,8 @@ record.
 
 In order; everything below this section is unordered.
 
-1. **Multilingual chunking** — *Search / vectors*.
-2. **Multilingual embedding model** — *Search / vectors*; settles the model half
-   of (1).
-3. **Zotero collection names as tags** — *Ingestion*.
+1. **Multilingual embedding model** — *Search / vectors*.
+2. **Zotero collection names as tags** — *Ingestion*.
 
 ## Maintainability & performance
 
@@ -27,7 +25,7 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 
 ## Ingestion
 
-- [ ] **Use Zotero collection names as tags** *(priority 3)* — plan in
+- [ ] **Use Zotero collection names as tags** *(priority 2)* — plan in
   `COLLECTION_TAGS.md`, which extends it to Firefox bookmark folders.
 - [ ] **OCR scanned PDFs** — Calibre books, Zotero attachments and fetched PDFs
   with no text layer are marked `no_text_layer` and get no body chunks; run
@@ -58,14 +56,7 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 
 ## Search / vectors
 
-- [ ] **Multilingual chunking** *(priority 1)* — `pka/ingestion/chunker.py` is
-  English-only on both paths: `_SIMPLE_SENT_RE` needs an ASCII `[A-Z]` after
-  `.!?`, the spaCy path loads `en_core_web_sm`, and scripts without `.!?` or
-  spaces (CJK, Thai) yield no boundary at all. A single-sentence split makes
-  `sentence_window_chunks` emit **the whole document as one chunk** — a silent
-  retrieval failure. Needs script/language detection and a per-language splitter
-  (or a character-window fallback); `trim_to_sentences` moves with it.
-- [ ] **Swap the embedding model** *(priority 2)* — Chroma's default
+- [ ] **Swap the embedding model** *(priority 1)* — Chroma's default
   `all-MiniLM-L6-v2` is used as-is (`storage/vector_store.py`). Benchmark
   multilingual candidates (`bge-m3`, `multilingual-e5-small`,
   `paraphrase-multilingual-MiniLM-L12-v2`) before committing: collections are

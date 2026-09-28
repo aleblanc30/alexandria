@@ -326,6 +326,10 @@ class Settings(BaseSettings):
     chunk_sentences: int = 5  # sentence-window size
     chunk_overlap: int = 1  # sentences of overlap between windows
     min_chunk_chars: int = 80  # discard chunks shorter than this
+    # Cut any run longer than this with no sentence boundary in it (Thai, which
+    # marks no sentence ends; unpunctuated OCR), at whitespace where it has any.
+    # Both lengths count a CJK/kana/Hangul/Thai character as three.
+    max_sentence_chars: int = 1000
     # Keep the extracted body text verbatim in `document_texts`, so summarising,
     # chunking and extraction can be redone without re-fetching. Local
     # retention only — no outbound call
