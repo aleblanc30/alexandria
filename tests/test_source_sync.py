@@ -418,7 +418,7 @@ class TestUnavailableSources:
         reg = MagicMock()
         monkeypatch.setattr("pka.ingestion.calibre_sync.ingest_calibre_metadata", reg)
 
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
 
         sp.reset("calibre")
         ing._sync_metadata("calibre")
@@ -435,7 +435,7 @@ class TestUnavailableSources:
         ingest = MagicMock()
         monkeypatch.setattr("pka.ingestion.image_sync.ingest_images", ingest)
 
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
 
         sp.reset("image")
         ing._sync_ingest("image")

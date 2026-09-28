@@ -15,7 +15,7 @@ export const EXPERIMENTAL_SOURCES: readonly IngestionSource[] = ['youtube']
  * Sources whose metadata sync is incremental, and so have a separate "walk
  * everything" mode. Reddit's feed stops at the first already-saved item; every
  * other connector reads its whole local database or folder each time.
- * Mirrors BACKFILL_SOURCES in pka/api/routers/ingestion.py.
+ * Mirrors BACKFILL_SOURCES in pka/api/routers/ingestion_jobs.py.
  */
 export const BACKFILL_SOURCES: readonly IngestionSource[] = ['reddit']
 

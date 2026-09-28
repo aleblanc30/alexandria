@@ -78,6 +78,11 @@
   and each one `init_db` runs is recorded in a new `schema_migrations` table and
   skipped on later starts. An existing archive has no record yet, so its first
   start after upgrading runs every step once (each a no-op) and records them.
+- **`pka/api/routers/ingestion.py` is split into four routers**:
+  `ingestion_status.py`, `ingestion_sources.py`, `ingestion_purge.py` and
+  `ingestion_jobs.py`, with shared helpers in `pka/api/ingestion_common.py`.
+  Every route keeps its path, method and handler name, so the OpenAPI schema is
+  unchanged.
 
 ### Fixes
 

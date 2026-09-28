@@ -57,7 +57,7 @@ text it hands to `ingest_text_block`.
 ```mermaid
 flowchart TD
     subgraph entry["Job launch"]
-        API["POST /api/ingestion/sync<br/>pka/api/routers/ingestion.py"]
+        API["POST /api/ingestion/sync<br/>pka/api/routers/ingestion_jobs.py"]
         CLI["alexandria &lt;source&gt;<br/>pka/cli.py"]
         REG["require_handlers(src)<br/>ingestion/registry.py"]
         SPEC["phase_spec(src) — PHASE_SPECS"]

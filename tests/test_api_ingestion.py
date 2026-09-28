@@ -85,7 +85,7 @@ class TestIngestion:
             sp.finish(src)
 
         sp.reset("zotero")
-        monkeypatch.setattr("pka.api.routers.ingestion._sync", fake_sync, raising=False)
+        monkeypatch.setattr("pka.api.routers.ingestion_jobs._sync", fake_sync, raising=False)
         r = client.post("/ingestion/sync/zotero")
         assert r.status_code == 202
 
@@ -153,7 +153,7 @@ class TestIngestion:
     def test_sync_events_streams_a_frame_for_an_idle_source(self, client, monkeypatch):
         import json
 
-        from pka.api.routers import ingestion as router
+        from pka.api.routers import ingestion_status as router
 
         # No grace window: an idle source yields its snapshot and the stream ends.
         monkeypatch.setattr(router, "_START_GRACE_SECONDS", 0.0)
@@ -172,7 +172,7 @@ class TestIngestion:
     def test_sync_events_ends_when_the_job_does(self, client, monkeypatch):
         import json
 
-        from pka.api.routers import ingestion as router
+        from pka.api.routers import ingestion_status as router
 
         snapshots = [
             {"source": "zotero", "status": "running", "processed": 1},
@@ -204,7 +204,9 @@ class TestIngestion:
             sp.finish(src)
 
         sp.reset("zotero")
-        monkeypatch.setattr("pka.api.routers.ingestion._sync_metadata", fake_meta, raising=False)
+        monkeypatch.setattr(
+            "pka.api.routers.ingestion_jobs._sync_metadata", fake_meta, raising=False
+        )
         r = client.post("/ingestion/sync/zotero/metadata")
         assert r.status_code == 202
         assert r.json()["job"] == "metadata"
@@ -216,14 +218,16 @@ class TestIngestion:
             sp.finish(src)
 
         sp.reset("firefox")
-        monkeypatch.setattr("pka.api.routers.ingestion._sync_ingest", fake_ingest, raising=False)
+        monkeypatch.setattr(
+            "pka.api.routers.ingestion_jobs._sync_ingest", fake_ingest, raising=False
+        )
         r = client.post("/ingestion/sync/firefox/ingest")
         assert r.status_code == 202
         assert r.json()["job"] == "ingest"
 
     def test_backfill_flag_reaches_the_reddit_handler(self, client, monkeypatch):
         """Reddit's sync is incremental, so a full re-walk must be asked for."""
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         seen: dict = {}
@@ -244,7 +248,7 @@ class TestIngestion:
         assert seen == {"backfill": True}
 
     def test_metadata_sync_without_backfill_passes_nothing(self, client, monkeypatch):
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         seen: dict = {"called": False}
@@ -271,7 +275,7 @@ class TestIngestion:
         assert "backfill" in r.json()["detail"]
 
     def test_sync_metadata_routes_zotero(self, monkeypatch):
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         called = []
@@ -286,7 +290,7 @@ class TestIngestion:
         assert sp.snapshot("zotero")["zotero"]["active_job"] is None
 
     def test_sync_ingest_routes_firefox(self, monkeypatch):
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         called = []
@@ -326,7 +330,7 @@ class TestIngestion:
 
     def test_ingest_assigns_new_docs_to_active_run(self, monkeypatch):
         """New documents are filed into the accepted run as soon as they land."""
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         self._stub_ingest(monkeypatch, {"embed": {}})
@@ -340,7 +344,7 @@ class TestIngestion:
 
     def test_metadata_sync_does_not_assign(self, monkeypatch):
         """Metadata writes no chunks, so there is nothing to assign."""
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         monkeypatch.setattr(
@@ -356,7 +360,7 @@ class TestIngestion:
 
     def test_cancelled_ingest_does_not_assign(self, monkeypatch):
         """A stopped job leaves the archive mid-update; assignment waits."""
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         self._stub_ingest(monkeypatch, {"embed": {"stopped": "cancelled"}})
@@ -369,7 +373,7 @@ class TestIngestion:
 
     def test_no_active_run_skips_assignment(self, monkeypatch):
         """Nothing to assign into, and an ingest must never start a full run."""
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         self._stub_ingest(monkeypatch, {"embed": {}})
@@ -382,7 +386,7 @@ class TestIngestion:
 
     def test_assignment_failure_leaves_sync_successful(self, monkeypatch):
         """Clustering is a view over the archive: its failure is not the sync's."""
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         self._stub_ingest(monkeypatch, {"embed": {}})
@@ -403,7 +407,7 @@ class TestIngestion:
         """force=true must stop the running worker, not run two jobs concurrently."""
         import threading as th
 
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         started: list[th.Event] = []
@@ -445,7 +449,7 @@ class TestIngestion:
         assert not sp.is_running("zotero")
 
     def test_rebuild_vectors_queued(self, client, monkeypatch):
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
 
         ing._rebuild_running = False
         monkeypatch.setattr(
@@ -458,7 +462,7 @@ class TestIngestion:
         ing._rebuild_running = False
 
     def test_rebuild_vectors_409_when_busy(self, client):
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
 
         ing._rebuild_running = True
         try:
@@ -468,7 +472,7 @@ class TestIngestion:
             ing._rebuild_running = False
 
     def test_sync_routes_zotero_via_sync_fn(self, monkeypatch):
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         called = []
@@ -482,7 +486,7 @@ class TestIngestion:
         assert sp.snapshot("zotero")["zotero"]["status"] == "done"
 
     def test_sync_records_error_on_failure(self, monkeypatch):
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         def boom(**kw):
@@ -496,7 +500,7 @@ class TestIngestion:
         assert "sync blew up" in snap["error"]
 
     def test_sync_firefox_source(self, monkeypatch):
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         monkeypatch.setattr(
@@ -508,7 +512,7 @@ class TestIngestion:
         assert sp.snapshot("firefox")["firefox"]["status"] == "paused"
 
     def test_sync_calibre_source(self, monkeypatch):
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         monkeypatch.setattr(
@@ -520,7 +524,7 @@ class TestIngestion:
         assert sp.snapshot("calibre")["calibre"]["status"] == "done"
 
     def test_sync_image_source(self, monkeypatch):
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
         from pka.ingestion import progress as sp
 
         monkeypatch.setattr(

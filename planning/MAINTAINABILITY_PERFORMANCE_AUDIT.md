@@ -267,7 +267,17 @@ Recommendation, in two steps:
    attributes, and `SettingsView`'s hand-maintained field-to-tier table gets its
    grouping from the model.
 
-### M-9: `api/routers/ingestion.py` is five routers in one file (S)
+### M-9: `api/routers/ingestion.py` is five routers in one file (S) — **done**
+
+Shipped as four routers rather than three: `ingestion_status.py` (status,
+progress, SSE, domain and unfetchable reports), `ingestion_sources.py` (paths,
+image dirs, pickers), `ingestion_purge.py` (source and target purges,
+enrichment-run list) and `ingestion_jobs.py` (sync/pause/cancel, enrich,
+rechunk, rebuild, `_workers`). Purge got its own module because its targets and
+provenance filters are not about sources. The three helpers more than one
+router needs (`require_source`, `require_nothing_running`, `seed_baselines`)
+live in `pka/api/ingestion_common.py`. No shim: only `api/main.py` and the tests
+imported the old module.
 
 Evidence: 515 lines, 19 commits, endpoints for status/progress/SSE, image
 directory management, per-source path management, purge, domain top-lists,
