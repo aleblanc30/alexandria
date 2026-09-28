@@ -623,6 +623,126 @@ def _purge_cluster_runs(_scope: PurgeScope) -> dict[str, int]:
     return purge_all_cluster_runs(dry_run=False)
 
 
+# ── duplicate_chunks ─────────────────────────────────────────────────────────
+# A full-text pass run twice on one document appends a second, identical copy of
+# its chunks, and of its cached summary chunk. Calibre did that on every ingest
+# until its pass learned to skip books already done; this finds what it left.
+
+
+def _repeat_period(seq: list) -> int | None:
+    """Smallest ``p < len(seq)`` such that ``seq`` is its first ``p`` items repeated."""
+    n = len(seq)
+    for p in range(1, n // 2 + 1):
+        if n % p == 0 and all(seq[i] == seq[i % p] for i in range(p, n)):
+            return p
+    return None
+
+
+def _duplicate_chunks(con, source: str | None) -> tuple[list[int], list[int], set[int]]:
+    """``(fulltext copies, summary copies, affected document ids)``, oldest kept.
+
+    A document's ``fulltext`` chunks, in index order, are a repeat when the
+    whole run is one run's chunks several times over. That is checked on
+    length and page first, which is cheap enough for the dry run the purge page
+    makes on every load, and then confirmed on the text itself. A document whose
+    passes differ (a different ``--max-pages``, a chunker change between runs)
+    is not a clean repeat and is left alone. Summary chunks repeat as exact
+    copies, since each run re-attached the cached summary: all but the first of
+    each text go.
+    """
+    q = (
+        sa.select(
+            chunks.c.id,
+            chunks.c.document_id,
+            sa.func.length(chunks.c.text).label("n"),
+            chunks.c.page_start,
+        )
+        .select_from(chunks.join(documents, chunks.c.document_id == documents.c.id))
+        .where(chunks.c.chunk_pass == "fulltext")
+        .order_by(chunks.c.document_id, chunks.c.chunk_index, chunks.c.id)
+    )
+    by_doc: dict[int, list] = {}
+    for row in con.execute(_source_clause(q, source)).fetchall():
+        by_doc.setdefault(row.document_id, []).append(row)
+
+    fulltext_ids: list[int] = []
+    affected: set[int] = set()
+    for doc_id, rows in by_doc.items():
+        period = _repeat_period([(r.n, r.page_start) for r in rows])
+        if period is None:
+            continue
+        texts = [
+            r[0]
+            for r in con.execute(
+                sa.select(chunks.c.text)
+                .where(chunks.c.document_id == doc_id)
+                .where(chunks.c.chunk_pass == "fulltext")
+                .order_by(chunks.c.chunk_index, chunks.c.id)
+            ).fetchall()
+        ]
+        if all(texts[i] == texts[i % period] for i in range(period, len(texts))):
+            fulltext_ids.extend(r.id for r in rows[period:])
+            affected.add(doc_id)
+
+    sq = (
+        sa.select(chunks.c.id, chunks.c.document_id, chunks.c.text)
+        .select_from(chunks.join(documents, chunks.c.document_id == documents.c.id))
+        .where(chunks.c.chunk_pass == "summary")
+        .order_by(chunks.c.document_id, chunks.c.chunk_index, chunks.c.id)
+    )
+    summary_ids: list[int] = []
+    seen: set[tuple[int, str]] = set()
+    for row in con.execute(_source_clause(sq, source)).fetchall():
+        key = (row.document_id, row.text)
+        if key in seen:
+            summary_ids.append(row.id)
+            affected.add(row.document_id)
+        else:
+            seen.add(key)
+    return fulltext_ids, summary_ids, affected
+
+
+def _count_duplicate_chunks(scope: PurgeScope) -> dict[str, int]:
+    with get_engine().connect() as con:
+        fulltext_ids, summary_ids, affected = _duplicate_chunks(con, scope.source)
+    return {
+        "documents": len(affected),
+        "fulltext_chunks": len(fulltext_ids),
+        "summary_chunks": len(summary_ids),
+    }
+
+
+def _purge_duplicate_chunks(scope: PurgeScope) -> dict[str, int]:
+    """Delete the repeated copies and their vectors, keeping each first copy.
+
+    Nothing is lost: what goes is byte-for-byte what stays. The document
+    embeddings are refreshed afterwards because a repeated summary chunk
+    weighted the mean pool toward itself.
+    """
+    eng = get_engine()
+    with eng.connect() as con:
+        fulltext_ids, summary_ids, affected = _duplicate_chunks(con, scope.source)
+        chunk_ids = fulltext_ids + summary_ids
+        vector_ids = _vector_ids_for_chunks(con, chunk_ids)
+
+    counts = {
+        "documents": len(affected),
+        "fulltext_chunks": len(fulltext_ids),
+        "summary_chunks": len(summary_ids),
+        "vectors_purged": vector_store.purge_vectors(vector_ids) if vector_ids else 0,
+    }
+    # purge_vectors dropped the rows it had vectors for; this takes the rest
+    # (a chunk whose embed was interrupted has no vector id).
+    with eng.begin() as con:
+        _delete_chunks(con, chunk_ids)
+
+    from pka.clustering.doc_embeddings import refresh_document_embedding
+
+    for doc_id in sorted(affected):
+        refresh_document_embedding(doc_id)
+    return counts
+
+
 TARGETS: dict[str, PurgeTarget] = {
     t.key: t
     for t in (
@@ -674,6 +794,14 @@ TARGETS: dict[str, PurgeTarget] = {
             _count_fetched_text,
             _purge_fetched_text,
             "POST /ingestion/sync/{source}/ingest (re-fetches over the network)",
+        ),
+        PurgeTarget(
+            "duplicate_chunks",
+            "Duplicate full-text and summary chunks",
+            3,
+            _count_duplicate_chunks,
+            _purge_duplicate_chunks,
+            None,
         ),
         PurgeTarget(
             "document_texts",

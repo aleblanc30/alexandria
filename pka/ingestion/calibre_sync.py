@@ -2,7 +2,9 @@
 
 import logging
 
-from pka.constants import Source
+from pka.constants import FetchStatus, Source
+from pka.db.chunks import source_ids_with_chunk_pass
+from pka.db.documents import source_ids_with_fetch_status
 from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.pending_metadata import (
@@ -36,6 +38,25 @@ def _unavailable_ingest(key: str, reason: str) -> dict:
         "fulltext": dict(_EMPTY_EMBED),
         "unavailable": reason,
     }
+
+
+def _needs_fulltext(books: list) -> list:
+    """Books whose file is on disk and whose full text is not archived yet.
+
+    Done means ``fulltext`` chunks already exist, or the file was found to be a
+    scan (``no_text_layer``). Without this every ingest re-extracted every book
+    and appended another full copy of its chunks, since the pass itself never
+    checks. To redo a book's full text (a different ``--max-pages``, say), purge
+    its ``fetched_text`` first.
+    """
+    done = source_ids_with_chunk_pass(Source.CALIBRE, "fulltext") | source_ids_with_fetch_status(
+        Source.CALIBRE, FetchStatus.NO_TEXT_LAYER
+    )
+    return [
+        b
+        for b in books
+        if b.preferred_path and b.preferred_path.exists() and b.source_id not in done
+    ]
 
 
 def sync_calibre_metadata(
@@ -85,12 +106,12 @@ def sync_calibre_ingest(
         stats["stopped"] = stats["metadata_embed"]["stopped"]
         return stats
 
-    if n_files == 0:
+    file_books = _needs_fulltext(books)
+    if not file_books:
         stats["fulltext"] = dict(_EMPTY_EMBED)
         return stats
 
-    file_books = [b for b in books if b.preferred_path and b.preferred_path.exists()]
-    sp.set_phase(key, "embedding", n_files)
+    sp.set_phase(key, "embedding", len(file_books))
     stats["fulltext"] = ingest_calibre_fulltext(
         file_books,
         dry_run=dry_run,

@@ -455,8 +455,8 @@ flowchart TD
 
 Local library, no fetch phase, but **two embedding passes**: a cheap
 `pass="metadata"` over every book, then `pass="fulltext"` over the books whose
-file exists on disk. It is the only pipeline that calls `set_phase('embedding')`
-twice. Both outbound touches (`lookup_book`, `summarize_text`) are default-off.
+file exists on disk and whose full text is not archived yet. Like Zotero, it
+calls `set_phase('embedding')` twice. Both outbound touches (`lookup_book`, `summarize_text`) are default-off.
 
 ```mermaid
 flowchart TD
@@ -533,10 +533,11 @@ flowchart TD
     NETOL(["Open Library / catalogue API"])
     LADDER --> NETOL
 
-    STOP1{"stopped, or n_files == 0?"}
+    NEED["_needs_fulltext(books)<br/>file on disk · no fulltext chunks ·<br/>not no_text_layer"]
+    STOP1{"stopped, or no book needs full text?"}
     ENDE(["return stats"])
-    SETE2["sp.set_phase('calibre','embedding', n_files)"]
-    B1 --> STOP1
+    SETE2["sp.set_phase('calibre','embedding', n_pending)"]
+    B1 --> NEED --> STOP1
     STOP1 -->|yes| ENDE
     STOP1 -->|no| SETE2 --> P2
 
@@ -560,7 +561,7 @@ flowchart TD
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
     class START,INIT,AVAIL,OK,UNAV,ENDU,TAKE,BEGIN,MLOOP,FS,INSDOC,TAGS,FULL,ING,SKIPF,SETE1,ELOOP1,SKIP1,B1,B2,STOP1,ENDE,SETE2,TAIL,NOOP1,NOTEXT,JOIN,STOREB shared
-    class LOADB,MRUN,SPLIT,COUNT,P1,MT,SYN,P2,EXTRACT,DISP,EPUB,PDFX,SECT,NOCLS specific
+    class LOADB,MRUN,SPLIT,COUNT,P1,MT,SYN,P2,EXTRACT,DISP,EPUB,PDFX,SECT,NOCLS,NEED specific
     class NETOL external
     class LOOK,LADDER,SUM,LLM gated
     class CDB,SQLITE,CHROMA store

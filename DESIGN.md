@@ -249,10 +249,12 @@ Calibre and Firefox follow a two-phase pattern:
   Chunk indices are offset past the phase-1 chunks via `existing_chunk_count()`
   so the two passes coexist in a single document.
 
-Phase-2 work is gated behind `--fulltext` (Calibre), runs as a second
-`embedding` pass of the ingest job (Zotero, which skips items that already have
-`fulltext` chunks or were found to be scans), or runs through
-`pka.ingestion.fetcher.fetch_and_embed_pending()` (Firefox). Each worker
+Phase-2 work is gated behind `--fulltext` (Calibre) or runs as a second
+`embedding` pass of the ingest job (Zotero), and in both it skips documents that
+already have `fulltext` chunks or were found to be scans: the pass itself
+appends, so re-running it on a document would store its chunks twice.
+Firefox's phase 2 runs through `pka.ingestion.fetcher.fetch_and_embed_pending()`
+instead. Each worker
 fetches one URL, persists fetch metadata, embeds immediately, then moves on—
 extracted text is not batched in RAM. Docs marked `fetched` but missing
 chunks are re-queued automatically on the next ingest run. When a Firefox URL

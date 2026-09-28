@@ -4,6 +4,14 @@
 
 ### Ingestion
 
+- **Calibre's full text is embedded once.** Every Calibre ingest used to hand
+  every book with a file to the full-text pass, which never checked what was
+  already there, so each run appended another copy of the book's chunks and of
+  its summary chunk. The pass now skips books that have `fulltext` chunks or
+  were found to be scans. A new purge target, `duplicate_chunks`
+  (`alexandria purge duplicate_chunks`, or the maintenance panel), removes the
+  copies earlier runs left: the first copy of each document's full text and
+  summary stays, and a document whose runs differ is left alone.
 - **Zotero ingests the full text of attached PDFs.** A second embedding pass
   in the Zotero ingest job (`ingest_zotero_fulltext`) extracts each attached
   PDF's page groups, retains the joined text in `document_texts` with its page

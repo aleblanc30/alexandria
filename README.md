@@ -147,6 +147,15 @@ alexandria purge summaries --source firefox   # or scope it to one connector
 alexandria purge vectors                      # then POST /ingestion/rebuild-vectors
 ```
 
+Before this release every Calibre ingest appended another copy of each book's
+full-text and summary chunks. `duplicate_chunks` removes the extra copies and
+keeps the first, and only where a document's runs are exact repeats:
+
+```bash
+alexandria purge duplicate_chunks --dry-run   # how many documents and chunks
+alexandria purge duplicate_chunks
+```
+
 Summaries record which model made them, so swapping a backend does not mean
 discarding the work you are keeping:
 

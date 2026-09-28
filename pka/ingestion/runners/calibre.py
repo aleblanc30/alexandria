@@ -213,7 +213,12 @@ def ingest_calibre_fulltext(
     max_pages: int | None = None,
     progress_key: str | None = None,
 ) -> dict:
-    """Phase 2: extract and embed full book text."""
+    """Phase 2: extract and embed full book text.
+
+    Callers pass only books still missing their full text (see
+    ``calibre_sync._needs_fulltext``); this does not re-check, and re-running it
+    on a book appends a second copy of its chunks and of its summary chunk.
+    """
     stats = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0, "no_text_layer": 0}
     known = document_index(Source.CALIBRE)
 

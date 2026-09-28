@@ -28,11 +28,6 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 
 ## Ingestion
 
-- [ ] **Calibre full text re-runs duplicate every book's chunks** —
-  `sync_calibre_ingest` hands every book with a file to `ingest_calibre_fulltext`,
-  which never checks for existing `fulltext` chunks, so each ingest job appends
-  another copy (10 → 20 in a two-run test). Filter as Zotero's
-  `_load_zotero_items_for_fulltext` does, then dedupe existing archives.
 - [ ] **Use Zotero collection names as tags** *(priority 4)* — plan in
   `COLLECTION_TAGS.md`, which extends it to Firefox bookmark folders.
 - [ ] **Deduplication of tags** — plan in `TAG_DEDUPLICATION.md`.
