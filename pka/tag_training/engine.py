@@ -166,6 +166,9 @@ def load_label_matrix(
         return np.empty((0, 0)), np.array([]), [], missing
 
     y = np.array([labels[doc_ids.index(did)] for did in used_ids], dtype=np.int64)
+    # sklearn is imported on use throughout this module: the ingest tail imports
+    # this module to score every document, and an archive with no accepted
+    # model never needs sklearn at all.
     from sklearn.preprocessing import normalize
 
     X = np.stack([found[did] for did in used_ids], axis=0)

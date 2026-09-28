@@ -69,6 +69,47 @@ class TestRefreshDocumentEmbedding:
         assert cached[doc_id].shape[0] > 0
 
 
+class TestRefreshAnnouncesTheDocument:
+    """Learned-tag scoring hangs off this announcement, so it must fire exactly
+    when a document gains an embedding, and not otherwise."""
+
+    @pytest.fixture
+    def announced(self, monkeypatch):
+        from pka import hooks
+
+        calls: list[int] = []
+        monkeypatch.setattr(hooks, "_document_embedded", [calls.append])
+        return calls
+
+    def test_an_embedded_document_is_announced(self, mock_chroma, announced):
+        doc_id = make_document("zotero", "AN1", "Has chunks", None, None)
+        insert_chunks(
+            [
+                {
+                    "document_id": doc_id,
+                    "chunk_index": 0,
+                    "text": "hello world",
+                    "token_count": 2,
+                    "vector_id": "vec-an1",
+                }
+            ]
+        )
+        from pka.storage import vector_store as vs
+
+        vs.upsert_chunks(
+            ids=["vec-an1"],
+            texts=["hello world"],
+            metadatas=[{"document_id": doc_id, "source": "zotero", "chunk_index": 0}],
+        )
+        assert refresh_document_embedding(doc_id) is True
+        assert announced == [doc_id]
+
+    def test_a_document_without_chunks_is_not_announced(self, mock_chroma, announced):
+        doc_id = make_document("zotero", "AN2", "No chunks", None, None)
+        assert refresh_document_embedding(doc_id) is False
+        assert announced == []
+
+
 class TestLoadCachedEmbeddings:
     def test_empty_doc_ids(self):
         found, missing = load_cached_embeddings([])

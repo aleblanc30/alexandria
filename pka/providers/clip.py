@@ -27,6 +27,8 @@ def _load_clip():
         # alone does not suppress the round-trip in current huggingface_hub.)
         os.environ.setdefault("HF_HUB_OFFLINE", "1")
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+        # transformers and torch (below) are imported only once CLIP is used:
+        # they take seconds to load, and CLIP is off by default.
         from transformers import CLIPModel, CLIPProcessor
 
         model_name = cfg.clip_model

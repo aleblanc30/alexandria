@@ -24,6 +24,7 @@ from pka.api.routers import (
     tags,
     trends,
 )
+from pka.bootstrap import install_hooks
 from pka.cli._logging import setup_logging
 from pka.clustering.run_progress import reconcile_interrupted_runs
 from pka.db.migrate import init_db
@@ -35,6 +36,9 @@ from pka.db.migrate import init_db
 # it also applies inside each ``--reload`` worker. uvicorn's own loggers have
 # ``propagate=False``, so this doesn't double-print their lines.
 setup_logging()
+# Listeners the ingest tail calls — learned-tag scoring among them. Background
+# sync jobs run in this process, so registering once at import covers them.
+install_hooks()
 
 log = logging.getLogger(__name__)
 

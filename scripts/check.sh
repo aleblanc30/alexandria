@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Runs every check in CLAUDE.md's "Verifying a change" table in one pass:
-# ruff lint, ruff format check, mypy, pytest with coverage, and the frontend
-# test + build. Deliberately manual-run: not wired into CI or a hook.
+# ruff lint, ruff format check, mypy, the import-layering contract, pytest
+# with coverage, and the frontend test + build. Deliberately manual-run: not
+# wired into CI or a hook.
 #
 #     ./scripts/check.sh
 #
@@ -42,6 +43,9 @@ run_step() {
 run_step "ruff check"        "$app"             "$python" -m ruff check pka tests scripts
 run_step "ruff format check" "$app"             "$python" -m ruff format --check pka tests scripts
 run_step "mypy"               "$app"             "$python" -m mypy pka
+# import-linter has no `python -m` entry point, and the venv's bin/ vs
+# Scripts/ layout differs between the two venvs this script accepts.
+run_step "import layering"    "$app"             "$python" -c "from importlinter.cli import lint_imports_command; lint_imports_command()"
 # -n 4: the suite parallelises cleanly (fully mocked, every test in its own
 # tmp_path), and 4 workers take it from ~96s to ~34s. Deliberately not `-n auto`
 # — 4, 8 and 12 workers all land in the same 34-38s band on a 12-core box, so

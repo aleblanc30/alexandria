@@ -38,6 +38,8 @@ def adaptive_cluster_params(n_docs: int) -> tuple[int, int, int]:
 
 
 def _normalize_for_cosine(matrix: np.ndarray) -> np.ndarray:
+    # sklearn and hdbscan are imported inside the functions that use them, here
+    # and below, so importing the clustering package stays cheap for the API.
     from sklearn.preprocessing import normalize
 
     return normalize(matrix, norm="l2", axis=1).astype(np.float32)

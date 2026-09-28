@@ -127,6 +127,8 @@ def _auto_k_agglomerative(
     Returns ``(best_k, {k: silhouette_score})`` — the sweep is recorded in
     ``params`` so a bad auto-pick is diagnosable rather than invisible.
     """
+    # sklearn is imported on use, here and below: loading it costs more than
+    # the rest of this module, and only a clustering run needs it.
     from sklearn.metrics import silhouette_score
 
     n_docs = len(data)

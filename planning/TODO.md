@@ -21,10 +21,11 @@ In order; everything below this section is unordered.
 `M-n` / `P-n` ids: M-1…M-13 and P-1…P-8 are `MAINTAINABILITY_PERFORMANCE_AUDIT.md`;
 M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 
-- [ ] **M-6: layering contract** — write the intended import layering down and
-  enforce it with import-linter; break the `ingestion → tag_training` edge with a
-  post-ingest hook registry. Comment the lazy imports that only defer heavy
-  libraries.
+- [ ] **Shrink the import-layering baseline** — 9 `ignore_imports` in
+  `pyproject.toml`'s contract: `classification → domains`, `enrichment_runs →
+  ingestion.summarize`, `api → cli` (×3), `ingestion.{enrich,rechunk} → purge`,
+  `purge → cli`, `providers.vlm_ocr → ingestion.image_extractor`. Each is a
+  small move of the shared helper to the lower layer.
 
 ## Ingestion
 

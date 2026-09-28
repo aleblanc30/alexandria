@@ -185,7 +185,26 @@ intent), and make every remaining catch either narrow the type or
 `log.debug(..., exc_info=True)`. The `fetch_base` rungs in particular should
 distinguish "library missing" from "extraction failed".
 
-### M-6: 118 function-level imports, several covering dependency cycles (M)
+### M-6: 118 function-level imports, several covering dependency cycles (M) — **done**
+
+Shipped: a `layers` contract in `pyproject.toml` (`[tool.importlinter]`),
+exhaustive over `pka`'s top-level modules, run as a step of `scripts/check.*`,
+and written down in `DESIGN.md` §1.2. The order was measured, not taken from
+the recommendation below: ingestion sits *above* clustering, because the ingest
+tail calls `refresh_document_embedding` / `insert_overlay_tags` and clustering
+never imports ingestion. The `ingestion → tag_training` edge (by then a single
+`doc_embeddings → tag_training.scoring` call, after M-17) is gone:
+`doc_embeddings` calls `pka.hooks.document_embedded(doc_id)`, and
+`pka.bootstrap.install_hooks()` registers the scorer, called from
+`pka/api/main.py` and `pka/cli/__init__.py` (which the `scripts/run_*.py` shims
+also import). `tests/test_hooks.py` checks each entry point registers it in a
+fresh interpreter, since conftest installs it for the suite. The nine imports
+that already broke the layering are baselined in `ignore_imports` rather than
+fixed here, with a TODO line to shrink the list. Lazy imports: the convention is
+stated once in `DESIGN.md` §1.2, plus a reason comment at the four heavy-library
+sites that had none (`clip`, `hdbscan_step`, `agglomerative`,
+`tag_training/engine`); the other function-level `pka` imports are not
+individually commented, since import-linter now reads them all.
 
 Evidence: `grep -E "^\s{4,}(from|import) pka"` → 118 sites; heaviest in
 `fetcher.py` (13), `providers/__init__.py` (12), `routers/runs.py` (9),

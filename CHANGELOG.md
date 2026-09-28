@@ -98,6 +98,13 @@
   `apply_learned_tags_for_document` (run for every ingested document), the
   learned-overlay writes, and session-parameter parsing. `lifecycle.py` keeps
   session create/train/accept/archive, and ingestion no longer imports it.
+- **Import layering is enforced.** A `lint-imports` contract in
+  `pyproject.toml` (layers in `DESIGN.md` §1.2) runs in `scripts/check.*`;
+  `import-linter` joins the dev extras. The ingest tail no longer imports tag
+  training: it announces each embedded document on `pka.hooks`, and
+  `pka.bootstrap.install_hooks()`, called by the API and the CLI, registers the
+  learned-tag scorer. Nine pre-existing violations are baselined in the
+  contract's `ignore_imports`.
 
 ### Fixes
 

@@ -26,6 +26,13 @@ from __future__ import annotations
 import importlib
 import sys
 
+from pka.bootstrap import install_hooks
+
+# Every ``pka.cli.<command>`` import runs this package first, including the
+# ``scripts/run_*.py`` shims that call a command's ``main`` directly, so this is
+# the one place that covers all of them. Cheap: the listeners import lazily.
+install_hooks()
+
 #: subcommand -> (module under pka.cli, one-line help)
 COMMANDS: dict[str, tuple[str, str]] = {
     "init": ("init_db", "Create/upgrade the SQLite archive (idempotent)"),

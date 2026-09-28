@@ -13,6 +13,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from pka.bootstrap import install_hooks
+
+# The suite runs the ingest tail the way the API and the CLI do, with the same
+# listeners registered. ``tests/test_hooks.py`` checks that those entry points
+# really do register them without this.
+install_hooks()
+
 # ── Schema template ───────────────────────────────────────────────────────────
 
 

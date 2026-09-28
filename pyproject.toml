@@ -54,6 +54,7 @@ dev = [
                                    # versions, and an unpinned ruff silently re-drifts
                                    # the whole tree the next time someone installs fresh
     "mypy",
+    "import-linter>=2.1",        # `lint-imports`: the layering contract below
 ]
 spacy = [
     "spacy>=3.7",                # optional sentence splitter backend
@@ -158,3 +159,49 @@ ignore = ["E501"]                   # line length handled by formatter
 # Test doubles and fixtures match the signature they stand in for, so an unused
 # argument there is the point, not a leftover.
 "tests/**" = ["ARG001"]
+
+# Import layering, enforced by `lint-imports` (scripts/check.*). A package may
+# import only from layers below it; `a | b` siblings may not import each other.
+# `exhaustive` means a new top-level module fails until it is placed here.
+# Ingestion calls into clustering (the doc-embedding refresh, overlay tags),
+# never the reverse; tag training sits above both and reaches the ingest tail
+# only through `pka.hooks`, wired up by `pka.bootstrap`.
+[tool.importlinter]
+root_package = "pka"
+
+[[tool.importlinter.contracts]]
+name = "pka layering"
+type = "layers"
+containers = ["pka"]
+exhaustive = true
+layers = [
+    "api | cli",
+    "bootstrap",
+    "purge | trends | domains | tag_training",
+    "ingestion",
+    "classification | enrichment_runs | clustering",
+    "connectors | storage | ollama_chat",
+    "providers",
+    "db",
+    "card_summary | json_utils",
+    "config | constants | hooks",
+]
+# Baseline: imports that break the layering today. This list only shrinks —
+# remove an entry when its import is fixed; never add one to get a green run.
+ignore_imports = [
+    # classification is below ingestion but takes extract_domain from domains
+    "pka.classification -> pka.domains",
+    # enrichment_runs is below ingestion but looks up summary settings there
+    "pka.enrichment_runs -> pka.ingestion.summarize",
+    # api reuses CLI modules for logging setup and two purge implementations
+    "pka.api.main -> pka.cli._logging",
+    "pka.api.routers.ingestion_purge -> pka.cli.purge_source",
+    "pka.api.routers.runs -> pka.cli.purge_cluster_runs",
+    # enrich and rechunk share purge's body_chunk_predicate
+    "pka.ingestion.enrich -> pka.purge",
+    "pka.ingestion.rechunk -> pka.purge",
+    # the purge registry's cluster-run target lives in the CLI
+    "pka.purge -> pka.cli.purge_cluster_runs",
+    # the VLM OCR provider borrows the image extractor's encoder
+    "pka.providers.vlm_ocr -> pka.ingestion.image_extractor",
+]

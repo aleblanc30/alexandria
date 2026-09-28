@@ -7,6 +7,7 @@ import logging
 import numpy as np
 import sqlalchemy as sa
 
+from pka import hooks
 from pka.db.engine import get_engine
 from pka.db.schema import chunks, documents
 
@@ -88,12 +89,9 @@ def refresh_document_embedding(
     blob = embedding_to_blob(mean_vec)
     with eng.begin() as con:
         con.execute(documents.update().where(documents.c.id == doc_id).values(doc_embedding=blob))
-    try:
-        from pka.tag_training.scoring import apply_learned_tags_for_document
-
-        apply_learned_tags_for_document(doc_id)
-    except Exception:
-        log.exception("Failed to apply learned tags to document %d", doc_id)
+    # Learned tags are scored here, by a listener tag training registers: this
+    # module sits below tag training and must not import it.
+    hooks.document_embedded(doc_id)
     return True
 
 

@@ -124,6 +124,48 @@ reports on: the local Ollama backend is probed on mount because
 backend is probed only when the user clicks *Check* — a page load must not
 itself become a new outbound call.
 
+### 1.2 Module layering
+
+`pka/` is layered, and a package imports only from the layers below it. The
+order is the `[tool.importlinter]` contract in `pyproject.toml`, which
+`scripts/check.*` enforces (`a | b` marks siblings that may not import each
+other):
+
+```
+api | cli                                   entry points
+bootstrap                                   start-up wiring
+purge | trends | domains | tag_training
+ingestion
+classification | enrichment_runs | clustering
+connectors | storage | ollama_chat
+providers
+db
+card_summary | json_utils
+config | constants | hooks
+```
+
+Ingestion sits *above* clustering because the shared ingest tail calls into it
+(`refresh_document_embedding`, `insert_overlay_tags`) and clustering never
+calls back. Tag training sits above both. It still has to react to every newly
+embedded document, so the tail announces that through `pka.hooks`
+(`document_embedded(doc_id)`), a registry that imports nothing from `pka`.
+Tag training's scorer is registered as a listener by
+`pka.bootstrap.install_hooks()`, which runs in `pka/api/main.py` and in
+`pka/cli/__init__.py`. Any new entry point that runs ingestion must call it
+too; `tests/test_hooks.py` checks the existing ones in a fresh interpreter.
+
+The contract is exhaustive, so a new top-level module fails the check until it
+is placed in a layer. Imports that already broke the layering when the
+contract was written are listed in its `ignore_imports`. That list only
+shrinks: an entry goes when its import is fixed, and a new violation is a
+failure to fix, not a line to add.
+
+Function-level imports are common in `pka/` and are checked like any other:
+import-linter reads them, so moving an import into a function does not get it
+past the contract. They exist to keep module import cheap, deferring heavy
+libraries (sklearn, hdbscan, umap, torch, transformers) and optional extras
+(spaCy, EasyOCR, the YouTube client) until the code that needs them runs.
+
 ## 2. Adding a new source connector
 
 To add a new source (e.g. Pocket, Raindrop, Readwise):
@@ -900,8 +942,9 @@ Mirror §4 cluster patterns in `pka/clustering/lifecycle.py`:
 - **Revoke:** delete `learned` overlay rows for that tag/session; keep label
   history for retraining.
 - **New documents:** after `refresh_document_embedding()` in
-  `pka/clustering/doc_embeddings.py`, `apply_learned_tags_for_document()`
-  (`pka/tag_training/scoring.py`)
+  `pka/clustering/doc_embeddings.py` announces the document on `pka.hooks`,
+  the listener `pka.bootstrap` registers calls
+  `apply_learned_tags_for_document()` (`pka/tag_training/scoring.py`), which
   scores the document against every **accepted** session and writes or clears
   `learned` overlay tags using each session’s threshold.
 - **Resume training:** `POST /tag-training/sessions/{id}/resume` sets an
