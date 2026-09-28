@@ -82,7 +82,7 @@ becoming "SEARCH … USING INDEX" is the pass condition to state.
 | Query shape, N+1, over-fetch | `pka/db/` query modules (`documents.py`, `browse.py`, …), `pka/api/document_serialize.py`, `pka/api/routers/search.py` |
 | Indexes / migrations | `pka/db/schema.py`, `MIGRATIONS` in `pka/db/migrate.py` |
 | Startup cost | `pka/api/main.py` router list, then each router's module-level imports |
-| Per-document round trips | `pka/ingestion/core.py`, `pka/clustering/doc_embeddings.py`, `pka/tag_training/lifecycle.py` |
+| Per-document round trips | `pka/ingestion/core.py`, `pka/clustering/doc_embeddings.py`, `pka/tag_training/scoring.py` |
 | Repeated source reads | `pka/ingestion/progress/baselines.py`, `pka/ingestion/pending_metadata.py`, the SSE handler in `routers/ingestion_status.py` |
 | Threading / background work | `pka/api/routers/ingestion_jobs.py` worker registry, `pka/clustering/engine.py` label pool |
 | Frontend drift | `frontend/src/api/client.ts` vs the pydantic schema modules |

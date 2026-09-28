@@ -94,6 +94,10 @@
   `force`, which no caller passed, among them); the rest are signatures a
   caller requires and carry a leading underscore. The unused
   `pka/api/schemas/common.py` (`Pagination`) is deleted.
+- **Tag-model scoring has its own module**, `pka/tag_training/scoring.py`:
+  `apply_learned_tags_for_document` (run for every ingested document), the
+  learned-overlay writes, and session-parameter parsing. `lifecycle.py` keeps
+  session create/train/accept/archive, and ingestion no longer imports it.
 
 ### Fixes
 

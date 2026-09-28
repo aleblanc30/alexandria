@@ -21,10 +21,6 @@ In order; everything below this section is unordered.
 `M-n` / `P-n` ids: M-1…M-13 and P-1…P-8 are `MAINTAINABILITY_PERFORMANCE_AUDIT.md`;
 M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
 
-- [ ] **M-17: split `tag_training/lifecycle.py`** — move the scoring half
-  (`apply_learned_tags_for_document`, run for every ingested document) into
-  `tag_training/scoring.py`, leaving session lifecycle to the API. Sequence with
-  M-6's `ingestion → tag_training` edge.
 - [ ] **M-6: layering contract** — write the intended import layering down and
   enforce it with import-linter; break the `ingestion → tag_training` edge with a
   post-ingest hook registry. Comment the lazy imports that only defer heavy

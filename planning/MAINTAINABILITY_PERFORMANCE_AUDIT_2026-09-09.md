@@ -242,7 +242,19 @@ to take it off the list, which is how `pka.clustering.engine` came off during
 M-1. Worth stating a target in `TODO.md` (say, list emptied by v0.1.0) so the
 ratchet has a direction rather than only a floor.
 
-### M-17: `tag_training/lifecycle.py` is the last B-grade module outside the excluded set (S/M)
+### M-17: `tag_training/lifecycle.py` is the last B-grade module outside the excluded set (S/M) — **done**
+
+Shipped as recommended: `_apply_model_to_documents` (now public,
+`apply_model_to_documents`, since `accept_session` calls it across the module
+line), `apply_learned_tags_for_document`, `_set_learned_overlay` and
+`_clear_learned_overlay` moved to `tag_training/scoring.py`, bodies unchanged.
+`_parse_parameters` went with them as `parse_parameters`: the scoring path reads
+each session's threshold through it, and `lifecycle.py` imports it from
+`scoring`, so the dependency points one way. `clustering/doc_embeddings.py` now
+imports `scoring`, so the ingest tail no longer loads `lifecycle` (or
+`llm_classifier` through it). No re-export shim. `scoring.py` is mypy-clean
+outside the override list; `lifecycle.py` stays on it for one pre-existing
+error (`:172`, an unguarded index on an optional row).
 
 Evidence: maintainability index **16.53**, the lowest in the tree other than
 `db/queries.py` (15.41, excluded as M-2). It is the module the shared ingest tail

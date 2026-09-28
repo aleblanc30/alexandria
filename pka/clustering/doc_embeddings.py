@@ -89,7 +89,7 @@ def refresh_document_embedding(
     with eng.begin() as con:
         con.execute(documents.update().where(documents.c.id == doc_id).values(doc_embedding=blob))
     try:
-        from pka.tag_training.lifecycle import apply_learned_tags_for_document
+        from pka.tag_training.scoring import apply_learned_tags_for_document
 
         apply_learned_tags_for_document(doc_id)
     except Exception:

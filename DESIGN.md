@@ -901,6 +901,7 @@ Mirror §4 cluster patterns in `pka/clustering/lifecycle.py`:
   history for retraining.
 - **New documents:** after `refresh_document_embedding()` in
   `pka/clustering/doc_embeddings.py`, `apply_learned_tags_for_document()`
+  (`pka/tag_training/scoring.py`)
   scores the document against every **accepted** session and writes or clears
   `learned` overlay tags using each session’s threshold.
 - **Resume training:** `POST /tag-training/sessions/{id}/resume` sets an
