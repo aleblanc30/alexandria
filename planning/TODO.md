@@ -28,7 +28,6 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
   with no text layer are marked `no_text_layer` and get no body chunks; run
   their pages through the OCR provider instead. Sketch in `BACKLOG.md` →
   *OCR the documents that have no text layer*.
-- [ ] **Deduplication of tags** — plan in `TAG_DEDUPLICATION.md`.
 - [ ] **Deduplication of items** — plan in `ITEM_DEDUPLICATION.md` (link rather
   than merge).
 - [ ] **Exempt preprint PDFs from the page cap** — `fetch_pdf_max_pages` caps

@@ -16,8 +16,9 @@ What changed, and what each change needs from an existing archive:
 | Token-sized chunker | `alexandria rechunk` | 7 |
 | Zotero PDF full text; Zotero collections read with their parents | one `alexandria zotero` sync | 8 |
 | Collection tags for documents already archived | `alexandria collection-tags` | 9 |
-| Calibre books whose retained text is only the first 20 pages | optional re-extraction | 10 |
-| Clustering runs from the old model stop taking new documents | a new run, accepted | 11 |
+| Duplicate and equivalent tags | `alexandria dedupe-tags` (spellings fold on their own) | 10 |
+| Calibre books whose retained text is only the first 20 pages | optional re-extraction | 11 |
+| Clustering runs from the old model stop taking new documents | a new run, accepted | 12 |
 
 The fetch-queue fix, the module splits and the layering contract need
 nothing.
@@ -123,7 +124,7 @@ tokenizer instead.
 It covers documents with retained body text: Firefox and Reddit link posts
 fetched since retention shipped, and Calibre books. Anything older keeps its
 old chunks, which still work. The final log line counts books skipped because
-only their first pages are retained (step 10).
+only their first pages are retained (step 11).
 
 ## 8. Pull in Zotero PDF full text
 
@@ -168,7 +169,27 @@ An excluded name drops only that folder; its subfolders are still tagged.
 `ALEXANDRIA_COLLECTION_TAGS_ENABLED=false` turns the whole feature off, and
 the next run removes the tags. Re-running after any change converges.
 
-## 10. (Optional) Re-extract truncated Calibre books
+## 10. Review duplicate tags
+
+Spellings of one tag (`Machine Learning`, `machine-learning`, `Économie` /
+`economie`) are already one tag from step 2 on; nothing to run. For the rest:
+
+```powershell
+alexandria dedupe-tags report            # what the spelling fold already merges
+alexandria dedupe-tags scan --dry-run    # proposals, with similarity scores
+alexandria dedupe-tags scan
+```
+
+Then review on the Tags page (*Duplicate tags*), or with `alexandria
+dedupe-tags list` / `accept <id>` / `reject <id>`. After step 6, because the
+semantic proposals use the model the chunk index records: before it, that is
+the English-only MiniLM. The similarity cut-off (`ALEXANDRIA_TAG_DEDUP_SIMILARITY`,
+0.92) was set without your vocabulary; if the dry run lists pairs you would
+keep apart near the bottom of its scores, raise it, and if it finds almost
+nothing, lower it to 0.88 and look again. Declining a pair is remembered, so
+re-scanning never re-asks.
+
+## 11. (Optional) Re-extract truncated Calibre books
 
 Books retain only their first 20 pages, so `rechunk` skips them, and their
 full text keeps the old chunks. Search still works on those. To re-cut them,
@@ -186,7 +207,7 @@ re-cut. With `book_summary_enabled` on, the re-extraction appends a second copy
 of each cached summary chunk, which the last command should report; run it
 without `--dry-run` if it does.
 
-## 11. Re-cluster
+## 12. Re-cluster
 
 The accepted clustering run was built from MiniLM vectors, and new documents
 are no longer assigned to it. Run clustering again, from the Clusters page or:
@@ -197,7 +218,7 @@ alexandria clustering
 
 Review the run and accept it (`--accept` skips the review).
 
-## 12. Start the server and check
+## 13. Start the server and check
 
 Start the scheduled task, then:
 

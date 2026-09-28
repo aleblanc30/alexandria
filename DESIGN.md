@@ -846,6 +846,58 @@ filter.
   tag training trains on its labels and writes `learned`, clustering writes
   `cluster_l1` / `cluster_l2`.
 
+### 3.8 Tag folding
+
+Sources write tags verbatim, so one idea arrives under several spellings
+(`Machine Learning`, `machine-learning`, `Économie` / `economie`) and, across
+languages or habits, under several names (`ml`, `apprentissage-automatique`).
+Nothing rewrites the stored strings. Which ones read as one tag is decided at
+read time, in two layers (`db/tag_fold.py`):
+
+- **The key**, `tag_key`: lowercase, accents removed, punctuation dropped,
+  spaces and underscores as hyphens. No judgement, so no decision is recorded:
+  every spelling with the same key is one tag.
+- **Aliases**, the `tag_aliases` table: an `active` row folds one key into
+  another. Rows are kept one hop deep by their writer (`db/tag_aliases.py`):
+  folding into a key that is itself folded resolves to its canonical, and
+  folding a canonical away repoints what was folded into it. A partial unique
+  index allows one active fold per key.
+
+Folding never crosses origins: a source tag, a cluster label and a learned tag
+with one key stay three tags, since each origin makes its own claim and the
+browse filters are split by it. `inferred` tags are closed vocabularies that
+their writers recreate, so aliases skip them; the key still applies.
+
+**Read sites.** `list_tags` groups by fold and counts distinct documents (a
+document carrying two spellings counts once), shows each tag in its most used
+spelling across the archive (ties alphabetical) and returns the spellings as
+`variants`. Every tag filter (source, overlay, collection, cluster, learned),
+the browse card chips, the tag-training seed from a source tag and the
+source tags that name a cluster all fold. They share one map of stored
+strings to folds, rebuilt at most every 30 seconds and at once after an alias
+changes. The writers are unchanged, so `docs/ingestion-flows.md` has nothing
+to draw.
+
+**Proposals** (`tag_dedup.py`, `alexandria dedupe-tags scan`, the Tags page)
+are `candidate` rows; nothing folds until the user accepts one, and a declined
+or undone pair is remembered as `rejected` and never proposed again.
+
+- **Semantic:** every compared tag is embedded with the chunk embedding model
+  (§3.6), locally, and pairs at or above `tag_dedup_similarity` (0.92, cosine)
+  are proposed. The multilingual model is what pairs a French and an English
+  name. Related but distinct tags also score high, which is why no pair folds
+  unreviewed. Only the `tag_dedup_max_tags` most used tags on at least
+  `tag_dedup_min_documents` documents are compared, in blocks, to bound the
+  cost.
+- **Morphology:** a plural and its singular, with a stop list for words that
+  only look plural (`physics`, `series`, `analysis`).
+- **Initialism:** a short tag spelling the initials of a longer one that also
+  exists (`ml` / `machine-learning`), which embeddings rate poorly.
+
+The more used tag of a proposed pair is kept; for an initialism, the long
+form. Tag names never leave the machine: the embedding model runs in-process
+and no LLM is involved.
+
 ## 4. Cluster lifecycle
 
 Every clustering run is stored regardless of acceptance. The UI surfaces

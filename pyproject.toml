@@ -179,7 +179,7 @@ layers = [
     "bootstrap | reembed",
     "purge | trends | domains | tag_training",
     "ingestion",
-    "classification | enrichment_runs | clustering",
+    "classification | enrichment_runs | clustering | tag_dedup",
     "connectors | storage | ollama_chat",
     "providers",
     "db",

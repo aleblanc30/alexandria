@@ -10,6 +10,7 @@ from pka.constants import Source, TagOrigin
 from pka.db import engine
 from pka.db.browse import apply_document_browse_filters, norm_filter
 from pka.db.schema import documents, overlay_tags, source_collections, source_tags
+from pka.db.tag_fold import SOURCE_ORIGIN, fold_map
 
 
 def insert_source_tags(document_id: int, tags: list[str], source: Source | str) -> None:
@@ -139,39 +140,29 @@ def list_tags(
                 **filter_kwargs,
             )
 
-        # ``grp`` exists only to order source tags ahead of overlay tags on a
-        # count tie, which is what the previous Python-side stable sort did by
-        # concatenating the two result lists in that order. It is dropped from
-        # the projection below.
         src_q = (
             sa.select(
                 source_tags.c.tag_string.label("tag"),
-                sa.literal("source").label("origin"),
-                sa.func.count(source_tags.c.id).label("n"),
-                sa.literal(0).label("grp"),
+                sa.literal(SOURCE_ORIGIN).label("origin"),
+                sa.func.count(sa.distinct(source_tags.c.document_id)).label("n"),
             )
             .select_from(source_tags)
             .group_by(source_tags.c.tag_string)
         )
         if doc_scope is not None:
             src_q = src_q.where(source_tags.c.document_id.in_(doc_scope))
-        if q:
-            src_q = src_q.where(source_tags.c.tag_string.ilike(f"%{q}%"))
 
         ov_q = (
             sa.select(
                 overlay_tags.c.tag.label("tag"),
                 overlay_tags.c.origin.label("origin"),
-                sa.func.count(overlay_tags.c.id).label("n"),
-                sa.literal(1).label("grp"),
+                sa.func.count(sa.distinct(overlay_tags.c.document_id)).label("n"),
             )
             .select_from(overlay_tags)
             .group_by(overlay_tags.c.tag, overlay_tags.c.origin)
         )
         if doc_scope is not None:
             ov_q = ov_q.where(overlay_tags.c.document_id.in_(doc_scope))
-        if q:
-            ov_q = ov_q.where(overlay_tags.c.tag.ilike(f"%{q}%"))
 
         overlay_origins = {
             str(TagOrigin.INFERRED),
@@ -183,7 +174,7 @@ def list_tags(
             str(TagOrigin.COLLECTION),
         }
         parts = []
-        if not origin or origin == "source":
+        if not origin or origin == SOURCE_ORIGIN:
             parts.append(src_q)
         if not origin or origin in overlay_origins:
             # Filtering before the GROUP BY is equivalent to filtering the rows
@@ -193,14 +184,66 @@ def list_tags(
             # An origin that is neither "source" nor an overlay origin matches
             # nothing, as it did when both branches were skipped.
             return []
+        rows = con.execute(sa.union_all(*parts) if len(parts) > 1 else parts[0]).fetchall()
+        folded = _fold_rows(con, rows, doc_scope)
 
-        # ORDER BY / LIMIT belong in SQL: the two GROUP BYs are over the whole
-        # of source_tags and overlay_tags, so ranking in Python meant building
-        # every distinct tag in the archive to return `limit` of them.
-        combined = sa.union_all(*parts).subquery() if len(parts) > 1 else parts[0].subquery()
-        stmt = (
-            sa.select(combined.c.tag, combined.c.origin, combined.c.n)
-            .order_by(combined.c.n.desc(), combined.c.grp.asc(), combined.c.tag.asc())
-            .limit(limit)
+    # Ranked in Python: the fold changes both the rows and their counts, so SQL
+    # cannot order them. Source tags first on a tie, then alphabetical.
+    out = [f for f in folded if not q or any(q.lower() in v.lower() for v in f["variants"])]
+    out.sort(key=lambda f: (-f["count"], f["origin"] != SOURCE_ORIGIN, f["tag"]))
+    return out[:limit]
+
+
+def _fold_rows(con: sa.Connection, rows, doc_scope) -> list[dict[str, Any]]:
+    """Merge ``(tag, origin, documents)`` rows that read as one tag (DESIGN.md §3.8).
+
+    Each row counts distinct documents, so a group of one keeps its count. A
+    group of several is recounted, because one document can carry two
+    spellings of the same tag and must count once.
+    """
+    fm = fold_map()
+    groups: dict[tuple[str, str], list[tuple[str, int]]] = {}
+    for tag, origin, n in rows:
+        groups.setdefault((origin, fm.canonical(tag, origin)), []).append((tag, n))
+
+    multi = {k: [t for t, _ in v] for k, v in groups.items() if len(v) > 1}
+    recount: dict[tuple[str, str], int] = {}
+    if multi:
+        docs: dict[tuple[str, str], set[int]] = {k: set() for k in multi}
+        by_raw: dict[tuple[str, str], tuple[str, str]] = {
+            (o, t): k for k, tags in multi.items() for t in tags for o in (k[0],)
+        }
+        src_raw = [t for (o, t) in by_raw if o == SOURCE_ORIGIN]
+        ov_raw = [t for (o, t) in by_raw if o != SOURCE_ORIGIN]
+        if src_raw:
+            q = sa.select(source_tags.c.tag_string, source_tags.c.document_id).where(
+                source_tags.c.tag_string.in_(src_raw)
+            )
+            if doc_scope is not None:
+                q = q.where(source_tags.c.document_id.in_(doc_scope))
+            for tag, doc_id in con.execute(q):
+                docs[by_raw[(SOURCE_ORIGIN, tag)]].add(doc_id)
+        if ov_raw:
+            q = sa.select(
+                overlay_tags.c.tag, overlay_tags.c.origin, overlay_tags.c.document_id
+            ).where(overlay_tags.c.tag.in_(ov_raw))
+            if doc_scope is not None:
+                q = q.where(overlay_tags.c.document_id.in_(doc_scope))
+            for tag, origin, doc_id in con.execute(q):
+                key = by_raw.get((origin, tag))
+                if key is not None:
+                    docs[key].add(doc_id)
+        recount = {k: len(v) for k, v in docs.items()}
+
+    out = []
+    for (origin, canonical), members in groups.items():
+        variants = sorted(members, key=lambda m: (-m[1], m[0]))
+        out.append(
+            {
+                "tag": fm.display(variants[0][0], origin),
+                "origin": origin,
+                "count": recount.get((origin, canonical), variants[0][1]),
+                "variants": [t for t, _ in variants],
+            }
         )
-        return [{"tag": r[0], "origin": r[1], "count": r[2]} for r in con.execute(stmt).fetchall()]
+    return out

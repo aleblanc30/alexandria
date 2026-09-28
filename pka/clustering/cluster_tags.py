@@ -102,11 +102,17 @@ def top_tags_for_cluster(con, cluster_id: int, run_id: int, limit: int = 10) -> 
     doc_ids = cluster_document_ids(con, cluster_id, run_id)[:200]
     if not doc_ids:
         return []
+    from pka.db.tag_fold import SOURCE_ORIGIN, fold_map
+
     rows = con.execute(
-        sa.select(source_tags.c.tag_string, sa.func.count().label("n"))
+        sa.select(source_tags.c.tag_string, source_tags.c.document_id)
         .where(source_tags.c.document_id.in_(doc_ids))
-        .group_by(source_tags.c.tag_string)
-        .order_by(sa.desc("n"))
-        .limit(limit)
+        .distinct()
     ).fetchall()
-    return [r[0] for r in rows]
+    # Folded, so one concept's votes are not split across its spellings.
+    fm = fold_map()
+    docs: dict[str, set[int]] = {}
+    for tag, doc_id in rows:
+        docs.setdefault(fm.display(tag, SOURCE_ORIGIN), set()).add(doc_id)
+    ranked = sorted(docs.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    return [tag for tag, _ in ranked[:limit]]

@@ -179,6 +179,12 @@ def isolated_settings(tmp_path, monkeypatch, _schema_template):
 
     monkeypatch.setattr(ct, "_cap_cache", None)
 
+    # Likewise the tag fold map, cached for 30 s against a per-test database.
+    import pka.db.tag_fold as tf
+
+    monkeypatch.setattr(tf, "_cache", None)
+    monkeypatch.setattr(tf, "_TTL_SECONDS", 0.0)
+
     # No test loads a real embedding model: every name gets the deterministic
     # fake, whether through mock_chroma or a fixture that mocks only the
     # collection. tests/test_embedding.py exercises the real wiring on stubs.

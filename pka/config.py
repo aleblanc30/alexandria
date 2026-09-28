@@ -381,6 +381,14 @@ class Settings(BaseSettings):
     # 0 disables the cap.
     collection_tag_max_documents: int = 1000
 
+    # ── Tag folding ─────────────────────────────────────────────────────────
+    # `alexandria dedupe-tags scan` proposes semantically equivalent tags by
+    # embedding similarity, with the local chunk embedding model (DESIGN.md
+    # §3.8). Proposals only: nothing folds until accepted.
+    tag_dedup_similarity: float = 0.92  # cosine similarity a pair must reach
+    tag_dedup_min_documents: int = 2  # a tag on fewer documents is not compared
+    tag_dedup_max_tags: int = 5000  # the most used tags compared, to bound the cost
+
     # ── Firefox fetch ───────────────────────────────────────────────────────
     fetch_timeout_seconds: float = 10.0  # max seconds to read response body
     fetch_connect_timeout_seconds: float = 5.0  # max seconds to establish connection

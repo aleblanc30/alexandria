@@ -1207,6 +1207,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tags/aliases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Aliases
+         * @description Fold proposals and decisions, with counts and, for candidates, example titles.
+         */
+        get: operations["list_aliases_tags_aliases_get"];
+        put?: never;
+        /**
+         * Merge Tags
+         * @description Fold tag ``alias`` into tag ``canonical`` (any stored spelling of either).
+         */
+        post: operations["merge_tags_tags_aliases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags/aliases/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan Aliases
+         * @description Propose new candidates. Semantic proposals embed every compared tag locally.
+         */
+        post: operations["scan_aliases_tags_aliases_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags/aliases/{alias_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Alias */
+        post: operations["accept_alias_tags_aliases__alias_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags/aliases/{alias_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Alias
+         * @description Decline a candidate or undo a fold; the pair is not proposed again.
+         */
+        post: operations["reject_alias_tags_aliases__alias_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags/variants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Variants
+         * @description Spellings the normalisation already folds, largest groups first.
+         */
+        get: operations["list_variants_tags_variants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trends/sources": {
         parameters: {
             query?: never;
@@ -1254,6 +1355,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AliasSide */
+        AliasSide: {
+            /** Documents */
+            documents: number;
+            /**
+             * Examples
+             * @default []
+             */
+            examples: string[];
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
         /** ApplyAllTagsResult */
         ApplyAllTagsResult: {
             /** Clusters */
@@ -1651,6 +1766,13 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** MergeRequest */
+        MergeRequest: {
+            /** Alias */
+            alias: string;
+            /** Canonical */
+            canonical: string;
+        };
         /** ProbeResult */
         ProbeResult: {
             /** Detail */
@@ -1738,6 +1860,31 @@ export interface components {
             status: string;
             /** Timestamp */
             timestamp: number;
+        };
+        /** ScanRequest */
+        ScanRequest: {
+            /**
+             * Kinds
+             * @default [
+             *       "semantic",
+             *       "morphology",
+             *       "initialism"
+             *     ]
+             */
+            kinds: ("semantic" | "morphology" | "initialism")[];
+            /** Threshold */
+            threshold?: number | null;
+        };
+        /** ScanResult */
+        ScanResult: {
+            /** By Kind */
+            by_kind: {
+                [key: string]: number;
+            };
+            /** Proposed */
+            proposed: number;
+            /** Tags */
+            tags: number;
         };
         /** SearchRequest */
         SearchRequest: {
@@ -1906,6 +2053,25 @@ export interface components {
             /** Path */
             path: string;
         };
+        /** TagAliasOut */
+        TagAliasOut: {
+            alias: components["schemas"]["AliasSide"];
+            canonical: components["schemas"]["AliasSide"];
+            /** Created At */
+            created_at?: number | null;
+            /** Decided At */
+            decided_at?: number | null;
+            /** Decided By */
+            decided_by?: string | null;
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Score */
+            score?: number | null;
+            /** State */
+            state: string;
+        };
         /** TagOut */
         TagOut: {
             /** Confidence */
@@ -1992,6 +2158,17 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VariantGroup */
+        VariantGroup: {
+            /** Documents */
+            documents: number;
+            /** Origin */
+            origin: string;
+            /** Tag */
+            tag: string;
+            /** Variants */
+            variants: string[];
         };
     };
     responses: never;
@@ -4146,6 +4323,195 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_aliases_tags_aliases_get: {
+        parameters: {
+            query?: {
+                state?: ("candidate" | "active" | "rejected") | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagAliasOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_tags_tags_aliases_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagAliasOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_aliases_tags_aliases_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_alias_tags_aliases__alias_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagAliasOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_alias_tags_aliases__alias_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_variants_tags_variants_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VariantGroup"][];
                 };
             };
             /** @description Validation Error */

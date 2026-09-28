@@ -91,6 +91,9 @@ export type DiagnosticsOut = Omit<
   merge_suggestions: MergeSuggestion[]
 }
 export type DocumentDetail = Schemas['DocumentDetail']
+export type TagAlias = Schemas['TagAliasOut']
+export type TagAliasScanResult = Schemas['ScanResult']
+export type TagVariantGroup = Schemas['VariantGroup']
 export type DocumentListItem = Schemas['DocumentListItem']
 export type DocumentListResponse = Schemas['DocumentListResponse']
 export type DocumentOut = Schemas['DocumentOut']
@@ -149,7 +152,8 @@ export interface ClusterRunParams {
 }
 export interface DriftFlag     { cluster_id: number; label: string; drift_score: number; n_recent: number; flagged: boolean }
 export interface MergeSuggestion { cluster_id_a: number; label_a: string; cluster_id_b: number; label_b: string; similarity: number }
-export interface TagRow        { tag: string; origin: string; count: number }
+// `variants`: the stored spellings folded into this row (DESIGN.md §3.8).
+export interface TagRow        { tag: string; origin: string; count: number; variants?: string[] }
 export interface IngestionStatus {
   total: number
   by_source: Record<string, number>
@@ -557,6 +561,20 @@ export const createTagTrainingSession = (tag: string, labels: TagTrainingLabel[]
     method: 'POST',
     body: JSON.stringify({ tag, labels }),
   })
+// ── Tag folding ───────────────────────────────────────────────────────────────
+
+export const listTagAliases = (state?: 'candidate' | 'active' | 'rejected') =>
+  req<TagAlias[]>(`/tags/aliases${state ? `?state=${state}` : ''}`)
+export const mergeTags = (alias: string, canonical: string) =>
+  req<TagAlias>('/tags/aliases', { method: 'POST', body: JSON.stringify({ alias, canonical }) })
+export const acceptTagAlias = (id: number) =>
+  req<TagAlias>(`/tags/aliases/${id}/accept`, { method: 'POST' })
+export const rejectTagAlias = (id: number) =>
+  req<void>(`/tags/aliases/${id}/reject`, { method: 'POST' })
+// Embeds every compared tag locally: minutes on a large vocabulary.
+export const scanTagAliases = () =>
+  req<TagAliasScanResult>('/tags/aliases/scan', { method: 'POST', body: '{}' }, 600_000)
+
 export const createTagTrainingFromSourceTag = (sourceTag: string, targetTag: string) =>
   req<TagTrainingSession>('/tag-training/sessions/from-source-tag', {
     method: 'POST',

@@ -1,6 +1,37 @@
 {
   "components": {
     "schemas": {
+      "AliasSide": {
+        "properties": {
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          },
+          "examples": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Examples",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "documents"
+        ],
+        "title": "AliasSide",
+        "type": "object"
+      },
       "ApplyAllTagsResult": {
         "properties": {
           "clusters": {
@@ -1260,6 +1291,24 @@
         "title": "ListCreate",
         "type": "object"
       },
+      "MergeRequest": {
+        "properties": {
+          "alias": {
+            "title": "Alias",
+            "type": "string"
+          },
+          "canonical": {
+            "title": "Canonical",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alias",
+          "canonical"
+        ],
+        "title": "MergeRequest",
+        "type": "object"
+      },
       "ProbeResult": {
         "properties": {
           "detail": {
@@ -1521,6 +1570,66 @@
           "notes"
         ],
         "title": "RunOut",
+        "type": "object"
+      },
+      "ScanRequest": {
+        "properties": {
+          "kinds": {
+            "default": [
+              "semantic",
+              "morphology",
+              "initialism"
+            ],
+            "items": {
+              "enum": [
+                "semantic",
+                "morphology",
+                "initialism"
+              ],
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          }
+        },
+        "title": "ScanRequest",
+        "type": "object"
+      },
+      "ScanResult": {
+        "properties": {
+          "by_kind": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Kind",
+            "type": "object"
+          },
+          "proposed": {
+            "title": "Proposed",
+            "type": "integer"
+          },
+          "tags": {
+            "title": "Tags",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tags",
+          "proposed",
+          "by_kind"
+        ],
+        "title": "ScanResult",
         "type": "object"
       },
       "SearchRequest": {
@@ -1942,6 +2051,81 @@
         "title": "SourcePathUpdate",
         "type": "object"
       },
+      "TagAliasOut": {
+        "properties": {
+          "alias": {
+            "$ref": "#/components/schemas/AliasSide"
+          },
+          "canonical": {
+            "$ref": "#/components/schemas/AliasSide"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "alias",
+          "canonical"
+        ],
+        "title": "TagAliasOut",
+        "type": "object"
+      },
       "TagOut": {
         "properties": {
           "confidence": {
@@ -2202,6 +2386,37 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VariantGroup": {
+        "properties": {
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          },
+          "variants": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "origin",
+          "tag",
+          "variants",
+          "documents"
+        ],
+        "title": "VariantGroup",
         "type": "object"
       }
     }
@@ -5615,6 +5830,287 @@
           }
         },
         "summary": "List Tags",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/tags/aliases": {
+      "get": {
+        "description": "Fold proposals and decisions, with counts and, for candidates, example titles.",
+        "operationId": "list_aliases_tags_aliases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "candidate",
+                    "active",
+                    "rejected"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TagAliasOut"
+                  },
+                  "title": "Response List Aliases Tags Aliases Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Aliases",
+        "tags": [
+          "tags"
+        ]
+      },
+      "post": {
+        "description": "Fold tag ``alias`` into tag ``canonical`` (any stored spelling of either).",
+        "operationId": "merge_tags_tags_aliases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagAliasOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Merge Tags",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/tags/aliases/scan": {
+      "post": {
+        "description": "Propose new candidates. Semantic proposals embed every compared tag locally.",
+        "operationId": "scan_aliases_tags_aliases_scan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan Aliases",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/tags/aliases/{alias_id}/accept": {
+      "post": {
+        "operationId": "accept_alias_tags_aliases__alias_id__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alias_id",
+            "required": true,
+            "schema": {
+              "title": "Alias Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagAliasOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Alias",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/tags/aliases/{alias_id}/reject": {
+      "post": {
+        "description": "Decline a candidate or undo a fold; the pair is not proposed again.",
+        "operationId": "reject_alias_tags_aliases__alias_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alias_id",
+            "required": true,
+            "schema": {
+              "title": "Alias Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Alias",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/tags/variants": {
+      "get": {
+        "description": "Spellings the normalisation already folds, largest groups first.",
+        "operationId": "list_variants_tags_variants_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VariantGroup"
+                  },
+                  "title": "Response List Variants Tags Variants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Variants",
         "tags": [
           "tags"
         ]

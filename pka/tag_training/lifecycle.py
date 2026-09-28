@@ -21,6 +21,7 @@ from pka.db.schema import (
     tag_training_labels,
     tag_training_sessions,
 )
+from pka.db.tag_fold import SOURCE_ORIGIN, fold_map
 from pka.tag_training.engine import (
     TRAINING_LABEL_SOURCES,
     default_parameters,
@@ -44,11 +45,16 @@ def _now() -> int:
 
 
 def document_ids_for_source_tag(source_tag: str) -> list[int]:
+    """Documents carrying *source_tag* in any spelling that folds to it (DESIGN.md §3.8).
+
+    A seed missing the variants would be smaller than the user believes it is.
+    """
+    variants = fold_map().variants(source_tag, SOURCE_ORIGIN)
     eng = get_engine()
     with eng.connect() as con:
         rows = con.execute(
             sa.select(source_tags.c.document_id)
-            .where(source_tags.c.tag_string == source_tag)
+            .where(source_tags.c.tag_string.in_(variants))
             .distinct()
         ).fetchall()
     return [r[0] for r in rows]

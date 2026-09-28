@@ -17,6 +17,7 @@ Installed as the ``alexandria`` console script::
     alexandria purge-cluster-runs --all --dry-run
     alexandria backfill-classification
     alexandria collection-tags --dry-run
+    alexandria dedupe-tags scan --dry-run
     alexandria dev
 
 Each subcommand delegates to a ``pka.cli.<module>.main(argv)`` that owns its
@@ -55,6 +56,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
         "backfill_classification",
         "Backfill item types and classification tags",
     ),
+    "dedupe-tags": ("dedupe_tags", "Fold duplicate and equivalent tags (report, scan, review)"),
     "collection-tags": (
         "collection_tags",
         "Tag documents with their Zotero collections and Firefox folders",

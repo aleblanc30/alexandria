@@ -4,6 +4,18 @@
 
 ### Tags
 
+- **Duplicate tags read as one, and equivalent ones can be merged.** Spellings
+  that differ only in case, accents, punctuation or spacing (`Machine
+  Learning`, `machine-learning`, `Économie` / `economie`) are one tag in the
+  tag list, every tag filter, the card chips, a training seed and a cluster's
+  naming input. Stored tags are not rewritten. Beyond spelling,
+  `alexandria dedupe-tags scan` and the Tags page's *Find duplicates* propose
+  merges for review: semantically equivalent tags by local embedding
+  similarity (so `apprentissage-automatique` meets `machine-learning`),
+  plurals, and initialisms (`ml`). Nothing merges until accepted, a declined
+  pair is not proposed again, and a merge can be undone. Tag counts are now
+  distinct documents, where a document tagged the same in two sources used to
+  count twice (`DESIGN.md` §3.8).
 - **Zotero collections and Firefox bookmark folders are tags.** Each segment
   of a document's collection path becomes an `overlay_tags` row with the new
   origin `collection`, so filtering on a parent folder also finds its

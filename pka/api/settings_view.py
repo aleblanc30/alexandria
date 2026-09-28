@@ -197,6 +197,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "collection_tag_max_depth",
         "collection_tag_exclude",
         "collection_tag_max_documents",
+        "tag_dedup_similarity",
+        "tag_dedup_min_documents",
+        "tag_dedup_max_tags",
     ),
     "Clustering": (
         "cluster_space",

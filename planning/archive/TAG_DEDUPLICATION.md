@@ -12,6 +12,15 @@ destructive rewrite — but no code.
 
 Not authoritative about current behavior — this is proposed work.
 
+**Outcome (archived).** Shipped in a different shape; `DESIGN.md` §3.8 is the
+record. Layer one became a read-time fold (`db/tag_fold.py`) rather than a
+stored `source_tags.tag_key`, since collection tags made overlay tags
+unslugified too and a column on each table meant touching every writer; the key
+also strips accents for French and Spanish tags. Layer two is `tag_aliases`
+as designed. Synonyms are proposed by the local embedding model instead of an
+LLM, so no §1.1 flag was needed, and every proposal is reviewed. The §2
+`patch_tags` slug fix was not made: the fold covers manual-tag spellings.
+
 ---
 
 ## 0. Where the duplicates come from

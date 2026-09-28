@@ -8,6 +8,7 @@ from pka.constants import Source, TagOrigin
 from pka.db import engine
 from pka.db.cards import first_chunk_map, resolve_description
 from pka.db.schema import documents, images, overlay_tags, source_tags
+from pka.db.tag_fold import SOURCE_ORIGIN, fold_map
 
 
 def norm_filter(values: list | None) -> list[str] | None:
@@ -15,18 +16,25 @@ def norm_filter(values: list | None) -> list[str] | None:
     return [str(v) for v in values] if values else None
 
 
+# A tag filter matches every spelling that reads as the tag (DESIGN.md §3.8):
+# filtering on `Machine Learning` also finds documents tagged `machine-learning`.
+
+
 def _where_source_tag(q: sa.Select, tag: str) -> sa.Select:
+    variants = fold_map().variants(tag, SOURCE_ORIGIN)
     return q.where(
         sa.exists(
             sa.select(source_tags.c.id).where(
-                (source_tags.c.document_id == documents.c.id) & (source_tags.c.tag_string == tag)
+                (source_tags.c.document_id == documents.c.id)
+                & source_tags.c.tag_string.in_(variants)
             )
         )
     )
 
 
 def _where_overlay_tag(q: sa.Select, tag: str, origin=None) -> sa.Select:
-    cond = (overlay_tags.c.document_id == documents.c.id) & (overlay_tags.c.tag == tag)
+    variants = fold_map().variants(tag, str(origin) if origin is not None else None)
+    cond = (overlay_tags.c.document_id == documents.c.id) & overlay_tags.c.tag.in_(variants)
     if origin is not None:
         cond = cond & (overlay_tags.c.origin == origin)
     return q.where(sa.exists(sa.select(overlay_tags.c.id).where(cond)))
@@ -141,12 +149,15 @@ def _browse_tag_maps(
     if not doc_ids:
         return source_map, l1_map, l2_map
 
+    # Chips show one tag per fold group, in its display form, so a card that
+    # carries two spellings of a tag shows one chip.
+    fm = fold_map()
     for doc_id, tag in con.execute(
         sa.select(source_tags.c.document_id, source_tags.c.tag_string).where(
             source_tags.c.document_id.in_(doc_ids)
         )
     ):
-        source_map[doc_id].append(tag)
+        _add_once(source_map[doc_id], fm.display(tag, SOURCE_ORIGIN))
 
     for doc_id, tag, origin in con.execute(
         sa.select(
@@ -158,12 +169,15 @@ def _browse_tag_maps(
             overlay_tags.c.origin.in_([TagOrigin.CLUSTER_L1, TagOrigin.CLUSTER_L2]),
         )
     ):
-        if origin == TagOrigin.CLUSTER_L1:
-            l1_map[doc_id].append(tag)
-        else:
-            l2_map[doc_id].append(tag)
+        target = l1_map if origin == TagOrigin.CLUSTER_L1 else l2_map
+        _add_once(target[doc_id], fm.display(tag, str(origin)))
 
     return source_map, l1_map, l2_map
+
+
+def _add_once(tags: list[str], tag: str) -> None:
+    if tag not in tags:
+        tags.append(tag)
 
 
 def list_documents(

@@ -187,6 +187,33 @@ overlay_tags = sa.Table(
     sa.Index("uq_overlay_doc_tag_origin", "document_id", "tag", "origin", unique=True),
 )
 
+# Decisions that one tag key reads as another (DESIGN.md §3.8). Both sides are
+# `pka.db.tag_fold.tag_key` forms, so case and accents are already settled.
+# `candidate` rows are proposals awaiting review, `rejected` ones are remembered
+# so a scan does not propose them again, and at most one `active` row may exist
+# per alias (the partial unique index), so no key folds two ways.
+tag_aliases = sa.Table(
+    "tag_aliases",
+    meta,
+    sa.Column("id", sa.Integer, primary_key=True),
+    sa.Column("alias", sa.Text, nullable=False),  # the key that folds away
+    sa.Column("canonical", sa.Text, nullable=False),  # the key it folds into
+    sa.Column("kind", sa.Text, nullable=False),  # semantic|morphology|initialism|manual
+    sa.Column("state", sa.Text, nullable=False),  # candidate|active|rejected
+    sa.Column("score", sa.Float),  # embedding similarity, for semantic candidates
+    sa.Column("decided_by", sa.Text),  # scan|user
+    sa.Column("created_at", sa.Integer),
+    sa.Column("decided_at", sa.Integer),
+    sa.UniqueConstraint("alias", "canonical", name="uq_tag_alias_pair"),
+    sa.Index("ix_tag_aliases_state", "state"),
+    sa.Index(
+        "uq_tag_aliases_active",
+        "alias",
+        unique=True,
+        sqlite_where=sa.text("state = 'active'"),
+    ),
+)
+
 clusters = sa.Table(
     "clusters",
     meta,
