@@ -338,6 +338,28 @@ class _FakeClock:
         return self.now
 
 
+class _TickingClock:
+    """A clock that advances on every reading, so no two readings are equal.
+
+    ``time.monotonic`` behaves this way on Linux (nanosecond resolution), where
+    a frozen ``_FakeClock`` hides any loop that only ends once two readings
+    tie. Past ``max_reads`` it raises, so such a loop fails the test instead
+    of hanging the suite.
+    """
+
+    def __init__(self, now: float = 1000.0, step: float = 1e-6, max_reads: int = 10_000) -> None:
+        self.now = now
+        self._step = step
+        self._reads_left = max_reads
+
+    def __call__(self) -> float:
+        self._reads_left -= 1
+        if self._reads_left < 0:
+            raise AssertionError("clock read too many times: the queue is spinning")
+        self.now += self._step
+        return self.now
+
+
 class TestThrottleKey:
     """Which domain's slot a worker must hold before starting a URL."""
 
@@ -442,6 +464,31 @@ class TestDomainQueue:
         assert sorted(drawn) == sorted(items)
         assert len(queue) == 0
         assert queue.get() is None
+
+    def test_unreserved_domains_are_handed_out_on_a_ticking_clock(self):
+        """The bug: with the clock advancing between readings, an unreserved
+        domain's heap entry always read as stale and was re-pushed forever, so
+        ``get`` never returned. A frozen clock hid it; Linux's does not."""
+        queue, _ = self._queue(
+            [(1, "https://a.com/1"), (2, "https://b.com/2"), (3, "C:/x")],
+            clock=_TickingClock(),
+        )
+        drawn = [queue.get() for _ in range(3)]
+        assert sorted(d[0][0] for d in drawn) == [1, 2, 3]
+        # Both domains were free, so neither costs a wait.
+        assert [d[1] for d in drawn] == pytest.approx([0.0, 0.0, 0.0], abs=1e-3)
+        assert queue.get() is None
+
+    def test_a_claimed_slot_still_reads_stale_on_a_ticking_clock(self):
+        """The fix must keep refreshing entries whose slot really moved: a
+        cooling domain waits out its gap rather than jumping the queue."""
+        queue, _ = self._queue(
+            [(1, "https://hot.com/a"), (2, "https://hot.com/b"), (3, "https://cool.com/c")],
+            clock=_TickingClock(),
+        )
+        drawn = [queue.get() for _ in range(3)]
+        assert drawn[2][0] == (2, "https://hot.com/b")
+        assert [d[1] for d in drawn] == pytest.approx([0.0, 0.0, 1.0], abs=1e-3)
 
     def test_claims_the_slot_the_fetch_would_have_claimed(self):
         """``slot_held=True`` is only honest if the claim landed on the same

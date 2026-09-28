@@ -79,6 +79,15 @@
   skipped on later starts. An existing archive has no record yet, so its first
   start after upgrading runs every step once (each a no-op) and records them.
 
+### Fixes
+
+- **The fetch queue no longer spins forever on a fine-grained clock.**
+  `_DomainQueue` read an unreserved domain's heap entry as stale whenever the
+  clock had advanced since the push, which on Linux's nanosecond
+  `time.monotonic` is always, so `get()` never returned and a fetch batch
+  hung. An entry is now stale only when its refreshed slot also lies in the
+  future. Windows' coarser clock let two readings tie often enough to hide it.
+
 ## v0.0.11
 
 ### Ingestion

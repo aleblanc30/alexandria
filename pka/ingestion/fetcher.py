@@ -295,7 +295,12 @@ class _DomainQueue:
                 self._by_key.pop(key, None)
                 continue
             fresh = self._scheduler.next_slot(key)
-            if fresh > slot:  # stale: slots were claimed since this was pushed
+            # Stale only when a slot claimed since the push lies in the future.
+            # ``next_slot`` of an unreserved key is the current clock reading,
+            # which has always moved on since the push; comparing it with
+            # ``slot`` alone re-pushed that entry forever on a clock fine
+            # enough that two readings never tie.
+            if fresh > slot and fresh > self._scheduler.now():
                 heapq.heappush(self._heap, (fresh, key))
                 continue
             return key, fresh
