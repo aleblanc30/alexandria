@@ -611,13 +611,13 @@ def _purge_vectors(scope: PurgeScope) -> dict[str, int]:
 # run that counted it would promise a deletion the purge then refuses to make.
 
 
-def _count_cluster_runs(scope: PurgeScope) -> dict[str, int]:
+def _count_cluster_runs(_scope: PurgeScope) -> dict[str, int]:
     from pka.cli.purge_cluster_runs import purge_all_cluster_runs
 
     return purge_all_cluster_runs(dry_run=True)
 
 
-def _purge_cluster_runs(scope: PurgeScope) -> dict[str, int]:
+def _purge_cluster_runs(_scope: PurgeScope) -> dict[str, int]:
     from pka.cli.purge_cluster_runs import purge_all_cluster_runs
 
     return purge_all_cluster_runs(dry_run=False)

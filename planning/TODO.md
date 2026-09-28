@@ -29,9 +29,6 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
   enforce it with import-linter; break the `ingestion → tag_training` edge with a
   post-ingest hook registry. Comment the lazy imports that only defer heavy
   libraries.
-- [ ] **M-18: hygiene** — delete `pka/api/schemas/common.py` (`Pagination`, zero
-  importers) and triage the 14 `ARG001` unused arguments. Leave `PLR0913` and
-  `TRY003` alone.
 
 ## Ingestion
 

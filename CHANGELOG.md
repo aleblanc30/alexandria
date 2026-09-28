@@ -89,6 +89,11 @@
   to 7. The rate-limited GET and error mapping that eight handler helpers
   copied is `fetch_base.rate_limited_get`, and the arXiv/bioRxiv PDF leg is
   `fetch_base.fetch_pdf_text`. Dispatch order and every result are unchanged.
+- **Unused arguments are a lint error outside `tests/`.** ruff now selects
+  `ARG001`. Three stale parameters were removed (`ingest_calibre_fulltext`'s
+  `force`, which no caller passed, among them); the rest are signatures a
+  caller requires and carry a leading underscore. The unused
+  `pka/api/schemas/common.py` (`Pagination`) is deleted.
 
 ### Fixes
 

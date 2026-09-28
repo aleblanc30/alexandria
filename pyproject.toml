@@ -146,10 +146,15 @@ target-version = "py311"
 # is deliberate and says so. Every existing site was reviewed and carries either
 # a narrowed exception type, a log line, or a `# noqa: BLE001 - <why>`, so a new
 # unannotated one is a lint failure rather than a thing to find later.
-select = ["E", "F", "I", "B", "UP", "BLE001", "S110", "S112"]
+# ARG001 likewise: every unused argument in pka/ and scripts/ was either removed
+# or renamed with a leading underscore where a caller's signature requires it.
+select = ["E", "F", "I", "B", "UP", "BLE001", "S110", "S112", "ARG001"]
 ignore = ["E501"]                   # line length handled by formatter
 
 [tool.ruff.lint.per-file-ignores]
 # FastAPI's dependency-injection style relies on `Depends(...)` / `Query(...)`
 # calls in argument defaults, which B008 flags by design.
 "pka/api/routers/*" = ["B008"]
+# Test doubles and fixtures match the signature they stand in for, so an unused
+# argument there is the point, not a leftover.
+"tests/**" = ["ARG001"]

@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     log.info("Alexandria API starting — initialising database…")
     init_db()
     # No clustering thread can outlive the process that owned it, so any run

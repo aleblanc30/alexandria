@@ -316,7 +316,6 @@ def _set_learned_overlay(
     doc_id: int,
     tag: str,
     confidence: float,
-    now: int,
 ) -> None:
     from pka.clustering.cluster_tags import insert_overlay_tags
 
@@ -347,7 +346,6 @@ def _apply_model_to_documents(
     model_blob: str,
     doc_ids: list[int],
     threshold: float,
-    now: int,
 ) -> int:
     """Apply or clear learned overlay for each doc_id. Returns tags written."""
     from pka.tag_training.engine import predict_proba
@@ -361,7 +359,7 @@ def _apply_model_to_documents(
         if prob is None:
             continue
         if prob >= threshold:
-            _set_learned_overlay(con, doc_id, tag, prob, now)
+            _set_learned_overlay(con, doc_id, tag, prob)
             applied += 1
         else:
             _clear_learned_overlay(con, doc_id, tag)
@@ -389,7 +387,6 @@ def apply_learned_tags_for_document(doc_id: int) -> int:
                 & tag_training_sessions.c.model_blob.isnot(None)
             )
         ).fetchall()
-        now = _now()
         for tag, model_blob, params_raw in rows:
             params = _parse_parameters(params_raw)
             threshold = float(params.get("threshold", 0.5))
@@ -399,7 +396,6 @@ def apply_learned_tags_for_document(doc_id: int) -> int:
                 model_blob,
                 [doc_id],
                 threshold,
-                now,
             )
     if applied:
         log.debug("Applied %d learned tag(s) to document %d", applied, doc_id)
@@ -655,7 +651,7 @@ def accept_session(session_id: int) -> dict[str, Any]:
             sa.select(documents.c.id).where(documents.c.doc_embedding.isnot(None))
         ).fetchall()
         doc_ids = [r[0] for r in all_rows]
-        _apply_model_to_documents(con, tag, row[0], doc_ids, threshold, now)
+        _apply_model_to_documents(con, tag, row[0], doc_ids, threshold)
 
     return get_session(session_id)
 

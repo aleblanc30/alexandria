@@ -92,8 +92,8 @@ def ingest_youtube_embed(
     doc_ids = document_index(Source.YOUTUBE) if skip_existing else {}
     embedded = source_ids_with_chunks(Source.YOUTUBE) if skip_existing else set()
 
-    def _should_skip(video: YouTubeVideo) -> bool:
-        return False
+    def _should_skip(_video: YouTubeVideo) -> bool:
+        return False  # skip_existing is applied inside _process, after side data
 
     def _process(video: YouTubeVideo) -> tuple[bool, int]:
         doc_id = doc_ids.get(video.source_id)

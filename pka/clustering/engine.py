@@ -125,7 +125,7 @@ def _run_level2_pass(
     """Run HDBSCAN inside each L1 cluster on ``cluster_matrix`` slices."""
     doc_id_to_idx = {d: i for i, d in enumerate(doc_ids)}
 
-    def _compute(member_doc_ids, sub_mcs, sub_ms, sub_nn):
+    def _compute(member_doc_ids, sub_mcs, sub_ms, _sub_nn):
         sub_matrix = cluster_matrix[[doc_id_to_idx[d] for d in member_doc_ids]]
         return _run_hdbscan(sub_matrix, sub_mcs, sub_ms, metric=hdbscan_metric)
 
@@ -198,9 +198,9 @@ def _run_level2_pass_agglomerative(
     leader_nodes, leader_cids = leaders(Z, l1_labels)
     node_by_l1cid = dict(zip(leader_cids.tolist(), leader_nodes.tolist(), strict=False))
 
-    def _compute(member_doc_ids, sub_mcs, sub_ms, sub_nn):
-        # sub_ms / sub_nn are HDBSCAN-shaped knobs; agglomerative ignores them
-        # and derives k from group size alone (§2.2c).
+    def _compute(member_doc_ids, _sub_mcs, _sub_ms, _sub_nn):
+        # The size knobs are HDBSCAN-shaped; agglomerative ignores them and
+        # derives k from group size alone (§2.2c).
         l1_cid = int(l1_labels[doc_id_to_idx[member_doc_ids[0]]])
         node = node_by_l1cid[l1_cid]
         return _split_node_auto(Z, n_leaves, node, member_doc_ids, doc_id_to_idx, data)

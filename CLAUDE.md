@@ -111,6 +111,9 @@ Two configuration facts that otherwise read as bugs:
   especially a silent `pass` or `continue` under one — fails the lint. Narrow the
   type, or log the failure, or write `# noqa: BLE001 - <why>` if the broad catch is
   a deliberate "one document must not kill the sync" guard.
+- ruff selects `ARG001` outside `tests/`: an unused function argument fails the
+  lint. Remove it, or prefix it with `_` when a caller's signature requires it
+  (a callback, a FastAPI hook, a dispatch table entry).
 - **The frontend's API types are generated, not written.** `frontend/src/api/types.gen.ts`
   comes from `frontend/src/api/openapi.json`, which `python scripts/dump_openapi.py`
   writes from the live FastAPI app; `client.ts` aliases the generated schemas under

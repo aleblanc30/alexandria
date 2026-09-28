@@ -159,8 +159,8 @@ def ingest_zotero_embed(
     doc_ids = document_index(Source.ZOTERO) if skip_existing else {}
     embedded = source_ids_with_chunks(Source.ZOTERO) if skip_existing else set()
 
-    def _should_skip(item: ZoteroItem) -> bool:
-        return False
+    def _should_skip(_item: ZoteroItem) -> bool:
+        return False  # skip_existing is applied inside _process, after the card summary
 
     def _process(item: ZoteroItem) -> tuple[bool, int]:
         doc_id = doc_ids.get(item.source_id)

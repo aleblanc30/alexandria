@@ -260,7 +260,20 @@ gives ingestion a small module to depend on and leaves lifecycle to the API. It
 also narrows the `ingestion → tag_training` edge that M-6 wants to break, so
 sequence it before or with that work rather than against it.
 
-### M-18: small hygiene, batchable (S)
+### M-18: small hygiene, batchable (S) — **done**
+
+Shipped: `pka/api/schemas/common.py` deleted (not wired in; the list responses
+keep their own `total`/`limit`/`offset`). Of the 14 `ARG001`s, three were stale
+and are gone: `_save_failed_body(base)` in the Reddit connector,
+`ingest_calibre_fulltext(force)` (no caller passed it), and `now` through
+`_apply_model_to_documents` → `_set_learned_overlay` in tag-training lifecycle
+(the overlay insert stamps its own time). The other eleven are signatures a caller
+imposes — FastAPI's `lifespan(app)`, the CLI `main(argv)` contract, the L2
+`compute_l2_labels` callbacks, a fetch-table handler, the embed loop's
+`should_skip`, the purge registry's `scope` — and now carry a leading
+underscore. `ARG001` is selected in ruff for everything outside `tests/`, where
+test doubles match signatures by design. `PLR0913` and `TRY003` left alone as
+recommended.
 
 - **Dead module.** `pka/api/schemas/common.py` defines `Pagination` and has
   **zero importers** anywhere in `pka/` or `tests/`. vulture misses it because a

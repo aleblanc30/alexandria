@@ -218,7 +218,6 @@ def ingest_calibre_books(
 
 def ingest_calibre_fulltext(
     books: list[CalibreBook],
-    force: bool = False,
     dry_run: bool = False,
     max_pages: int | None = None,
     progress_key: str | None = None,
