@@ -17,8 +17,9 @@ What changed, and what each change needs from an existing archive:
 | Zotero PDF full text; Zotero collections read with their parents | one `alexandria zotero` sync | 8 |
 | Collection tags for documents already archived | `alexandria collection-tags` | 9 |
 | Duplicate and equivalent tags | `alexandria dedupe-tags` (spellings fold on their own) | 10 |
-| Calibre books whose retained text is only the first 20 pages | optional re-extraction | 11 |
-| Clustering runs from the old model stop taking new documents | a new run, accepted | 12 |
+| The same work saved twice | `alexandria dedupe scan` | 11 |
+| Calibre books whose retained text is only the first 20 pages | optional re-extraction | 12 |
+| Clustering runs from the old model stop taking new documents | a new run, accepted | 13 |
 
 The fetch-queue fix, the module splits and the layering contract need
 nothing.
@@ -124,7 +125,7 @@ tokenizer instead.
 It covers documents with retained body text: Firefox and Reddit link posts
 fetched since retention shipped, and Calibre books. Anything older keeps its
 old chunks, which still work. The final log line counts books skipped because
-only their first pages are retained (step 11).
+only their first pages are retained (step 12).
 
 ## 8. Pull in Zotero PDF full text
 
@@ -189,7 +190,24 @@ keep apart near the bottom of its scores, raise it, and if it finds almost
 nothing, lower it to 0.88 and look again. Declining a pair is remembered, so
 re-scanning never re-asks.
 
-## 11. (Optional) Re-extract truncated Calibre books
+## 11. Link duplicate documents
+
+```powershell
+alexandria dedupe scan --dry-run
+alexandria dedupe scan
+```
+
+The dry run lists the pairs it would link (same DOI, arXiv id, ISBN or URL)
+and the near duplicates it would propose. Linking hides nothing permanently:
+the duplicate's card folds into its canonical, and *Unlink* on the Ingestion
+page restores it. Near duplicates wait there for *Link* / *Keep apart*. After
+step 6, because near duplicates compare the document vectors the re-embed
+recomputes, and before step 13, so the new clustering run leaves duplicates
+out. If the near-duplicate list pairs different papers of one series, raise
+`ALEXANDRIA_DEDUPE_SIMILARITY` above 0.97; linking never happens for those
+without you.
+
+## 12. (Optional) Re-extract truncated Calibre books
 
 Books retain only their first 20 pages, so `rechunk` skips them, and their
 full text keeps the old chunks. Search still works on those. To re-cut them,
@@ -207,7 +225,7 @@ re-cut. With `book_summary_enabled` on, the re-extraction appends a second copy
 of each cached summary chunk, which the last command should report; run it
 without `--dry-run` if it does.
 
-## 12. Re-cluster
+## 13. Re-cluster
 
 The accepted clustering run was built from MiniLM vectors, and new documents
 are no longer assigned to it. Run clustering again, from the Clusters page or:
@@ -218,7 +236,7 @@ alexandria clustering
 
 Review the run and accept it (`--accept` skips the review).
 
-## 13. Start the server and check
+## 14. Start the server and check
 
 Start the scheduled task, then:
 

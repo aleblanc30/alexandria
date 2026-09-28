@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from pka.constants import Source, TagOrigin
 from pka.db import engine
 from pka.db.browse import apply_document_browse_filters, norm_filter
+from pka.db.duplicates import exclude_duplicates, owner_of
 from pka.db.schema import documents, overlay_tags, source_collections, source_tags
 from pka.db.tag_fold import SOURCE_ORIGIN, fold_map
 
@@ -135,34 +136,34 @@ def list_tags(
     with engine.get_engine().connect() as con:
         doc_scope = None
         if has_doc_scope:
-            doc_scope = apply_document_browse_filters(
-                sa.select(documents.c.id),
-                **filter_kwargs,
+            doc_scope = exclude_duplicates(
+                apply_document_browse_filters(sa.select(documents.c.id), **filter_kwargs)
             )
 
         src_q = (
             sa.select(
                 source_tags.c.tag_string.label("tag"),
                 sa.literal(SOURCE_ORIGIN).label("origin"),
-                sa.func.count(sa.distinct(source_tags.c.document_id)).label("n"),
+                # Per item: a linked duplicate counts as its canonical (§3.9).
+                sa.func.count(sa.distinct(owner_of(source_tags.c.document_id))).label("n"),
             )
             .select_from(source_tags)
             .group_by(source_tags.c.tag_string)
         )
         if doc_scope is not None:
-            src_q = src_q.where(source_tags.c.document_id.in_(doc_scope))
+            src_q = src_q.where(owner_of(source_tags.c.document_id).in_(doc_scope))
 
         ov_q = (
             sa.select(
                 overlay_tags.c.tag.label("tag"),
                 overlay_tags.c.origin.label("origin"),
-                sa.func.count(sa.distinct(overlay_tags.c.document_id)).label("n"),
+                sa.func.count(sa.distinct(owner_of(overlay_tags.c.document_id))).label("n"),
             )
             .select_from(overlay_tags)
             .group_by(overlay_tags.c.tag, overlay_tags.c.origin)
         )
         if doc_scope is not None:
-            ov_q = ov_q.where(overlay_tags.c.document_id.in_(doc_scope))
+            ov_q = ov_q.where(owner_of(overlay_tags.c.document_id).in_(doc_scope))
 
         overlay_origins = {
             str(TagOrigin.INFERRED),
@@ -216,19 +217,21 @@ def _fold_rows(con: sa.Connection, rows, doc_scope) -> list[dict[str, Any]]:
         src_raw = [t for (o, t) in by_raw if o == SOURCE_ORIGIN]
         ov_raw = [t for (o, t) in by_raw if o != SOURCE_ORIGIN]
         if src_raw:
-            q = sa.select(source_tags.c.tag_string, source_tags.c.document_id).where(
+            owner = owner_of(source_tags.c.document_id)
+            q = sa.select(source_tags.c.tag_string, owner).where(
                 source_tags.c.tag_string.in_(src_raw)
             )
             if doc_scope is not None:
-                q = q.where(source_tags.c.document_id.in_(doc_scope))
+                q = q.where(owner.in_(doc_scope))
             for tag, doc_id in con.execute(q):
                 docs[by_raw[(SOURCE_ORIGIN, tag)]].add(doc_id)
         if ov_raw:
-            q = sa.select(
-                overlay_tags.c.tag, overlay_tags.c.origin, overlay_tags.c.document_id
-            ).where(overlay_tags.c.tag.in_(ov_raw))
+            owner = owner_of(overlay_tags.c.document_id)
+            q = sa.select(overlay_tags.c.tag, overlay_tags.c.origin, owner).where(
+                overlay_tags.c.tag.in_(ov_raw)
+            )
             if doc_scope is not None:
-                q = q.where(overlay_tags.c.document_id.in_(doc_scope))
+                q = q.where(owner.in_(doc_scope))
             for tag, origin, doc_id in con.execute(q):
                 key = by_raw.get((origin, tag))
                 if key is not None:

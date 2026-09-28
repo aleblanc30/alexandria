@@ -200,6 +200,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "tag_dedup_similarity",
         "tag_dedup_min_documents",
         "tag_dedup_max_tags",
+        "dedupe_similarity",
+        "dedupe_max_candidates",
     ),
     "Clustering": (
         "cluster_space",

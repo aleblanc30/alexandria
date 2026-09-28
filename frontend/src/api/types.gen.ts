@@ -239,6 +239,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Links
+         * @description Links and proposals, with both documents' title, source and URL.
+         */
+        get: operations["list_links_duplicates_get"];
+        put?: never;
+        /**
+         * Link Documents
+         * @description Link two documents by hand.
+         */
+        post: operations["link_documents_duplicates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/duplicates/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan Duplicates
+         * @description Link exact duplicates, and propose near ones for review when ``embeddings``.
+         */
+        post: operations["scan_duplicates_duplicates_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/duplicates/{link_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Link */
+        post: operations["accept_link_duplicates__link_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/duplicates/{link_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Link
+         * @description Decline a proposal or undo a link; the pair is not proposed again.
+         */
+        post: operations["reject_link_duplicates__link_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/images": {
         parameters: {
             query?: never;
@@ -1493,6 +1574,11 @@ export interface components {
         };
         /** DocumentDetail */
         DocumentDetail: {
+            /**
+             * Also Saved In
+             * @default []
+             */
+            also_saved_in: components["schemas"]["LinkedCopy"][];
             /** Archive Url */
             archive_url?: string | null;
             /** Arxiv Id */
@@ -1671,6 +1757,52 @@ export interface components {
             /** Top Unfetchable */
             top_unfetchable: components["schemas"]["DomainRow"][];
         };
+        /** DuplicateLinkOut */
+        DuplicateLinkOut: {
+            canonical: components["schemas"]["LinkedCopy"];
+            /** Canonical Id */
+            canonical_id: number;
+            /** Created At */
+            created_at?: number | null;
+            /** Decided At */
+            decided_at?: number | null;
+            /** Decided By */
+            decided_by?: string | null;
+            duplicate: components["schemas"]["LinkedCopy"];
+            /** Duplicate Id */
+            duplicate_id: number;
+            /** Id */
+            id: number;
+            /** Match Key */
+            match_key: string;
+            /** Match Value */
+            match_value?: string | null;
+            /** Score */
+            score?: number | null;
+            /** State */
+            state: string;
+        };
+        /** DuplicateScanRequest */
+        DuplicateScanRequest: {
+            /**
+             * Embeddings
+             * @default true
+             */
+            embeddings: boolean;
+            /** Threshold */
+            threshold?: number | null;
+        };
+        /** DuplicateScanResult */
+        DuplicateScanResult: {
+            /** By Key */
+            by_key: {
+                [key: string]: number;
+            };
+            /** Linked */
+            linked: number;
+            /** Proposed */
+            proposed: number;
+        };
         /**
          * EnrichmentOut
          * @description One retrieval-enrichment chunk's provenance (DESIGN.md §3.2).
@@ -1755,6 +1887,27 @@ export interface components {
         LabelsBatch: {
             /** Labels */
             labels: components["schemas"]["LabelIn"][];
+        };
+        /** LinkRequest */
+        LinkRequest: {
+            /** Canonical Id */
+            canonical_id: number;
+            /** Duplicate Id */
+            duplicate_id: number;
+        };
+        /**
+         * LinkedCopy
+         * @description Another document linked as the same work (DESIGN.md §3.9).
+         */
+        LinkedCopy: {
+            /** Id */
+            id: number;
+            /** Source */
+            source: string;
+            /** Title */
+            title: string;
+            /** Url Or Path */
+            url_or_path?: string | null;
         };
         /** ListCreate */
         ListCreate: {
@@ -2564,6 +2717,164 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_links_duplicates_get: {
+        parameters: {
+            query?: {
+                state?: ("candidate" | "merged" | "rejected") | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateLinkOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    link_documents_duplicates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateLinkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_duplicates_duplicates_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DuplicateScanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateScanResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_link_duplicates__link_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateLinkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_link_duplicates__link_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

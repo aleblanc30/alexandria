@@ -898,6 +898,48 @@ The more used tag of a proposed pair is kept; for an initialism, the long
 form. Tag names never leave the machine: the embedding model runs in-process
 and no LLM is involved.
 
+### 3.9 Duplicate documents
+
+The same work saved twice, whether a URL bookmarked and filed in Zotero, a
+paper reached through arXiv and the publisher, or a book in Calibre and on a
+shelf photo, is linked, never merged: `document_duplicates` records that a
+`duplicate_id` reads as a `canonical_id`, and both rows keep their chunks,
+tags and source record. A hard merge would not survive a sync, since the next
+run of the losing source re-inserts its row by `(source, source_id)`; a link
+also comes undone in one state change.
+
+- **Exact keys link on scan** (`dedupe.py`, `alexandria dedupe scan`, the
+  Ingestion page): the same DOI, with an arXiv id and its derived DOI counting
+  as one (`resolve_doi`); the same arXiv id; the same ISBN once both are
+  ISBN-13; the same URL after `canonical_url`, which drops scheme, `www.`,
+  fragments, tracking parameters and parameter order, and reduces YouTube,
+  Reddit and Amazon URLs to their video, thread or ASIN. The canonical URL is
+  for matching only and is never fetched. Matches are grouped by union-find,
+  so three copies link to one canonical rather than as a chain.
+- **Near duplicates are only proposed**: pairs of unlinked documents whose
+  `doc_embedding` vectors reach `dedupe_similarity` (0.97), at most
+  `dedupe_max_candidates` per scan, best first. They catch a page saved under
+  two unrelated URLs, and also pair the papers of one series, so each waits
+  for review.
+- **The canonical** is the row with the most content, by fetch status, then
+  chunk count, then age, then id; deliberately not a preferred source, and
+  deterministic so a re-scan never swaps a pair.
+- **One hop deep.** The writer (`db/duplicates.py`) resolves a canonical that
+  is itself a duplicate, and hands a new duplicate's own duplicates to its
+  canonical; a partial unique index allows one canonical per duplicate. A
+  declined or undone pair is kept as `rejected` and never proposed or linked
+  again.
+
+**Read sites.** Browse lists and counts canonical rows only. A linked pair
+reads as one item: its card carries both rows' tags; every tag filter and the
+source filter match through either row; tag counts count the item once;
+search scores the canonical with the better of the two rows' hits; the detail
+panel lists the other copy under *Also saved in*. Clustering and tag training
+leave duplicates out of their corpora; past cluster runs keep them. Ingestion
+counts, progress and the domain report still count both rows, since they
+describe what each source holds. `purge-source` deletes the links of the
+documents it removes.
+
 ## 4. Cluster lifecycle
 
 Every clustering run is stored regardless of acceptance. The UI surfaces

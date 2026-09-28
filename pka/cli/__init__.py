@@ -18,6 +18,7 @@ Installed as the ``alexandria`` console script::
     alexandria backfill-classification
     alexandria collection-tags --dry-run
     alexandria dedupe-tags scan --dry-run
+    alexandria dedupe scan --dry-run
     alexandria dev
 
 Each subcommand delegates to a ``pka.cli.<module>.main(argv)`` that owns its
@@ -56,6 +57,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
         "backfill_classification",
         "Backfill item types and classification tags",
     ),
+    "dedupe": ("dedupe", "Find and link duplicate documents"),
     "dedupe-tags": ("dedupe_tags", "Fold duplicate and equivalent tags (report, scan, review)"),
     "collection-tags": (
         "collection_tags",

@@ -177,7 +177,7 @@ exhaustive = true
 layers = [
     "api | cli",
     "bootstrap | reembed",
-    "purge | trends | domains | tag_training",
+    "purge | trends | domains | tag_training | dedupe",
     "ingestion",
     "classification | enrichment_runs | clustering | tag_dedup",
     "connectors | storage | ollama_chat",

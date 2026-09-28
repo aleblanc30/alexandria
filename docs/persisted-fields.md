@@ -120,7 +120,10 @@ ingestion-time, all of them source-agnostic.
 
 `schema_migrations` is absent from the matrix because no source writes it:
 `init_db` (`pka/db/migrate.py`) adds one row per migration step it has applied.
-`tag_aliases` is absent for the same reason: it holds tag-fold proposals and
+`document_duplicates` is absent too: links between documents that are the
+same work, written by `alexandria dedupe` and the Ingestion page (`DESIGN.md`
+§3.9); no source writes it, and a linked document keeps every row this file
+lists. `tag_aliases` is absent for the same reason: it holds tag-fold proposals and
 decisions, written by `alexandria dedupe-tags` and the Tags page
 (`DESIGN.md` §3.8). No ingestion path reads or writes it, and the tag strings
 in `source_tags` and `overlay_tags` stay as the sources wrote them.

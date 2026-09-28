@@ -20,6 +20,7 @@ from pka.api.db_rows import fetchall_mappings
 from pka.api.schemas.search import SearchRequest
 from pka.constants import Source
 from pka.db.browse import filter_document_ids
+from pka.db.duplicates import canonical_map
 from pka.db.fulltext import MIN_QUERY_CHARS, keyword_document_ids
 from pka.db.schema import cluster_assignments, documents
 
@@ -161,6 +162,30 @@ def merge_clip_hits(results: Hits, req: SearchRequest) -> Hits:
     scored = sorted(((d, s) for d, s in best.items() if s is not None), key=lambda x: -x[1])
     unscored: Hits = [(d, None) for d, s in best.items() if s is None]
     return scored + unscored
+
+
+def fold_duplicates(con, results: Hits) -> Hits:
+    """Score each merged duplicate's hit as its canonical document (DESIGN.md §3.9).
+
+    One card per item: the canonical takes the best score of either row and the
+    position of whichever ranked first. A hit with no score keeps none unless
+    the other row has one.
+    """
+    cmap = canonical_map(con)
+    if not cmap or not results:
+        return results
+    best: dict[int, float | None] = {}
+    order: list[int] = []
+    for doc_id, score in results:
+        target = cmap.get(doc_id, doc_id)
+        if target not in best:
+            order.append(target)
+            best[target] = score
+        else:
+            current = best[target]
+            if score is not None and (current is None or score > current):
+                best[target] = score
+    return [(d, best[d]) for d in order]
 
 
 def apply_browse_filters(con, results: Hits, req: SearchRequest) -> Hits:

@@ -92,6 +92,8 @@ export type DiagnosticsOut = Omit<
 }
 export type DocumentDetail = Schemas['DocumentDetail']
 export type TagAlias = Schemas['TagAliasOut']
+export type DuplicateLink = Schemas['DuplicateLinkOut']
+export type DuplicateScanResult = Schemas['DuplicateScanResult']
 export type TagAliasScanResult = Schemas['ScanResult']
 export type TagVariantGroup = Schemas['VariantGroup']
 export type DocumentListItem = Schemas['DocumentListItem']
@@ -561,6 +563,18 @@ export const createTagTrainingSession = (tag: string, labels: TagTrainingLabel[]
     method: 'POST',
     body: JSON.stringify({ tag, labels }),
   })
+// ── Duplicate documents ───────────────────────────────────────────────────────
+
+export const listDuplicates = (state?: 'candidate' | 'merged' | 'rejected') =>
+  req<DuplicateLink[]>(`/duplicates${state ? `?state=${state}` : ''}`)
+// Compares every document vector for near duplicates: can take a while.
+export const scanDuplicates = () =>
+  req<DuplicateScanResult>('/duplicates/scan', { method: 'POST', body: '{}' }, 600_000)
+export const acceptDuplicate = (id: number) =>
+  req<DuplicateLink>(`/duplicates/${id}/accept`, { method: 'POST' })
+export const rejectDuplicate = (id: number) =>
+  req<void>(`/duplicates/${id}/reject`, { method: 'POST' })
+
 // ── Tag folding ───────────────────────────────────────────────────────────────
 
 export const listTagAliases = (state?: 'candidate' | 'active' | 'rejected') =>

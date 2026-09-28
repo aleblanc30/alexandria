@@ -389,6 +389,13 @@ class Settings(BaseSettings):
     tag_dedup_min_documents: int = 2  # a tag on fewer documents is not compared
     tag_dedup_max_tags: int = 5000  # the most used tags compared, to bound the cost
 
+    # ── Duplicate documents ─────────────────────────────────────────────────
+    # `alexandria dedupe scan` links exact duplicates (DOI, arXiv id, ISBN, URL)
+    # and proposes near ones whose document vectors reach this cosine
+    # similarity, for review (DESIGN.md §3.9).
+    dedupe_similarity: float = 0.97
+    dedupe_max_candidates: int = 500  # proposals kept per scan, best first
+
     # ── Firefox fetch ───────────────────────────────────────────────────────
     fetch_timeout_seconds: float = 10.0  # max seconds to read response body
     fetch_connect_timeout_seconds: float = 5.0  # max seconds to establish connection

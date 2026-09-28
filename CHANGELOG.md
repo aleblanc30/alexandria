@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Duplicates
+
+- **The same work saved twice reads as one item.** `alexandria dedupe scan`
+  (or *Find duplicates* on the Ingestion page) links documents that share a
+  DOI (an arXiv id and its DOI count as one), an arXiv id, an ISBN (10 and 13
+  compared as 13) or a URL once normalised (scheme, `www.`, tracking
+  parameters, YouTube / Reddit / Amazon forms). It proposes near duplicates by
+  document similarity for review. Nothing is deleted: a linked pair shows as
+  one card carrying both rows' tags, matches filters and search through
+  either row, counts once in the tag list, and lists the other copy in the
+  detail panel under *Also saved in*. Clustering and tag training skip the
+  duplicate. Unlinking restores both, and a declined pair is not proposed
+  again (`DESIGN.md` §3.9).
+
 ### Tags
 
 - **Duplicate tags read as one, and equivalent ones can be merged.** Spellings

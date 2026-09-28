@@ -16,6 +16,7 @@ import sqlalchemy as sa
 
 from pka.cli._logging import setup_logging
 from pka.constants import ALL_SOURCES, Source, TagOrigin
+from pka.db.duplicates import delete_for_documents
 from pka.db.engine import get_engine
 from pka.db.schema import (
     chunks,
@@ -158,6 +159,11 @@ def _purge_documents(
                 con.execute(tbl.delete().where(tbl.c.document_id.in_(batch))).rowcount
                 for batch in _batches(doc_ids)
             )
+        # Links name a document on either side, so they are not a _CHILD_TABLES
+        # entry; a link left behind would point at a deleted row.
+        counts["document_duplicates"] = sum(
+            delete_for_documents(con, batch) for batch in _batches(doc_ids)
+        )
         counts["overlay_tags"] = sum(
             con.execute(
                 overlay_tags.delete().where(

@@ -135,6 +135,18 @@
         </div>
       </section>
 
+      <section v-if="doc.also_saved_in?.length" class="section">
+        <div class="section-label">Also saved in</div>
+        <ul class="also-list">
+          <li v-for="c in doc.also_saved_in" :key="c.id">
+            <SourceBadge :source="c.source" />
+            <button type="button" class="link-btn" @click.stop="openCopy(c.id)">
+              {{ c.title || c.url_or_path || `#${c.id}` }}
+            </button>
+          </li>
+        </ul>
+      </section>
+
       <section class="section">
         <div class="section-label">Collections</div>
         <p class="hint-text">{{ doc.collections?.join(', ') || '—' }}</p>
@@ -171,6 +183,10 @@ const route = useRoute()
 const ui  = useUiStore()
 const doc = ref<DocumentDetail | null>(null)
 const newTag = ref('')
+
+async function openCopy(id: number) {
+  ui.openDetail(await getDocument(id))
+}
 
 const coverUrl = computed(() => (doc.value ? docCoverUrl(doc.value) : null))
 const coverFailed = ref(false)
@@ -274,4 +290,8 @@ async function addTag() {
 .rung--brave        { background: #FAEEDA; color: #854F0B }
 .rung--local_model  { background: #EFEEEC; color: #55524C }
 .rung--unknown      { background: #EFEEEC; color: #55524C }
+.also-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px }
+.also-list li { display: flex; align-items: center; gap: 6px; font-size: 12px }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent, #185FA5); cursor: pointer; text-align: left; font-size: 12px }
+.link-btn:hover { text-decoration: underline }
 </style>

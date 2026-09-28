@@ -7,6 +7,7 @@ import sqlalchemy as sa
 from pka.constants import Source, TagOrigin
 from pka.db import engine
 from pka.db.cards import first_chunk_map, resolve_description
+from pka.db.duplicates import duplicates_of, exclude_duplicates, source_in, with_duplicates
 from pka.db.schema import documents, images, overlay_tags, source_tags
 from pka.db.tag_fold import SOURCE_ORIGIN, fold_map
 
@@ -18,6 +19,8 @@ def norm_filter(values: list | None) -> list[str] | None:
 
 # A tag filter matches every spelling that reads as the tag (DESIGN.md §3.8):
 # filtering on `Machine Learning` also finds documents tagged `machine-learning`.
+# It also matches through a linked duplicate's tags (§3.9): the Zotero copy's
+# tag finds the item whose canonical row is the Firefox bookmark.
 
 
 def _where_source_tag(q: sa.Select, tag: str) -> sa.Select:
@@ -25,8 +28,7 @@ def _where_source_tag(q: sa.Select, tag: str) -> sa.Select:
     return q.where(
         sa.exists(
             sa.select(source_tags.c.id).where(
-                (source_tags.c.document_id == documents.c.id)
-                & source_tags.c.tag_string.in_(variants)
+                with_duplicates(source_tags.c.document_id) & source_tags.c.tag_string.in_(variants)
             )
         )
     )
@@ -34,7 +36,7 @@ def _where_source_tag(q: sa.Select, tag: str) -> sa.Select:
 
 def _where_overlay_tag(q: sa.Select, tag: str, origin=None) -> sa.Select:
     variants = fold_map().variants(tag, str(origin) if origin is not None else None)
-    cond = (overlay_tags.c.document_id == documents.c.id) & overlay_tags.c.tag.in_(variants)
+    cond = with_duplicates(overlay_tags.c.document_id) & overlay_tags.c.tag.in_(variants)
     if origin is not None:
         cond = cond & (overlay_tags.c.origin == origin)
     return q.where(sa.exists(sa.select(overlay_tags.c.id).where(cond)))
@@ -54,7 +56,7 @@ def apply_document_browse_filters(
     wayback_only: bool = False,
 ) -> sa.Select:
     if source_filter:
-        q = q.where(documents.c.source.in_(source_filter))
+        q = q.where(source_in(source_filter))
     if wayback_only:
         q = q.where(
             (documents.c.source == str(Source.FIREFOX)) & documents.c.archive_url.isnot(None)
@@ -151,13 +153,17 @@ def _browse_tag_maps(
 
     # Chips show one tag per fold group, in its display form, so a card that
     # carries two spellings of a tag shows one chip.
+    # A linked duplicate's tags show on its canonical's card (§3.9).
     fm = fold_map()
+    owner = {d: d for d in doc_ids}
+    for canonical, dups in duplicates_of(con, doc_ids).items():
+        owner.update(dict.fromkeys(dups, canonical))
     for doc_id, tag in con.execute(
         sa.select(source_tags.c.document_id, source_tags.c.tag_string).where(
-            source_tags.c.document_id.in_(doc_ids)
+            source_tags.c.document_id.in_(list(owner))
         )
     ):
-        _add_once(source_map[doc_id], fm.display(tag, SOURCE_ORIGIN))
+        _add_once(source_map[owner[doc_id]], fm.display(tag, SOURCE_ORIGIN))
 
     for doc_id, tag, origin in con.execute(
         sa.select(
@@ -207,28 +213,33 @@ def list_documents(
     }
 
     with engine.get_engine().connect() as con:
-        count_q = _exclude_pending_images(
-            apply_document_browse_filters(
-                sa.select(sa.func.count()).select_from(documents),
-                **filter_kwargs,
+        # A merged duplicate is shown as its canonical (DESIGN.md §3.9).
+        count_q = exclude_duplicates(
+            _exclude_pending_images(
+                apply_document_browse_filters(
+                    sa.select(sa.func.count()).select_from(documents),
+                    **filter_kwargs,
+                )
             )
         )
         total = con.execute(count_q).scalar() or 0
 
         page_q = (
-            _exclude_pending_images(
-                apply_document_browse_filters(
-                    sa.select(
-                        documents.c.id,
-                        documents.c.source,
-                        documents.c.source_id,
-                        documents.c.title,
-                        documents.c.url_or_path,
-                        documents.c.archive_url,
-                        documents.c.zotero_attachment_key,
-                        documents.c.card_summary,
-                    ),
-                    **filter_kwargs,
+            exclude_duplicates(
+                _exclude_pending_images(
+                    apply_document_browse_filters(
+                        sa.select(
+                            documents.c.id,
+                            documents.c.source,
+                            documents.c.source_id,
+                            documents.c.title,
+                            documents.c.url_or_path,
+                            documents.c.archive_url,
+                            documents.c.zotero_attachment_key,
+                            documents.c.card_summary,
+                        ),
+                        **filter_kwargs,
+                    )
                 )
             )
             .order_by(

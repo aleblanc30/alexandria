@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pka.api.routers import (
     clusters,
     documents,
+    duplicates,
     images,
     ingestion_jobs,
     ingestion_purge,
@@ -87,6 +88,7 @@ for router in (
     reading_lists,
     tag_training,
     settings,
+    duplicates,
 ):
     app.include_router(router.router)
 

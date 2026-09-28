@@ -214,6 +214,37 @@ tag_aliases = sa.Table(
     ),
 )
 
+# Two documents that are the same work saved twice (DESIGN.md §3.9). Linked,
+# never deleted: both rows keep their chunks, tags and source record, and a
+# sync that re-reads either one changes nothing here. `merged` pairs read as one
+# item, shown as the canonical row; `candidate` pairs await review; `rejected`
+# ones are remembered so a scan does not propose them again. The partial unique
+# index allows one canonical per duplicate, and the writer keeps links one hop
+# deep (a canonical is never itself a merged duplicate).
+document_duplicates = sa.Table(
+    "document_duplicates",
+    meta,
+    sa.Column("id", sa.Integer, primary_key=True),
+    sa.Column("canonical_id", sa.Integer, sa.ForeignKey("documents.id"), nullable=False),
+    sa.Column("duplicate_id", sa.Integer, sa.ForeignKey("documents.id"), nullable=False),
+    sa.Column("match_key", sa.Text, nullable=False),  # doi|arxiv_id|isbn|url|embedding|manual
+    sa.Column("match_value", sa.Text),  # the shared key, for review
+    sa.Column("score", sa.Float),  # embedding similarity, for embedding candidates
+    sa.Column("state", sa.Text, nullable=False),  # candidate|merged|rejected
+    sa.Column("decided_by", sa.Text),  # scan|user
+    sa.Column("created_at", sa.Integer),
+    sa.Column("decided_at", sa.Integer),
+    sa.UniqueConstraint("canonical_id", "duplicate_id", name="uq_dup_pair"),
+    sa.Index("ix_document_duplicates_canonical_id", "canonical_id"),
+    sa.Index("ix_document_duplicates_state", "state"),
+    sa.Index(
+        "uq_document_duplicates_merged",
+        "duplicate_id",
+        unique=True,
+        sqlite_where=sa.text("state = 'merged'"),
+    ),
+)
+
 clusters = sa.Table(
     "clusters",
     meta,

@@ -16,11 +16,13 @@ from pka.api.schemas.documents import (
     DocumentOut,
     EnrichmentOut,
     ImageDetail,
+    LinkedCopy,
     RedditDetail,
 )
 from pka.constants import Source
 from pka.db.cards import document_description, first_chunk_map, resolve_description
 from pka.db.chunks import document_enrichment
+from pka.db.duplicates import linked_copies
 from pka.db.reddit import reddit_item
 from pka.db.schema import (
     chunks,
@@ -356,4 +358,5 @@ def document_detail(con, doc_id: int, run_id: int | None) -> DocumentDetail | No
         image=image_detail,
         reddit=reddit_detail,
         enrichment=enrichment_out(document_enrichment([doc_id]).get(doc_id, [])),
+        also_saved_in=[LinkedCopy(**c) for c in linked_copies(con, doc_id)],
     )
