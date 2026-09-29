@@ -28,6 +28,11 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
   with no text layer are marked `no_text_layer` and get no body chunks; run
   their pages through the OCR provider instead. Sketch in `BACKLOG.md` →
   *OCR the documents that have no text layer*.
+- [ ] **Relate a preprint to its published article** — a "version of" relation,
+  distinct from duplicate links: the two carry different DOIs and different
+  text, and a reader may want the published version specifically. Candidates
+  from arXiv's journal-ref / DOI fields and Crossref's `is-preprint-of`, plus
+  title and author match. Background in `archive/ITEM_DEDUPLICATION.md` §1, §11.
 - [ ] **Exempt preprint PDFs from the page cap** — `fetch_pdf_max_pages` caps
   every PDF route at 3 pages, so arXiv/bioRxiv index only title + abstract + 3
   pages.
