@@ -68,12 +68,6 @@ M-14 and P-9 onward are `MAINTAINABILITY_PERFORMANCE_AUDIT_2026-09-09.md`.
   (`label=0`, `source=seed`) at session start, from source tags and browse
   multi-select.
 
-## UI
-
-- [ ] **Make the top-unfetchable-domains list collapsible** (`DomainTopLists.vue`).
-- [ ] **Learned tags are not displayed in the browse view.**
-- [ ] **Delete tags in the UI** — with API support and confirmation.
-
 ## Discovery
 
 - [ ] **Favourites** — mark a document as a favourite from the browse card and

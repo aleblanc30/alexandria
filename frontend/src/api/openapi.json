@@ -657,6 +657,14 @@
             "title": "Id",
             "type": "integer"
           },
+          "learned_tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Learned Tags",
+            "type": "array"
+          },
           "source": {
             "title": "Source",
             "type": "string"
@@ -2331,6 +2339,42 @@
         "title": "TagAliasOut",
         "type": "object"
       },
+      "TagDeleteResult": {
+        "properties": {
+          "archived_sessions": {
+            "default": 0,
+            "title": "Archived Sessions",
+            "type": "integer"
+          },
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "spellings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Spellings",
+            "type": "array"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag",
+          "origin",
+          "spellings",
+          "documents"
+        ],
+        "title": "TagDeleteResult",
+        "type": "object"
+      },
       "TagOut": {
         "properties": {
           "confidence": {
@@ -3815,7 +3859,7 @@
     },
     "/ingestion/domains": {
       "get": {
-        "description": "Top domains by document count and by unfetchable count.",
+        "description": "Top domains by document count and by unfetchable count; ``limit=0`` returns all.",
         "operationId": "domain_top_lists_ingestion_domains_get",
         "parameters": [
           {
@@ -6092,6 +6136,59 @@
       }
     },
     "/tags": {
+      "delete": {
+        "description": "Remove a tag of one origin from every document that carries it.\n\nOnly overlay origins that nothing regenerates can be deleted; a learned tag\nalso archives its accepted model so the next ingested document does not\nbring it back.",
+        "operationId": "delete_tag_tags_delete",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tag",
+              "type": "string"
+            }
+          },
+          {
+            "description": "manual | inferred | llm | learned",
+            "in": "query",
+            "name": "origin",
+            "required": true,
+            "schema": {
+              "description": "manual | inferred | llm | learned",
+              "title": "Origin",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagDeleteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Tag",
+        "tags": [
+          "tags"
+        ]
+      },
       "get": {
         "operationId": "list_tags_tags_get",
         "parameters": [

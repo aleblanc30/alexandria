@@ -409,7 +409,7 @@ export interface paths {
         };
         /**
          * Domain Top Lists
-         * @description Top domains by document count and by unfetchable count.
+         * @description Top domains by document count and by unfetchable count; ``limit=0`` returns all.
          */
         get: operations["domain_top_lists_ingestion_domains_get"];
         put?: never;
@@ -1282,7 +1282,15 @@ export interface paths {
         get: operations["list_tags_tags_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Tag
+         * @description Remove a tag of one origin from every document that carries it.
+         *
+         *     Only overlay origins that nothing regenerates can be deleted; a learned tag
+         *     also archives its accepted model so the next ingested document does not
+         *     bring it back.
+         */
+        delete: operations["delete_tag_tags_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1659,6 +1667,11 @@ export interface components {
             description: string;
             /** Id */
             id: number;
+            /**
+             * Learned Tags
+             * @default []
+             */
+            learned_tags: string[];
             /** Source */
             source: string;
             /** Source Id */
@@ -2224,6 +2237,22 @@ export interface components {
             score?: number | null;
             /** State */
             state: string;
+        };
+        /** TagDeleteResult */
+        TagDeleteResult: {
+            /**
+             * Archived Sessions
+             * @default 0
+             */
+            archived_sessions: number;
+            /** Documents */
+            documents: number;
+            /** Origin */
+            origin: string;
+            /** Spellings */
+            spellings: string[];
+            /** Tag */
+            tag: string;
         };
         /** TagOut */
         TagOut: {
@@ -4634,6 +4663,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_tag_tags_delete: {
+        parameters: {
+            query: {
+                tag: string;
+                /** @description manual | inferred | llm | learned */
+                origin: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagDeleteResult"];
                 };
             };
             /** @description Validation Error */
