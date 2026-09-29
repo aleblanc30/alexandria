@@ -75,8 +75,9 @@ proxies — that route needs no `ollama_cloud` settings at all.
 Callers use the accessors in `pka/providers/__init__.py`
 (`get_chat_provider()` etc.); the historical `pka.ollama_chat.chat_json` and
 `image_extractor.classify_and_describe` / `ocr_image` / `clip_embed_*` are thin
-shims over these. **Text-chunk** embeddings are intentionally *not* here — they
-stay inside ChromaDB's built-in function (see `pka/storage/vector_store.py`).
+shims over these. **Text-chunk** embeddings are intentionally *not* here: they
+run in-process through `pka/storage/embedding.py`, with the model named by
+`embedding_model` (§3.6).
 
 ### 1.1 Network access policy
 
@@ -111,9 +112,11 @@ more than the on/off state:
 | Enrichment lookups | `external_lookup_enabled`, `cover_search_fallback`, `doi_metadata_lookup` | **Derived identifiers** — an ISBN, a title+author string, or a DOI derived from a bookmarked publisher URL. Reveals *library inventory* (what is on the shelf) rather than content. |
 | Source connectors | `ALEXANDRIA_YOUTUBE_*`, `ALEXANDRIA_REDDIT_*` (OAuth credentials or `reddit_feed_url`), Firefox phase-2 fetch | **Nothing new** — these read back your own data from a service you already gave it to, or fetch a URL you bookmarked. |
 
-Text-chunk embeddings are the one capability with no remote option: they stay
-inside ChromaDB's built-in function, so the embedding of every document is
-computed locally regardless of configuration.
+Text-chunk embeddings have no remote option: they run in-process (§3.6), so
+the embedding of every document is computed locally regardless of
+configuration. The model's weights are downloaded once from the Hugging Face
+Hub when they are not cached, which sends no document content, and Hub
+telemetry is switched off before the library loads.
 
 The outbound flags above are surfaced read-only in the UI at `/settings`
 (`pka/api/settings_view.py`), alongside every other config field and a
@@ -123,6 +126,48 @@ reports on: the local Ollama backend is probed on mount because
 `OllamaChatProvider.resolve_model` auto-detect probe), while every remote
 backend is probed only when the user clicks *Check* — a page load must not
 itself become a new outbound call.
+
+### 1.2 Module layering
+
+`pka/` is layered, and a package imports only from the layers below it. The
+order is the `[tool.importlinter]` contract in `pyproject.toml`, which
+`scripts/check.*` enforces (`a | b` marks siblings that may not import each
+other):
+
+```
+api | cli                                   entry points
+bootstrap                                   start-up wiring
+purge | trends | domains | tag_training
+ingestion
+classification | enrichment_runs | clustering
+connectors | storage | ollama_chat
+providers
+db
+card_summary | json_utils
+config | constants | hooks
+```
+
+Ingestion sits *above* clustering because the shared ingest tail calls into it
+(`refresh_document_embedding`, `insert_overlay_tags`) and clustering never
+calls back. Tag training sits above both. It still has to react to every newly
+embedded document, so the tail announces that through `pka.hooks`
+(`document_embedded(doc_id)`), a registry that imports nothing from `pka`.
+Tag training's scorer is registered as a listener by
+`pka.bootstrap.install_hooks()`, which runs in `pka/api/main.py` and in
+`pka/cli/__init__.py`. Any new entry point that runs ingestion must call it
+too; `tests/test_hooks.py` checks the existing ones in a fresh interpreter.
+
+The contract is exhaustive, so a new top-level module fails the check until it
+is placed in a layer. Imports that already broke the layering when the
+contract was written are listed in its `ignore_imports`. That list only
+shrinks: an entry goes when its import is fixed, and a new violation is a
+failure to fix, not a line to add.
+
+Function-level imports are common in `pka/` and are checked like any other:
+import-linter reads them, so moving an import into a function does not get it
+past the contract. They exist to keep module import cheap, deferring heavy
+libraries (sklearn, hdbscan, umap, torch, transformers) and optional extras
+(EasyOCR, the YouTube client) until the code that needs them runs.
 
 ## 2. Adding a new source connector
 
@@ -186,11 +231,11 @@ two-phase flow (metadata import, then embed — no async fetch phase).
 
 > Drawn per source in [`docs/ingestion-flows.md`](docs/ingestion-flows.md),
 > including where each pipeline departs from the pattern below — Firefox
-> interleaving phase 2 with its fetch, Calibre running the embedding phase
-> twice, Reddit forking on `external_url`, and Images substituting four
+> interleaving phase 2 with its fetch, Calibre and Zotero running the embedding
+> phase twice, Reddit forking on `external_url`, and Images substituting four
 > extraction passes for a fetch. Keep those graphs in step with this section.
 
-Calibre and Firefox follow a two-phase pattern:
+Calibre, Zotero and Firefox follow a two-phase pattern:
 
 - **Phase 1** is fast and deterministic. It writes document rows and
   embeds whatever cheap text is immediately available (title + abstract
@@ -199,13 +244,20 @@ Calibre and Firefox follow a two-phase pattern:
   performs.
 
 - **Phase 2** is slow and side-effecting. It pulls full-text from PDFs/EPUBs
-  (Calibre) or fetches and extracts HTML and remote PDFs (Firefox) and embeds
-  the result.
+  (Calibre) or attached PDFs (Zotero), or fetches and extracts HTML and remote
+  PDFs (Firefox), and embeds the result. Calibre and Zotero tag their phase-1
+  chunk `pass="metadata"` and their full-text chunks `pass="fulltext"`, so a
+  re-chunk or a body purge, which treats untagged chunks as body, leaves the
+  metadata chunk alone.
   Chunk indices are offset past the phase-1 chunks via `existing_chunk_count()`
   so the two passes coexist in a single document.
 
-Phase-2 work is gated behind `--fulltext` (Calibre) or runs through
-`pka.ingestion.fetcher.fetch_and_embed_pending()` (Firefox). Each worker
+Phase-2 work is gated behind `--fulltext` (Calibre) or runs as a second
+`embedding` pass of the ingest job (Zotero), and in both it skips documents that
+already have `fulltext` chunks or were found to be scans: the pass itself
+appends, so re-running it on a document would store its chunks twice.
+Firefox's phase 2 runs through `pka.ingestion.fetcher.fetch_and_embed_pending()`
+instead. Each worker
 fetches one URL, persists fetch metadata, embeds immediately, then moves on—
 extracted text is not batched in RAM. Docs marked `fetched` but missing
 chunks are re-queued automatically on the next ingest run. When a Firefox URL
@@ -219,15 +271,16 @@ is whitespace-normalised, overlapped and missing every window under
 `min_chunk_chars`, so re-summarising, re-chunking, re-running an extraction fix
 or auditing what the fetcher actually got would otherwise all mean re-fetching.
 Retention covers text with no other verbatim home that cost a round trip or a
-slow extraction: fetched bodies (Firefox, Reddit link posts) and Calibre's
-phase-2 sections, joined into one body with a `blocks_json` map — `index`,
-`title`, `page_start`/`page_end`, and the offset that slices each section back
-out — so a re-chunk can reproduce the per-section chunk metadata. Reddit's inline
+slow extraction: fetched bodies (Firefox, Reddit link posts) and the phase-2
+sections of Calibre books and Zotero PDFs, joined into one body with a
+`blocks_json` map — `index`, `title`, `page_start`/`page_end`, and the offset
+that slices each section back out — so a re-chunk can reproduce the per-section
+chunk metadata. Reddit's inline
 bodies (`reddit_items.body`) and image text (`images`) are already kept, and a
 Zotero abstract or YouTube description is a re-read from its own source.
 Local-only, so it is not a §1.1 gate; `retain_document_text` (default on) exists
-for disk, and `book_retain_max_pages` (20) caps **books only** — Calibre's text
-is kept to its opening pages, cut on a section boundary, because a
+for disk, and `book_retain_max_pages` (20) caps **extracted files only** — a
+Calibre book's or Zotero PDF's text is kept to its opening pages, cut on a section boundary, because a
 several-hundred-page PDF is the one input that makes the sidecar expensive and
 the file is still on disk. A fetched body is never capped: it is small, and it
 is the copy that cannot be re-read from anywhere. A capped row records its
@@ -286,7 +339,7 @@ cut from that section carries its `page_start` / `page_end` into both the Chroma
 metadata and the `chunks` table, so a retrieved passage can be cited back to the
 pages it was read from. The section is the finest unit available: the chunker
 receives it as one block, so per-chunk page attribution would need
-`sentence_window_chunks` to return a sentence→page map. The fetch route drops the
+`chunk_text` to return a chunk→page map. The fetch route drops the
 range — it embeds a fetched document as a single block and has nowhere to hang it.
 
 **Reddit saved posts** are a *network* source (no filesystem path) rather than a
@@ -355,8 +408,7 @@ local DB, with **one loader** producing `RedditSaved`:
 
    **Every poll is archived** (`pka/connectors/reddit_archive.py`,
    `reddit_archive_enabled`, default **on** — a local disk write, not an
-   outbound path). Reddit is the only source with no local original: Firefox,
-   Zotero and Calibre keep their own databases, whereas the saved list lives on
+   outbound path). Reddit has no local original: the saved list lives on
    a server behind a token that can be rotated, a bot filter that can start
    refusing us, and a feed that serves only the newest slice. A poll is in
    practice unrepeatable, so it is written down before it is parsed:
@@ -517,7 +569,7 @@ Three mechanisms close these, in ascending cost:
 | Calibre, no ISBN | Title/author lookup → second catalogue. Skipped entirely when Calibre already holds a description, since pass 1 embeds that | off (`external_lookup_enabled`) |
 | Calibre full text | Local map-reduce summary over the extracted sections | off (`book_summary_enabled`) |
 | Long fetched articles | Same path as bookmarks — they are the same runner | off (`bookmark_summary_enabled`) |
-| Zotero | *No summary* — the abstract already is one. The real gap is that attached PDFs are never ingested. | — |
+| Zotero | *No summary* — the abstract already is one. Attached PDFs are ingested in phase 2 but not summarised. | — |
 | YouTube | *No summary* — nothing to summarise beyond uploader metadata; transcripts are not ingested. | — |
 
 **Structured bibliographic fields.** `documents` also carries `doi`, `arxiv_id`,
@@ -569,7 +621,8 @@ browse card stays truthful about the artifact itself, and a bad batch is
 purgeable and auditable without re-ingesting. CLIP vectors are untouched —
 they are visual, and a synopsis has no business in them. Generated summaries are
 cached in a column so purge-and-reingest does not re-run inference, and are kept
-to 2–4 sentences because MiniLM truncates in the low hundreds of word-pieces.
+to 2–4 sentences because the embedding model truncates its input at a few
+hundred tokens (§3.6).
 A multi-book cover attaches one chunk per book; note that a shelf photo with a
 dozen synopses will dominate that document's mean-pooled `doc_embedding`.
 
@@ -612,7 +665,7 @@ distinct because they fail differently:
 | Path | Function | Space | Matches |
 |------|----------|-------|---------|
 | Visual | `search_images_by_text` | CLIP (`alexandria_clip`) | the query against the **picture** |
-| Inferred text | `search_images_by_inferred_text` | MiniLM (`alexandria_chunks`) | the query against the text read **out of** the picture |
+| Inferred text | `search_images_by_inferred_text` | text embedding model (`alexandria_chunks`) | the query against the text read **out of** the picture |
 
 The second path needs nothing image-specific: §3.2's per-type content
 extraction, the description, and OCR are already assembled by
@@ -647,6 +700,246 @@ That merge compares scores from two embedding spaces, which is an approximation
 — the same one `/search` already makes — and it decides ordering only: both
 paths return their results either way.
 
+### 3.4 Keyword search (FTS5)
+
+`mode="fulltext"`, the keyword half of `hybrid`, and the fallback when semantic
+search returns nothing all run through two FTS5 indexes in `archive.db`:
+`documents_fts` over `documents.title` + `card_summary`, and `chunks_fts` over
+`chunks.text`, so a phrase is found in a PDF's full text, a fetched page, an
+abstract or an image's OCR, not only in a title (`pka/db/fulltext.py`).
+
+- **Trigram tokenizer.** A query matches as one case-insensitive substring,
+  the semantics of the title `ILIKE '%q%'` it replaced, and works in scripts
+  without word boundaries (CJK, Thai). Words out of order do not match. A
+  query under three characters cannot use a trigram index and falls back to
+  that title scan.
+- **Ranking.** Title and card-summary matches first, by BM25; documents
+  matched only in a chunk body after them, by their best chunk's BM25. The two
+  are not merged into one score: a title containing the phrase says more about
+  a document than one paragraph of its body. Ties go to the lower document id.
+  Results carry no similarity (`None`), as before.
+- **External content, synced by triggers.** Neither index stores the text; each
+  reads it from its table, and `AFTER INSERT / DELETE / UPDATE` triggers keep
+  it current for every writer, purges and raw SQL included, without any writer
+  knowing the index exists. The consequence is a constraint: **`chunks.text`,
+  `documents.title` and `documents.card_summary` stay plain text.** Compressing
+  or moving them breaks keyword search silently.
+- **Built by migrations.** create_all cannot make a virtual table, so both
+  indexes, their triggers and the initial `rebuild` are `MIGRATIONS` steps,
+  run for a new archive as for an old one. The rebuild over `chunks` is the
+  slow step on a large archive. SQLite 3.35 or later is required
+  (`MATERIALIZED` CTEs; the trigram tokenizer needs 3.34).
+
+### 3.5 Chunking
+
+Every text reaches the index through `chunk_text` (`ingestion/chunker.py`),
+which is `semantic-text-splitter` over the cleaned text. It packs the largest
+units that fit, paragraphs, then sentences, then words, into chunks of at most
+`chunk_tokens` (256) tokens, and repeats up to `chunk_overlap_tokens` (32) from
+the end of one chunk at the start of the next. Chunks shorter than
+`min_chunk_chars` are dropped, as before.
+
+- **Tokens of the embedding model.** Tokens are counted by the tokenizer of
+  the model the chunk index uses (§3.6), and the budget is capped at what that
+  model reads after its passage prefix and special tokens (254 for
+  `all-MiniLM-L6-v2`; a few under 512 for `multilingual-e5-small`). A chunk is therefore
+  never truncated when it is embedded. A run with no boundary in it, such as
+  unpunctuated OCR, is cut between words.
+- **Unicode sentence boundaries.** Sentences are UAX #29's, which need no
+  language: `É`, `Á`, `Ñ`, `¿`, `¡` and `«` open a sentence as `A` does, for
+  the archive's English, French and Spanish alike. They know no
+  abbreviations, so a chunk may break after `Dr.` or inside `« … ? »`.
+- **Overlap is whole units.** A sentence that fits in the overlap budget is
+  repeated; a longer one is not, and the chunks then meet without overlap.
+- **Sentences for trimming.** A summary, a synopsis or a short body trimmed to
+  `summary_max_sentences` is split by `pysbd`'s English rules
+  (`split_sentences`), which do know `Dr.` and `e.g.`, and split the French
+  and Spanish examples in the tests correctly.
+
+Scripts without spaces (CJK, Thai) chunk at Unicode's word boundaries, which
+for them are single characters; keyword search (§3.4) finds text in them
+regardless. Changing these settings applies to existing documents through
+`alexandria rechunk` (retained text) or a re-ingest. `alexandria reembed` does
+not re-chunk: chunks cut for the legacy model's 254 tokens stay that size under
+a model that reads more, until a rechunk.
+
+### 3.6 Embedding model
+
+Every chunk and every search query is embedded by one model, named by
+`embedding_model` (default `intfloat/multilingual-e5-small`), and run
+in-process through `sentence-transformers` (`pka/storage/embedding.py`).
+E5 was trained with instruction prefixes, so chunks are embedded as
+`passage: …` and queries as `query: …`, and vectors are L2-normalised. The
+archive's languages (§3.5) are English, French and Spanish; the previous model,
+`all-MiniLM-L6-v2`, was trained on English data.
+
+- **The collection records its model.** Vectors from two models are not
+  comparable, even at the same dimension (both shipped models are 384-d, so
+  nothing would fail loudly). The `alexandria_chunks` collection is created
+  with the model's name in its metadata (`embedding_model`), and every upsert
+  and query uses the recorded model, whatever the setting says. A collection
+  with no recorded model predates the setting and was built with
+  `all-MiniLM-L6-v2`, which still runs through Chroma's ONNX function so its
+  query vectors match the stored ones. A mismatch with the setting logs one
+  warning per process and changes nothing.
+- **Moving to another model is explicit.** `alexandria reembed` (or `POST
+  /ingestion/rebuild-vectors`) rebuilds the collection from SQLite chunk text
+  with the configured model, keeping each chunk's Chroma metadata; then
+  recomputes every `documents.doc_embedding`; then retrains each tag model
+  from its labels and re-applies the accepted ones (§5). A tag model that can
+  no longer be trained loses its model rather than score new vectors with old
+  weights. Nothing is fetched or re-chunked.
+- **Clustering is re-run by hand.** Each finished run records the model in its
+  `parameters`; `assign_new_docs` refuses to place documents into a run from
+  another model, since its centroids are in the old space. The run stays
+  browsable until a new one is accepted.
+- **Truncation.** The model reads the first 512 tokens of a chunk, and the
+  chunker sizes chunks to fit (§3.5). The fallback text `ingest_text_block`
+  embeds whole when the body yields no chunk can exceed it; its tail is not
+  embedded, though keyword search (§3.4) still finds it.
+
+### 3.7 Collection tags
+
+The folders a user filed things into, Zotero collections and Firefox bookmark
+folders, become browsable tags with `origin=collection` in `overlay_tags`
+(`ingestion/collection_tags.py`). The Browse sidebar lists them in their own
+group, and every browse, search and tag listing takes a `collection_tags`
+filter.
+
+- **Derived, not stored twice.** `source_collections` keeps what the source
+  said, one slash-joined path per row; the tags are a projection of it. The
+  runners write them next to the collections, and `alexandria collection-tags`
+  rewrites them from `source_collections` alone, so a change to these rules
+  reaches the whole archive without a sync. Both are an add-missing,
+  delete-stale sync scoped to the origin (`db.tags.sync_overlay_tags`), so a
+  renamed folder loses its old tag and a manual tag with the same text is
+  untouched.
+- **A tag per path segment.** `Research/Distributed Systems` gives `Research`
+  and `Distributed Systems`, so filtering on a parent folder finds what is
+  filed in its subfolders. Zotero paths are rebuilt from
+  `collections.parentCollectionID` by the connector, and every metadata sync
+  rewrites the collections of items already archived
+  (`refresh_zotero_collections`), so a moved item follows its collection.
+  Firefox writes a bookmark's folder when it is first archived only. At most
+  `collection_tag_max_depth` (4) segments are kept from the top of a path;
+  empty and single-character segments are skipped; a tag that repeats an
+  earlier one of the same document in another case is dropped. A folder name
+  containing `/` splits into two tags.
+- **Firefox roots are not tags.** `menu`, `toolbar`, `unfiled` and `mobile`,
+  the names places.sqlite stores the built-in folders under, are dropped when
+  they head a path; a user folder of the same name deeper down is kept.
+- **Noise is cut two ways.** A bookmark tree gathers folders that say nothing
+  about their contents. `collection_tag_exclude` lists names never to tag
+  (case-insensitive; the folder's subfolders are still tagged), and a tag on
+  more than `collection_tag_max_documents` (1000) documents is dropped, since
+  a folder holding that much of the library filters like a source. The cap is
+  counted across both sources from `source_collections`, by the backfill and,
+  through a five-minute cache, by ingestion, so the two agree; `alexandria
+  collection-tags --dry-run` lists what it drops.
+- **Zotero and Firefox only.** Calibre series, subreddits and YouTube
+  playlists are in `source_collections` too but are not tagged.
+- **Local, and on by default.** A derivation of data already in the archive,
+  with no outbound call, so §1.1's default-off rule does not apply.
+  `collection_tags_enabled` off stops new ones, and `alexandria
+  collection-tags` then removes the existing ones.
+- **Outside tag training and clustering.** Neither reads `collection` rows:
+  tag training trains on its labels and writes `learned`, clustering writes
+  `cluster_l1` / `cluster_l2`.
+
+### 3.8 Tag folding
+
+Sources write tags verbatim, so one idea arrives under several spellings
+(`Machine Learning`, `machine-learning`, `Économie` / `economie`) and, across
+languages or habits, under several names (`ml`, `apprentissage-automatique`).
+Nothing rewrites the stored strings. Which ones read as one tag is decided at
+read time, in two layers (`db/tag_fold.py`):
+
+- **The key**, `tag_key`: lowercase, accents removed, punctuation dropped,
+  spaces and underscores as hyphens. No judgement, so no decision is recorded:
+  every spelling with the same key is one tag.
+- **Aliases**, the `tag_aliases` table: an `active` row folds one key into
+  another. Rows are kept one hop deep by their writer (`db/tag_aliases.py`):
+  folding into a key that is itself folded resolves to its canonical, and
+  folding a canonical away repoints what was folded into it. A partial unique
+  index allows one active fold per key.
+
+Folding never crosses origins: a source tag, a cluster label and a learned tag
+with one key stay three tags, since each origin makes its own claim and the
+browse filters are split by it. `inferred` tags are closed vocabularies that
+their writers recreate, so aliases skip them; the key still applies.
+
+**Read sites.** `list_tags` groups by fold and counts distinct documents (a
+document carrying two spellings counts once), shows each tag in its most used
+spelling across the archive (ties alphabetical) and returns the spellings as
+`variants`. Every tag filter (source, overlay, collection, cluster, learned),
+the browse card chips, the tag-training seed from a source tag and the
+source tags that name a cluster all fold. They share one map of stored
+strings to folds, rebuilt at most every 30 seconds and at once after an alias
+changes. The writers are unchanged, so `docs/ingestion-flows.md` has nothing
+to draw.
+
+**Proposals** (`tag_dedup.py`, `alexandria dedupe-tags scan`, the Tags page)
+are `candidate` rows; nothing folds until the user accepts one, and a declined
+or undone pair is remembered as `rejected` and never proposed again.
+
+- **Semantic:** every compared tag is embedded with the chunk embedding model
+  (§3.6), locally, and pairs at or above `tag_dedup_similarity` (0.92, cosine)
+  are proposed. The multilingual model is what pairs a French and an English
+  name. Related but distinct tags also score high, which is why no pair folds
+  unreviewed. Only the `tag_dedup_max_tags` most used tags on at least
+  `tag_dedup_min_documents` documents are compared, in blocks, to bound the
+  cost.
+- **Morphology:** a plural and its singular, with a stop list for words that
+  only look plural (`physics`, `series`, `analysis`).
+- **Initialism:** a short tag spelling the initials of a longer one that also
+  exists (`ml` / `machine-learning`), which embeddings rate poorly.
+
+The more used tag of a proposed pair is kept; for an initialism, the long
+form. Tag names never leave the machine: the embedding model runs in-process
+and no LLM is involved.
+
+### 3.9 Duplicate documents
+
+The same work saved twice, whether a URL bookmarked and filed in Zotero, a
+paper reached through arXiv and the publisher, or a book in Calibre and on a
+shelf photo, is linked, never merged: `document_duplicates` records that a
+`duplicate_id` reads as a `canonical_id`, and both rows keep their chunks,
+tags and source record. A hard merge would not survive a sync, since the next
+run of the losing source re-inserts its row by `(source, source_id)`; a link
+also comes undone in one state change.
+
+- **Exact keys link on scan** (`dedupe.py`, `alexandria dedupe scan`, the
+  Ingestion page): the same DOI, with an arXiv id and its derived DOI counting
+  as one (`resolve_doi`); the same arXiv id; the same ISBN once both are
+  ISBN-13; the same URL after `canonical_url`, which drops scheme, `www.`,
+  fragments, tracking parameters and parameter order, and reduces YouTube,
+  Reddit and Amazon URLs to their video, thread or ASIN. The canonical URL is
+  for matching only and is never fetched. Matches are grouped by union-find,
+  so three copies link to one canonical rather than as a chain.
+- **Near duplicates are only proposed**: pairs of unlinked documents whose
+  `doc_embedding` vectors reach `dedupe_similarity` (0.97), at most
+  `dedupe_max_candidates` per scan, best first. They catch a page saved under
+  two unrelated URLs, and also pair the papers of one series, so each waits
+  for review.
+- **The canonical** is the row with the most content, by fetch status, then
+  chunk count, then age, then id; deliberately not a preferred source, and
+  deterministic so a re-scan never swaps a pair.
+- **One hop deep.** The writer (`db/duplicates.py`) resolves a canonical that
+  is itself a duplicate, and hands a new duplicate's own duplicates to its
+  canonical; a partial unique index allows one canonical per duplicate. A
+  declined or undone pair is kept as `rejected` and never proposed or linked
+  again.
+
+**Read sites.** Browse lists and counts canonical rows only. A linked pair
+reads as one item: its card carries both rows' tags; every tag filter and the
+source filter match through either row; tag counts count the item once;
+search scores the canonical with the better of the two rows' hits; the detail
+panel lists the other copy under *Also saved in*. Clustering and tag training
+leave duplicates out of their corpora; past cluster runs keep them. Ingestion
+counts, progress and the domain report still count both rows, since they
+describe what each source holds. `purge-source` deletes the links of the
+documents it removes.
+
 ## 4. Cluster lifecycle
 
 Every clustering run is stored regardless of acceptance. The UI surfaces
@@ -660,7 +953,9 @@ When an ingest or full sync finishes cleanly and a run is accepted,
 clusters by nearest centroid, so the archive stays browsable between runs. That
 assignment is the only automatic clustering step: it adds documents to clusters
 that already exist and never creates, relabels, or re-clusters a run. Producing
-a new run stays an explicit action (`/runs/trigger`).
+a new run stays an explicit action (`/runs/trigger`). A run records the
+embedding model it clustered, and one from another model than the chunk
+index's takes no new documents (§3.6).
 
 Clustering is two-level hierarchical, over a selectable clusterer. The default
 is **HDBSCAN** (PCA space): density-based, so it leaves low-density documents as
@@ -712,7 +1007,7 @@ Alexandria already has several tagging mechanisms that do not overlap with this 
 | Rule-based classification | `pka/classification.py` | Fixed tags `{academic, paper, preprint}` at ingest; `TagOrigin.INFERRED` |
 | Manual / cluster overlay tags | `overlay_tags`, `pka/clustering/cluster_tags.py` | User edits or cluster-label overlays (`cluster_l1` / `cluster_l2`) |
 | Unsupervised structure | `pka/clustering/engine.py` (+ its step modules) | HDBSCAN groups; no per-tag classifier |
-| Document vectors | `documents.doc_embedding`, `pka/clustering/doc_embeddings.py` | 384-d MiniLM mean-pool — reuse as classifier features |
+| Document vectors | `documents.doc_embedding`, `pka/clustering/doc_embeddings.py` | 384-d mean-pool of the chunk vectors — reuse as classifier features |
 
 Active learning fills the gap: **user-defined, semantic tags** learned from
 examples, not hard-coded rules or unsupervised cluster labels.
@@ -900,12 +1195,18 @@ Mirror §4 cluster patterns in `pka/clustering/lifecycle.py`:
 - **Revoke:** delete `learned` overlay rows for that tag/session; keep label
   history for retraining.
 - **New documents:** after `refresh_document_embedding()` in
-  `pka/clustering/doc_embeddings.py`, `apply_learned_tags_for_document()`
+  `pka/clustering/doc_embeddings.py` announces the document on `pka.hooks`,
+  the listener `pka.bootstrap` registers calls
+  `apply_learned_tags_for_document()` (`pka/tag_training/scoring.py`), which
   scores the document against every **accepted** session and writes or clears
   `learned` overlay tags using each session’s threshold.
 - **Resume training:** `POST /tag-training/sessions/{id}/resume` sets an
   accepted session back to `labeling` (model and labels kept). Re-accept after
   more labeling to refresh archive-wide tags.
+- **Embedding model change:** `alexandria reembed` retrains every session
+  that has a model from its labels and re-applies the accepted ones; it skips
+  the ingest hook while document vectors are recomputed, since the models it
+  would call are still fitted to the old vectors (§3.6).
 - **Stale models:** optional drift flag when mean embedding of recent false
   positives diverges from the positive centroid (reuse drift pattern from §4).
 
@@ -946,7 +1247,7 @@ router `pka/api/routers/tag_training.py`, Vite proxy `/tag-training`.
 summary, label counts, uncertainty queue (Yes/No), pseudo-label actions (model +
 LLM), accept / resume. Reuse `DocDetailPanel` for context while labeling.
 
-Browse filter: extend `list_documents()` in `pka/db/queries.py` with
+Browse filter: extend `list_documents()` in `pka/db/browse.py` with
 `learned_tags` (same pattern as `overlay_tags` / `cluster_l1_tags`).
 
 ### 5.8 Non-goals and open questions

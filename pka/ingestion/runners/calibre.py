@@ -8,18 +8,16 @@ import logging
 from pka.config import settings as cfg
 from pka.connectors.calibre import CalibreBook, split_calibre_tags
 from pka.constants import FetchStatus, PdfTextLayer, Source
-from pka.db.queries import (
+from pka.db.chunks import existing_chunk_count, source_ids_with_chunks
+from pka.db.documents import (
     DocumentWrite,
     document_index,
-    existing_chunk_count,
     insert_document_if_new,
-    insert_source_collections,
-    insert_source_tags,
     set_fetch_status,
-    source_ids_with_chunks,
     upsert_document,
 )
-from pka.ingestion.book_extractor import extract_book_report, metadata_text
+from pka.db.tags import insert_source_collections, insert_source_tags
+from pka.ingestion.book_extractor import extract_book_report, metadata_text, section_page_range
 from pka.ingestion.core import attach_summary_chunk, ingest_text_block
 from pka.ingestion.loops import MetadataOutcome, run_embed_loop, run_metadata_loop
 from pka.ingestion.openlibrary import isbn_checksum_valid, normalize_isbn
@@ -38,15 +36,6 @@ def _calibre_isbn(book: CalibreBook) -> str | None:
 
 def _calibre_authors_json(book: CalibreBook) -> str | None:
     return json.dumps(book.authors) if book.authors else None
-
-
-def _page_range(section: dict) -> dict:
-    """Page numbers for a PDF section; ``{}`` for EPUB chapters, which have none.
-
-    Omitted rather than passed as ``None`` — Chroma metadata values must be
-    scalars, so a ``None`` here fails the whole upsert.
-    """
-    return {key: section[key] for key in ("page_start", "page_end") if section.get(key) is not None}
 
 
 def _attach_book_synopsis(book: CalibreBook, doc_id: int, *, dry_run: bool) -> int:
@@ -220,12 +209,16 @@ def ingest_calibre_books(
 
 def ingest_calibre_fulltext(
     books: list[CalibreBook],
-    force: bool = False,
     dry_run: bool = False,
     max_pages: int | None = None,
     progress_key: str | None = None,
 ) -> dict:
-    """Phase 2: extract and embed full book text."""
+    """Phase 2: extract and embed full book text.
+
+    Callers pass only books still missing their full text (see
+    ``calibre_sync._needs_fulltext``); this does not re-check, and re-running it
+    on a book appends a second copy of its chunks and of its summary chunk.
+    """
     stats = {"processed": 0, "skipped": 0, "failed": 0, "chunks": 0, "no_text_layer": 0}
     known = document_index(Source.CALIBRE)
 
@@ -303,7 +296,7 @@ def ingest_calibre_fulltext(
                         "pass": "fulltext",
                         "section_title": section.get("title", ""),
                         "section_index": section.get("index", 0),
-                        **_page_range(section),
+                        **section_page_range(section),
                     },
                     chunk_offset=chunk_offset + total_added,
                     dry_run=dry_run,

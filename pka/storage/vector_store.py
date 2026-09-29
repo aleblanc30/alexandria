@@ -1,9 +1,14 @@
 """
 Chroma collection wrapper (embedded mode, persistent on disk).
 
-Text chunks use Chroma's default embedding function (Sentence Transformers
-``all-MiniLM-L6-v2``). Pass documents only on upsert; use :func:`query` with
-natural-language text at search time.
+Chroma stores the vectors; it does not compute them. Chunks and queries are
+embedded here, by the model in :mod:`pka.storage.embedding` that the collection
+was built with. The collection records that model's name in its metadata
+(``embedding_model``); a collection from before the model was a setting has no
+such key and was built with ``all-MiniLM-L6-v2``. When the ``embedding_model``
+setting names a different model, this module keeps using the recorded one, since
+vectors from two models are not comparable, and logs that ``alexandria reembed``
+is needed to switch. A collection created from nothing records the setting.
 
 A single module-level client/collection pair is cached for the lifetime of
 the process. Tests should reset it via :func:`reset_collection`.
@@ -29,22 +34,24 @@ from __future__ import annotations
 
 import logging
 import threading
+from typing import Any
 
 import chromadb
 from chromadb.api.shared_system_client import SharedSystemClient
 from chromadb.config import Settings as ChromaSettings
-from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
 from pka.config import settings as cfg
+from pka.storage import embedding
 
 log = logging.getLogger(__name__)
 
 _client: chromadb.ClientAPI | None = None
 _collection: chromadb.Collection | None = None
-_embedding_fn: DefaultEmbeddingFunction | None = None
+_warned_mismatch = False
 # Reentrant: get_collection() holds it across its call to get_client().
 _client_lock = threading.RLock()
 COLLECTION_NAME = "alexandria_chunks"
+MODEL_KEY = "embedding_model"
 _FETCH_BATCH_SIZE = 200
 
 # Chroma hydrates metadatas/embeddings/documents with a second SQL query that
@@ -64,11 +71,27 @@ _DELETE_BATCH_SIZE = _GET_PAGE_SIZE
 _UPSERT_BATCH_SIZE = 5_000
 
 
-def _get_embedding_function() -> DefaultEmbeddingFunction:
-    global _embedding_fn
-    if _embedding_fn is None:
-        _embedding_fn = DefaultEmbeddingFunction()
-    return _embedding_fn
+def active_model_name() -> str:
+    """The model the chunk collection was built with, which every embed must use."""
+    global _warned_mismatch
+    metadata = get_collection().metadata or {}
+    name = metadata.get(MODEL_KEY) or embedding.LEGACY_MODEL
+    if name != cfg.embedding_model and not _warned_mismatch:
+        _warned_mismatch = True
+        log.warning(
+            "The chunk index was built with %s, but embedding_model is %s. Search and "
+            "ingestion keep using %s until `alexandria reembed` rebuilds the index.",
+            name,
+            cfg.embedding_model,
+            name,
+        )
+    return name
+
+
+def active_embedder() -> embedding.Embedder:
+    """The model every chunk and query is embedded with, and the chunker sizes for."""
+    # Looked up on the module at call time, so the suite's fake reaches it.
+    return embedding.get_embedder(active_model_name())
 
 
 def _new_client() -> chromadb.ClientAPI:
@@ -102,10 +125,12 @@ def get_collection() -> chromadb.Collection:
     global _collection
     with _client_lock:
         if _collection is None:
+            # No embedding_function: every upsert and query passes vectors.
+            # The metadata applies only when the collection is created; an
+            # existing one keeps what it was built with.
             _collection = get_client().get_or_create_collection(
                 name=COLLECTION_NAME,
-                metadata={"hnsw:space": "cosine"},
-                embedding_function=_get_embedding_function(),
+                metadata={"hnsw:space": "cosine", MODEL_KEY: cfg.embedding_model},
             )
             log.debug("Chroma collection '%s' ready", COLLECTION_NAME)
         return _collection
@@ -119,7 +144,7 @@ def vector_count() -> int:
         log.warning("Chroma count failed (%s); using chunk table", exc)
         import sqlalchemy as sa
 
-        from pka.db.queries import get_engine
+        from pka.db.engine import get_engine
         from pka.db.schema import chunks
 
         with get_engine().connect() as con:
@@ -137,14 +162,26 @@ def drop_document_collection() -> None:
 
 
 def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
-    """Rebuild ``alexandria_chunks`` from SQLite chunk text (Chroma embeds in-process)."""
+    """Rebuild ``alexandria_chunks`` from SQLite chunk text with the configured model.
+
+    The dropped collection is recreated under the ``embedding_model`` setting,
+    which is how an archive moves to a new model. Only the chunk vectors: the
+    document vectors, tag models and clusters derived from them are
+    :func:`pka.reembed.reembed`'s to redo.
+
+    Each chunk keeps the Chroma metadata it had (``pass``, pages, section,
+    synopsis provenance), read before the drop, and gains any of ``pass`` and
+    its pages that only SQLite holds. A chunk the old collection cannot account
+    for, or a collection too damaged to read, gets what SQLite mirrors of it.
+    """
     import uuid
 
     import sqlalchemy as sa
 
-    from pka.db.queries import get_engine
+    from pka.db.engine import get_engine
     from pka.db.schema import chunks, documents
 
+    previous = _previous_metadata()
     drop_document_collection()
     eng = get_engine()
     with eng.connect() as con:
@@ -154,6 +191,10 @@ def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
                 chunks.c.document_id,
                 chunks.c.chunk_index,
                 chunks.c.text,
+                chunks.c.vector_id,
+                chunks.c.chunk_pass,
+                chunks.c.page_start,
+                chunks.c.page_end,
                 documents.c.source,
                 documents.c.title,
             )
@@ -170,15 +211,7 @@ def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
         batch = rows[i : i + batch_size]
         texts = [r.text for r in batch]
         vector_ids = [str(uuid.uuid4()) for _ in batch]
-        metadatas = [
-            {
-                "document_id": r.document_id,
-                "source": r.source,
-                "title": r.title or "",
-                "chunk_index": r.chunk_index,
-            }
-            for r in batch
-        ]
+        metadatas = [_rebuilt_metadata(r, previous.get(r.vector_id)) for r in batch]
         upsert_chunks(vector_ids, texts, metadatas)
         with eng.begin() as con:
             for row, vid in zip(batch, vector_ids, strict=False):
@@ -189,12 +222,39 @@ def rebuild_from_chunks(*, batch_size: int = 32) -> dict[str, int]:
     return {"chunks": total, "processed": processed}
 
 
+def _previous_metadata() -> dict[str, dict]:
+    """Every chunk's current Chroma metadata by vector id; empty if unreadable."""
+    try:
+        page = fetch_records(include=["metadatas"])
+    except Exception as exc:  # noqa: BLE001 - a rebuild must still run over a broken index
+        log.warning("Could not read the old chunk metadata (%s); rebuilding from SQLite", exc)
+        return {}
+    return {vid: dict(m or {}) for vid, m in zip(page["ids"], page["metadatas"], strict=False)}
+
+
+def _rebuilt_metadata(row: Any, previous: dict | None) -> dict:
+    """The old metadata of a rebuilt chunk, plus any key only SQLite mirrors."""
+    meta = dict(previous) if previous else {}
+    mirrored = {"pass": row.chunk_pass, "page_start": row.page_start, "page_end": row.page_end}
+    for key, value in mirrored.items():
+        if value is not None:
+            meta.setdefault(key, value)
+    meta.update(
+        document_id=row.document_id,
+        source=row.source,
+        title=row.title or "",
+        chunk_index=row.chunk_index,
+    )
+    return meta
+
+
 def reset_collection() -> None:
     """Drop the cached client and collection — used by the test suite."""
-    global _client, _collection
+    global _client, _collection, _warned_mismatch
     with _client_lock:
         _client = None
         _collection = None
+        _warned_mismatch = False
 
 
 def upsert_chunks(
@@ -204,27 +264,14 @@ def upsert_chunks(
 ) -> list[list[float]]:
     """Upsert chunk documents and return the embeddings that were stored.
 
-    The embeddings are computed here rather than left to Chroma, which would
-    otherwise run the same model over the same texts. Nothing about the stored
-    vectors changes — it is the collection's own embedding function — but the
-    caller now holds them, so the document mean-pool no longer has to read them
-    straight back out.
+    Embedded here, by the collection's model, and returned so the document
+    mean-pool does not have to read them straight back out. The embedder hands
+    back native Python floats, which Chroma requires.
     """
     if not ids:
         return []
     col = get_collection()
-    # Normalise to native Python floats. An embedding function may hand back
-    # either shape and both have bitten: Chroma's default returns numpy arrays,
-    # and a bare ``list(vec)`` over one yields ``np.float32`` *scalars*, which
-    # ``normalize_embeddings`` rejects outright ("expected a list of floats or
-    # ints ... got [[np.float32(...)]]"); a function returning plain lists — the
-    # suite's fake among them — has no ``.tolist()`` to call instead. Test for
-    # the array rather than assuming, and take its C-level conversion when it is
-    # there, since this runs over every chunk of every document.
-    embeddings = [
-        vec.tolist() if hasattr(vec, "tolist") else [float(x) for x in vec]
-        for vec in _get_embedding_function()(texts)
-    ]
+    embeddings = active_embedder().embed_documents(texts)
     for i in range(0, len(ids), _UPSERT_BATCH_SIZE):
         window = slice(i, i + _UPSERT_BATCH_SIZE)
         col.upsert(
@@ -341,7 +388,7 @@ def purge_vectors(vector_ids: list[str]) -> int:
     """Remove vectors from Chroma and their ``chunks`` rows."""
     if not vector_ids:
         return 0
-    from pka.db.queries import get_engine
+    from pka.db.engine import get_engine
     from pka.db.schema import chunks
 
     col = get_collection()
@@ -367,7 +414,10 @@ def query(
     where: dict | None = None,
 ) -> list[dict]:
     """Return the top-n most similar chunks for a natural-language query."""
-    kwargs: dict = {"query_texts": [query_text], "n_results": n_results}
+    kwargs: dict = {
+        "query_embeddings": [active_embedder().embed_query(query_text)],
+        "n_results": n_results,
+    }
     if where:
         kwargs["where"] = where
     res = get_collection().query(**kwargs)

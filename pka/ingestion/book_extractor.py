@@ -231,6 +231,15 @@ def extract_pdf(path: Path, max_pages: int | None = None) -> list[dict]:
 # ── Unified entry point ────────────────────────────────────────────────────
 
 
+def section_page_range(section: dict) -> dict:
+    """Page numbers for a PDF section; ``{}`` for EPUB chapters, which have none.
+
+    Omitted rather than passed as ``None`` — Chroma metadata values must be
+    scalars, so a ``None`` here fails the whole upsert.
+    """
+    return {key: section[key] for key in ("page_start", "page_end") if section.get(key) is not None}
+
+
 def extract_book_report(
     path: Path,
     max_pages: int | None = None,

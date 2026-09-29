@@ -71,6 +71,7 @@ class TagOrigin(StrEnum):
     CLUSTER_L1 = "cluster_l1"
     CLUSTER_L2 = "cluster_l2"
     LEARNED = "learned"
+    COLLECTION = "collection"
 
 
 ALL_SOURCES = [s.value for s in Source]

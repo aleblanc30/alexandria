@@ -13,9 +13,9 @@ that is what this pass summarises. Anything older has no stored row — retentio
 is not backfilled, because a reassembly stored as if it were the original would
 be a lie the audit use case would then read — so for those documents the pass
 falls back to text reassembled from ``chunks.text``, which is
-whitespace-normalised and cut into overlapping sentence windows.
+whitespace-normalised and cut into overlapping chunks.
 :func:`reassemble_chunk_text` undoes the overlap; the joins are imperfect where
-the chunker's ``min_chars`` filter dropped a short window, and a summariser is
+the chunker's ``min_chars`` filter dropped a short chunk, and a summariser is
 robust to that in a way an extractor would not be. Re-fetching instead was never
 an option: it would destroy the expensive network work to redo the cheap
 inference, which is the exact workflow this feature exists to eliminate.
@@ -28,10 +28,10 @@ import logging
 import sqlalchemy as sa
 
 from pka.constants import EnrichmentKind, Source
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import chunks, documents
 from pka.enrichment_runs import run_scope
-from pka.ingestion.chunker import _split_sentences
+from pka.ingestion.chunker import clean_text
 from pka.ingestion.core import _SUMMARY_FLAGS, attach_summary_chunk
 from pka.ingestion.text_store import load_document_text
 from pka.purge import body_chunk_predicate
@@ -43,29 +43,63 @@ log = logging.getLogger(__name__)
 SUMMARY_SOURCES = tuple(_SUMMARY_FLAGS)
 
 
-def reassemble_chunk_text(texts: list[str]) -> str:
-    """Join overlapping sentence-window chunks back into prose.
+# A short overlap is more likely a coincidence ("the" ending one chunk and
+# starting the next) than a repeat, and is kept rather than merged, unless it
+# is a whole sentence, as the one-sentence overlap of older chunks often was.
+_MIN_OVERLAP_CHARS = 12
+_SENTENCE_END = tuple(".!?…\"'”’)]»")
 
-    ``sentence_window_chunks`` advances by ``window - overlap`` sentences, so
-    consecutive chunks share their boundary sentences verbatim. Rather than
-    trusting the configured overlap (which may have changed since ingestion),
-    each chunk is matched against the previous one by longest shared
-    sentence run and the duplicate head dropped. A chunk that shares nothing —
-    because the window between them was too short to be kept — is appended
-    whole, leaving a gap rather than duplicated fragments.
+
+def _overlap(prev: str, nxt: str) -> int:
+    """Length of the longest head of *nxt* that *prev* ends with, on word bounds.
+
+    One pass of the Knuth-Morris-Pratt failure function over ``nxt + sep +
+    prev``: its final value is that length, in time linear in the two.
     """
-    out: list[str] = []
+    head = nxt[: len(prev)]
+    s = head + "\x00" + prev[-len(head) :] if head else ""
+    fail = [0] * len(s)
+    for i in range(1, len(s)):
+        k = fail[i - 1]
+        while k and s[i] != s[k]:
+            k = fail[k - 1]
+        if s[i] == s[k]:
+            k += 1
+        fail[i] = k
+    k = fail[-1] if s else 0
+    # Shrink to an overlap that is whole words at both ends.
+    while k:
+        whole_words = (k == len(nxt) or nxt[k].isspace()) and (
+            k == len(prev) or prev[-k - 1].isspace()
+        )
+        if whole_words and (k >= _MIN_OVERLAP_CHARS or nxt[:k].endswith(_SENTENCE_END)):
+            return k
+        k = fail[k - 1]
+    return 0
+
+
+def reassemble_chunk_text(texts: list[str]) -> str:
+    """Join overlapping chunks back into prose.
+
+    Consecutive chunks repeat the end of one at the start of the next: whole
+    sentences for sentence-window chunks, whole words for the token chunks that
+    replaced them. Rather than trusting the configured overlap (which may have
+    changed since ingestion), each chunk is matched against the text so far by
+    its longest repeated head and that head dropped. A chunk that repeats
+    nothing, because the chunk between them was too short to be kept, is
+    appended whole, leaving a gap rather than duplicated fragments.
+    """
+    out = ""
     for text in texts:
-        sentences = _split_sentences(text or "")
-        if not sentences:
+        piece = clean_text(text or "")
+        if not piece:
             continue
-        if out:
-            overlap = min(len(out), len(sentences))
-            while overlap > 0 and out[-overlap:] != sentences[:overlap]:
-                overlap -= 1
-            sentences = sentences[overlap:]
-        out.extend(sentences)
-    return " ".join(out)
+        if not out:
+            out = piece
+            continue
+        k = _overlap(out, piece)
+        out = out + piece[k:] if k else f"{out} {piece}"
+    return out
 
 
 def _summary_candidates(con, source: str | None, limit: int | None) -> list[sa.Row]:

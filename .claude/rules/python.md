@@ -24,7 +24,7 @@ Python **3.11+**.
 |---------|----------|
 | Settings | `pka/config.py` (Pydantic, `ALEXANDRIA_` env prefix) |
 | Enums | `pka/constants.py` (`Source`, `FetchStatus`, `TagOrigin` are string enums) |
-| DB | SQLAlchemy **Core** in `pka/db/schema.py`, queries in `pka/db/queries.py` — no ORM models |
+| DB | SQLAlchemy **Core** in `pka/db/schema.py`; engine in `pka/db/engine.py`, migrations in `pka/db/migrate.py`, queries in one module per aggregate (`documents`, `chunks`, `cards`, `tags`, `browse`, `clusters`, `reddit`, `images`) — no ORM models. `pka/db/queries.py` is a deprecated re-export shim |
 | Ingestion | `pka/ingestion/core.py` (`ingest_text_block`) + `pka/ingestion/runners/` |
 | Model backends | `pka/providers/` — every LLM/vision/OCR call goes through a provider, never a backend directly |
 | API | routers in `pka/api/routers/`, schemas in `pka/api/schemas/`, app in `pka/api/main.py` |
@@ -38,5 +38,9 @@ particular the underscore alias `_ingest_text_block` is the old name for
 
 ## Schema changes
 
-Update `pka/db/schema.py` and keep `pka/db/init_db.py` **idempotent** — `alexandria init`
-must be safe to re-run against an existing archive. Add or adjust tests alongside.
+Update `pka/db/schema.py` and keep `init_db` **idempotent** — `alexandria init`
+must be safe to re-run against an existing archive. A column or index added to a
+table that already shipped also needs a step appended to `MIGRATIONS` in
+`pka/db/migrate.py`, under a new name; never rename, reorder or edit a shipped
+step, because archives that recorded it will not run it again. Add the column or
+index to `tests/test_schema_migration.py`'s lists alongside.

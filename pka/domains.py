@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import sqlalchemy as sa
 
 from pka.constants import FetchStatus
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import documents
 
 

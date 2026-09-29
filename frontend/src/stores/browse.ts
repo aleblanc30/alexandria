@@ -30,8 +30,15 @@ export const useBrowseStore = defineStore('browse', () => {
   const sourceTags    = ref<string[]>([])
   const level1Tags    = ref<string[]>([])
   const level2Tags    = ref<string[]>([])
-  const tagRows       = ref<{ source: api.TagRow[]; level1: api.TagRow[]; level2: api.TagRow[] }>({
+  const collectionTags = ref<string[]>([])
+  const tagRows       = ref<{
+    source: api.TagRow[]
+    collection: api.TagRow[]
+    level1: api.TagRow[]
+    level2: api.TagRow[]
+  }>({
     source: [],
+    collection: [],
     level1: [],
     level2: [],
   })
@@ -76,6 +83,7 @@ export const useBrowseStore = defineStore('browse', () => {
       sourceTags: sourceTags.value,
       level1Tags: level1Tags.value,
       level2Tags: level2Tags.value,
+      collectionTags: collectionTags.value,
       academicFilter: academicFilter.value,
       academicKinds: academicKinds.value,
       waybackOnly: waybackOnly.value,
@@ -99,12 +107,18 @@ export const useBrowseStore = defineStore('browse', () => {
     try {
       const scope = sources.value.length ? sources.value : undefined
       const tagScope = tagScopeParams()
-      const [sourceRows, level1Rows, level2Rows] = await Promise.all([
+      const [sourceRows, collectionRows, level1Rows, level2Rows] = await Promise.all([
         api.listTags({ origin: 'source', sources: scope, ...tagScope, limit: 200 }),
+        api.listTags({ origin: 'collection', sources: scope, ...tagScope, limit: 200 }),
         api.listTags({ origin: 'cluster_l1', sources: scope, ...tagScope, limit: 200 }),
         api.listTags({ origin: 'cluster_l2', sources: scope, ...tagScope, limit: 200 }),
       ])
-      tagRows.value = { source: sourceRows, level1: level1Rows, level2: level2Rows }
+      tagRows.value = {
+        source: sourceRows,
+        collection: collectionRows,
+        level1: level1Rows,
+        level2: level2Rows,
+      }
     } catch (e: unknown) {
       useToastStore().push(errorMessage(e), 'error')
     } finally {
@@ -209,6 +223,13 @@ export const useBrowseStore = defineStore('browse', () => {
     void refreshTagsAndList()
   }
 
+  function toggleCollectionTag(tag: string) {
+    const idx = collectionTags.value.indexOf(tag)
+    if (idx === -1) collectionTags.value.push(tag)
+    else collectionTags.value.splice(idx, 1)
+    void refreshTagsAndList()
+  }
+
   function toggleLevel1Tag(tag: string) {
     const idx = level1Tags.value.indexOf(tag)
     if (idx === -1) level1Tags.value.push(tag)
@@ -231,6 +252,7 @@ export const useBrowseStore = defineStore('browse', () => {
     sourceTags,
     level1Tags,
     level2Tags,
+    collectionTags,
     tagRows,
     documents,
     total,
@@ -255,6 +277,7 @@ export const useBrowseStore = defineStore('browse', () => {
     toggleAcademic,
     toggleAcademicKind,
     toggleSourceTag,
+    toggleCollectionTag,
     toggleLevel1Tag,
     toggleLevel2Tag,
   }

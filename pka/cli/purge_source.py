@@ -16,7 +16,8 @@ import sqlalchemy as sa
 
 from pka.cli._logging import setup_logging
 from pka.constants import ALL_SOURCES, Source, TagOrigin
-from pka.db.queries import get_engine
+from pka.db.duplicates import delete_for_documents
+from pka.db.engine import get_engine
 from pka.db.schema import (
     chunks,
     cluster_assignments,
@@ -158,6 +159,11 @@ def _purge_documents(
                 con.execute(tbl.delete().where(tbl.c.document_id.in_(batch))).rowcount
                 for batch in _batches(doc_ids)
             )
+        # Links name a document on either side, so they are not a _CHILD_TABLES
+        # entry; a link left behind would point at a deleted row.
+        counts["document_duplicates"] = sum(
+            delete_for_documents(con, batch) for batch in _batches(doc_ids)
+        )
         counts["overlay_tags"] = sum(
             con.execute(
                 overlay_tags.delete().where(
@@ -188,7 +194,7 @@ def _purge_images(*, dry_run: bool = False, include_user_data: bool = False) -> 
     ``image_tags`` sidecar rows and the CLIP vectors, which live in a separate
     Chroma collection (``alexandria_clip``) rather than the chunk collection.
     """
-    from pka.db.queries import clear_image_rejections
+    from pka.db.images import clear_image_rejections
     from pka.ingestion import image_pipeline
 
     eng = get_engine()

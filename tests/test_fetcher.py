@@ -11,9 +11,12 @@ from pka.constants import FetchStatus, PdfTextLayer
 from pka.db.queries import DocumentWrite, init_db, upsert_document
 from pka.ingestion.book_extractor import BookExtraction
 from pka.ingestion.fetcher import (
+    FetchHandler,
     FetchResult,
     _DomainQueue,
+    _fetch_handlers,
     _fetch_one,
+    _fetch_one_impl,
     _persist_fetch_result,
     _throttle_key,
     bookmark_url_unfetchable_reason,
@@ -338,6 +341,28 @@ class _FakeClock:
         return self.now
 
 
+class _TickingClock:
+    """A clock that advances on every reading, so no two readings are equal.
+
+    ``time.monotonic`` behaves this way on Linux (nanosecond resolution), where
+    a frozen ``_FakeClock`` hides any loop that only ends once two readings
+    tie. Past ``max_reads`` it raises, so such a loop fails the test instead
+    of hanging the suite.
+    """
+
+    def __init__(self, now: float = 1000.0, step: float = 1e-6, max_reads: int = 10_000) -> None:
+        self.now = now
+        self._step = step
+        self._reads_left = max_reads
+
+    def __call__(self) -> float:
+        self._reads_left -= 1
+        if self._reads_left < 0:
+            raise AssertionError("clock read too many times: the queue is spinning")
+        self.now += self._step
+        return self.now
+
+
 class TestThrottleKey:
     """Which domain's slot a worker must hold before starting a URL."""
 
@@ -369,6 +394,81 @@ class TestThrottleKey:
         claims export.arxiv.org and then arxiv.org), which a single worker-level
         claim cannot represent."""
         assert _throttle_key(url) is None
+
+
+class TestFetchHandlerTable:
+    """The per-site dispatch ``_fetch_one_impl`` walks, in order."""
+
+    _PUBLISHERS = (
+        "mitpress",
+        "direct_mit",
+        "doi_org",
+        "nature",
+        "springer",
+        "aps",
+        "sciencedirect",
+    )
+
+    def _names(self) -> list[str]:
+        return [h.name for h in _fetch_handlers()]
+
+    def test_names_are_unique(self):
+        names = self._names()
+        assert len(names) == len(set(names))
+
+    def test_publisher_block_follows_arxiv(self):
+        """doi.org/10.48550/arXiv.… is an arXiv DOI; arXiv must get first refusal."""
+        names = self._names()
+        for publisher in self._PUBLISHERS:
+            assert names.index("arxiv") < names.index(publisher), publisher
+
+    def test_wikipedia_special_pages_are_skipped_before_the_article_handler(self):
+        names = self._names()
+        assert names.index("wikipedia_special") < names.index("wikipedia")
+
+    async def test_a_declining_handler_falls_through_to_the_next(self, monkeypatch):
+        calls: list[str] = []
+
+        def decline(_c, _d, _u):
+            calls.append("decline")
+
+        async def accept(_c, doc_id, url):
+            calls.append("accept")
+            return FetchResult(doc_id, url, "fetched", "text", 200, None)
+
+        monkeypatch.setattr(
+            "pka.ingestion.fetcher._fetch_handlers",
+            lambda: (
+                FetchHandler("skipped", decline, lambda url: False, awaits=False),
+                FetchHandler("declines", decline, awaits=False),
+                FetchHandler("accepts", accept),
+            ),
+        )
+        result = await _fetch_one_impl(MagicMock(), 7, "https://example.com/a")
+        assert calls == ["decline", "accept"]
+        assert result.status == "fetched"
+
+    async def test_no_handler_result_reaches_the_generic_get(self, monkeypatch):
+        generic = AsyncMock(return_value=FetchResult(1, "u", "fetched", "x", 200, None))
+        monkeypatch.setattr("pka.ingestion.fetcher._fetch_handlers", lambda: ())
+        monkeypatch.setattr("pka.ingestion.fetcher._fetch_generic", generic)
+
+        await _fetch_one_impl(MagicMock(), 1, "https://example.com/a", slot_held=True)
+
+        generic.assert_awaited_once()
+        assert generic.await_args.kwargs == {"slot_held": True}
+
+    async def test_a_patched_handler_module_is_honoured(self, monkeypatch):
+        """The table is rebuilt per call, not cached, so a patch after the
+        first fetch still reaches dispatch."""
+        _fetch_handlers()  # a first build, as a previous fetch would have made
+
+        async def fake_arxiv(_c, doc_id, url):
+            return FetchResult(doc_id, url, "fetched", "patched", 200, None)
+
+        monkeypatch.setattr("pka.ingestion.arxiv.fetch_arxiv_paper", fake_arxiv)
+        result = await _fetch_one_impl(MagicMock(), 2, "https://arxiv.org/abs/2401.00001")
+        assert result.text == "patched"
 
 
 class TestDomainQueue:
@@ -442,6 +542,31 @@ class TestDomainQueue:
         assert sorted(drawn) == sorted(items)
         assert len(queue) == 0
         assert queue.get() is None
+
+    def test_unreserved_domains_are_handed_out_on_a_ticking_clock(self):
+        """The bug: with the clock advancing between readings, an unreserved
+        domain's heap entry always read as stale and was re-pushed forever, so
+        ``get`` never returned. A frozen clock hid it; Linux's does not."""
+        queue, _ = self._queue(
+            [(1, "https://a.com/1"), (2, "https://b.com/2"), (3, "C:/x")],
+            clock=_TickingClock(),
+        )
+        drawn = [queue.get() for _ in range(3)]
+        assert sorted(d[0][0] for d in drawn) == [1, 2, 3]
+        # Both domains were free, so neither costs a wait.
+        assert [d[1] for d in drawn] == pytest.approx([0.0, 0.0, 0.0], abs=1e-3)
+        assert queue.get() is None
+
+    def test_a_claimed_slot_still_reads_stale_on_a_ticking_clock(self):
+        """The fix must keep refreshing entries whose slot really moved: a
+        cooling domain waits out its gap rather than jumping the queue."""
+        queue, _ = self._queue(
+            [(1, "https://hot.com/a"), (2, "https://hot.com/b"), (3, "https://cool.com/c")],
+            clock=_TickingClock(),
+        )
+        drawn = [queue.get() for _ in range(3)]
+        assert drawn[2][0] == (2, "https://hot.com/b")
+        assert [d[1] for d in drawn] == pytest.approx([0.0, 0.0, 1.0], abs=1e-3)
 
     def test_claims_the_slot_the_fetch_would_have_claimed(self):
         """``slot_held=True`` is only honest if the claim landed on the same

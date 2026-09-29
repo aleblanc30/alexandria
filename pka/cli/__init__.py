@@ -11,10 +11,14 @@ Installed as the ``alexandria`` console script::
     alexandria clustering --accept
     alexandria domain-report --json
     alexandria rechunk --source firefox --dry-run
+    alexandria reembed
     alexandria purge summaries --source firefox --dry-run
     alexandria purge-source firefox --dry-run
     alexandria purge-cluster-runs --all --dry-run
     alexandria backfill-classification
+    alexandria collection-tags --dry-run
+    alexandria dedupe-tags scan --dry-run
+    alexandria dedupe scan --dry-run
     alexandria dev
 
 Each subcommand delegates to a ``pka.cli.<module>.main(argv)`` that owns its
@@ -25,6 +29,13 @@ from __future__ import annotations
 
 import importlib
 import sys
+
+from pka.bootstrap import install_hooks
+
+# Every ``pka.cli.<command>`` import runs this package first, including the
+# ``scripts/run_*.py`` shims that call a command's ``main`` directly, so this is
+# the one place that covers all of them. Cheap: the listeners import lazily.
+install_hooks()
 
 #: subcommand -> (module under pka.cli, one-line help)
 COMMANDS: dict[str, tuple[str, str]] = {
@@ -38,12 +49,19 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "clustering": ("clustering", "Run the clustering pipeline"),
     "domain-report": ("domain_report", "Domain frequency report over ingested URLs"),
     "rechunk": ("rechunk", "Re-chunk documents from their retained text (no re-fetch)"),
+    "reembed": ("reembed", "Rebuild every vector with the configured embedding model"),
     "purge": ("purge", "Remove one kind of artifact (summaries, vectors, image text, …)"),
     "purge-source": ("purge_source", "Remove archived data for a source"),
     "purge-cluster-runs": ("purge_cluster_runs", "Delete stored clustering runs"),
     "backfill-classification": (
         "backfill_classification",
         "Backfill item types and classification tags",
+    ),
+    "dedupe": ("dedupe", "Find and link duplicate documents"),
+    "dedupe-tags": ("dedupe_tags", "Fold duplicate and equivalent tags (report, scan, review)"),
+    "collection-tags": (
+        "collection_tags",
+        "Tag documents with their Zotero collections and Firefox folders",
     ),
     "dev": ("dev", "Run backend + frontend together for local development (opens browser)"),
 }

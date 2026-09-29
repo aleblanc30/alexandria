@@ -7,8 +7,8 @@ import uuid
 
 from pka.config import settings as cfg
 from pka.constants import Source
-from pka.db.queries import insert_chunks
-from pka.ingestion.chunker import sentence_window_chunks
+from pka.db.chunks import insert_chunks
+from pka.ingestion.chunker import chunk_text
 from pka.storage.vector_store import upsert_chunks
 
 log = logging.getLogger(__name__)
@@ -57,12 +57,7 @@ def ingest_text_block(
     """
     chunk_texts: list[str] = []
     if text and text.strip():
-        chunk_texts = sentence_window_chunks(
-            text,
-            window=cfg.chunk_sentences,
-            overlap=cfg.chunk_overlap,
-            min_chars=min_chars if min_chars is not None else cfg.min_chunk_chars,
-        )
+        chunk_texts = chunk_text(text, min_chars=min_chars)
     if not chunk_texts and fallback_text and fallback_text.strip():
         chunk_texts = [fallback_text.strip()]
     if not chunk_texts:
@@ -173,11 +168,8 @@ def attach_summary_chunk(
     if not getattr(cfg, _SUMMARY_FLAGS.get(str(source), ""), False):
         return 0
 
-    from pka.db.queries import (
-        existing_chunk_count,
-        get_generated_summary,
-        set_generated_summary,
-    )
+    from pka.db.chunks import existing_chunk_count
+    from pka.db.documents import get_generated_summary, set_generated_summary
 
     try:
         summary = get_generated_summary(doc_id)

@@ -1,4 +1,7 @@
-"""Tag training session CRUD, train, accept, and overlay application."""
+"""Tag training session lifecycle: create, label, train, accept, resume, archive.
+
+Scoring documents against accepted models is :mod:`pka.tag_training.scoring`.
+"""
 
 from __future__ import annotations
 
@@ -11,15 +14,14 @@ from typing import Any
 import sqlalchemy as sa
 
 from pka.clustering.cluster_tags import slugify_tag
-from pka.constants import TagOrigin
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import (
     documents,
-    overlay_tags,
     source_tags,
     tag_training_labels,
     tag_training_sessions,
 )
+from pka.db.tag_fold import SOURCE_ORIGIN, fold_map
 from pka.tag_training.engine import (
     TRAINING_LABEL_SOURCES,
     default_parameters,
@@ -33,6 +35,7 @@ from pka.tag_training.llm_classifier import (
     negative_prompt_samples,
     seed_collection_samples,
 )
+from pka.tag_training.scoring import apply_model_to_documents, parse_parameters
 
 log = logging.getLogger(__name__)
 
@@ -41,24 +44,17 @@ def _now() -> int:
     return int(time.time())
 
 
-def _parse_parameters(raw: str | None) -> dict[str, Any]:
-    if not raw:
-        return default_parameters()
-    try:
-        data = json.loads(raw)
-        out = default_parameters()
-        out.update(data)
-        return out
-    except json.JSONDecodeError:
-        return default_parameters()
-
-
 def document_ids_for_source_tag(source_tag: str) -> list[int]:
+    """Documents carrying *source_tag* in any spelling that folds to it (DESIGN.md §3.8).
+
+    A seed missing the variants would be smaller than the user believes it is.
+    """
+    variants = fold_map().variants(source_tag, SOURCE_ORIGIN)
     eng = get_engine()
     with eng.connect() as con:
         rows = con.execute(
             sa.select(source_tags.c.document_id)
-            .where(source_tags.c.tag_string == source_tag)
+            .where(source_tags.c.tag_string.in_(variants))
             .distinct()
         ).fetchall()
     return [r[0] for r in rows]
@@ -237,7 +233,7 @@ def get_session(session_id: int) -> dict[str, Any]:
             else:
                 neg = int(n)
 
-    params = _parse_parameters(row["parameters"])
+    params = parse_parameters(row["parameters"])
     provenance = None
     if row["provenance"]:
         try:
@@ -309,101 +305,6 @@ def train_session(session_id: int) -> dict[str, Any]:
     out = get_session(session_id)
     out["train_stats"] = stats
     return out
-
-
-def _set_learned_overlay(
-    con: sa.Connection,
-    doc_id: int,
-    tag: str,
-    confidence: float,
-    now: int,
-) -> None:
-    from pka.clustering.cluster_tags import insert_overlay_tags
-
-    # Delete-then-insert so confidence reflects the latest score.
-    _clear_learned_overlay(con, doc_id, tag)
-    insert_overlay_tags(
-        con,
-        [doc_id],
-        tag,
-        TagOrigin.LEARNED,
-        confidence=float(confidence),
-    )
-
-
-def _clear_learned_overlay(con: sa.Connection, doc_id: int, tag: str) -> None:
-    con.execute(
-        overlay_tags.delete().where(
-            (overlay_tags.c.document_id == doc_id)
-            & (overlay_tags.c.tag == tag)
-            & (overlay_tags.c.origin == str(TagOrigin.LEARNED))
-        )
-    )
-
-
-def _apply_model_to_documents(
-    con: sa.Connection,
-    tag: str,
-    model_blob: str,
-    doc_ids: list[int],
-    threshold: float,
-    now: int,
-) -> int:
-    """Apply or clear learned overlay for each doc_id. Returns tags written."""
-    from pka.tag_training.engine import predict_proba
-
-    if not doc_ids:
-        return 0
-    scores = predict_proba(model_blob, doc_ids)
-    applied = 0
-    for doc_id in doc_ids:
-        prob = scores.get(doc_id)
-        if prob is None:
-            continue
-        if prob >= threshold:
-            _set_learned_overlay(con, doc_id, tag, prob, now)
-            applied += 1
-        else:
-            _clear_learned_overlay(con, doc_id, tag)
-    return applied
-
-
-def apply_learned_tags_for_document(doc_id: int) -> int:
-    """Score one document against all accepted models; update overlay tags."""
-    eng = get_engine()
-    applied = 0
-    with eng.begin() as con:
-        blob = con.execute(
-            sa.select(documents.c.doc_embedding).where(documents.c.id == doc_id)
-        ).scalar()
-        if not blob:
-            return 0
-
-        rows = con.execute(
-            sa.select(
-                tag_training_sessions.c.tag,
-                tag_training_sessions.c.model_blob,
-                tag_training_sessions.c.parameters,
-            ).where(
-                (tag_training_sessions.c.status == "accepted")
-                & tag_training_sessions.c.model_blob.isnot(None)
-            )
-        ).fetchall()
-        now = _now()
-        for tag, model_blob, params_raw in rows:
-            params = _parse_parameters(params_raw)
-            threshold = float(params.get("threshold", 0.5))
-            applied += _apply_model_to_documents(
-                con,
-                tag,
-                model_blob,
-                [doc_id],
-                threshold,
-                now,
-            )
-    if applied:
-        log.debug("Applied %d learned tag(s) to document %d", applied, doc_id)
-    return applied
 
 
 def resume_session(session_id: int) -> dict[str, Any]:
@@ -485,7 +386,7 @@ def apply_pseudo_labels_model(session_id: int) -> dict[str, Any]:
             "positive and one negative label with document embeddings"
         )
 
-    params = _parse_parameters(row[1])
+    params = parse_parameters(row[1])
     high = float(params.get("pseudo_label_high", 0.95))
     low = float(params.get("pseudo_label_low", 0.05))
     candidates = pseudo_labels_from_model(session_id, row[0], high=high, low=low)
@@ -531,7 +432,7 @@ def apply_pseudo_labels_llm(
 
     neg_samples, neg_source = negative_prompt_samples(session_id, n_max=neg_n)
 
-    from pka.db.queries import _doc_title_excerpts
+    from pka.db.cards import doc_title_excerpts
 
     pool = unlabeled_doc_ids(session_id)
     if not pool:
@@ -553,7 +454,7 @@ def apply_pseudo_labels_llm(
     pairs: list[tuple[int, int]] = []
 
     with eng.connect() as con:
-        by_id = _doc_title_excerpts(con, doc_ids)
+        by_id = doc_title_excerpts(con, doc_ids)
 
     for doc_id in doc_ids:
         title, excerpt = by_id.get(doc_id, ("Untitled", ""))
@@ -605,7 +506,7 @@ def get_queue(session_id: int) -> list[dict[str, Any]]:
         # Untrainable (single-class labels or no embeddings) — nothing to queue.
         return []
 
-    params = _parse_parameters(row[1])
+    params = parse_parameters(row[1])
     batch = int(params.get("queue_batch_size", 10))
     return uncertainty_queue(session_id, row[0], batch_size=batch)
 
@@ -626,7 +527,7 @@ def accept_session(session_id: int) -> dict[str, Any]:
             raise ValueError("No model on session")
 
         tag = row[1]
-        params = _parse_parameters(
+        params = parse_parameters(
             con.execute(
                 sa.select(tag_training_sessions.c.parameters).where(
                     tag_training_sessions.c.session_id == session_id
@@ -655,7 +556,7 @@ def accept_session(session_id: int) -> dict[str, Any]:
             sa.select(documents.c.id).where(documents.c.doc_embedding.isnot(None))
         ).fetchall()
         doc_ids = [r[0] for r in all_rows]
-        _apply_model_to_documents(con, tag, row[0], doc_ids, threshold, now)
+        apply_model_to_documents(con, tag, row[0], doc_ids, threshold)
 
     return get_session(session_id)
 

@@ -1,7 +1,8 @@
 <#
     Runs every check in CLAUDE.md's "Verifying a change" table in one pass:
-    ruff lint, ruff format check, mypy, pytest with coverage, and the frontend
-    test + build. Deliberately manual-run: not wired into CI or a hook.
+    ruff lint, ruff format check, mypy, the import-layering contract, pytest
+    with coverage, and the frontend test + build. Deliberately manual-run: not
+    wired into CI or a hook.
 
         .\scripts\check.ps1
 
@@ -38,6 +39,8 @@ $steps = @(
     @{ Name = 'ruff check';        Dir = $App;                    Cmd = { & $python -m ruff check pka tests scripts } }
     @{ Name = 'ruff format check'; Dir = $App;                    Cmd = { & $python -m ruff format --check pka tests scripts } }
     @{ Name = 'mypy';              Dir = $App;                    Cmd = { & $python -m mypy pka } }
+    # import-linter has no `python -m` entry point; call its command directly.
+    @{ Name = 'import layering';   Dir = $App;                    Cmd = { & $python -c 'from importlinter.cli import lint_imports_command; lint_imports_command()' } }
     # -n 4: see the comment on the same step in check.sh — 4 workers take the
     # suite from ~96s to ~34s, more workers gain nothing, and coverage totals
     # are identical to a serial run.

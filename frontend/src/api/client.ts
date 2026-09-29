@@ -91,6 +91,11 @@ export type DiagnosticsOut = Omit<
   merge_suggestions: MergeSuggestion[]
 }
 export type DocumentDetail = Schemas['DocumentDetail']
+export type TagAlias = Schemas['TagAliasOut']
+export type DuplicateLink = Schemas['DuplicateLinkOut']
+export type DuplicateScanResult = Schemas['DuplicateScanResult']
+export type TagAliasScanResult = Schemas['ScanResult']
+export type TagVariantGroup = Schemas['VariantGroup']
 export type DocumentListItem = Schemas['DocumentListItem']
 export type DocumentListResponse = Schemas['DocumentListResponse']
 export type DocumentOut = Schemas['DocumentOut']
@@ -149,7 +154,8 @@ export interface ClusterRunParams {
 }
 export interface DriftFlag     { cluster_id: number; label: string; drift_score: number; n_recent: number; flagged: boolean }
 export interface MergeSuggestion { cluster_id_a: number; label_a: string; cluster_id_b: number; label_b: string; similarity: number }
-export interface TagRow        { tag: string; origin: string; count: number }
+// `variants`: the stored spellings folded into this row (DESIGN.md §3.8).
+export interface TagRow        { tag: string; origin: string; count: number; variants?: string[] }
 export interface IngestionStatus {
   total: number
   by_source: Record<string, number>
@@ -225,6 +231,7 @@ export const listDocuments = (params?: {
   cluster_l1_tags?: string[]
   cluster_l2_tags?: string[]
   learned_tags?: string[]
+  collection_tags?: string[]
   wayback_only?: boolean
   limit?: number
   offset?: number
@@ -237,6 +244,7 @@ export const listDocuments = (params?: {
   params?.cluster_l1_tags?.forEach(t => qs.append('cluster_l1_tags', t))
   params?.cluster_l2_tags?.forEach(t => qs.append('cluster_l2_tags', t))
   params?.learned_tags?.forEach(t => qs.append('learned_tags', t))
+  params?.collection_tags?.forEach(t => qs.append('collection_tags', t))
   if (params?.wayback_only) qs.set('wayback_only', 'true')
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.offset != null) qs.set('offset', String(params.offset))
@@ -288,6 +296,7 @@ export const listTags = (params?: {
   source_tags?: string[]
   cluster_l1_tags?: string[]
   cluster_l2_tags?: string[]
+  collection_tags?: string[]
   wayback_only?: boolean
   q?: string
   limit?: number
@@ -298,6 +307,7 @@ export const listTags = (params?: {
   params?.source_tags?.forEach(t => qs.append('source_tags', t))
   params?.cluster_l1_tags?.forEach(t => qs.append('cluster_l1_tags', t))
   params?.cluster_l2_tags?.forEach(t => qs.append('cluster_l2_tags', t))
+  params?.collection_tags?.forEach(t => qs.append('collection_tags', t))
   if (params?.wayback_only) qs.set('wayback_only', 'true')
   if (params?.q) qs.set('q', params.q)
   if (params?.limit != null) qs.set('limit', String(params.limit))
@@ -553,6 +563,32 @@ export const createTagTrainingSession = (tag: string, labels: TagTrainingLabel[]
     method: 'POST',
     body: JSON.stringify({ tag, labels }),
   })
+// ── Duplicate documents ───────────────────────────────────────────────────────
+
+export const listDuplicates = (state?: 'candidate' | 'merged' | 'rejected') =>
+  req<DuplicateLink[]>(`/duplicates${state ? `?state=${state}` : ''}`)
+// Compares every document vector for near duplicates: can take a while.
+export const scanDuplicates = () =>
+  req<DuplicateScanResult>('/duplicates/scan', { method: 'POST', body: '{}' }, 600_000)
+export const acceptDuplicate = (id: number) =>
+  req<DuplicateLink>(`/duplicates/${id}/accept`, { method: 'POST' })
+export const rejectDuplicate = (id: number) =>
+  req<void>(`/duplicates/${id}/reject`, { method: 'POST' })
+
+// ── Tag folding ───────────────────────────────────────────────────────────────
+
+export const listTagAliases = (state?: 'candidate' | 'active' | 'rejected') =>
+  req<TagAlias[]>(`/tags/aliases${state ? `?state=${state}` : ''}`)
+export const mergeTags = (alias: string, canonical: string) =>
+  req<TagAlias>('/tags/aliases', { method: 'POST', body: JSON.stringify({ alias, canonical }) })
+export const acceptTagAlias = (id: number) =>
+  req<TagAlias>(`/tags/aliases/${id}/accept`, { method: 'POST' })
+export const rejectTagAlias = (id: number) =>
+  req<void>(`/tags/aliases/${id}/reject`, { method: 'POST' })
+// Embeds every compared tag locally: minutes on a large vocabulary.
+export const scanTagAliases = () =>
+  req<TagAliasScanResult>('/tags/aliases/scan', { method: 'POST', body: '{}' }, 600_000)
+
 export const createTagTrainingFromSourceTag = (sourceTag: string, targetTag: string) =>
   req<TagTrainingSession>('/tag-training/sessions/from-source-tag', {
     method: 'POST',

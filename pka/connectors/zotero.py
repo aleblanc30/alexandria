@@ -31,7 +31,7 @@ class ZoteroItem:
     doi: str | None
     url: str | None  # Zotero item URL field (article page, etc.)
     item_type: str  # journalArticle, book, webpage, ...
-    collections: list[str]  # Zotero collection names
+    collections: list[str]  # paths of the collections holding it, "Parent/Child"
     tags: list[str]  # Zotero tag strings (verbatim)
     pdf_path: Path | None  # path to attached PDF, if any
     date_added: int | None  # unix timestamp
@@ -182,6 +182,31 @@ def _load_item_fields(
     return {r["fieldName"]: r["value"] for r in cur.fetchall()}
 
 
+def _build_collection_paths(cur: sqlite3.Cursor) -> dict[int, str]:
+    """Map collectionID → its slash-joined path from the top-level collection.
+
+    Zotero nests collections through ``parentCollectionID``; an item's own
+    collection name alone loses where it sits. A broken parent link or a cycle
+    ends the path where it breaks instead of failing the load.
+    """
+    cur.execute("SELECT collectionID, collectionName, parentCollectionID FROM collections")
+    rows = cur.fetchall()
+    names = {r["collectionID"]: (r["collectionName"] or "").strip() for r in rows}
+    parents = {r["collectionID"]: r["parentCollectionID"] for r in rows}
+
+    paths: dict[int, str] = {}
+    for start in names:
+        chain: list[str] = []
+        seen: set[int] = set()
+        cid: int | None = start
+        while cid is not None and cid in names and cid not in seen:
+            seen.add(cid)
+            chain.append(names[cid])
+            cid = parents.get(cid)
+        paths[start] = "/".join(reversed(chain))
+    return paths
+
+
 _ITEM_KEYS_SQL = """
     SELECT i.key
     FROM   items i
@@ -247,6 +272,7 @@ def load_items(
 
         uses_value_id = _item_data_uses_value_id(cur)
         annotation_texts = _load_annotation_texts(cur)
+        collection_paths = _build_collection_paths(cur)
 
         for row in rows:
             item_id = row["itemID"]
@@ -275,15 +301,14 @@ def load_items(
             authors = [f"{r['firstName']} {r['lastName']}".strip() for r in cur.fetchall()]
 
             cur.execute(
-                """
-                SELECT col.collectionName
-                FROM   collectionItems ci
-                JOIN   collections col ON ci.collectionID = col.collectionID
-                WHERE  ci.itemID = ?
-            """,
+                "SELECT collectionID FROM collectionItems WHERE itemID = ? ORDER BY collectionID",
                 (item_id,),
             )
-            collections = [r["collectionName"] for r in cur.fetchall()]
+            collections = [
+                collection_paths[r["collectionID"]]
+                for r in cur.fetchall()
+                if collection_paths.get(r["collectionID"])
+            ]
 
             cur.execute(
                 """

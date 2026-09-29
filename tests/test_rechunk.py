@@ -21,8 +21,8 @@ from pka.ingestion.text_store import store_document_text
 from tests.conftest import make_document
 
 # Twelve sentences, each comfortably over half of ``min_chunk_chars``, so a
-# two-sentence window survives the minimum-length filter and a five-sentence one
-# produces visibly fewer chunks. Anything shorter and every window is discarded,
+# 24-token chunk survives the minimum-length filter and the default size
+# produces visibly fewer chunks. Anything shorter and every chunk is discarded,
 # which exercises the fallback path rather than the chunker.
 BODY = " ".join(
     f"The protocol proceeds through phase number {i} of the run."
@@ -71,9 +71,9 @@ class TestFetchedBody:
         before = _chunk_rows(doc_id)
         assert len(before) >= 1
 
-        # A two-sentence window cuts the same body far more finely.
-        monkeypatch.setattr(cfg, "chunk_sentences", 2)
-        monkeypatch.setattr(cfg, "chunk_overlap", 0)
+        # A 24-token budget cuts the same body far more finely.
+        monkeypatch.setattr(cfg, "chunk_tokens", 24)
+        monkeypatch.setattr(cfg, "chunk_overlap_tokens", 0)
         stats = rechunk_documents()
 
         after = _chunk_rows(doc_id)
@@ -203,8 +203,8 @@ class TestCalibreBlocks:
         before = [(r.chunk_pass, r.page_start, r.page_end) for r in _chunk_rows(doc_id)]
         assert ("fulltext", 1, 10) in before and ("fulltext", 11, 20) in before
 
-        monkeypatch.setattr(cfg, "chunk_sentences", 2)
-        monkeypatch.setattr(cfg, "chunk_overlap", 0)
+        monkeypatch.setattr(cfg, "chunk_tokens", 24)
+        monkeypatch.setattr(cfg, "chunk_overlap_tokens", 0)
         stats = rechunk_documents()
 
         after = _chunk_rows(doc_id)

@@ -28,7 +28,8 @@ documents = sa.Table(
     sa.Column("item_type", sa.Text),  # Zotero itemTypes.typeName
     sa.Column("card_summary", sa.Text),  # card excerpt (abstract, body lines, …)
     sa.Column("note", sa.Text),  # free-text notes (e.g. long Calibre tags)
-    sa.Column("doc_embedding", sa.LargeBinary),  # mean-pooled float32 vector (384-d)
+    # Mean-pooled float32 chunk vector, 384-d for both shipped embedding models.
+    sa.Column("doc_embedding", sa.LargeBinary),
     sa.Column("generated_summary", sa.Text),  # cached LLM summary (DESIGN.md §3.2)
     # Which enrichment run produced generated_summary. NULL means genuinely
     # unknown — every summary written before provenance shipped — and is never
@@ -141,8 +142,8 @@ reddit_items = sa.Table(
 # The extracted body text of a fetched or extracted document, kept verbatim so
 # summarising, chunking and extraction can be redone without going back to the
 # network. `chunks.text` is the only other
-# copy and it is whitespace-normalised, cut into overlapping windows, and
-# missing every window shorter than `min_chunk_chars` — a lossy reconstruction,
+# copy and it is whitespace-normalised, cut into overlapping chunks, and
+# missing every chunk shorter than `min_chunk_chars` — a lossy reconstruction,
 # which is why `ingestion/enrich.py` has to reassemble one.
 #
 # A sidecar rather than a `documents` column: `documents` is scanned by browse,
@@ -186,6 +187,64 @@ overlay_tags = sa.Table(
     sa.Index("uq_overlay_doc_tag_origin", "document_id", "tag", "origin", unique=True),
 )
 
+# Decisions that one tag key reads as another (DESIGN.md §3.8). Both sides are
+# `pka.db.tag_fold.tag_key` forms, so case and accents are already settled.
+# `candidate` rows are proposals awaiting review, `rejected` ones are remembered
+# so a scan does not propose them again, and at most one `active` row may exist
+# per alias (the partial unique index), so no key folds two ways.
+tag_aliases = sa.Table(
+    "tag_aliases",
+    meta,
+    sa.Column("id", sa.Integer, primary_key=True),
+    sa.Column("alias", sa.Text, nullable=False),  # the key that folds away
+    sa.Column("canonical", sa.Text, nullable=False),  # the key it folds into
+    sa.Column("kind", sa.Text, nullable=False),  # semantic|morphology|initialism|manual
+    sa.Column("state", sa.Text, nullable=False),  # candidate|active|rejected
+    sa.Column("score", sa.Float),  # embedding similarity, for semantic candidates
+    sa.Column("decided_by", sa.Text),  # scan|user
+    sa.Column("created_at", sa.Integer),
+    sa.Column("decided_at", sa.Integer),
+    sa.UniqueConstraint("alias", "canonical", name="uq_tag_alias_pair"),
+    sa.Index("ix_tag_aliases_state", "state"),
+    sa.Index(
+        "uq_tag_aliases_active",
+        "alias",
+        unique=True,
+        sqlite_where=sa.text("state = 'active'"),
+    ),
+)
+
+# Two documents that are the same work saved twice (DESIGN.md §3.9). Linked,
+# never deleted: both rows keep their chunks, tags and source record, and a
+# sync that re-reads either one changes nothing here. `merged` pairs read as one
+# item, shown as the canonical row; `candidate` pairs await review; `rejected`
+# ones are remembered so a scan does not propose them again. The partial unique
+# index allows one canonical per duplicate, and the writer keeps links one hop
+# deep (a canonical is never itself a merged duplicate).
+document_duplicates = sa.Table(
+    "document_duplicates",
+    meta,
+    sa.Column("id", sa.Integer, primary_key=True),
+    sa.Column("canonical_id", sa.Integer, sa.ForeignKey("documents.id"), nullable=False),
+    sa.Column("duplicate_id", sa.Integer, sa.ForeignKey("documents.id"), nullable=False),
+    sa.Column("match_key", sa.Text, nullable=False),  # doi|arxiv_id|isbn|url|embedding|manual
+    sa.Column("match_value", sa.Text),  # the shared key, for review
+    sa.Column("score", sa.Float),  # embedding similarity, for embedding candidates
+    sa.Column("state", sa.Text, nullable=False),  # candidate|merged|rejected
+    sa.Column("decided_by", sa.Text),  # scan|user
+    sa.Column("created_at", sa.Integer),
+    sa.Column("decided_at", sa.Integer),
+    sa.UniqueConstraint("canonical_id", "duplicate_id", name="uq_dup_pair"),
+    sa.Index("ix_document_duplicates_canonical_id", "canonical_id"),
+    sa.Index("ix_document_duplicates_state", "state"),
+    sa.Index(
+        "uq_document_duplicates_merged",
+        "duplicate_id",
+        unique=True,
+        sqlite_where=sa.text("state = 'merged'"),
+    ),
+)
+
 clusters = sa.Table(
     "clusters",
     meta,
@@ -200,7 +259,7 @@ clusters = sa.Table(
         sa.Integer,
         sa.ForeignKey("clusters.cluster_id"),
     ),
-    sa.Column("centroid", sa.LargeBinary),  # mean-pooled 384-d float32 blob
+    sa.Column("centroid", sa.LargeBinary),  # mean-pooled float32 blob, in doc_embedding's space
     # The run's single noise bucket (HDBSCAN label -1). It holds documents that
     # have no good neighbourhood, so it is never a centroid target, never
     # labelled, and never tagged — see DESIGN.md §4.
@@ -213,7 +272,7 @@ cluster_runs = sa.Table(
     sa.Column("run_id", sa.Integer, primary_key=True),
     sa.Column("timestamp", sa.Integer, nullable=False),
     sa.Column("algorithm", sa.Text),
-    sa.Column("parameters", sa.Text),  # JSON blob
+    sa.Column("parameters", sa.Text),  # JSON blob, incl. the run's embedding_model
     sa.Column("accepted", sa.Boolean, default=False),
     sa.Column("status", sa.Text, default="finished"),  # running|finished|failed|cancelled
     sa.Column("notes", sa.Text),
@@ -366,4 +425,16 @@ tag_training_labels = sa.Table(
     sa.Column("source", sa.Text, nullable=False),
     sa.Column("created_at", sa.Integer, nullable=False),
     sa.UniqueConstraint("session_id", "document_id", name="uq_tag_train_session_doc"),
+)
+
+# ── Schema migrations ─────────────────────────────────────────────────────────
+
+# One row per step of ``pka.db.migrate.MIGRATIONS`` that has run against this
+# archive, so ``init_db`` skips it on the next start. Every step is idempotent
+# on its own; the record only saves re-checking it.
+schema_migrations = sa.Table(
+    "schema_migrations",
+    meta,
+    sa.Column("name", sa.Text, primary_key=True),
+    sa.Column("applied_at", sa.Integer, nullable=False),
 )

@@ -47,6 +47,8 @@ import re
 import time
 from collections import deque
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -54,7 +56,7 @@ import sqlalchemy as sa
 
 from pka.config import settings as cfg
 from pka.constants import FetchStatus, Source
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import documents, fetch_log
 from pka.ingestion.content_gate import interstitial_reason
 from pka.ingestion.fetch_base import (  # re-exported: shared primitives live one layer down
@@ -295,7 +297,12 @@ class _DomainQueue:
                 self._by_key.pop(key, None)
                 continue
             fresh = self._scheduler.next_slot(key)
-            if fresh > slot:  # stale: slots were claimed since this was pushed
+            # Stale only when a slot claimed since the push lies in the future.
+            # ``next_slot`` of an unreserved key is the current clock reading,
+            # which has always moved on since the push; comparing it with
+            # ``slot`` alone re-pushed that entry forever on a clock fine
+            # enough that two readings never tie.
+            if fresh > slot and fresh > self._scheduler.now():
                 heapq.heappush(self._heap, (fresh, key))
                 continue
             return key, fresh
@@ -334,6 +341,118 @@ class _DomainQueue:
 # ── Per-URL fetch ─────────────────────────────────────────────────────────────
 
 
+@dataclass(frozen=True, slots=True)
+class FetchHandler:
+    """One per-site rung of the dispatch in :func:`_fetch_one_impl`.
+
+    ``fetch`` is tried when ``matches(url)`` is truthy (always, when ``matches``
+    is ``None``); a ``None`` result falls through to the next rung and, past the
+    last, to the generic GET. ``awaits=False`` marks the handlers that build
+    their result from the URL alone: no request, so no client, no rate-limiter
+    slot and no budget leg.
+    """
+
+    name: str
+    fetch: Callable[[httpx.AsyncClient, int, str], Any]
+    matches: Callable[[str], object] | None = None
+    awaits: bool = True
+
+
+def _wikipedia_special_result(_client: httpx.AsyncClient, doc_id: int, url: str) -> FetchResult:
+    return FetchResult(doc_id, url, "skipped", None, None, "wikipedia special page")
+
+
+def _fetch_handlers() -> tuple[FetchHandler, ...]:
+    """The per-site handlers, in dispatch order.
+
+    Built on each call rather than at import, so ``fetcher`` does not pull every
+    handler module in at module scope. Not cached either: resolving the names
+    here on each call is what a ``monkeypatch`` of a handler module relies on,
+    and it costs a dict lookup per module next to a network request.
+
+    Order is load-bearing. The publisher block (MIT Press through
+    ScienceDirect) is free to reorder internally — its host checks are
+    disjoint — but must stay after arXiv: ``doi.org/10.48550/arXiv.…`` is a
+    valid arXiv DOI, and ``doi_org.py`` hands that cross-walk back to
+    ``fetch_arxiv_paper`` itself.
+    """
+    from pka.ingestion import (
+        aps,
+        arxiv,
+        biorxiv,
+        direct_mit,
+        doi_org,
+        mitpress,
+        nature,
+        pubmed,
+        reddit_bookmark,
+        researchgate,
+        sciencedirect,
+        search_url,
+        springer,
+        wikipedia,
+        youtube_bookmark,
+    )
+
+    return (
+        FetchHandler(
+            "search_url",
+            lambda _c, doc_id, url: search_url.search_url_result(doc_id, url),
+            awaits=False,
+        ),
+        FetchHandler(
+            "researchgate",
+            lambda _c, doc_id, url: researchgate.researchgate_result(doc_id, url),
+            awaits=False,
+        ),
+        FetchHandler(
+            "wikipedia_special",
+            _wikipedia_special_result,
+            wikipedia.is_wikipedia_special,
+            awaits=False,
+        ),
+        FetchHandler(
+            "wikipedia",
+            wikipedia.fetch_wikipedia_with_retries,
+            lambda url: wikipedia.parse_wikipedia_url(url) is not None,
+        ),
+        FetchHandler(
+            "youtube_video",
+            youtube_bookmark.fetch_youtube_video,
+            youtube_bookmark.parse_youtube_url,
+        ),
+        # A channel or playlist card is built from the URL: scraping one returns
+        # Google's consent interstitial, not page content.
+        FetchHandler(
+            "youtube_page",
+            lambda _c, doc_id, url: youtube_bookmark.youtube_page_result(doc_id, url),
+            awaits=False,
+        ),
+        FetchHandler(
+            "reddit", reddit_bookmark.fetch_reddit_thread, reddit_bookmark.parse_reddit_permalink
+        ),
+        FetchHandler("arxiv", arxiv.fetch_arxiv_paper, arxiv.parse_arxiv_url),
+        FetchHandler("biorxiv", biorxiv.fetch_biorxiv_paper, biorxiv.parse_biorxiv_url),
+        FetchHandler("pubmed", pubmed.fetch_pubmed_article, pubmed.parse_pubmed_url),
+        # Publisher block: after arXiv (see docstring).
+        FetchHandler("mitpress", mitpress.fetch_mitpress_book, mitpress.parse_mitpress_url),
+        FetchHandler(
+            "direct_mit",
+            direct_mit.fetch_direct_mit,
+            lambda url: direct_mit.parse_direct_mit_url(url) is not None,
+        ),
+        FetchHandler("doi_org", doi_org.fetch_doi_url, doi_org.parse_doi_url),
+        FetchHandler("nature", nature.fetch_nature_article, nature.parse_nature_url),
+        FetchHandler("springer", springer.fetch_springer_article, springer.parse_springer_url),
+        FetchHandler("aps", aps.fetch_aps_article, aps.parse_aps_url),
+        FetchHandler(
+            "sciencedirect",
+            sciencedirect.fetch_sciencedirect_article,
+            sciencedirect.parse_sciencedirect_url,
+        ),
+    )
+
+
 async def _fetch_one_impl(
     client: httpx.AsyncClient,
     doc_id: int,
@@ -341,132 +460,28 @@ async def _fetch_one_impl(
     *,
     slot_held: bool = False,
 ) -> FetchResult:
-    from pka.ingestion.wikipedia import (
-        fetch_wikipedia_with_retries,
-        is_wikipedia_special,
-        parse_wikipedia_url,
-    )
-
     if reason := bookmark_url_unfetchable_reason(url):
         return FetchResult(doc_id, url, "unfetchable", None, None, reason)
 
-    from pka.ingestion.search_url import search_url_result
-
-    if (result := search_url_result(doc_id, url)) is not None:
-        return result
-
-    from pka.ingestion.researchgate import researchgate_result
-
-    # Sync and un-awaited like search_url_result above: no request is made, so
-    # there is no client, no rate-limiter slot and no budget leg.
-    if (result := researchgate_result(doc_id, url)) is not None:
-        return result
-
-    if is_wikipedia_special(url):
-        return FetchResult(doc_id, url, "skipped", None, None, "wikipedia special page")
-    if parse_wikipedia_url(url) is not None:
-        return await fetch_wikipedia_with_retries(client, doc_id, url)
-
-    from pka.ingestion.youtube_bookmark import (
-        fetch_youtube_video,
-        parse_youtube_url,
-        youtube_page_result,
-    )
-
-    if parse_youtube_url(url):
-        result = await fetch_youtube_video(client, doc_id, url)
+    for handler in _fetch_handlers():
+        if handler.matches is not None and not handler.matches(url):
+            continue
+        result = handler.fetch(client, doc_id, url)
+        if handler.awaits:
+            result = await result
         if result is not None:
             return result
+    return await _fetch_generic(client, doc_id, url, slot_held=slot_held)
 
-    # Sync and un-awaited: a channel or playlist card is built from the URL, and
-    # scraping one returns Google's consent interstitial, not page content.
-    if (result := youtube_page_result(doc_id, url)) is not None:
-        return result
 
-    from pka.ingestion.reddit_bookmark import fetch_reddit_thread, parse_reddit_permalink
-
-    if parse_reddit_permalink(url):
-        result = await fetch_reddit_thread(client, doc_id, url)
-        if result is not None:
-            return result
-
-    from pka.ingestion.arxiv import fetch_arxiv_paper, parse_arxiv_url
-
-    if parse_arxiv_url(url):
-        result = await fetch_arxiv_paper(client, doc_id, url)
-        if result is not None:
-            return result
-
-    from pka.ingestion.biorxiv import fetch_biorxiv_paper, parse_biorxiv_url
-
-    if parse_biorxiv_url(url):
-        result = await fetch_biorxiv_paper(client, doc_id, url)
-        if result is not None:
-            return result
-
-    from pka.ingestion.pubmed import fetch_pubmed_article, parse_pubmed_url
-
-    if parse_pubmed_url(url):
-        result = await fetch_pubmed_article(client, doc_id, url)
-        if result is not None:
-            return result
-
-    # Identifier-carrying publisher URLs. Order
-    # within this block is free — the host checks are disjoint — but it must
-    # stay after arXiv: doi.org/10.48550/arXiv.… is a valid arXiv DOI, and
-    # doi_org.py hands that cross-walk back to fetch_arxiv_paper itself.
-    from pka.ingestion.mitpress import fetch_mitpress_book, parse_mitpress_url
-
-    if parse_mitpress_url(url):
-        result = await fetch_mitpress_book(client, doc_id, url)
-        if result is not None:
-            return result
-
-    from pka.ingestion.direct_mit import fetch_direct_mit, parse_direct_mit_url
-
-    if parse_direct_mit_url(url) is not None:
-        result = await fetch_direct_mit(client, doc_id, url)
-        if result is not None:
-            return result
-
-    from pka.ingestion.doi_org import fetch_doi_url, parse_doi_url
-
-    if parse_doi_url(url):
-        result = await fetch_doi_url(client, doc_id, url)
-        if result is not None:
-            return result
-
-    from pka.ingestion.nature import fetch_nature_article, parse_nature_url
-
-    if parse_nature_url(url):
-        result = await fetch_nature_article(client, doc_id, url)
-        if result is not None:
-            return result
-
-    from pka.ingestion.springer import fetch_springer_article, parse_springer_url
-
-    if parse_springer_url(url):
-        result = await fetch_springer_article(client, doc_id, url)
-        if result is not None:
-            return result
-
-    from pka.ingestion.aps import fetch_aps_article, parse_aps_url
-
-    if parse_aps_url(url):
-        result = await fetch_aps_article(client, doc_id, url)
-        if result is not None:
-            return result
-
-    from pka.ingestion.sciencedirect import (
-        fetch_sciencedirect_article,
-        parse_sciencedirect_url,
-    )
-
-    if parse_sciencedirect_url(url):
-        result = await fetch_sciencedirect_article(client, doc_id, url)
-        if result is not None:
-            return result
-
+async def _fetch_generic(
+    client: httpx.AsyncClient,
+    doc_id: int,
+    url: str,
+    *,
+    slot_held: bool,
+) -> FetchResult:
+    """Plain GET and extraction, for a URL no per-site handler returned a result for."""
     expect_pdf = _url_looks_like_pdf(url)
     path = urlparse(url).path.lower()
     if not expect_pdf and any(path.endswith(ext) for ext in _SKIP_EXTENSIONS):
@@ -540,8 +555,8 @@ async def _fetch_one_impl(
     # storing it — keeps meaningless text out of the chunks and the vector
     # store, and puts the domain in the unfetchable lists, where a missing
     # handler is something the operator can see and act on.
-    if reason := interstitial_reason(text):
-        return FetchResult(doc_id, url, "unfetchable", None, http_status, reason)
+    if wall := interstitial_reason(text):
+        return FetchResult(doc_id, url, "unfetchable", None, http_status, wall)
 
     return FetchResult(doc_id, url, "fetched", text, http_status, None)
 
@@ -802,7 +817,7 @@ async def fetch_and_embed_pending(
 
     Work queue includes pending URLs and fetched docs missing chunks (orphan backfill).
     """
-    from pka.db.queries import source_ingest_queue
+    from pka.db.documents import source_ingest_queue
 
     reset_unfetchable_for_fetch(source)
 

@@ -18,7 +18,18 @@ class TestSettings:
         assert r.status_code == 200
         body = r.json()
         assert {g["name"] for g in body["groups"]} == set(
-            ["Providers", "Outbound", "Images", "Fetch", "Chunking", "Clustering", "Storage", "Dev"]
+            [
+                "Providers",
+                "Outbound",
+                "Images",
+                "Fetch",
+                "Embedding",
+                "Chunking",
+                "Tags",
+                "Clustering",
+                "Storage",
+                "Dev",
+            ]
         )
         assert {c["capability"] for c in body["capabilities"]} == {
             "chat",

@@ -2,8 +2,119 @@
 
 ## Unreleased
 
+### Duplicates
+
+- **The same work saved twice reads as one item.** `alexandria dedupe scan`
+  (or *Find duplicates* on the Ingestion page) links documents that share a
+  DOI (an arXiv id and its DOI count as one), an arXiv id, an ISBN (10 and 13
+  compared as 13) or a URL once normalised (scheme, `www.`, tracking
+  parameters, YouTube / Reddit / Amazon forms). It proposes near duplicates by
+  document similarity for review. Nothing is deleted: a linked pair shows as
+  one card carrying both rows' tags, matches filters and search through
+  either row, counts once in the tag list, and lists the other copy in the
+  detail panel under *Also saved in*. Clustering and tag training skip the
+  duplicate. Unlinking restores both, and a declined pair is not proposed
+  again (`DESIGN.md` §3.9).
+
+### Tags
+
+- **Duplicate tags read as one, and equivalent ones can be merged.** Spellings
+  that differ only in case, accents, punctuation or spacing (`Machine
+  Learning`, `machine-learning`, `Économie` / `economie`) are one tag in the
+  tag list, every tag filter, the card chips, a training seed and a cluster's
+  naming input. Stored tags are not rewritten. Beyond spelling,
+  `alexandria dedupe-tags scan` and the Tags page's *Find duplicates* propose
+  merges for review: semantically equivalent tags by local embedding
+  similarity (so `apprentissage-automatique` meets `machine-learning`),
+  plurals, and initialisms (`ml`). Nothing merges until accepted, a declined
+  pair is not proposed again, and a merge can be undone. Tag counts are now
+  distinct documents, where a document tagged the same in two sources used to
+  count twice (`DESIGN.md` §3.8).
+- **Zotero collections and Firefox bookmark folders are tags.** Each segment
+  of a document's collection path becomes an `overlay_tags` row with the new
+  origin `collection`, so filtering on a parent folder also finds its
+  subfolders' contents. Firefox's built-in `menu` / `toolbar` / `unfiled` /
+  `mobile` roots are dropped, and at most `collection_tag_max_depth` (4)
+  segments are kept. Two settings cut noise: `collection_tag_exclude` names
+  folders never to tag, and a tag on more than `collection_tag_max_documents`
+  (1000) documents is left out. The Browse sidebar has a *Collections* group, and
+  `/documents`, `/tags` and search take a `collection_tags` filter. Zotero
+  collections are now read with their parents (`Thesis/Chapter 2`, where only
+  `Chapter 2` was stored before), and every metadata sync rewrites the
+  collections of items already archived, which it never did. An item taken out
+  of its last collection now loses the old `source_collections` rows.
+  `alexandria collection-tags` derives the tags for an existing archive from
+  `source_collections`, with `--dry-run` listing the most used ones; the
+  setting `collection_tags_enabled` (default on) turns the feature off
+  (`DESIGN.md` §3.7).
+
+### Search
+
+- **Chunks are sized in tokens of the embedding model, by off-the-shelf
+  libraries, and French and Spanish sentences split correctly.** The in-house
+  sentence-window chunker (and its optional spaCy backend) is replaced by
+  `semantic-text-splitter`, which packs whole sentences, by Unicode's
+  boundaries, into chunks of up to `chunk_tokens` (256) tokens counted by the
+  embedding model's tokenizer, never more than the model reads, overlapping by
+  up to `chunk_overlap_tokens` (32). The old splitter needed an ASCII capital
+  after `.!?`, so a sentence opening on `É`, `Á`, `Ñ`, or after `¿`, `¡` or
+  `«`, ran into the one before it; Unicode's boundaries need no language and
+  split these as English ones. A run with no boundary (unpunctuated OCR) is
+  cut between words, so such a document is no longer a single chunk. Unicode
+  knows no abbreviations, so a chunk may now break after `Dr.`; trimming a
+  summary or synopsis to whole sentences uses `pysbd`, which does.
+  `chunk_sentences`, `chunk_overlap` and `max_sentence_chars` are gone: a
+  `.env` still setting one logs a warning and is otherwise ignored. Existing
+  documents keep their chunks until `alexandria rechunk` or a re-ingest
+  (`DESIGN.md` §3.5).
+- **The embedding model is a setting, and defaults to a multilingual one.**
+  Chunks and queries were embedded by Chroma's built-in `all-MiniLM-L6-v2`,
+  trained on English data. `embedding_model` (default
+  `intfloat/multilingual-e5-small`, run through the new `sentence-transformers`
+  dependency) now names the model, with E5's `query:` / `passage:` prefixes.
+  The chunk collection records the model it was built with and keeps using
+  it: **an existing archive stays on `all-MiniLM-L6-v2`**, with one warning
+  at startup, until `alexandria reembed` (or the Maintenance panel's
+  *Rebuild*) re-embeds every chunk, recomputes document vectors, and
+  retrains and re-applies the learned-tag models. Re-run clustering
+  afterwards: an accepted run from the old model no longer takes new
+  documents. The model downloads once from the Hugging Face Hub on first use
+  (`DESIGN.md` §3.6).
+- **A vector rebuild keeps chunk metadata.** Rebuilding the index used to
+  write only `document_id`, `source`, `title` and `chunk_index`, dropping
+  `pass`, page ranges, sections and synopsis provenance. Each chunk now keeps
+  what it had, and gains `pass` and pages from SQLite where Chroma lacked them.
+- **Keyword search covers bodies, and is indexed.** `fulltext` mode (and the
+  keyword half of `hybrid`) used to be an unbounded `title ILIKE '%q%'` scan.
+  It now queries two FTS5 trigram indexes, over titles + card summaries and
+  over every chunk, so a phrase is found in PDF full text, fetched pages,
+  abstracts and OCR, in any script. Title matches rank ahead of body-only
+  ones. Triggers keep both indexes current for every writer. A query under
+  three characters still uses the title scan. The first `alexandria init`
+  after upgrading builds the chunk index, which takes minutes on a large
+  archive. `chunks.text`, `documents.title` and `card_summary` must now stay
+  plain text (`DESIGN.md` §3.4).
+
 ### Ingestion
 
+- **Calibre's full text is embedded once.** Every Calibre ingest used to hand
+  every book with a file to the full-text pass, which never checked what was
+  already there, so each run appended another copy of the book's chunks and of
+  its summary chunk. The pass now skips books that have `fulltext` chunks or
+  were found to be scans. A new purge target, `duplicate_chunks`
+  (`alexandria purge duplicate_chunks`, or the maintenance panel), removes the
+  copies earlier runs left: the first copy of each document's full text and
+  summary stays, and a document whose runs differ is left alone.
+- **Zotero ingests the full text of attached PDFs.** A second embedding pass
+  in the Zotero ingest job (`ingest_zotero_fulltext`) extracts each attached
+  PDF's page groups, retains the joined text in `document_texts` with its page
+  map, and embeds one block per group (`pass="fulltext"`, with `page_start` /
+  `page_end`), offset past the abstract chunk. A scanned PDF is marked
+  `no_text_layer`. Items that already have `fulltext` chunks or were found to be
+  scans are not re-read, so a second sync adds nothing. The title + abstract
+  chunk is now tagged `pass="metadata"`, as Calibre's is, and a migration step
+  tags the existing ones, so `rechunk` and the `fetched_text` purge treat only
+  the PDF text as body. Until now Zotero indexed title + abstract only.
 - **Fetched body text is retained verbatim** in a new `document_texts` sidecar
   (`pka/ingestion/text_store.py`), zlib-compressed, one row per document,
   written before chunking. Until now `chunks.text` was the only copy — normalised,
@@ -63,6 +174,57 @@
   distinguishable from a document, and `rechunk` refuses a prefix rather than
   re-cutting it and silently shrinking that document's index to its first pages.
   The summary pass still sees the whole book: only what is *stored* is cut.
+
+### Maintenance
+
+- **`pka/db/queries.py` is split by aggregate** into `engine.py`, `migrate.py`,
+  `documents.py`, `chunks.py`, `cards.py`, `clusters.py`, `tags.py`,
+  `browse.py`, `reddit.py` and `images.py` under `pka/db/`. `queries.py` stays
+  as a deprecated re-export shim; code under `pka/` imports from the new
+  modules. Four helpers that were already imported across modules lost their
+  underscore: `doc_title_excerpts`, `first_chunk_map` (was
+  `_batch_first_chunk_map`), `apply_document_browse_filters`, `norm_filter`.
+- **Migrations are an ordered `(name, step)` list** (`pka.db.migrate.MIGRATIONS`)
+  in place of one 200-line `init_db`. Each step still checks before it alters,
+  and each one `init_db` runs is recorded in a new `schema_migrations` table and
+  skipped on later starts. An existing archive has no record yet, so its first
+  start after upgrading runs every step once (each a no-op) and records them.
+- **`pka/api/routers/ingestion.py` is split into four routers**:
+  `ingestion_status.py`, `ingestion_sources.py`, `ingestion_purge.py` and
+  `ingestion_jobs.py`, with shared helpers in `pka/api/ingestion_common.py`.
+  Every route keeps its path, method and handler name, so the OpenAPI schema is
+  unchanged.
+- **Per-site fetch dispatch is a handler table.** `_fetch_one_impl` walks
+  `_fetch_handlers()`, an ordered tuple of `FetchHandler`s, and falls back to
+  `_fetch_generic()` for the plain GET; its cyclomatic complexity drops from 51
+  to 7. The rate-limited GET and error mapping that eight handler helpers
+  copied is `fetch_base.rate_limited_get`, and the arXiv/bioRxiv PDF leg is
+  `fetch_base.fetch_pdf_text`. Dispatch order and every result are unchanged.
+- **Unused arguments are a lint error outside `tests/`.** ruff now selects
+  `ARG001`. Three stale parameters were removed (`ingest_calibre_fulltext`'s
+  `force`, which no caller passed, among them); the rest are signatures a
+  caller requires and carry a leading underscore. The unused
+  `pka/api/schemas/common.py` (`Pagination`) is deleted.
+- **Tag-model scoring has its own module**, `pka/tag_training/scoring.py`:
+  `apply_learned_tags_for_document` (run for every ingested document), the
+  learned-overlay writes, and session-parameter parsing. `lifecycle.py` keeps
+  session create/train/accept/archive, and ingestion no longer imports it.
+- **Import layering is enforced.** A `lint-imports` contract in
+  `pyproject.toml` (layers in `DESIGN.md` §1.2) runs in `scripts/check.*`;
+  `import-linter` joins the dev extras. The ingest tail no longer imports tag
+  training: it announces each embedded document on `pka.hooks`, and
+  `pka.bootstrap.install_hooks()`, called by the API and the CLI, registers the
+  learned-tag scorer. Nine pre-existing violations are baselined in the
+  contract's `ignore_imports`.
+
+### Fixes
+
+- **The fetch queue no longer spins forever on a fine-grained clock.**
+  `_DomainQueue` read an unreserved domain's heap entry as stale whenever the
+  clock had advanced since the push, which on Linux's nanosecond
+  `time.monotonic` is always, so `get()` never returned and a fetch batch
+  hung. An entry is now stale only when its refreshed slot also lies in the
+  future. Windows' coarser clock let two readings tie often enough to hide it.
 
 ## v0.0.11
 

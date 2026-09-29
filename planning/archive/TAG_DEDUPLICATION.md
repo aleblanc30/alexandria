@@ -6,11 +6,20 @@ countable tag, without rewriting what a source actually said.
 
 Covers the `TODO.md` item *"Deduplication of tags"* under *Ingestion &
 deduplication*. The sibling item *"Deduplication of items"* is a different
-problem (document identity) and is planned in `ITEM_DEDUPLICATION.md`; the two
+problem (document identity) and is planned in `ITEM_DEDUPLICATION.md` (archived); the two
 share a shape — a derived relation consulted at read time rather than a
 destructive rewrite — but no code.
 
 Not authoritative about current behavior — this is proposed work.
+
+**Outcome (archived).** Shipped in a different shape; `DESIGN.md` §3.8 is the
+record. Layer one became a read-time fold (`db/tag_fold.py`) rather than a
+stored `source_tags.tag_key`, since collection tags made overlay tags
+unslugified too and a column on each table meant touching every writer; the key
+also strips accents for French and Spanish tags. Layer two is `tag_aliases`
+as designed. Synonyms are proposed by the local embedding model instead of an
+LLM, so no §1.1 flag was needed, and every proposal is reviewed. The §2
+`patch_tags` slug fix was not made: the fold covers manual-tag spellings.
 
 ---
 
@@ -105,8 +114,8 @@ browse EXISTS, on `(document_id, tag_key)` alongside the existing
 `ix_source_tags_document_id_tag_string`.
 
 - `tag_string` is untouched and remains the record of what the source said, the
-  same rule `COLLECTION_TAGS.md` §1 states for `source_collections` and
-  `ITEM_DEDUPLICATION.md` §1 states for `documents.isbn`.
+  same rule `archive/COLLECTION_TAGS.md` §1 states for `source_collections` and
+  `ITEM_DEDUPLICATION.md` (archived) §1 states for `documents.isbn`.
 - Because the key is derived, changing the normalisation rule is a backfill
   (`alexandria dedupe-tags rekey`), never a resync. This is the reason to store
   a derived column rather than normalise on the way in and lose the original.
@@ -151,7 +160,7 @@ Both sides hold *normalised keys*, so layer one has already run and the alias
 table never has to think about case. Four properties it relies on:
 
 - **The partial unique index is the no-two-canonicals invariant**, exactly as in
-  `ITEM_DEDUPLICATION.md` §4: a form may be a candidate against several
+  `ITEM_DEDUPLICATION.md` (archived) §4: a form may be a candidate against several
   canonicals but `active` under one.
 - **No chains.** The writer refuses an alias whose `canonical` is itself an
   active alias, rewriting it to that alias's canonical. Read sites then expand

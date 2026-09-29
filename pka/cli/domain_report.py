@@ -15,7 +15,7 @@ import json
 import sys
 
 from pka.constants import ALL_SOURCES
-from pka.db.queries import init_db
+from pka.db.migrate import init_db
 from pka.domains import build_domain_frequency_report
 
 

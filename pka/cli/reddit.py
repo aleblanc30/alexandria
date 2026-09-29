@@ -25,7 +25,7 @@ import argparse
 import logging
 
 from pka.cli._logging import setup_logging
-from pka.db.queries import init_db
+from pka.db.migrate import init_db
 from pka.ingestion.reddit_sync import (
     sync_reddit,
     sync_reddit_ingest,

@@ -538,7 +538,7 @@ class TestTagTrainingApi:
             1700000999,
         )
         _set_embedding(new_id, _pos_vec(1.05))
-        from pka.tag_training.lifecycle import apply_learned_tags_for_document
+        from pka.tag_training.scoring import apply_learned_tags_for_document
 
         n = apply_learned_tags_for_document(new_id)
         assert n >= 1

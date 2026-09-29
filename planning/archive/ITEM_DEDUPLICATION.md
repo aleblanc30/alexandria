@@ -12,6 +12,16 @@ problem (string canonicalisation inside one namespace) and is not covered here.
 
 Not authoritative about current behavior — this is proposed work.
 
+**Outcome (archived).** Shipped as designed, all phases at once, recorded in
+`DESIGN.md` §3.9. Differences: the embedding near-duplicate pass (§11) shipped
+as review-only candidates; linked pairs union their tags and sources at read
+time (the §11 open question, decided yes); the scan lives in `pka/dedupe.py`
+and the read helpers in `pka/db/duplicates.py` rather than a `pka/dedupe/`
+package, for the import layering; review is on the Ingestion page rather than
+inside the Maintenance panel. Still open, not planned: preprint ↔ published
+as a "version of" relation, compaction of a duplicate's chunks, and skipping
+enrichment for linked duplicates.
+
 ---
 
 ## 0. What already exists

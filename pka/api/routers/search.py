@@ -21,6 +21,7 @@ from pka.api.search_hits import (
     Hits,
     apply_browse_filters,
     apply_row_filters,
+    fold_duplicates,
     fulltext_hits,
     merge_clip_hits,
     merge_new,
@@ -47,6 +48,7 @@ def search(req: SearchRequest, engine=Depends(get_engine)):
             results = merge_new(results, fulltext_hits(con, req))
 
         results = merge_clip_hits(results, req)
+        results = fold_duplicates(con, results)
         results = apply_browse_filters(con, results, req)
         results = apply_row_filters(con, results, req, run_id)
 

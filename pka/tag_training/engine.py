@@ -14,7 +14,8 @@ from pka.clustering.doc_embeddings import (
     embedding_to_blob,
     load_cached_embeddings,
 )
-from pka.db.queries import get_engine
+from pka.db.duplicates import merged_duplicate_ids
+from pka.db.engine import get_engine
 from pka.db.schema import documents, tag_training_labels
 
 if TYPE_CHECKING:
@@ -106,7 +107,8 @@ def unlabeled_doc_ids(session_id: int) -> list[int]:
     """Documents with no label row in this session."""
     eng = get_engine()
     with eng.connect() as con:
-        labeled = _session_labeled_doc_ids(con, session_id)
+        # A merged duplicate would be labelled twice (DESIGN.md §3.9).
+        labeled = _session_labeled_doc_ids(con, session_id) | merged_duplicate_ids(con)
         rows = con.execute(sa.select(documents.c.id)).fetchall()
     return [r[0] for r in rows if r[0] not in labeled]
 
@@ -114,7 +116,7 @@ def unlabeled_doc_ids(session_id: int) -> list[int]:
 def unlabeled_doc_ids_with_embeddings(session_id: int) -> list[int]:
     eng = get_engine()
     with eng.connect() as con:
-        labeled = _session_labeled_doc_ids(con, session_id)
+        labeled = _session_labeled_doc_ids(con, session_id) | merged_duplicate_ids(con)
         rows = con.execute(
             sa.select(documents.c.id).where(documents.c.doc_embedding.isnot(None))
         ).fetchall()
@@ -166,6 +168,9 @@ def load_label_matrix(
         return np.empty((0, 0)), np.array([]), [], missing
 
     y = np.array([labels[doc_ids.index(did)] for did in used_ids], dtype=np.int64)
+    # sklearn is imported on use throughout this module: the ingest tail imports
+    # this module to score every document, and an archive with no accepted
+    # model never needs sklearn at all.
     from sklearn.preprocessing import normalize
 
     X = np.stack([found[did] for did in used_ids], axis=0)
@@ -223,7 +228,7 @@ def uncertainty_queue(
     """Documents with embeddings not yet labeled, sorted by uncertainty."""
     eng = get_engine()
     with eng.connect() as con:
-        labeled = _session_labeled_doc_ids(con, session_id)
+        labeled = _session_labeled_doc_ids(con, session_id) | merged_duplicate_ids(con)
         rows = con.execute(
             sa.select(documents.c.id, documents.c.title).where(
                 documents.c.doc_embedding.isnot(None)

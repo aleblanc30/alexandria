@@ -11,7 +11,8 @@ import sqlalchemy as sa
 
 from pka.config import settings
 from pka.constants import Source
-from pka.db.queries import document_index, get_engine
+from pka.db.documents import document_index
+from pka.db.engine import get_engine
 from pka.db.schema import documents, images
 from pka.ingestion.dev_limits import take
 from pka.ingestion.source_access import try_load_calibre_books, try_scan_images

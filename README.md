@@ -53,7 +53,6 @@ frontend/                     # Vue 3 + Vite + Pinia
 pip install -e .
 # Optional extras
 pip install -e '.[dev]'    # pytest, ruff, mypy
-pip install -e '.[spacy]'  # better sentence splitting
 
 # Database — idempotent, safe to re-run
 alexandria init            # or: python scripts/init_db.py
@@ -70,8 +69,10 @@ for `python scripts/<name>.py` workflows; both forms run the same code.
 System prerequisites:
 
 - **Ollama** for clustering labels and image vision (`ollama pull llava` or your
-  chat model). Text chunk embeddings use Chroma's built-in Sentence Transformers
-  model (`all-MiniLM-L6-v2`, downloaded on first use).
+  chat model). Text chunk embeddings run locally through `sentence-transformers`
+  (`ALEXANDRIA_EMBEDDING_MODEL`, default `intfloat/multilingual-e5-small`,
+  downloaded on first use). An archive built before the setting keeps
+  `all-MiniLM-L6-v2` until `alexandria reembed` moves it to the configured model.
 - **Ollama Cloud** (optional) runs bigger models than the machine fits, without
   the prompts touching a third-party aggregator. Two routes, both per-capability
   so chat can go remote while OCR and embeddings stay local:
@@ -144,7 +145,16 @@ expensive fetched text, and your own tags and reading lists, in place.
 alexandria purge --list                       # targets, and what regenerates each
 alexandria purge summaries --dry-run          # counts first; nothing is deleted
 alexandria purge summaries --source firefox   # or scope it to one connector
-alexandria purge vectors                      # then POST /ingestion/rebuild-vectors
+alexandria purge vectors                      # then alexandria reembed
+```
+
+Before this release every Calibre ingest appended another copy of each book's
+full-text and summary chunks. `duplicate_chunks` removes the extra copies and
+keeps the first, and only where a document's runs are exact repeats:
+
+```bash
+alexandria purge duplicate_chunks --dry-run   # how many documents and chunks
+alexandria purge duplicate_chunks
 ```
 
 Summaries record which model made them, so swapping a backend does not mean
@@ -169,8 +179,9 @@ curl -X POST 'localhost:8420/ingestion/enrich?kind=summary'
 
 The body text of anything fetched or extracted is kept verbatim
 (`document_texts`, setting `retain_document_text`, default on), so changing the
-chunker — or swapping the embedding model, which is the usual reason to — can be
-applied to documents already in the archive without fetching a single URL again:
+chunker can be applied to documents already in the archive without fetching a
+single URL again (an embedding-model change needs only `alexandria reembed`,
+which re-embeds the chunks as they are):
 
 ```bash
 alexandria rechunk --dry-run          # how many documents have retained text

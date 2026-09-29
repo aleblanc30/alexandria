@@ -15,7 +15,9 @@ from functools import partial
 
 from pka.connectors.reddit import RedditSaved, load_saved, load_saved_from_archive
 from pka.constants import Source
-from pka.db.queries import all_reddit_items, document_index, init_db, source_ingest_queue
+from pka.db.documents import document_index, source_ingest_queue
+from pka.db.migrate import init_db
+from pka.db.reddit import all_reddit_items
 from pka.ingestion import progress as sp
 from pka.ingestion.dev_limits import take
 from pka.ingestion.fetcher import fetch_and_embed_pending

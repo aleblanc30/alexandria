@@ -64,7 +64,7 @@ Index coverage, by hand — there is no tool for this:
 
 ```bash
 grep -n "sa.Index\|ForeignKey\|document_id" pka/db/schema.py
-grep -rn "CREATE INDEX IF NOT EXISTS" pka/db/queries.py
+grep -n "_create_index(" pka/db/migrate.py
 ```
 
 For each child-table column with no index, find its readers
@@ -79,10 +79,10 @@ becoming "SEARCH … USING INDEX" is the pass condition to state.
 
 | Class | Start here |
 |---|---|
-| Query shape, N+1, over-fetch | `pka/db/queries.py`, `pka/api/document_serialize.py`, `pka/api/routers/search.py` |
-| Indexes / migrations | `pka/db/schema.py`, `init_db` in `pka/db/queries.py` |
+| Query shape, N+1, over-fetch | `pka/db/` query modules (`documents.py`, `browse.py`, …), `pka/api/document_serialize.py`, `pka/api/routers/search.py` |
+| Indexes / migrations | `pka/db/schema.py`, `MIGRATIONS` in `pka/db/migrate.py` |
 | Startup cost | `pka/api/main.py` router list, then each router's module-level imports |
-| Per-document round trips | `pka/ingestion/core.py`, `pka/clustering/doc_embeddings.py`, `pka/tag_training/lifecycle.py` |
-| Repeated source reads | `pka/ingestion/progress/baselines.py`, `pka/ingestion/pending_metadata.py`, the SSE handler in `routers/ingestion.py` |
-| Threading / background work | `pka/api/routers/ingestion.py` worker registry, `pka/clustering/engine.py` label pool |
+| Per-document round trips | `pka/ingestion/core.py`, `pka/clustering/doc_embeddings.py`, `pka/tag_training/scoring.py` |
+| Repeated source reads | `pka/ingestion/progress/baselines.py`, `pka/ingestion/pending_metadata.py`, the SSE handler in `routers/ingestion_status.py` |
+| Threading / background work | `pka/api/routers/ingestion_jobs.py` worker registry, `pka/clustering/engine.py` label pool |
 | Frontend drift | `frontend/src/api/client.ts` vs the pydantic schema modules |

@@ -6,12 +6,14 @@ wikipedia) can use these without importing the dispatcher that calls them —
 ``fetcher`` dispatches down to those modules, they depend only on this one.
 """
 
+import asyncio
 import logging
 import re
 import tempfile
 from dataclasses import dataclass
 from html import unescape
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -75,6 +77,65 @@ def _http_timeout(*, pdf: bool = False) -> httpx.Timeout:
     read = cfg.fetch_pdf_timeout_seconds if pdf else cfg.fetch_timeout_seconds
     connect = cfg.fetch_connect_timeout_seconds
     return httpx.Timeout(connect=connect, read=read, write=connect, pool=connect)
+
+
+async def rate_limited_get(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    pdf: bool = False,
+    headers: dict[str, str] | None = None,
+) -> tuple[httpx.Response | None, int | None, str | None]:
+    """GET ``url`` after waiting for its domain's slot, with the handlers' error mapping.
+
+    Returns ``(response, status, None)``, or ``(None, status, error)`` for a
+    timeout, a request error or an HTTP status of 400 or more — the triple the
+    per-site metadata and PDF helpers return upward. ``pdf`` selects the longer
+    read timeout and prefixes the errors with ``pdf `` so a caller reporting both
+    legs can tell them apart.
+    """
+    prefix = "pdf " if pdf else ""
+    extra: dict[str, Any] = {"headers": headers} if headers is not None else {}
+    await _limiter.wait(url)
+    try:
+        resp = await client.get(
+            url,
+            follow_redirects=True,
+            timeout=_http_timeout(pdf=pdf),
+            **extra,
+        )
+    except httpx.TimeoutException:
+        return None, None, f"{prefix}timeout"
+    except httpx.RequestError as exc:
+        return None, None, str(exc)
+    if resp.status_code >= 400:
+        return None, resp.status_code, f"{prefix}HTTP {resp.status_code}"
+    return resp, resp.status_code, None
+
+
+async def fetch_pdf_text(
+    client: httpx.AsyncClient,
+    pdf_url: str,
+) -> tuple[str | None, int | None, str | None]:
+    """Download ``pdf_url`` and extract its text: ``(text, status, None)`` or ``(None, status, error)``.
+
+    For a handler whose PDF is a second leg after a metadata call, so a failure
+    here degrades the result (abstract only) rather than failing it.
+    """
+    resp, status, err = await rate_limited_get(client, pdf_url, pdf=True)
+    if resp is None:
+        return None, status, err
+
+    result = await asyncio.to_thread(
+        _fetch_pdf_result,
+        0,
+        pdf_url,
+        resp.content,
+        resp.status_code,
+    )
+    if result.status != "fetched" or not result.text:
+        return None, resp.status_code, result.error_msg or "pdf extraction failed"
+    return result.text, resp.status_code, None
 
 
 def _extract_pdf_from_bytes(

@@ -13,6 +13,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from pka.bootstrap import install_hooks
+
+# The suite runs the ingest tail the way the API and the CLI do, with the same
+# listeners registered. ``tests/test_hooks.py`` checks that those entry points
+# really do register them without this.
+install_hooks()
+
 # ── Schema template ───────────────────────────────────────────────────────────
 
 
@@ -35,16 +42,17 @@ def _schema_template(tmp_path_factory) -> Path:
     monkeypatching applies, and calling ``init_db`` against a developer's real
     ``data_dir`` is not something to leave to fixture ordering.
     """
-    import pka.db.queries as q
+    import pka.db.engine as db_engine
     from pka import config
+    from pka.db.migrate import init_db
 
     target = tmp_path_factory.mktemp("schema_template")
-    saved_dir, saved_engine = config.settings.data_dir, q._engine
+    saved_dir, saved_engine = config.settings.data_dir, db_engine._engine
     try:
         config.settings.data_dir = target
-        q._engine = None
-        q.init_db()
-        q.get_engine().dispose()
+        db_engine._engine = None
+        init_db()
+        db_engine.get_engine().dispose()
         # Fold the WAL back in so the .db file alone is a complete archive —
         # the copy below does not carry -wal/-shm.
         con = sqlite3.connect(config.settings.archive_db)
@@ -54,7 +62,7 @@ def _schema_template(tmp_path_factory) -> Path:
             con.close()
         return target / "archive.db"
     finally:
-        config.settings.data_dir, q._engine = saved_dir, saved_engine
+        config.settings.data_dir, db_engine._engine = saved_dir, saved_engine
 
 
 # ── Settings override ─────────────────────────────────────────────────────────
@@ -130,40 +138,59 @@ def isolated_settings(tmp_path, monkeypatch, _schema_template):
     monkeypatch.setattr(s, "search_provider", "google_books")
 
     # Reset cached SQLAlchemy engine so each test gets a fresh DB
-    import pka.db.queries as q
+    import pka.db.engine as db_engine
 
-    monkeypatch.setattr(q, "_engine", None)
+    monkeypatch.setattr(db_engine, "_engine", None)
 
     # Hand that fresh DB its schema as a file copy instead of 33 CREATE
     # statements. ``init_db`` still runs in full on top — ``create_all`` finds
     # every table present and each migration branch no-ops — so this changes
     # what the setup costs, not what it produces.
     #
-    # ``get_engine`` is the hook because ``init_db`` and every query helper look
-    # it up as a module global at *call* time. Patching ``init_db`` itself would
-    # not work: a hundred test modules did ``from pka.db.queries import init_db``
-    # at import time and hold the original function object, which this reaches
-    # and a rebind of the name does not.
+    # ``get_engine`` is the hook because ``init_db`` and every ``pka.db`` helper
+    # look it up on ``pka.db.engine`` at *call* time. Patching ``init_db`` itself
+    # would not work: a hundred test modules did ``from pka.db.queries import
+    # init_db`` at import time and hold the original function object, which
+    # this reaches and a rebind of the name does not.
     #
     # Seeding only when no archive exists yet is what keeps
     # ``test_schema_migration.py`` honest: it writes a first-commit archive to
     # this same path before anything opens an engine, so it finds its own file
     # here and migrates that, never a modern schema dropped underneath it.
-    real_get_engine = q.get_engine
+    real_get_engine = db_engine.get_engine
 
     def seeded_get_engine():
-        if q._engine is None and not s.archive_db.exists():
+        if db_engine._engine is None and not s.archive_db.exists():
             s.archive_db.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(_schema_template, s.archive_db)
         return real_get_engine()
 
-    monkeypatch.setattr(q, "get_engine", seeded_get_engine)
+    monkeypatch.setattr(db_engine, "get_engine", seeded_get_engine)
 
     # Reset cached Chroma client/collection
     import pka.storage.vector_store as vs
 
     monkeypatch.setattr(vs, "_client", None)
     monkeypatch.setattr(vs, "_collection", None)
+    monkeypatch.setattr(vs, "_warned_mismatch", False)
+
+    # The collection-tag cap is counted per archive; one test's must not leak.
+    import pka.ingestion.collection_tags as ct
+
+    monkeypatch.setattr(ct, "_cap_cache", None)
+
+    # Likewise the tag fold map, cached for 30 s against a per-test database.
+    import pka.db.tag_fold as tf
+
+    monkeypatch.setattr(tf, "_cache", None)
+    monkeypatch.setattr(tf, "_TTL_SECONDS", 0.0)
+
+    # No test loads a real embedding model: every name gets the deterministic
+    # fake, whether through mock_chroma or a fixture that mocks only the
+    # collection. tests/test_embedding.py exercises the real wiring on stubs.
+    import pka.storage.embedding as embedding
+
+    monkeypatch.setattr(embedding, "get_embedder", lambda name: FakeEmbedder(name))
 
     # Reset cached CLIP collection
     import pka.ingestion.image_pipeline as ip
@@ -308,7 +335,7 @@ def _make_zotero_db(path: Path) -> Path:
         CREATE TABLE itemCreators(itemID INTEGER, creatorID INTEGER,
                                   creatorTypeID INTEGER, orderIndex INTEGER);
         CREATE TABLE collections (collectionID INTEGER PRIMARY KEY,
-                                  collectionName TEXT);
+                                  collectionName TEXT, parentCollectionID INTEGER);
         CREATE TABLE collectionItems(collectionID INTEGER, itemID INTEGER);
         CREATE TABLE tags        (tagID INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE itemTags    (itemID INTEGER, tagID INTEGER);
@@ -332,8 +359,12 @@ def _make_zotero_db(path: Path) -> Path:
                                     (1,4,'2023');
         INSERT INTO creators VALUES (1,'Diego','Ongaro');
         INSERT INTO itemCreators VALUES (1,1,1,0);
-        INSERT INTO collections VALUES (1,'Distributed Systems');
-        INSERT INTO collectionItems VALUES (1,1);
+        -- "Distributed Systems" nested under "Computer Science"; item 1 is in
+        -- the subcollection and in a top-level "Reading list" too.
+        INSERT INTO collections VALUES (1,'Distributed Systems',2),
+                                       (2,'Computer Science',NULL),
+                                       (3,'Reading list',NULL);
+        INSERT INTO collectionItems VALUES (1,1),(3,1);
         INSERT INTO tags VALUES (1,'consensus');
         INSERT INTO itemTags VALUES (1,1);
         -- PDF attachment for item 1
@@ -577,7 +608,48 @@ def fake_embedding(text: str) -> list[float]:
     return [(total % (i + 2)) / 100.0 for i in range(FAKE_DIM)]
 
 
+_WORD_TOKENIZER = None
+
+
+def word_tokenizer():
+    """A ``tokenizers.Tokenizer`` that counts words, needing no download."""
+    global _WORD_TOKENIZER
+    if _WORD_TOKENIZER is None:
+        from tokenizers import Tokenizer
+        from tokenizers.models import WordLevel
+        from tokenizers.pre_tokenizers import Whitespace
+
+        _WORD_TOKENIZER = Tokenizer(WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
+        _WORD_TOKENIZER.pre_tokenizer = Whitespace()
+    return _WORD_TOKENIZER
+
+
+class FakeEmbedder:
+    """Stands in for every model in :mod:`pka.storage.embedding`."""
+
+    #: One token per whitespace-separated word or punctuation run, built
+    #: offline; the chunker counts with it exactly as with a real model's.
+    max_chunk_tokens = 510
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.tokenizer = word_tokenizer()
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [fake_embedding(t) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return fake_embedding(text)
+
+
 # ── Mock Chroma ───────────────────────────────────────────────────────────────
+
+
+def _collection_metadata() -> dict:
+    """What a collection built with the configured model records."""
+    from pka.config import settings
+
+    return {"hnsw:space": "cosine", "embedding_model": settings.embedding_model}
 
 
 @pytest.fixture()
@@ -585,6 +657,7 @@ def empty_vector_store(monkeypatch):
     """Mocked Chroma collection returning no results — default for API tests."""
     col = MagicMock()
     col.count.return_value = 0
+    col.metadata = _collection_metadata()
     col.query.return_value = {
         "ids": [[]],
         "documents": [[]],
@@ -663,19 +736,9 @@ def mock_chroma(monkeypatch):
     col.query.side_effect = _query
     col.get.side_effect = _get
     col.count.return_value = 0
-
-    class _FakeEmbeddingFunction:
-        """Stands in for Chroma's DefaultEmbeddingFunction.
-
-        ``upsert_chunks`` embeds in-process, so without
-        this the mocked path would load the real MiniLM model.
-        """
-
-        def __call__(self, input):  # noqa: A002 - Chroma's own parameter name
-            return [fake_embedding(text) for text in input]
+    col.metadata = _collection_metadata()
 
     import pka.storage.vector_store as vs
 
     monkeypatch.setattr(vs, "get_collection", lambda: col)
-    monkeypatch.setattr(vs, "_embedding_fn", _FakeEmbeddingFunction())
     return store, col

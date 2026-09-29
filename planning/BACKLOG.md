@@ -176,7 +176,7 @@ does not — `ChatProvider` in `pka/providers/base.py` is only `resolve_model` +
 ### OCR the documents that have no text layer
 
 **What:** Give the `no_text_layer` set — scanned PDFs, recorded as such by
-`extract_pdf_report` on both the Calibre and the fetch route — a way to become
+`extract_pdf_report` on the Calibre, Zotero-attachment and fetch routes — a way to become
 searchable text: rasterise each page, run it through the existing OCR provider,
 and feed the result into `ingest_text_block` like any other section.
 
@@ -199,11 +199,28 @@ budget question gets answered.
   the machine. `easyocr` stays local and is the safe default backend for it.
 - Cap it: a page budget per document, and select work with
   `fetch_status = 'no_text_layer'` rather than re-probing every PDF.
+- Mind the skip filters: `calibre_sync._needs_fulltext` and
+  `zotero_sync._load_zotero_items_for_fulltext` skip `no_text_layer` documents,
+  so the full-text passes will not re-read a scan. An OCR pass has to write its
+  chunks as `pass="fulltext"` (with page numbers) and move the status off
+  `no_text_layer`, or those filters and this pass disagree about what is done.
 - Chunk metadata already has somewhere to put the page number (`page_start` /
   `page_end`), and OCR is the one route that knows it exactly — one page in,
   one section out.
 - Cross-check the numbers: VLMs invent plausible text on degraded regions, so
   anything numeric coming out of a scan should be treated as unverified.
+
+## Tags
+
+### Collection tags for the other sources
+
+Zotero collections and Firefox folders are `collection` tags (`DESIGN.md` §3.7).
+Calibre series, `r/<subreddit>` and YouTube playlists sit in
+`source_collections` too; each is one `TAGGED_SOURCES` entry plus a call next
+to its `insert_source_collections`. Each has its own noise profile: a subreddit
+tag repeats `reddit_items.subreddit`, and a series name is often a single
+book's. Run `alexandria collection-tags --dry-run` first and judge by its
+top-tag counts. Background in `archive/COLLECTION_TAGS.md` §3.
 
 ## Archiving
 

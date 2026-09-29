@@ -72,6 +72,15 @@ class EnrichmentOut(BaseModel):
     text: str
 
 
+class LinkedCopy(BaseModel):
+    """Another document linked as the same work (DESIGN.md §3.9)."""
+
+    id: int
+    source: str
+    title: str
+    url_or_path: str | None = None
+
+
 class DocumentDetail(DocumentOut):
     description: str = ""
     chunks_count: int
@@ -79,6 +88,7 @@ class DocumentDetail(DocumentOut):
     image: ImageDetail | None = None
     reddit: RedditDetail | None = None
     enrichment: list[EnrichmentOut] = []
+    also_saved_in: list[LinkedCopy] = []
 
 
 class TagPatchRequest(BaseModel):

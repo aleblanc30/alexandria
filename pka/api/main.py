@@ -11,8 +11,12 @@ from fastapi.staticfiles import StaticFiles
 from pka.api.routers import (
     clusters,
     documents,
+    duplicates,
     images,
-    ingestion,
+    ingestion_jobs,
+    ingestion_purge,
+    ingestion_sources,
+    ingestion_status,
     reading_lists,
     runs,
     search,
@@ -21,9 +25,10 @@ from pka.api.routers import (
     tags,
     trends,
 )
+from pka.bootstrap import install_hooks
 from pka.cli._logging import setup_logging
 from pka.clustering.run_progress import reconcile_interrupted_runs
-from pka.db.queries import init_db
+from pka.db.migrate import init_db
 
 # Configure logging as soon as the app is imported. uvicorn configures only its
 # own loggers and leaves the root handler-less, so every ``pka.*`` INFO log —
@@ -32,12 +37,15 @@ from pka.db.queries import init_db
 # it also applies inside each ``--reload`` worker. uvicorn's own loggers have
 # ``propagate=False``, so this doesn't double-print their lines.
 setup_logging()
+# Listeners the ingest tail calls — learned-tag scoring among them. Background
+# sync jobs run in this process, so registering once at import covers them.
+install_hooks()
 
 log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     log.info("Alexandria API starting — initialising database…")
     init_db()
     # No clustering thread can outlive the process that owned it, so any run
@@ -73,10 +81,14 @@ for router in (
     runs,
     tags,
     trends,
-    ingestion,
+    ingestion_status,
+    ingestion_sources,
+    ingestion_purge,
+    ingestion_jobs,
     reading_lists,
     tag_training,
     settings,
+    duplicates,
 ):
     app.include_router(router.router)
 

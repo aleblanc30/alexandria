@@ -1,7 +1,7 @@
 """Re-chunk documents from their retained text, without going back to the source.
 
-The pass that ``document_texts`` exists for. Changing ``chunk_sentences``, ``chunk_overlap``, ``min_chunk_chars`` or
-the splitter itself used to be unappliable to an archive already ingested: the
+The pass that ``document_texts`` exists for. Changing ``chunk_tokens``,
+``chunk_overlap_tokens``, ``min_chunk_chars`` or the splitter itself used to be unappliable to an archive already ingested: the
 only copy of the body was ``chunks.text``, so re-cutting it meant re-fetching
 every URL and re-extracting every book. With the text retained, it is a local
 read.
@@ -25,7 +25,7 @@ import logging
 import sqlalchemy as sa
 
 from pka.constants import Source
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import chunks, documents
 from pka.ingestion.core import fetched_embed_text, ingest_text_block
 from pka.ingestion.text_store import document_text_meta, load_document_text
@@ -105,7 +105,7 @@ def _rechunk_blocks(row: sa.Row, text: str, blocks: list[dict], offset: int) -> 
         }
         for key in ("page_start", "page_end"):
             # Chroma metadata values must be scalars, so a None is omitted
-            # rather than passed — same rule as runners/calibre.py::_page_range.
+            # rather than passed — same rule as book_extractor.section_page_range.
             if block.get(key) is not None:
                 meta[key] = block[key]
         result = ingest_text_block(

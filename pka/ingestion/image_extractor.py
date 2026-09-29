@@ -543,8 +543,8 @@ def extract_image_content(
     is no label yet, so this falls back to classify-then-prompt (two calls).
 
     Failures degrade like :func:`classify_and_describe`: whatever was already
-    resolved is returned, never raised. The gate is the only caller that needs an
-    outage to surface, and it runs before this pass.
+    resolved is returned, never raised. A caller that needs an outage to surface
+    has to check before this pass, as the gate does.
     """
     description = ""
     classified = image_type is None

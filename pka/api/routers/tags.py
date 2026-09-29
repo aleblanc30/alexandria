@@ -1,12 +1,21 @@
-"""``/tags`` — list source and overlay tags with optional filter."""
+"""``/tags`` — list source and overlay tags with optional filter, and fold them."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from pka.api.dependencies import get_engine
+from pka.api.schemas.tags import (
+    MergeRequest,
+    ScanRequest,
+    ScanResult,
+    TagAliasOut,
+    VariantGroup,
+)
 from pka.constants import Source
-from pka.db.queries import list_tags as query_list_tags
+from pka.db import tag_aliases
+from pka.db.tags import list_tags as query_list_tags
+from pka.tag_dedup import describe, scan, variant_report
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -15,12 +24,13 @@ router = APIRouter(prefix="/tags", tags=["tags"])
 def list_tags(
     origin: str | None = Query(
         None,
-        description="source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned",
+        description="source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned | collection",
     ),
     sources: Annotated[list[Source] | None, Query()] = None,
     source_tags: Annotated[list[str] | None, Query()] = None,
     cluster_l1_tags: Annotated[list[str] | None, Query()] = None,
     cluster_l2_tags: Annotated[list[str] | None, Query()] = None,
+    collection_tags: Annotated[list[str] | None, Query()] = None,
     wayback_only: bool = Query(default=False),
     q: str | None = Query(None),
     limit: int = 100,
@@ -34,7 +44,60 @@ def list_tags(
         source_tag_filter=source_tags,
         cluster_l1_tag_filter=cluster_l1_tags,
         cluster_l2_tag_filter=cluster_l2_tags,
+        collection_tag_filter=collection_tags,
         wayback_only=wayback_only,
         q=q,
         limit=limit,
     )
+
+
+# ── Folding (DESIGN.md §3.8) ────────────────────────────────────────────────
+
+
+@router.get("/aliases", response_model=list[TagAliasOut])
+def list_aliases(
+    state: Literal["candidate", "active", "rejected"] | None = Query(None),
+    limit: int = Query(default=200, ge=1, le=2000),
+):
+    """Fold proposals and decisions, with counts and, for candidates, example titles."""
+    return describe(tag_aliases.list_aliases(state)[:limit])
+
+
+@router.post("/aliases", response_model=TagAliasOut)
+def merge_tags(req: MergeRequest):
+    """Fold tag ``alias`` into tag ``canonical`` (any stored spelling of either)."""
+    try:
+        row = tag_aliases.merge(req.alias, req.canonical)
+    except tag_aliases.AliasError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return describe([row])[0]
+
+
+@router.post("/aliases/scan", response_model=ScanResult)
+def scan_aliases(req: ScanRequest):
+    """Propose new candidates. Semantic proposals embed every compared tag locally."""
+    return scan(tuple(req.kinds), threshold=req.threshold)
+
+
+@router.post("/aliases/{alias_id}/accept", response_model=TagAliasOut)
+def accept_alias(alias_id: int):
+    try:
+        row = tag_aliases.accept(alias_id)
+    except KeyError as exc:
+        raise HTTPException(404, "No such alias") from exc
+    except tag_aliases.AliasError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return describe([row])[0]
+
+
+@router.post("/aliases/{alias_id}/reject", status_code=204)
+def reject_alias(alias_id: int):
+    """Decline a candidate or undo a fold; the pair is not proposed again."""
+    if not tag_aliases.reject(alias_id):
+        raise HTTPException(404, "No such alias")
+
+
+@router.get("/variants", response_model=list[VariantGroup])
+def list_variants(limit: int = Query(default=200, ge=1, le=5000)):
+    """Spellings the normalisation already folds, largest groups first."""
+    return variant_report()[:limit]

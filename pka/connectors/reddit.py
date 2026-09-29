@@ -187,7 +187,7 @@ def _quiet_http_logs():
         httpx_log.setLevel(previous)
 
 
-def _save_failed_body(response, base: str) -> Path | None:
+def _save_failed_body(response) -> Path | None:
     """Write a failed feed response to ``data_dir/diagnostics`` and return its path.
 
     A block page explains itself in the body, and the excerpt in the error
@@ -374,7 +374,7 @@ def _fetch_feed_response(base: str, params: dict[str, str]):
         ) from exc
 
     if response.status_code != 200:
-        saved = _save_failed_body(response, base)
+        saved = _save_failed_body(response)
         where = f" Full response saved to {saved}." if saved else ""
         raise RedditConnectorError(
             f"Reddit feed returned HTTP {response.status_code} for {_redact(base)}. "

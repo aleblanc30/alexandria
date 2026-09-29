@@ -8,10 +8,11 @@ from __future__ import annotations
 import logging
 
 from pka.cli._logging import setup_logging
-from pka.db.queries import init_db
+from pka.db.migrate import init_db
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(_argv: list[str] | None = None) -> int:
+    # Takes no options; ``argv`` is only the signature every subcommand's main shares.
     setup_logging()
     init_db()
     logging.getLogger("init_db").info("Database ready.")

@@ -13,7 +13,7 @@ import threading
 
 import sqlalchemy as sa
 
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import cluster_runs
 
 log = logging.getLogger(__name__)

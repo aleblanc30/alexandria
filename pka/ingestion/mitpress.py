@@ -88,13 +88,13 @@ def title_from_slug(slug: str | None) -> str | None:
 
 
 async def fetch_mitpress_book(
-    client: object,
+    _client: object,
     doc_id: int,
     url: str,
 ) -> FetchResult | None:
     """Card for an MIT Press book page. ``None`` when the URL is not one.
 
-    ``client`` is accepted and unused: the dispatch chain hands one to every
+    ``_client`` is accepted and unused: the dispatch table hands one to every
     async handler, and the Open Library leg brings its own HTTP client.
     """
     parsed = parse_mitpress_url(url)

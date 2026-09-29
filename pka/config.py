@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     EnvSettingsSource,
@@ -26,6 +26,14 @@ from pydantic_settings import (
 )
 
 log = logging.getLogger(__name__)
+
+# Settings that were removed. A `.env` still naming one would otherwise stop the
+# app from starting (unknown keys are rejected), so each is dropped with a warning.
+RETIRED_SETTINGS = {
+    "chunk_sentences": "chunks are sized in tokens: see chunk_tokens",
+    "chunk_overlap": "see chunk_overlap_tokens",
+    "max_sentence_chars": "chunks are sized in tokens: see chunk_tokens",
+}
 
 FORBIDDEN_PATH_PREFIXES = (Path("/etc"), Path("/usr"), Path("/var"), Path("/sys"))
 
@@ -322,9 +330,18 @@ class Settings(BaseSettings):
     # start/finish/purge. Set to 0 to disable caching (always recompute).
     ingestion_probe_cache_ttl_seconds: float = 30.0
 
+    # ── Embedding ───────────────────────────────────────────────────────────
+    # The model that embeds chunks and queries. An archive keeps the model its
+    # chunk index was built with until `alexandria reembed` rebuilds it with
+    # this one (DESIGN.md §3.6); downloaded once from the Hugging Face Hub.
+    embedding_model: str = "intfloat/multilingual-e5-small"
+
     # ── Chunking ────────────────────────────────────────────────────────────
-    chunk_sentences: int = 5  # sentence-window size
-    chunk_overlap: int = 1  # sentences of overlap between windows
+    # Chunks are packed from whole sentences up to this many tokens of the
+    # embedding model's tokenizer, and never past what the model reads
+    # (DESIGN.md §3.5).
+    chunk_tokens: int = 256
+    chunk_overlap_tokens: int = 32  # tokens repeated from the end of the previous chunk
     min_chunk_chars: int = 80  # discard chunks shorter than this
     # Keep the extracted body text verbatim in `document_texts`, so summarising,
     # chunking and extraction can be redone without re-fetching. Local
@@ -343,6 +360,41 @@ class Settings(BaseSettings):
     # are the copies that cannot be re-read from disk if lost.
     book_retain_max_pages: int | None = 20
     book_retain_max_chars: int | None = 50_000
+
+    # ── Collection tags ─────────────────────────────────────────────────────
+    # Zotero collections and Firefox bookmark folders become `collection`
+    # overlay tags, one per path segment (DESIGN.md §3.7). A local derivation
+    # of data already in the archive, with no outbound call, so §1.1's
+    # default-off rule does not apply. Off stops new ones and makes
+    # `alexandria collection-tags` remove the existing ones.
+    collection_tags_enabled: bool = True
+    # Segments kept from the top of each path, so a deep tree does not put a
+    # tag per level on every document in it.
+    collection_tag_max_depth: int = 4
+    # Folder names never to tag, compared without regard to case: the dumping
+    # grounds a bookmark tree accumulates ("Imported", "Misc"). A JSON array
+    # or a comma-separated list in `.env`.
+    collection_tag_exclude: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # A collection tag on more documents than this is dropped: a folder holding
+    # a large share of the library filters like a source, not like a tag.
+    # Applied by `alexandria collection-tags`, which sees the whole archive.
+    # 0 disables the cap.
+    collection_tag_max_documents: int = 1000
+
+    # ── Tag folding ─────────────────────────────────────────────────────────
+    # `alexandria dedupe-tags scan` proposes semantically equivalent tags by
+    # embedding similarity, with the local chunk embedding model (DESIGN.md
+    # §3.8). Proposals only: nothing folds until accepted.
+    tag_dedup_similarity: float = 0.92  # cosine similarity a pair must reach
+    tag_dedup_min_documents: int = 2  # a tag on fewer documents is not compared
+    tag_dedup_max_tags: int = 5000  # the most used tags compared, to bound the cost
+
+    # ── Duplicate documents ─────────────────────────────────────────────────
+    # `alexandria dedupe scan` links exact duplicates (DOI, arXiv id, ISBN, URL)
+    # and proposes near ones whose document vectors reach this cosine
+    # similarity, for review (DESIGN.md §3.9).
+    dedupe_similarity: float = 0.97
+    dedupe_max_candidates: int = 500  # proposals kept per scan, best first
 
     # ── Firefox fetch ───────────────────────────────────────────────────────
     fetch_timeout_seconds: float = 10.0  # max seconds to read response body
@@ -499,10 +551,38 @@ class Settings(BaseSettings):
             return v
         return reject_system_path(v)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_retired(cls, data):
+        if not isinstance(data, dict):
+            return data
+        for name, instead in RETIRED_SETTINGS.items():
+            for key in (name, f"alexandria_{name}"):
+                if key in data:
+                    data.pop(key)
+                    log.warning("ALEXANDRIA_%s is no longer a setting (%s)", name.upper(), instead)
+        return data
+
     @field_validator("image_dirs", mode="before")
     @classmethod
     def _parse_image_dirs(cls, v: object) -> list[Path]:
         return _parse_path_list(v)
+
+    @field_validator("collection_tag_exclude", mode="before")
+    @classmethod
+    def _parse_name_list(cls, v: object) -> list[str]:
+        """A list, a JSON array string, or a comma-separated string of names."""
+        if v is None or v == "":
+            return []
+        if isinstance(v, str):
+            text = v.strip()
+            if text.startswith("["):
+                v = json.loads(text)
+            else:
+                v = text.split(",")
+        if not isinstance(v, list | tuple):
+            raise ValueError("expected a list of names")
+        return [str(s).strip() for s in v if str(s).strip()]
 
     # ── Sources ─────────────────────────────────────────────────────────────
     @classmethod

@@ -35,7 +35,7 @@ import logging
 from pka.config import settings as cfg
 from pka.constants import EnrichmentKind
 from pka.enrichment_runs import record_call
-from pka.ingestion.chunker import _split_sentences, clean_text, trim_to_sentences
+from pka.ingestion.chunker import clean_text, split_sentences, trim_to_sentences
 from pka.ollama_chat import chat_json
 
 log = logging.getLogger(__name__)
@@ -51,6 +51,10 @@ CHUNK_CHAR_LIMIT = 6000
 # opening body of a document, and cost has to stay predictable during a bulk
 # ingest.
 MAX_CHUNKS_PER_PASS = 12
+
+# Above this many characters per allowed sentence, a text is summarised rather
+# than kept as its own summary.
+_SHORT_CHARS_PER_SENTENCE = 500
 
 # Reduce passes above the map pass. Combined with the truncating base case this
 # is what makes the recursion terminate on any input, however large.
@@ -200,35 +204,14 @@ def _summarize_once(
 def _chunk_for_summary(text: str) -> list[str]:
     """Split *text* into at most ``MAX_CHUNKS_PER_PASS`` chunks on sentence bounds.
 
-    Uses the chunker's splitter so a summarisation chunk breaks where a retrieval
-    chunk would. An individual sentence longer than the limit (a wall of OCR text
-    with no punctuation, say) is hard-sliced — otherwise one pathological sentence
-    would defeat the bound.
+    Characters rather than tokens: the limit is a prompt budget, not a model's
+    input length. A sentence longer than the limit (a wall of OCR text with no
+    punctuation, say) is cut between words, so one pathological sentence cannot
+    defeat the bound.
     """
-    pieces: list[str] = []
-    for sentence in _split_sentences(text) or [text]:
-        if len(sentence) <= CHUNK_CHAR_LIMIT:
-            pieces.append(sentence)
-        else:
-            pieces.extend(
-                sentence[i : i + CHUNK_CHAR_LIMIT]
-                for i in range(0, len(sentence), CHUNK_CHAR_LIMIT)
-            )
+    from semantic_text_splitter import TextSplitter
 
-    chunks: list[str] = []
-    current: list[str] = []
-    length = 0
-    for piece in pieces:
-        if current and length + len(piece) + 1 > CHUNK_CHAR_LIMIT:
-            chunks.append(" ".join(current))
-            if len(chunks) >= MAX_CHUNKS_PER_PASS:
-                return chunks
-            current, length = [], 0
-        current.append(piece)
-        length += len(piece) + 1
-    if current:
-        chunks.append(" ".join(current))
-    return chunks[:MAX_CHUNKS_PER_PASS]
+    return TextSplitter(CHUNK_CHAR_LIMIT).chunks(clean_text(text))[:MAX_CHUNKS_PER_PASS]
 
 
 def _summarize_recursive(
@@ -335,7 +318,10 @@ def summarize_text(
         return None
 
     # Already short enough to be its own summary — most bookmarks land here.
-    if len(_split_sentences(cleaned)) <= limit:
+    # Anything past _SHORT_CHARS_PER_SENTENCE a sentence is summarised whatever
+    # its count: a wall of unpunctuated OCR is one "sentence" but no summary,
+    # and counting a whole book's sentences would cost more than it saves.
+    if len(cleaned) <= limit * _SHORT_CHARS_PER_SENTENCE and len(split_sentences(cleaned)) <= limit:
         return trim_to_sentences(cleaned, limit) or None
 
     try:

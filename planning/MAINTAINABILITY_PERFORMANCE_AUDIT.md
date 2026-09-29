@@ -101,7 +101,16 @@ The file already has the seams drawn: the `# ── Step N` banners at lines 84,
   `TriggerRunRequest` maps onto once; the API schema and the CLI then stop
   hand-mirroring the same defaults.
 
-### M-2: `pka/db/queries.py` mixes engine lifecycle, migrations, and every query (M)
+### M-2: `pka/db/queries.py` mixes engine lifecycle, migrations, and every query (M) — **done**
+
+Shipped as recommended, with three departures. Applied steps are recorded in a
+new `schema_migrations` table: there is no `meta` table, only the SQLAlchemy
+`MetaData` object of that name, and a name-keyed record survives reordering in a
+way `PRAGMA user_version` would not. Card text (`resolve_description`,
+`first_chunk_map`, `doc_title_excerpts`) got its own `cards.py`, and Reddit and
+image-rejection helpers got `reddit.py` / `images.py`, since they fit none of the
+five named aggregates. The drop-and-restore migration tests now clear the record
+first, because a recorded step is skipped by design.
 
 Evidence: 1,233 lines, 46 top-level definitions, MI 14.7, second-highest churn
 (34 commits). `init_db` (CC 28, 69 statements) is 45 hand-written
@@ -176,7 +185,26 @@ intent), and make every remaining catch either narrow the type or
 `log.debug(..., exc_info=True)`. The `fetch_base` rungs in particular should
 distinguish "library missing" from "extraction failed".
 
-### M-6: 118 function-level imports, several covering dependency cycles (M)
+### M-6: 118 function-level imports, several covering dependency cycles (M) — **done**
+
+Shipped: a `layers` contract in `pyproject.toml` (`[tool.importlinter]`),
+exhaustive over `pka`'s top-level modules, run as a step of `scripts/check.*`,
+and written down in `DESIGN.md` §1.2. The order was measured, not taken from
+the recommendation below: ingestion sits *above* clustering, because the ingest
+tail calls `refresh_document_embedding` / `insert_overlay_tags` and clustering
+never imports ingestion. The `ingestion → tag_training` edge (by then a single
+`doc_embeddings → tag_training.scoring` call, after M-17) is gone:
+`doc_embeddings` calls `pka.hooks.document_embedded(doc_id)`, and
+`pka.bootstrap.install_hooks()` registers the scorer, called from
+`pka/api/main.py` and `pka/cli/__init__.py` (which the `scripts/run_*.py` shims
+also import). `tests/test_hooks.py` checks each entry point registers it in a
+fresh interpreter, since conftest installs it for the suite. The nine imports
+that already broke the layering are baselined in `ignore_imports` rather than
+fixed here, with a TODO line to shrink the list. Lazy imports: the convention is
+stated once in `DESIGN.md` §1.2, plus a reason comment at the four heavy-library
+sites that had none (`clip`, `hdbscan_step`, `agglomerative`,
+`tag_training/engine`); the other function-level `pka` imports are not
+individually commented, since import-linter now reads them all.
 
 Evidence: `grep -E "^\s{4,}(from|import) pka"` → 118 sites; heaviest in
 `fetcher.py` (13), `providers/__init__.py` (12), `routers/runs.py` (9),
@@ -258,7 +286,17 @@ Recommendation, in two steps:
    attributes, and `SettingsView`'s hand-maintained field-to-tier table gets its
    grouping from the model.
 
-### M-9: `api/routers/ingestion.py` is five routers in one file (S)
+### M-9: `api/routers/ingestion.py` is five routers in one file (S) — **done**
+
+Shipped as four routers rather than three: `ingestion_status.py` (status,
+progress, SSE, domain and unfetchable reports), `ingestion_sources.py` (paths,
+image dirs, pickers), `ingestion_purge.py` (source and target purges,
+enrichment-run list) and `ingestion_jobs.py` (sync/pause/cancel, enrich,
+rechunk, rebuild, `_workers`). Purge got its own module because its targets and
+provenance filters are not about sources. The three helpers more than one
+router needs (`require_source`, `require_nothing_running`, `seed_baselines`)
+live in `pka/api/ingestion_common.py`. No shim: only `api/main.py` and the tests
+imported the old module.
 
 Evidence: 515 lines, 19 commits, endpoints for status/progress/SSE, image
 directory management, per-source path management, purge, domain top-lists,
@@ -433,7 +471,11 @@ Recommendations, independently adoptable:
   batch at the end of the sync phase (`refresh_document_embeddings(ids)` with a
   single `fetch_records_by_document_ids`).
 
-### P-5: search: unbounded title scan and over-wide row fetch (S) — **2 of 3 done**
+### P-5: search: unbounded title scan and over-wide row fetch (S) — **done**
+
+The FTS5 index shipped with keyword search (`DESIGN.md` §3.4): trigram indexes
+over `documents(title, card_summary)` and `chunks(text)`, trigger-synced rather
+than kept by the `DocumentWrite` path, so every writer is covered.
 
 Both column projections and the over-fetch ceiling shipped with M-3. The row
 filter now selects `id` / `fetch_status` / `date_added`, and `documents_out_batch`

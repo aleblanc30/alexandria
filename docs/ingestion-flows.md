@@ -18,7 +18,7 @@ across pipelines:
 
 | Colour | Meaning |
 |--------|---------|
-| 🟦 **blue** | **Shared machinery** — code every (or nearly every) pipeline runs: `pka/ingestion/core.py`, `loops.py`, `progress/`, `sync_shared.py`, `registry.py`, `fetcher.py`, `db/queries.py` |
+| 🟦 **blue** | **Shared machinery** — code every (or nearly every) pipeline runs: `pka/ingestion/core.py`, `loops.py`, `progress/`, `sync_shared.py`, `registry.py`, `fetcher.py`, `db/` (`documents.py`, `chunks.py`, `tags.py`) |
 | 🟧 **amber** | **Source-specific** — the connector and runner written for this source alone |
 | 🟥 **red** | **Outbound network** — a call that leaves `localhost` |
 | 🟩 **green** | **Persistence** — SQLite (`documents`, `alexandria_chunks`, sidecar tables) and ChromaDB |
@@ -57,7 +57,7 @@ text it hands to `ingest_text_block`.
 ```mermaid
 flowchart TD
     subgraph entry["Job launch"]
-        API["POST /api/ingestion/sync<br/>pka/api/routers/ingestion.py"]
+        API["POST /api/ingestion/sync<br/>pka/api/routers/ingestion_jobs.py"]
         CLI["alexandria &lt;source&gt;<br/>pka/cli.py"]
         REG["require_handlers(src)<br/>ingestion/registry.py"]
         SPEC["phase_spec(src) — PHASE_SPECS"]
@@ -98,7 +98,7 @@ flowchart TD
 
     subgraph tail["Shared tail — ingestion/core.py"]
         TAIL["ingest_text_block(doc_id, text, source, …)"]
-        CHUNK["sentence_window_chunks()<br/>ingestion/chunker.py"]
+        CHUNK["chunk_text()<br/>ingestion/chunker.py"]
         FB{"no chunks and<br/>fallback_text given?"}
         FBUSE["embed fallback as one chunk"]
         UPS["upsert_chunks() → embedding model<br/>storage/vector_store.py<br/>returns the vectors it stored"]
@@ -155,10 +155,13 @@ flowchart TD
 
 ## 1. Zotero
 
-Two phases, no fetch phase: the library is already on disk and the embeddable
-text is `title + creators + abstract + annotations`, so `fetching` is skipped
-outright. Zotero is the only source whose read starts by **snapshotting** the
-upstream SQLite file. No generated summary — an item already carries its abstract.
+Two phases, no fetch phase: the library is already on disk, so `fetching` is
+skipped outright. The embedding phase runs twice, like Calibre's: first
+`title + creators + abstract + annotations` for every item (`pass="metadata"`),
+then the full text of each attached PDF not yet archived (`pass="fulltext"`),
+retained in `document_texts` with its page map. Zotero's read starts by
+**snapshotting** the upstream SQLite file. No generated summary —
+an item already carries its abstract.
 
 ```mermaid
 flowchart TD
@@ -169,7 +172,7 @@ flowchart TD
 
     COPY["ensure_zotero_copy()<br/>snapshot zotero.sqlite (dev: reuse)"]
     ZDB[("zotero.sqlite<br/>read-only copy")]
-    LOAD["load_items()<br/>items + tags + collections + annotations"]
+    LOAD["load_items()<br/>items + tags + collection paths + annotations"]
     TAKE["take(items, ZOTERO)"]
 
     MRUN["ingest_zotero_metadata()<br/>runners/zotero.py"]
@@ -177,12 +180,13 @@ flowchart TD
     KW["_zotero_document_kwargs()<br/>fetch_status = AVAILABLE if pdf_path else PENDING"]
     INSDOC["insert_document_if_new()"]
     TAGS["insert_source_tags()<br/>insert_source_collections()"]
+    COLLTAG["sync_collection_tags()<br/>ingestion/collection_tags.py — a tag per path segment"]
     CLS["classify_document(ZOTERO, item_type, url_or_path)<br/>sync_classification_tags()"]
     CARD["update_card_summary(zotero_card_summary(item))<br/>highlight, else abstract"]
-    ATTK["refresh_zotero_metadata()"]
+    ATTK["refresh_zotero_metadata()<br/>refresh_zotero_collections() — archived items:<br/>collections + collection tags rewritten"]
 
     START --> INIT --> BASE --> BEGIN --> COPY --> ZDB --> LOAD --> TAKE --> MRUN
-    MRUN --> MLOOP --> KW --> INSDOC --> TAGS --> CLS --> CARD --> ATTK
+    MRUN --> MLOOP --> KW --> INSDOC --> TAGS --> COLLTAG --> CLS --> CARD --> ATTK
 
     ATTK --> FULL{"run_full_sync()"}
     FULL --> ING["sync_zotero_ingest()"]
@@ -201,8 +205,8 @@ flowchart TD
     ELOOP["run_embed_loop()"]
     UPD["upsert_document() when the row is missing"]
     TEXT["zotero_embed_text(item)<br/>title + creators + abstract + annotations"]
-    BLOCK["ingest_text_block(min_chars=1)"]
-    CHUNK["sentence_window_chunks()"]
+    BLOCK["ingest_text_block(min_chars=1, pass='metadata')"]
+    CHUNK["chunk_text()"]
     UPSC["upsert_chunks() → embedding model<br/>returns the vectors it stored"]
     INSC["insert_chunks()"]
     DOCEMB["refresh_document_embedding(known=…)<br/>one block per document, so no Chroma read"]
@@ -212,12 +216,32 @@ flowchart TD
     NOSUM["no attach_summary_chunk:<br/>ZOTERO is absent from _SUMMARY_FLAGS"]
     BLOCK -.-> NOSUM
 
-    SQLITE[("SQLite: documents, tags,<br/>collections, chunks")]
+    FTPLAN["_load_zotero_items_for_fulltext()<br/>readable PDF · no fulltext chunks ·<br/>not no_text_layer"]
+    SETF2["sp.set_phase('zotero', 'embedding', n_pdfs)<br/>second pass over the same phase"]
+    FRUN["ingest_zotero_fulltext()<br/>runners/zotero.py"]
+    EXTR["extract_book_report(pdf_path)<br/>book_extractor.py — page groups"]
+    SCAN["set_fetch_status(NO_TEXT_LAYER)<br/>a scan: nothing to chunk"]
+    KEEP["store_document_text()<br/>truncate_blocks(book caps) + blocks map"]
+    FBLOCK["ingest_text_block(pass='fulltext',<br/>section + page range, refresh=False)<br/>offset by existing_chunk_count()"]
+    FREF["refresh_document_embedding()<br/>once, after the last block"]
+
+    DOCEMB --> FTPLAN --> SETF2 --> FRUN --> EXTR
+    EXTR -->|no text layer| SCAN
+    EXTR -->|sections| KEEP --> FBLOCK --> FREF
+
+    PDF[("attached PDF<br/>Zotero storage/, read-only")]
+    EXTR --> PDF
+
+    SQLITE[("SQLite: documents, tags, collections,<br/>chunks, document_texts")]
     CHROMA[("ChromaDB: alexandria_chunks")]
     INSDOC --> SQLITE
     TAGS --> SQLITE
+    COLLTAG --> SQLITE
     INSC --> SQLITE
+    KEEP --> SQLITE
+    SCAN --> SQLITE
     UPSC --> CHROMA
+    FBLOCK --> CHROMA
 
     classDef shared   fill:#1f6feb,stroke:#0b3d91,stroke-width:1px,color:#ffffff
     classDef specific fill:#f59e0b,stroke:#b45309,stroke-width:1px,color:#1a1a1a
@@ -225,16 +249,16 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,BASE,BEGIN,TAKE,MLOOP,INSDOC,TAGS,CLS,CARD,FULL,ING,HAVE,DIFF,SKIPF,SETE,ELOOP,UPD,BLOCK,CHUNK,UPSC,INSC,DOCEMB shared
-    class COPY,LOAD,MRUN,KW,ATTK,PLAN,KEYS,RELOAD,ERUN,TEXT,NOSUM specific
-    class ZDB,SQLITE,CHROMA store
+    class START,INIT,BASE,BEGIN,TAKE,MLOOP,INSDOC,TAGS,COLLTAG,CLS,CARD,FULL,ING,HAVE,DIFF,SKIPF,SETE,ELOOP,UPD,BLOCK,CHUNK,UPSC,INSC,DOCEMB,SETF2,EXTR,SCAN,KEEP,FBLOCK,FREF shared
+    class COPY,LOAD,MRUN,KW,ATTK,PLAN,KEYS,RELOAD,ERUN,TEXT,NOSUM,FTPLAN,FRUN specific
+    class ZDB,SQLITE,CHROMA,PDF store
 ```
 
 ---
 
 ## 2. Firefox
 
-The only pipeline with `plans_own_phases=True, tracks_embedding=False`
+Firefox's `PhaseSpec` is `plans_own_phases=True, tracks_embedding=False`
 (`registry.PHASE_SPECS`): its work is unknown until the fetch queue is built, and
 every fetched page is embedded **inline by the fetch worker**, so there is no
 separate embedding phase to report. Everything from `fetch_and_embed_pending`
@@ -273,12 +297,13 @@ flowchart TD
     SU["fetch_status = UNFETCHABLE"]
     INSDOC["insert_document_if_new()"]
     TAGS["insert_source_tags()<br/>insert_source_collections(folder_path)"]
+    COLLTAG["sync_collection_tags()<br/>a tag per folder, Firefox roots dropped"]
     CLS["classify_document(FIREFOX, url)<br/>sync_classification_tags()"]
 
     START --> INIT --> LOADBM --> PLACES --> TAKE --> BEGIN --> MRUN --> MLOOP --> UNF --> STATUS
     STATUS -->|yes| SP --> INSDOC
     STATUS -->|no| SU --> INSDOC
-    INSDOC --> TAGS --> CLS
+    INSDOC --> TAGS --> COLLTAG --> CLS
 
     CLS --> FULL{"run_full_sync()"}
     FULL --> ING["sync_firefox_ingest()"]
@@ -302,7 +327,7 @@ flowchart TD
     SETF --> ASYNC --> POOL --> KEY --> DQ --> SLEEP --> ONE
 
     subgraph handlers["_fetch_one_impl dispatch — shared fetcher"]
-        DISPATCH{"URL shape?"}
+        DISPATCH{"URL shape?<br/>_fetch_handlers(), in order —<br/>first handler returning a result wins"}
         SRCH["search_url_result()<br/>query decoded from the URL — no request"]
         WIKI["fetch_wikipedia_with_retries()<br/>MediaWiki Action API"]
         YT["fetch_youtube_video()<br/>oEmbed — title + channel, no key"]
@@ -316,7 +341,7 @@ flowchart TD
         DMIT["fetch_direct_mit()<br/>article-pdf: filename is the DOI suffix → direct lookup ·<br/>article: crossref bibliographic query · both accepted only if<br/>volume/issue/page round-trip · book: openlibrary by title<br/>gates: doi_metadata_lookup / external_lookup_enabled"]
         DOIO["fetch_doi_url()<br/>doi.org content negotiation (CSL-JSON)<br/>— the bookmarked host, so no flag"]
         PUB["fetch_nature / springer / aps / sciencedirect_article()<br/>DOI (or Elsevier PII) from the URL → api.crossref.org,<br/>+ Semantic Scholar when the record has no abstract<br/>gate: doi_metadata_lookup"]
-        EXT["non-HTML extension → skipped"]
+        EXT["_fetch_generic(): no handler returned a result<br/>non-HTML extension → skipped"]
         LIM["_limiter.wait(url)<br/>per-domain slot, 1 req/s —<br/>skipped when the pool already claimed it"]
         GET["httpx GET, follow_redirects"]
         WB["fetch_via_wayback()<br/>gate: fetch_wayback_fallback"]
@@ -399,7 +424,7 @@ flowchart TD
     BLOCK --> SUM --> LLM --> BLOCK
     BLOCK --> CARD2
 
-    CHUNK["sentence_window_chunks()"]
+    CHUNK["chunk_text()"]
     UPSC["upsert_chunks() → embedding model<br/>returns the vectors it stored"]
     INSC["insert_chunks()"]
     DOCEMB["refresh_document_embedding()<br/>once, after the body and summary blocks<br/>(both pass refresh=False)"]
@@ -419,7 +444,7 @@ flowchart TD
     classDef store    fill:#059669,stroke:#065f46,stroke-width:1px,color:#ffffff
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
-    class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,KEY,DQ,SLEEP,LIM,ONE,DISPATCH,EXT,PDF,HTML,GATE,REJECT,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,STORE,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
+    class START,INIT,TAKE,BEGIN,MLOOP,UNF,STATUS,SP,SU,INSDOC,TAGS,COLLTAG,CLS,FULL,ING,RESET,NW,SKIPF,SETF,DONE,ASYNC,POOL,KEY,DQ,SLEEP,LIM,ONE,DISPATCH,EXT,PDF,HTML,GATE,REJECT,RESULT,PERSIST,ADV,SKIPC,SKIPPED,EXC,STORE,COMPOSE,BLOCK,CHUNK,UPSC,INSC,DOCEMB,CARD2 shared
     class LOADBM,MRUN,QUEUE,EMBED specific
     class NET,GET,WIKI,ARX,BIO,AMZ,DOIO external
     class RG,YTP specific
@@ -433,8 +458,8 @@ flowchart TD
 
 Local library, no fetch phase, but **two embedding passes**: a cheap
 `pass="metadata"` over every book, then `pass="fulltext"` over the books whose
-file exists on disk. It is the only pipeline that calls `set_phase('embedding')`
-twice. Both outbound touches (`lookup_book`, `summarize_text`) are default-off.
+file exists on disk and whose full text is not archived yet. Like Zotero, it
+calls `set_phase('embedding')` twice. Both outbound touches (`lookup_book`, `summarize_text`) are default-off.
 
 ```mermaid
 flowchart TD
@@ -511,14 +536,15 @@ flowchart TD
     NETOL(["Open Library / catalogue API"])
     LADDER --> NETOL
 
-    STOP1{"stopped, or n_files == 0?"}
+    NEED["_needs_fulltext(books)<br/>file on disk · no fulltext chunks ·<br/>not no_text_layer"]
+    STOP1{"stopped, or no book needs full text?"}
     ENDE(["return stats"])
-    SETE2["sp.set_phase('calibre','embedding', n_files)"]
-    B1 --> STOP1
+    SETE2["sp.set_phase('calibre','embedding', n_pending)"]
+    B1 --> NEED --> STOP1
     STOP1 -->|yes| ENDE
     STOP1 -->|no| SETE2 --> P2
 
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
+    TAIL["chunk_text() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
     B1 --> TAIL
     B2 --> TAIL
     SECT --> TAIL
@@ -538,7 +564,7 @@ flowchart TD
     classDef gated    fill:#7c3aed,stroke:#4c1d95,stroke-width:1px,color:#ffffff,stroke-dasharray:4 3
 
     class START,INIT,AVAIL,OK,UNAV,ENDU,TAKE,BEGIN,MLOOP,FS,INSDOC,TAGS,FULL,ING,SKIPF,SETE1,ELOOP1,SKIP1,B1,B2,STOP1,ENDE,SETE2,TAIL,NOOP1,NOTEXT,JOIN,STOREB shared
-    class LOADB,MRUN,SPLIT,COUNT,P1,MT,SYN,P2,EXTRACT,DISP,EPUB,PDFX,SECT,NOCLS specific
+    class LOADB,MRUN,SPLIT,COUNT,P1,MT,SYN,P2,EXTRACT,DISP,EPUB,PDFX,SECT,NOCLS,NEED specific
     class NETOL external
     class LOOK,LADDER,SUM,LLM gated
     class CDB,SQLITE,CHROMA store
@@ -550,9 +576,9 @@ flowchart TD
 
 The hybrid. Metadata comes from the private Atom feed; the ingest phase then
 **forks on `external_url`** — link posts go through the shared Firefox fetcher,
-self-posts and comments are embedded from their inline body. It is the only
-source that archives every upstream response before parsing it, and the only one
-that passes `material` / `context` to the summariser. That archive also feeds
+self-posts and comments are embedded from their inline body. It archives every
+upstream response before parsing it, and passes `material` / `context` to the
+summariser. That archive also feeds
 ingestion: every metadata sync replays the items `saved.jsonl` holds but the
 database does not *before* the walk, and those ids stop the walk too, so the
 feed is asked only for what neither store has.
@@ -638,7 +664,7 @@ flowchart TD
     NETX(["Internet — target sites"])
     POOL --> NETX
 
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
+    TAIL["chunk_text() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
     BF --> TAIL
     BI --> TAIL
     SUMF --> TAIL
@@ -732,7 +758,7 @@ flowchart TD
     HAVE["skip when source_id in source_ids_with_chunks(YOUTUBE)"]
     TEXT["youtube_embed_text(video)<br/>title + channel + description + tags"]
     BLOCK["ingest_text_block(min_chars=1,<br/>fallback_text=title)"]
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
+    TAIL["chunk_text() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
 
     SETE --> ERUN --> ELOOP --> UPD --> HAVE --> TEXT --> BLOCK --> TAIL
 
@@ -762,11 +788,11 @@ flowchart TD
 
 ## 6. Images
 
-The furthest from the shared shape. It still uses `run_metadata_loop`,
-`run_embed_loop` and `ingest_text_block`, but the "text" being embedded is
+It uses the shared `run_metadata_loop`, `run_embed_loop` and
+`ingest_text_block`, but the "text" being embedded is
 *inferred from pixels* by four extraction passes, and it writes a second vector
-collection (CLIP) that no other pipeline touches. It is also the only pipeline
-with an **admission gate** that can delete rows an earlier pass wrote.
+collection (CLIP). It also has an **admission gate** that can delete rows an
+earlier pass wrote.
 
 ```mermaid
 flowchart TD
@@ -845,7 +871,7 @@ flowchart TD
     CLIPUP["CLIP collection upsert<br/>ids, embeddings, metadata(document_id, image_id, path)"]
     P4A --> CLIPUP
 
-    TAIL["sentence_window_chunks() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
+    TAIL["chunk_text() → upsert_chunks()<br/>→ insert_chunks() → refresh_document_embedding()<br/>(deferred to one call per document where a<br/>second block follows)"]
     BLOCK --> TAIL
 
     NOSUM["no attach_summary_chunk:<br/>IMAGE is absent from _SUMMARY_FLAGS"]
@@ -887,16 +913,18 @@ Reading the six graphs together, the shared surface is:
 | `loops.run_metadata_loop` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `loops.run_embed_loop` | ✅ | — ¹ | ✅ | ✅ | ✅ | ✅ |
 | `core.ingest_text_block` + chunk/embed/persist tail | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| deferred `refresh_document_embedding` (`refresh=False`) ⁵ | — | ✅ | ✅ | ✅ | — | — |
+| deferred `refresh_document_embedding` (`refresh=False`) ⁵ | ✅ | ✅ | ✅ | ✅ | — | — |
 | `sync_shared.run_full_sync` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `sync_shared.unavailable_metadata` | — | — | ✅ | — | ✅ | ✅ |
 | `classification.classify_document` | ✅ | ✅ | — | — | ✅ | — ² |
+| `collection_tags.sync_collection_tags` (`collection_tags_enabled`) | ✅ | ✅ | — | — | — | — |
 | `fetcher.fetch_and_embed_pending` (async pool, per-domain limiter, handler dispatch) | — | ✅ | — | ✅ ³ | — | — |
 | `core.fetched_embed_text` + `card_summary.body_excerpt` | — | ✅ | — | ✅ ³ | — | — |
-| `text_store.store_document_text` (`retain_document_text`) | — | ✅ | ✅ ⁶ | ✅ ³ | — | — |
+| `text_store.store_document_text` (`retain_document_text`) | ✅ ⁶ | ✅ | ✅ ⁶ | ✅ ³ | — | — |
 | `core.attach_summary_chunk` (`_SUMMARY_FLAGS`) | — | ✅ | ✅ | ✅ | — | — |
 | `enrichment_runs` provenance around the summary call ⁴ | — | ✅ | ✅ | ✅ | — | — |
 | `openlibrary.lookup_book` ladder | — | — | ✅ | — | — | ✅ |
+| `book_extractor.extract_book_report` (page groups, scan detection) | ✅ | — | ✅ | — | — | — |
 
 ¹ Firefox embeds inline inside the fetch worker (`tracks_embedding=False`). It
 uses `run_embed_loop` only on the batch path `ingest_fetched_texts`, which
@@ -914,15 +942,15 @@ ends — so a sync whose summaries are all cached opens no run at all.
 than one block per document ran it once per block and threw away all but the
 last result. Those sources pass `refresh=False` and call
 `refresh_document_embedding` themselves once the last block is in: Calibre after
-its section loop and after its synopsis block, Firefox and Reddit after the
-generated-summary block. Zotero, YouTube and Images write one block per document
-and keep the default, which now costs no Chroma read at all because
+its section loop and after its synopsis block, Zotero after its PDF section
+loop, Firefox and Reddit after the generated-summary block. Zotero's abstract
+pass, YouTube and Images write one block per document and keep the default, which now costs no Chroma read at all because
 `upsert_chunks` hands the vectors back. A source that adopts `refresh=False`
 without adding that trailing call leaves its documents with a stale
 `doc_embedding`, invisible to clustering, learned tags and semantic search.
-⁶ Calibre stores the *joined* pass-2 sections plus a `blocks_json` map of where
-each one sits in that text, so a later re-chunk can reproduce the section and
-page metadata; the fetched sources store one undifferentiated body. The sources
+⁶ Calibre and Zotero (its PDF pass) store the *joined* pass-2 sections plus a
+`blocks_json` map of where each one sits in that text, so a later re-chunk can
+reproduce the section and page metadata; the fetched sources store one undifferentiated body. The sources
 marked `—` are the ones whose text already has a verbatim home
 (`reddit_items.body`, `images.ocr_text`/`description`) or is a millisecond
 re-read from the source itself (Zotero abstract, YouTube description).

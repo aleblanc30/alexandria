@@ -294,6 +294,8 @@ class TestZoteroSync:
             "pka.ingestion.zotero_sync._load_zotero_items_for_embed",
             lambda skip_existing=True: ([_zotero_item()], 1, 0),
         )
+        # No attached PDFs: this checks the abstract pass's phases.
+        monkeypatch.setattr("pka.ingestion.zotero_sync._load_zotero_items_for_fulltext", lambda: [])
         meta = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0})
         embed = MagicMock(return_value={"processed": 1, "skipped": 0, "failed": 0, "chunks": 2})
         monkeypatch.setattr("pka.ingestion.zotero_sync.ingest_zotero_metadata", meta)
@@ -418,7 +420,7 @@ class TestUnavailableSources:
         reg = MagicMock()
         monkeypatch.setattr("pka.ingestion.calibre_sync.ingest_calibre_metadata", reg)
 
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
 
         sp.reset("calibre")
         ing._sync_metadata("calibre")
@@ -435,7 +437,7 @@ class TestUnavailableSources:
         ingest = MagicMock()
         monkeypatch.setattr("pka.ingestion.image_sync.ingest_images", ingest)
 
-        from pka.api.routers import ingestion as ing
+        from pka.api.routers import ingestion_jobs as ing
 
         sp.reset("image")
         ing._sync_ingest("image")

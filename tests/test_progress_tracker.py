@@ -418,7 +418,7 @@ def test_snapshot_concurrent_with_advance_is_safe():
 
 def test_snapshot_opens_no_db_connection(monkeypatch):
     """The serializer is pure: a poll must not queue behind the archive DB."""
-    import pka.db.queries as queries
+    import pka.db.engine as db_engine
 
     sp.begin_metadata_sync("zotero", pending=4, baseline=1)
     sp.advance("zotero")
@@ -426,7 +426,7 @@ def test_snapshot_opens_no_db_connection(monkeypatch):
     def fail():  # pragma: no cover - only runs on regression
         raise AssertionError("snapshot() opened a database connection")
 
-    monkeypatch.setattr(queries, "get_engine", fail)
+    monkeypatch.setattr(db_engine, "get_engine", fail)
     snap = sp.snapshot("zotero")["zotero"]
     assert snap["phase_details"][0]["processed"] == 2
 

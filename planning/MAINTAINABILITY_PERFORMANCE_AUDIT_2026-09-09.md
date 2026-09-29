@@ -105,7 +105,25 @@ is a finding here.
 
 Ordered by expected payoff. "Effort" is a rough S/M/L.
 
-### M-14: `_fetch_one_impl` is a 212-line dispatch chain, CC 51 (M)
+### M-14: `_fetch_one_impl` is a 212-line dispatch chain, CC 51 (M) — **done**
+
+Shipped: `_fetch_handlers()` returns an ordered tuple of `FetchHandler(name,
+fetch, matches, awaits)`, and `_fetch_one_impl` is the unfetchable guard, a loop
+over it, then `_fetch_generic()` for the plain GET tail. CC 51 became 7 for the
+dispatcher and 21 for `_fetch_generic` (the PDF / content-type / Wayback /
+Amazon branches, unchanged). One departure: the table is rebuilt on every call
+rather than cached on first use, because caching froze the handler functions
+and a `monkeypatch` of a handler module stopped reaching dispatch — a test pins
+that. Tests also pin the arXiv-before-publisher order.
+
+The duplicated blocks: the rate-limited GET with its timeout / request-error /
+4xx mapping, copied eight times (arXiv ×2, bioRxiv ×2, doi_meta, PubMed, Reddit,
+YouTube), is now `fetch_base.rate_limited_get`, and the arXiv/bioRxiv PDF leg is
+`fetch_base.fetch_pdf_text`. pylint's duplicate-code report went from six pairs
+to two, both left on purpose: the arXiv/bioRxiv abstract-or-PDF result tail
+(folding it needs a helper with a dozen parameters, and the two differ in author
+format and identifier fields), and `runners/firefox.py` ≡ `runners/reddit.py`,
+which is runner code outside the fetch family.
 
 Evidence: `pka/ingestion/fetcher.py:338-549`. Cyclomatic complexity **51 (F)**,
 the highest in the tree; the function holds **19 predicate rungs** and **16
@@ -224,7 +242,19 @@ to take it off the list, which is how `pka.clustering.engine` came off during
 M-1. Worth stating a target in `TODO.md` (say, list emptied by v0.1.0) so the
 ratchet has a direction rather than only a floor.
 
-### M-17: `tag_training/lifecycle.py` is the last B-grade module outside the excluded set (S/M)
+### M-17: `tag_training/lifecycle.py` is the last B-grade module outside the excluded set (S/M) — **done**
+
+Shipped as recommended: `_apply_model_to_documents` (now public,
+`apply_model_to_documents`, since `accept_session` calls it across the module
+line), `apply_learned_tags_for_document`, `_set_learned_overlay` and
+`_clear_learned_overlay` moved to `tag_training/scoring.py`, bodies unchanged.
+`_parse_parameters` went with them as `parse_parameters`: the scoring path reads
+each session's threshold through it, and `lifecycle.py` imports it from
+`scoring`, so the dependency points one way. `clustering/doc_embeddings.py` now
+imports `scoring`, so the ingest tail no longer loads `lifecycle` (or
+`llm_classifier` through it). No re-export shim. `scoring.py` is mypy-clean
+outside the override list; `lifecycle.py` stays on it for one pre-existing
+error (`:172`, an unguarded index on an optional row).
 
 Evidence: maintainability index **16.53**, the lowest in the tree other than
 `db/queries.py` (15.41, excluded as M-2). It is the module the shared ingest tail
@@ -242,7 +272,20 @@ gives ingestion a small module to depend on and leaves lifecycle to the API. It
 also narrows the `ingestion → tag_training` edge that M-6 wants to break, so
 sequence it before or with that work rather than against it.
 
-### M-18: small hygiene, batchable (S)
+### M-18: small hygiene, batchable (S) — **done**
+
+Shipped: `pka/api/schemas/common.py` deleted (not wired in; the list responses
+keep their own `total`/`limit`/`offset`). Of the 14 `ARG001`s, three were stale
+and are gone: `_save_failed_body(base)` in the Reddit connector,
+`ingest_calibre_fulltext(force)` (no caller passed it), and `now` through
+`_apply_model_to_documents` → `_set_learned_overlay` in tag-training lifecycle
+(the overlay insert stamps its own time). The other eleven are signatures a caller
+imposes — FastAPI's `lifespan(app)`, the CLI `main(argv)` contract, the L2
+`compute_l2_labels` callbacks, a fetch-table handler, the embed loop's
+`should_skip`, the purge registry's `scope` — and now carry a leading
+underscore. `ARG001` is selected in ruff for everything outside `tests/`, where
+test doubles match signatures by design. `PLR0913` and `TRY003` left alone as
+recommended.
 
 - **Dead module.** `pka/api/schemas/common.py` defines `Pagination` and has
   **zero importers** anywhere in `pka/` or `tests/`. vulture misses it because a

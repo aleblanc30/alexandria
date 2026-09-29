@@ -19,7 +19,9 @@ import sqlalchemy as sa
 from pka.api.db_rows import fetchall_mappings
 from pka.api.schemas.search import SearchRequest
 from pka.constants import Source
-from pka.db.queries import filter_document_ids
+from pka.db.browse import filter_document_ids
+from pka.db.duplicates import canonical_map
+from pka.db.fulltext import MIN_QUERY_CHARS, keyword_document_ids
 from pka.db.schema import cluster_assignments, documents
 
 log = logging.getLogger(__name__)
@@ -82,13 +84,21 @@ def semantic_hits(req: SearchRequest) -> Hits:
 
 
 def fulltext_hits(con, req: SearchRequest) -> Hits:
-    """Title substring matches, in ``documents.id`` order, with no similarity.
+    """Keyword matches with no similarity, best first.
+
+    The query is matched as one substring against titles, card summaries and
+    every chunk body, through the FTS5 indexes (:mod:`pka.db.fulltext`), which
+    rank title and summary matches ahead of body-only ones. A query shorter than
+    the trigram minimum cannot use them and falls back to the title scan it
+    replaced, in ``documents.id`` order.
 
     No ``LIMIT``: pagination happens after merging and filtering, so a
     pre-limited fetch would make page 2+ incomplete and undercount the total.
-    Replacing the scan with an FTS5 index is a separate follow-up; this is the
-    one place the query lives.
     """
+    if len(req.query.strip()) >= MIN_QUERY_CHARS:
+        ids = keyword_document_ids(con, req.query, req.sources)
+        return [(doc_id, None) for doc_id in ids]
+
     q = (
         sa.select(documents.c.id)
         .where(documents.c.title.ilike(f"%{req.query}%"))
@@ -116,8 +126,8 @@ def merge_clip_hits(results: Hits, req: SearchRequest) -> Hits:
     flag check of its own.
 
     Scored entries come back sorted by similarity and unscored ones after them,
-    so in ``fulltext`` mode a CLIP hit moves its document ahead of the plain
-    ``documents.id`` ordering. That is intended, and comparing a CLIP score
+    so in ``fulltext`` mode a CLIP hit moves its document ahead of the keyword
+    ranking. That is intended, and comparing a CLIP score
     against a MiniLM one is the same deliberate approximation
     :func:`pka.api.image_hits.merge_image_hits` documents.
     """
@@ -154,6 +164,30 @@ def merge_clip_hits(results: Hits, req: SearchRequest) -> Hits:
     return scored + unscored
 
 
+def fold_duplicates(con, results: Hits) -> Hits:
+    """Score each merged duplicate's hit as its canonical document (DESIGN.md §3.9).
+
+    One card per item: the canonical takes the best score of either row and the
+    position of whichever ranked first. A hit with no score keeps none unless
+    the other row has one.
+    """
+    cmap = canonical_map(con)
+    if not cmap or not results:
+        return results
+    best: dict[int, float | None] = {}
+    order: list[int] = []
+    for doc_id, score in results:
+        target = cmap.get(doc_id, doc_id)
+        if target not in best:
+            order.append(target)
+            best[target] = score
+        else:
+            current = best[target]
+            if score is not None and (current is None or score > current):
+                best[target] = score
+    return [(d, best[d]) for d in order]
+
+
 def apply_browse_filters(con, results: Hits, req: SearchRequest) -> Hits:
     """Drop hits failing the browse-style filters, preserving order."""
     wanted = (
@@ -162,6 +196,7 @@ def apply_browse_filters(con, results: Hits, req: SearchRequest) -> Hits:
         or req.general_tags
         or req.cluster_l1_tags
         or req.cluster_l2_tags
+        or req.collection_tags
         or req.wayback_only
     )
     if not results or not wanted:
@@ -175,6 +210,7 @@ def apply_browse_filters(con, results: Hits, req: SearchRequest) -> Hits:
         general_tag_filter=req.general_tags or None,
         cluster_l1_tag_filter=req.cluster_l1_tags or None,
         cluster_l2_tag_filter=req.cluster_l2_tags or None,
+        collection_tag_filter=req.collection_tags or None,
         wayback_only=req.wayback_only,
     )
     return [(doc_id, sim) for doc_id, sim in results if doc_id in allowed]

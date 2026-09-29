@@ -49,7 +49,7 @@ import httpx
 
 from pka.card_summary import preprint_card_summary
 from pka.config import settings as cfg
-from pka.ingestion.fetch_base import FetchResult, _http_timeout, _limiter
+from pka.ingestion.fetch_base import FetchResult, rate_limited_get
 from pka.ingestion.identifiers import normalize_doi
 from pka.ingestion.preprint_text import build_preprint_text
 
@@ -229,21 +229,9 @@ async def _get_json(
     *,
     headers: dict[str, str] | None = None,
 ) -> tuple[object | None, int | None, str | None]:
-    await _limiter.wait(url)
-    try:
-        resp = await client.get(
-            url,
-            follow_redirects=True,
-            timeout=_http_timeout(),
-            headers=headers,
-        )
-    except httpx.TimeoutException:
-        return None, None, "timeout"
-    except httpx.RequestError as exc:
-        return None, None, str(exc)
-
-    if resp.status_code >= 400:
-        return None, resp.status_code, f"HTTP {resp.status_code}"
+    resp, status, err = await rate_limited_get(client, url, headers=headers)
+    if resp is None:
+        return None, status, err
     try:
         return resp.json(), resp.status_code, None
     except ValueError:

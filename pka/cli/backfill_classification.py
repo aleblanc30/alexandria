@@ -18,7 +18,9 @@ from pka.classification import classify_document, sync_classification_tags
 from pka.cli._logging import setup_logging
 from pka.connectors.zotero import load_items
 from pka.constants import Source
-from pka.db.queries import get_engine, init_db, update_document_item_type
+from pka.db.documents import update_document_item_type
+from pka.db.engine import get_engine
+from pka.db.migrate import init_db
 from pka.db.schema import documents
 
 log = logging.getLogger("backfill_classification")

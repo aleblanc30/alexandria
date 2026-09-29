@@ -16,7 +16,7 @@ import sys
 import sqlalchemy as sa
 
 from pka.cli._logging import setup_logging
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import cluster_assignments, cluster_runs, clusters
 
 log = logging.getLogger("purge_cluster_runs")

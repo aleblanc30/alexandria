@@ -30,7 +30,7 @@ local-*first* (see `DESIGN.md` §1.1).
 Work tracking and in-flight design proposals live in `planning/`, not at repo
 root: `planning/TODO.md` (high-priority, one line each), `planning/BACKLOG.md`
 (nice-to-haves), and one dedicated `planning/<NAME>.md` per larger plan (e.g.
-`planning/COLLECTION_TAGS.md`, `planning/WAYBACK.md`). None of these are
+`planning/MCP_PLAN.md`, `planning/WAYBACK.md`). None of these are
 authoritative about current behavior — they describe proposed or deferred
 work, not what the code does. Once a `planning/<NAME>.md` plan's corresponding
 `TODO.md` line(s) are checked off with nothing left proposed, move the file to
@@ -75,7 +75,7 @@ Run from repo root.
 
 **Default to `scripts/check.sh` (Bash/WSL) or `scripts/check.ps1` (PowerShell).**
 It runs every check below in one pass — ruff check, ruff format --check, mypy,
-pytest with coverage, `npm run lint`, `npm run test`, `npm run build` — using the repo's own
+the import-layering contract, pytest with coverage, `npm run lint`, `npm run test`, `npm run build` — using the repo's own
 `.venv` directly, so no activation is needed. Every step runs even when an
 earlier one fails, so one invocation reports everything that is broken; it exits
 non-zero if any step failed. Use it in place of chaining the commands by hand.
@@ -87,6 +87,7 @@ non-zero if any step failed. Use it in place of chaining the commands by hand.
 | Backend tests + coverage | `pytest --cov=pka --cov-report=term-missing` |
 | Lint / format | `ruff check pka tests scripts` / `ruff format pka tests scripts` |
 | Type check | `mypy pka` |
+| Import layering | `lint-imports` |
 | Frontend lint | `cd frontend && npm run lint` |
 | Frontend tests | `cd frontend && npm run test` |
 | Frontend build + typecheck | `cd frontend && npm run build` |
@@ -111,6 +112,16 @@ Two configuration facts that otherwise read as bugs:
   especially a silent `pass` or `continue` under one — fails the lint. Narrow the
   type, or log the failure, or write `# noqa: BLE001 - <why>` if the broad catch is
   a deliberate "one document must not kill the sync" guard.
+- **Imports are layered** (`DESIGN.md` §1.2, `[tool.importlinter]` in
+  `pyproject.toml`): a package imports only from layers below it, and a new
+  top-level module must be placed in the contract. The `ignore_imports` list is
+  a baseline that only shrinks — fix a new violation, never add it there.
+  Tag training reacts to ingestion through `pka.hooks`, registered by
+  `pka.bootstrap.install_hooks()`; a new entry point that runs ingestion must
+  call it.
+- ruff selects `ARG001` outside `tests/`: an unused function argument fails the
+  lint. Remove it, or prefix it with `_` when a caller's signature requires it
+  (a callback, a FastAPI hook, a dispatch table entry).
 - **The frontend's API types are generated, not written.** `frontend/src/api/types.gen.ts`
   comes from `frontend/src/api/openapi.json`, which `python scripts/dump_openapi.py`
   writes from the live FastAPI app; `client.ts` aliases the generated schemas under
@@ -198,10 +209,21 @@ Two configuration facts that otherwise read as bugs:
     note, not leaving a warning about code that no longer exists.
 
   Read the source of truth in this order: `db/schema.py` for columns,
-  `db/queries.py::DocumentWrite` for what an ingestion upsert may touch,
+  `db/documents.py::DocumentWrite` for what an ingestion upsert may touch,
   `runners/<source>.py` and `image_pipeline.py` for who writes what,
   `ingestion/core.py` for the chunk tail, `ingestion/fetcher.py` for the
   fetch-time writes.
+- **No uniqueness claims about sets the code can grow.** In docs, comments and
+  docstrings, do not call something *the only* / *the sole* / *the first*
+  source, pipeline, caller, setting or target, say *no other* one does
+  something, or rank it against the others (*the furthest from the shared
+  shape*). The next addition makes the sentence false and nothing flags it: a
+  flow-graph intro kept calling Calibre the only source with two embedding
+  passes after Zotero gained one. Describe the thing's own property instead
+  ("Firefox's `PhaseSpec` is …", "Zotero's read starts by snapshotting …"). A
+  uniqueness that is a deliberate constraint belongs in `DESIGN.md`, stated as
+  the rule, so changing it is a design decision; elsewhere, cite that section.
+  Facts about external systems (what Reddit's feed serves) are not covered.
 - Keep diffs minimal; do not refactor unrelated code.
 
 ## Where things live

@@ -8,16 +8,16 @@ from pka.card_summary import body_excerpt
 from pka.classification import classify_document, sync_classification_tags
 from pka.connectors.firefox import FirefoxBookmark
 from pka.constants import FetchStatus, Source
-from pka.db.queries import (
+from pka.db.chunks import document_ids_with_chunks
+from pka.db.documents import (
     DocumentWrite,
-    document_ids_with_chunks,
     document_index,
     document_titles,
     insert_document_if_new,
-    insert_source_collections,
-    insert_source_tags,
     update_card_summary,
 )
+from pka.db.tags import insert_source_collections, insert_source_tags
+from pka.ingestion.collection_tags import sync_collection_tags
 from pka.ingestion.core import (
     attach_summary_chunk,
     fetched_embed_text,
@@ -67,6 +67,7 @@ def ingest_firefox_bookmarks(
         insert_source_tags(doc_id, bm.tags, source=Source.FIREFOX)
         if bm.folder_path:
             insert_source_collections(doc_id, [bm.folder_path], source=Source.FIREFOX)
+            sync_collection_tags(doc_id, [bm.folder_path], Source.FIREFOX)
         _sync_firefox_classification(doc_id, bm)
         known[bm.source_id] = doc_id
         return "processed"

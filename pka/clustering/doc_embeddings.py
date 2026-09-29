@@ -1,4 +1,4 @@
-"""Cached mean-pooled document embeddings (384-d MiniLM) in SQLite."""
+"""Cached mean-pooled document embeddings in SQLite, in the chunk index's vector space."""
 
 from __future__ import annotations
 
@@ -7,12 +7,17 @@ import logging
 import numpy as np
 import sqlalchemy as sa
 
-from pka.db.queries import get_engine
+from pka import hooks
+from pka.db.engine import get_engine
 from pka.db.schema import chunks, documents
 
 log = logging.getLogger(__name__)
 
+# The vector size of both models this archive has shipped with (all-MiniLM-L6-v2
+# and multilingual-e5-small). Informational: blobs are read at whatever size
+# they were written, so a larger model needs no change here.
 EMBEDDING_DIM = 384
+
 _ID_BATCH_SIZE = 5_000
 
 
@@ -54,6 +59,8 @@ def _vectors_from_chroma(doc_id: int, vector_ids: list[str]) -> list[list[float]
 def refresh_document_embedding(
     doc_id: int,
     known: dict[str, list[float]] | None = None,
+    *,
+    announce: bool = True,
 ) -> bool:
     """Recompute mean-pooled chunk embedding for one document and persist.
 
@@ -63,6 +70,10 @@ def refresh_document_embedding(
     document written in more than one block falls back to reading the whole set
     back, once, rather than mixing the two sources. SQLite is the authority on
     which vector ids belong to the document either way.
+
+    ``announce=False`` skips the ``document_embedded`` hook. Only a re-embed
+    wants that: the learned-tag models the hook would apply are still in the
+    old vector space until it retrains them.
     """
     eng = get_engine()
     with eng.connect() as con:
@@ -88,12 +99,10 @@ def refresh_document_embedding(
     blob = embedding_to_blob(mean_vec)
     with eng.begin() as con:
         con.execute(documents.update().where(documents.c.id == doc_id).values(doc_embedding=blob))
-    try:
-        from pka.tag_training.lifecycle import apply_learned_tags_for_document
-
-        apply_learned_tags_for_document(doc_id)
-    except Exception:
-        log.exception("Failed to apply learned tags to document %d", doc_id)
+    # Learned tags are scored here, by a listener tag training registers: this
+    # module sits below tag training and must not import it.
+    if announce:
+        hooks.document_embedded(doc_id)
     return True
 
 

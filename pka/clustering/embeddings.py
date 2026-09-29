@@ -53,7 +53,8 @@ def _candidate_document_ids(source_filter: list[str] | None) -> list[int]:
     """
     import sqlalchemy as sa
 
-    from pka.db.queries import get_engine
+    from pka.db.duplicates import merged_duplicate_ids
+    from pka.db.engine import get_engine
     from pka.db.schema import chunks, documents
 
     q = sa.select(chunks.c.document_id).select_from(chunks).distinct()
@@ -62,14 +63,17 @@ def _candidate_document_ids(source_filter: list[str] | None) -> list[int]:
             documents.c.source.in_(source_filter)
         )
     with get_engine().connect() as con:
-        return sorted({r[0] for r in con.execute(q)})
+        # A merged duplicate is its canonical's second copy: clustering both
+        # would put one work in the corpus twice (DESIGN.md §3.9).
+        skip = merged_duplicate_ids(con)
+        return sorted({r[0] for r in con.execute(q)} - skip)
 
 
 def _archive_has_chunks() -> bool:
     """Whether anything has been ingested at all, for the empty-archive message."""
     import sqlalchemy as sa
 
-    from pka.db.queries import get_engine
+    from pka.db.engine import get_engine
     from pka.db.schema import chunks
 
     with get_engine().connect() as con:

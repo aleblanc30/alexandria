@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging()
 
     if args.runs:
-        from pka.db.queries import init_db
+        from pka.db.migrate import init_db
         from pka.enrichment_runs import list_runs
 
         init_db()
@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.target:
         parser.error("a target is required unless --list or --runs is given")
 
-    from pka.db.queries import init_db
+    from pka.db.migrate import init_db
 
     init_db()
     try:

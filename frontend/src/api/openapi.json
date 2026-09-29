@@ -1,6 +1,37 @@
 {
   "components": {
     "schemas": {
+      "AliasSide": {
+        "properties": {
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          },
+          "examples": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Examples",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "documents"
+        ],
+        "title": "AliasSide",
+        "type": "object"
+      },
       "ApplyAllTagsResult": {
         "properties": {
           "clusters": {
@@ -333,6 +364,14 @@
       },
       "DocumentDetail": {
         "properties": {
+          "also_saved_in": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LinkedCopy"
+            },
+            "title": "Also Saved In",
+            "type": "array"
+          },
           "archive_url": {
             "anyOf": [
               {
@@ -961,6 +1000,150 @@
         "title": "DomainTopLists",
         "type": "object"
       },
+      "DuplicateLinkOut": {
+        "properties": {
+          "canonical": {
+            "$ref": "#/components/schemas/LinkedCopy"
+          },
+          "canonical_id": {
+            "title": "Canonical Id",
+            "type": "integer"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "duplicate": {
+            "$ref": "#/components/schemas/LinkedCopy"
+          },
+          "duplicate_id": {
+            "title": "Duplicate Id",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "match_key": {
+            "title": "Match Key",
+            "type": "string"
+          },
+          "match_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Value"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "canonical_id",
+          "duplicate_id",
+          "match_key",
+          "state",
+          "canonical",
+          "duplicate"
+        ],
+        "title": "DuplicateLinkOut",
+        "type": "object"
+      },
+      "DuplicateScanRequest": {
+        "properties": {
+          "embeddings": {
+            "default": true,
+            "title": "Embeddings",
+            "type": "boolean"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          }
+        },
+        "title": "DuplicateScanRequest",
+        "type": "object"
+      },
+      "DuplicateScanResult": {
+        "properties": {
+          "by_key": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Key",
+            "type": "object"
+          },
+          "linked": {
+            "title": "Linked",
+            "type": "integer"
+          },
+          "proposed": {
+            "title": "Proposed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "linked",
+          "by_key",
+          "proposed"
+        ],
+        "title": "DuplicateScanResult",
+        "type": "object"
+      },
       "EnrichmentOut": {
         "description": "One retrieval-enrichment chunk's provenance (DESIGN.md \u00a73.2).\n\n``label`` is rendered here rather than in the frontend so the enrichment\nladder stays the single source of truth for how each rung is named.",
         "properties": {
@@ -1242,6 +1425,59 @@
         "title": "LabelsBatch",
         "type": "object"
       },
+      "LinkRequest": {
+        "properties": {
+          "canonical_id": {
+            "title": "Canonical Id",
+            "type": "integer"
+          },
+          "duplicate_id": {
+            "title": "Duplicate Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "canonical_id",
+          "duplicate_id"
+        ],
+        "title": "LinkRequest",
+        "type": "object"
+      },
+      "LinkedCopy": {
+        "description": "Another document linked as the same work (DESIGN.md \u00a73.9).",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url_or_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url Or Path"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "title"
+        ],
+        "title": "LinkedCopy",
+        "type": "object"
+      },
       "ListCreate": {
         "properties": {
           "description": {
@@ -1258,6 +1494,24 @@
           "name"
         ],
         "title": "ListCreate",
+        "type": "object"
+      },
+      "MergeRequest": {
+        "properties": {
+          "alias": {
+            "title": "Alias",
+            "type": "string"
+          },
+          "canonical": {
+            "title": "Canonical",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alias",
+          "canonical"
+        ],
+        "title": "MergeRequest",
         "type": "object"
       },
       "ProbeResult": {
@@ -1523,6 +1777,66 @@
         "title": "RunOut",
         "type": "object"
       },
+      "ScanRequest": {
+        "properties": {
+          "kinds": {
+            "default": [
+              "semantic",
+              "morphology",
+              "initialism"
+            ],
+            "items": {
+              "enum": [
+                "semantic",
+                "morphology",
+                "initialism"
+              ],
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          }
+        },
+        "title": "ScanRequest",
+        "type": "object"
+      },
+      "ScanResult": {
+        "properties": {
+          "by_kind": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Kind",
+            "type": "object"
+          },
+          "proposed": {
+            "title": "Proposed",
+            "type": "integer"
+          },
+          "tags": {
+            "title": "Tags",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tags",
+          "proposed",
+          "by_kind"
+        ],
+        "title": "ScanResult",
+        "type": "object"
+      },
       "SearchRequest": {
         "properties": {
           "cluster_ids": {
@@ -1547,6 +1861,14 @@
               "type": "string"
             },
             "title": "Cluster L2 Tags",
+            "type": "array"
+          },
+          "collection_tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Collection Tags",
             "type": "array"
           },
           "date_from": {
@@ -1934,6 +2256,81 @@
         "title": "SourcePathUpdate",
         "type": "object"
       },
+      "TagAliasOut": {
+        "properties": {
+          "alias": {
+            "$ref": "#/components/schemas/AliasSide"
+          },
+          "canonical": {
+            "$ref": "#/components/schemas/AliasSide"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "alias",
+          "canonical"
+        ],
+        "title": "TagAliasOut",
+        "type": "object"
+      },
       "TagOut": {
         "properties": {
           "confidence": {
@@ -2194,6 +2591,37 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VariantGroup": {
+        "properties": {
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          },
+          "variants": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "origin",
+          "tag",
+          "variants",
+          "documents"
+        ],
+        "title": "VariantGroup",
         "type": "object"
       }
     }
@@ -2673,6 +3101,25 @@
           },
           {
             "in": "query",
+            "name": "collection_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Collection Tags"
+            }
+          },
+          {
+            "in": "query",
             "name": "wayback_only",
             "required": false,
             "schema": {
@@ -2908,6 +3355,237 @@
         "summary": "Get Document Text",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/duplicates": {
+      "get": {
+        "description": "Links and proposals, with both documents' title, source and URL.",
+        "operationId": "list_links_duplicates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "candidate",
+                    "merged",
+                    "rejected"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DuplicateLinkOut"
+                  },
+                  "title": "Response List Links Duplicates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Links",
+        "tags": [
+          "duplicates"
+        ]
+      },
+      "post": {
+        "description": "Link two documents by hand.",
+        "operationId": "link_documents_duplicates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicateLinkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Documents",
+        "tags": [
+          "duplicates"
+        ]
+      }
+    },
+    "/duplicates/scan": {
+      "post": {
+        "description": "Link exact duplicates, and propose near ones for review when ``embeddings``.",
+        "operationId": "scan_duplicates_duplicates_scan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicateScanResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan Duplicates",
+        "tags": [
+          "duplicates"
+        ]
+      }
+    },
+    "/duplicates/{link_id}/accept": {
+      "post": {
+        "operationId": "accept_link_duplicates__link_id__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "link_id",
+            "required": true,
+            "schema": {
+              "title": "Link Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DuplicateLinkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Link",
+        "tags": [
+          "duplicates"
+        ]
+      }
+    },
+    "/duplicates/{link_id}/reject": {
+      "post": {
+        "description": "Decline a proposal or undo a link; the pair is not proposed again.",
+        "operationId": "reject_link_duplicates__link_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "link_id",
+            "required": true,
+            "schema": {
+              "title": "Link Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Link",
+        "tags": [
+          "duplicates"
         ]
       }
     },
@@ -3486,7 +4164,7 @@
     },
     "/ingestion/rebuild-vectors": {
       "post": {
-        "description": "Rebuild the Chroma chunk index from SQLite chunk text.",
+        "description": "Rebuild every vector from SQLite chunk text with the configured model.\n\nThe chunk index, the document vectors and the tag models; see\n:mod:`pka.reembed`.",
         "operationId": "rebuild_vectors_ingestion_rebuild_vectors_post",
         "responses": {
           "202": {
@@ -5418,7 +6096,7 @@
         "operationId": "list_tags_tags_get",
         "parameters": [
           {
-            "description": "source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned",
+            "description": "source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned | collection",
             "in": "query",
             "name": "origin",
             "required": false,
@@ -5431,7 +6109,7 @@
                   "type": "null"
                 }
               ],
-              "description": "source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned",
+              "description": "source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned | collection",
               "title": "Origin"
             }
           },
@@ -5513,6 +6191,25 @@
           },
           {
             "in": "query",
+            "name": "collection_tags",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Collection Tags"
+            }
+          },
+          {
+            "in": "query",
             "name": "wayback_only",
             "required": false,
             "schema": {
@@ -5569,6 +6266,287 @@
           }
         },
         "summary": "List Tags",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/tags/aliases": {
+      "get": {
+        "description": "Fold proposals and decisions, with counts and, for candidates, example titles.",
+        "operationId": "list_aliases_tags_aliases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "candidate",
+                    "active",
+                    "rejected"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TagAliasOut"
+                  },
+                  "title": "Response List Aliases Tags Aliases Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Aliases",
+        "tags": [
+          "tags"
+        ]
+      },
+      "post": {
+        "description": "Fold tag ``alias`` into tag ``canonical`` (any stored spelling of either).",
+        "operationId": "merge_tags_tags_aliases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagAliasOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Merge Tags",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/tags/aliases/scan": {
+      "post": {
+        "description": "Propose new candidates. Semantic proposals embed every compared tag locally.",
+        "operationId": "scan_aliases_tags_aliases_scan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan Aliases",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/tags/aliases/{alias_id}/accept": {
+      "post": {
+        "operationId": "accept_alias_tags_aliases__alias_id__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alias_id",
+            "required": true,
+            "schema": {
+              "title": "Alias Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagAliasOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Alias",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/tags/aliases/{alias_id}/reject": {
+      "post": {
+        "description": "Decline a candidate or undo a fold; the pair is not proposed again.",
+        "operationId": "reject_alias_tags_aliases__alias_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alias_id",
+            "required": true,
+            "schema": {
+              "title": "Alias Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Alias",
+        "tags": [
+          "tags"
+        ]
+      }
+    },
+    "/tags/variants": {
+      "get": {
+        "description": "Spellings the normalisation already folds, largest groups first.",
+        "operationId": "list_variants_tags_variants_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VariantGroup"
+                  },
+                  "title": "Response List Variants Tags Variants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Variants",
         "tags": [
           "tags"
         ]

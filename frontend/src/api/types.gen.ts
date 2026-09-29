@@ -239,6 +239,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Links
+         * @description Links and proposals, with both documents' title, source and URL.
+         */
+        get: operations["list_links_duplicates_get"];
+        put?: never;
+        /**
+         * Link Documents
+         * @description Link two documents by hand.
+         */
+        post: operations["link_documents_duplicates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/duplicates/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan Duplicates
+         * @description Link exact duplicates, and propose near ones for review when ``embeddings``.
+         */
+        post: operations["scan_duplicates_duplicates_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/duplicates/{link_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Link */
+        post: operations["accept_link_duplicates__link_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/duplicates/{link_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Link
+         * @description Decline a proposal or undo a link; the pair is not proposed again.
+         */
+        post: operations["reject_link_duplicates__link_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/images": {
         parameters: {
             query?: never;
@@ -441,7 +522,10 @@ export interface paths {
         put?: never;
         /**
          * Rebuild Vectors
-         * @description Rebuild the Chroma chunk index from SQLite chunk text.
+         * @description Rebuild every vector from SQLite chunk text with the configured model.
+         *
+         *     The chunk index, the document vectors and the tag models; see
+         *     :mod:`pka.reembed`.
          */
         post: operations["rebuild_vectors_ingestion_rebuild_vectors_post"];
         delete?: never;
@@ -1204,6 +1288,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tags/aliases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Aliases
+         * @description Fold proposals and decisions, with counts and, for candidates, example titles.
+         */
+        get: operations["list_aliases_tags_aliases_get"];
+        put?: never;
+        /**
+         * Merge Tags
+         * @description Fold tag ``alias`` into tag ``canonical`` (any stored spelling of either).
+         */
+        post: operations["merge_tags_tags_aliases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags/aliases/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan Aliases
+         * @description Propose new candidates. Semantic proposals embed every compared tag locally.
+         */
+        post: operations["scan_aliases_tags_aliases_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags/aliases/{alias_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Alias */
+        post: operations["accept_alias_tags_aliases__alias_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags/aliases/{alias_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Alias
+         * @description Decline a candidate or undo a fold; the pair is not proposed again.
+         */
+        post: operations["reject_alias_tags_aliases__alias_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags/variants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Variants
+         * @description Spellings the normalisation already folds, largest groups first.
+         */
+        get: operations["list_variants_tags_variants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trends/sources": {
         parameters: {
             query?: never;
@@ -1251,6 +1436,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AliasSide */
+        AliasSide: {
+            /** Documents */
+            documents: number;
+            /**
+             * Examples
+             * @default []
+             */
+            examples: string[];
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
         /** ApplyAllTagsResult */
         ApplyAllTagsResult: {
             /** Clusters */
@@ -1375,6 +1574,11 @@ export interface components {
         };
         /** DocumentDetail */
         DocumentDetail: {
+            /**
+             * Also Saved In
+             * @default []
+             */
+            also_saved_in: components["schemas"]["LinkedCopy"][];
             /** Archive Url */
             archive_url?: string | null;
             /** Arxiv Id */
@@ -1553,6 +1757,52 @@ export interface components {
             /** Top Unfetchable */
             top_unfetchable: components["schemas"]["DomainRow"][];
         };
+        /** DuplicateLinkOut */
+        DuplicateLinkOut: {
+            canonical: components["schemas"]["LinkedCopy"];
+            /** Canonical Id */
+            canonical_id: number;
+            /** Created At */
+            created_at?: number | null;
+            /** Decided At */
+            decided_at?: number | null;
+            /** Decided By */
+            decided_by?: string | null;
+            duplicate: components["schemas"]["LinkedCopy"];
+            /** Duplicate Id */
+            duplicate_id: number;
+            /** Id */
+            id: number;
+            /** Match Key */
+            match_key: string;
+            /** Match Value */
+            match_value?: string | null;
+            /** Score */
+            score?: number | null;
+            /** State */
+            state: string;
+        };
+        /** DuplicateScanRequest */
+        DuplicateScanRequest: {
+            /**
+             * Embeddings
+             * @default true
+             */
+            embeddings: boolean;
+            /** Threshold */
+            threshold?: number | null;
+        };
+        /** DuplicateScanResult */
+        DuplicateScanResult: {
+            /** By Key */
+            by_key: {
+                [key: string]: number;
+            };
+            /** Linked */
+            linked: number;
+            /** Proposed */
+            proposed: number;
+        };
         /**
          * EnrichmentOut
          * @description One retrieval-enrichment chunk's provenance (DESIGN.md §3.2).
@@ -1638,6 +1888,27 @@ export interface components {
             /** Labels */
             labels: components["schemas"]["LabelIn"][];
         };
+        /** LinkRequest */
+        LinkRequest: {
+            /** Canonical Id */
+            canonical_id: number;
+            /** Duplicate Id */
+            duplicate_id: number;
+        };
+        /**
+         * LinkedCopy
+         * @description Another document linked as the same work (DESIGN.md §3.9).
+         */
+        LinkedCopy: {
+            /** Id */
+            id: number;
+            /** Source */
+            source: string;
+            /** Title */
+            title: string;
+            /** Url Or Path */
+            url_or_path?: string | null;
+        };
         /** ListCreate */
         ListCreate: {
             /**
@@ -1647,6 +1918,13 @@ export interface components {
             description: string;
             /** Name */
             name: string;
+        };
+        /** MergeRequest */
+        MergeRequest: {
+            /** Alias */
+            alias: string;
+            /** Canonical */
+            canonical: string;
         };
         /** ProbeResult */
         ProbeResult: {
@@ -1736,6 +2014,31 @@ export interface components {
             /** Timestamp */
             timestamp: number;
         };
+        /** ScanRequest */
+        ScanRequest: {
+            /**
+             * Kinds
+             * @default [
+             *       "semantic",
+             *       "morphology",
+             *       "initialism"
+             *     ]
+             */
+            kinds: ("semantic" | "morphology" | "initialism")[];
+            /** Threshold */
+            threshold?: number | null;
+        };
+        /** ScanResult */
+        ScanResult: {
+            /** By Kind */
+            by_kind: {
+                [key: string]: number;
+            };
+            /** Proposed */
+            proposed: number;
+            /** Tags */
+            tags: number;
+        };
         /** SearchRequest */
         SearchRequest: {
             /**
@@ -1753,6 +2056,11 @@ export interface components {
              * @default []
              */
             cluster_l2_tags: string[];
+            /**
+             * Collection Tags
+             * @default []
+             */
+            collection_tags: string[];
             /** Date From */
             date_from?: number | null;
             /** Date To */
@@ -1898,6 +2206,25 @@ export interface components {
             /** Path */
             path: string;
         };
+        /** TagAliasOut */
+        TagAliasOut: {
+            alias: components["schemas"]["AliasSide"];
+            canonical: components["schemas"]["AliasSide"];
+            /** Created At */
+            created_at?: number | null;
+            /** Decided At */
+            decided_at?: number | null;
+            /** Decided By */
+            decided_by?: string | null;
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Score */
+            score?: number | null;
+            /** State */
+            state: string;
+        };
         /** TagOut */
         TagOut: {
             /** Confidence */
@@ -1984,6 +2311,17 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VariantGroup */
+        VariantGroup: {
+            /** Documents */
+            documents: number;
+            /** Origin */
+            origin: string;
+            /** Tag */
+            tag: string;
+            /** Variants */
+            variants: string[];
         };
     };
     responses: never;
@@ -2230,6 +2568,7 @@ export interface operations {
                 cluster_l1_tags?: string[] | null;
                 cluster_l2_tags?: string[] | null;
                 learned_tags?: string[] | null;
+                collection_tags?: string[] | null;
                 wayback_only?: boolean;
                 limit?: number;
                 offset?: number;
@@ -2378,6 +2717,164 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_links_duplicates_get: {
+        parameters: {
+            query?: {
+                state?: ("candidate" | "merged" | "rejected") | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateLinkOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    link_documents_duplicates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateLinkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_duplicates_duplicates_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DuplicateScanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateScanResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_link_duplicates__link_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuplicateLinkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_link_duplicates__link_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -4113,12 +4610,13 @@ export interface operations {
     list_tags_tags_get: {
         parameters: {
             query?: {
-                /** @description source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned */
+                /** @description source | inferred | manual | llm | cluster_l1 | cluster_l2 | learned | collection */
                 origin?: string | null;
                 sources?: components["schemas"]["Source"][] | null;
                 source_tags?: string[] | null;
                 cluster_l1_tags?: string[] | null;
                 cluster_l2_tags?: string[] | null;
+                collection_tags?: string[] | null;
                 wayback_only?: boolean;
                 q?: string | null;
                 limit?: number;
@@ -4136,6 +4634,195 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_aliases_tags_aliases_get: {
+        parameters: {
+            query?: {
+                state?: ("candidate" | "active" | "rejected") | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagAliasOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_tags_tags_aliases_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagAliasOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_aliases_tags_aliases_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_alias_tags_aliases__alias_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagAliasOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_alias_tags_aliases__alias_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alias_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_variants_tags_variants_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VariantGroup"][];
                 };
             };
             /** @description Validation Error */

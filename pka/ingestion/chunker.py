@@ -1,44 +1,30 @@
 """
-Text cleaning and sentence-window chunking.
+Text cleaning, chunking and sentence splitting, on off-the-shelf libraries.
 
-Default sentence splitter uses an abbreviation-aware regex; a spaCy
-sentencizer is used instead when the ``spacy`` package is importable.
-The choice is made lazily on first call.
+:func:`chunk_text` cuts retrieval chunks with ``semantic-text-splitter``: it
+packs the largest semantic units that fit (paragraphs, then sentences, then
+words) into chunks of at most ``chunk_tokens`` tokens, counted by the
+embedding model's own tokenizer and capped at what the model reads, with up to
+``chunk_overlap_tokens`` repeated from the previous chunk. Sentence boundaries
+are Unicode's (UAX #29), which need no language: a French or Spanish sentence
+opening on ``É`` or ``¿`` splits as an English one does, and a run with no
+boundary at all (unpunctuated OCR) is cut between words.
+
+:func:`split_sentences` is ``pysbd`` with its English rules, for the callers
+that need whole sentences rather than chunks (trimming a summary or a
+synopsis). Its abbreviation handling (``Dr.``, ``e.g.``) is finer than
+Unicode's, which does break after ``Dr.``.
 """
 
 import logging
 import re
+import threading
 import unicodedata
+from typing import Any
+
+from pka.config import settings as cfg
 
 log = logging.getLogger(__name__)
-
-_SIMPLE_SENT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
-
-_ABBREV = {
-    "Dr.",
-    "Mr.",
-    "Mrs.",
-    "Ms.",
-    "Prof.",
-    "Sr.",
-    "Jr.",
-    "Inc.",
-    "Ltd.",
-    "Co.",
-    "Corp.",
-    "vs.",
-    "etc.",
-    "e.g.",
-    "i.e.",
-    "U.S.",
-    "U.K.",
-    "Fig.",
-    "fig.",
-    "Eq.",
-    "eq.",
-    "Ref.",
-    "ref.",
-}
 
 
 def clean_text(text: str) -> str:
@@ -49,78 +35,80 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-def _split_sentences_naive(text: str) -> list[str]:
-    """Regex splitter with abbreviation protection."""
-    for a in _ABBREV:
-        text = text.replace(a, a.replace(".", "<ABBR>"))
-    parts = _SIMPLE_SENT_RE.split(text)
-    return [p.replace("<ABBR>", ".").strip() for p in parts if p.strip()]
+_splitters: dict[tuple[str, int, int], Any] = {}
+_splitters_lock = threading.Lock()
 
 
-_spacy_nlp: "object | bool | None" = None
+def _splitter(embedder: Any, max_tokens: int, overlap_tokens: int):
+    """A token splitter for *embedder*, built once per model and size."""
+    from semantic_text_splitter import TextSplitter
+
+    capacity = max(1, min(max_tokens, embedder.max_chunk_tokens))
+    overlap = max(0, min(overlap_tokens, capacity - 1))
+    key = (embedder.name, capacity, overlap)
+    with _splitters_lock:
+        if key not in _splitters:
+            _splitters[key] = TextSplitter.from_huggingface_tokenizer(
+                embedder.tokenizer, capacity, overlap=overlap
+            )
+        return _splitters[key]
 
 
-def _get_spacy():
-    """Lazy spaCy loader. Caches False to avoid re-attempting after ImportError."""
-    global _spacy_nlp
-    if _spacy_nlp is False:
-        return None
-    if _spacy_nlp is None:
-        try:
-            import spacy
-
-            try:
-                _spacy_nlp = spacy.load(
-                    "en_core_web_sm",
-                    disable=["ner", "tagger", "parser"],
-                )
-                _spacy_nlp.add_pipe("sentencizer")
-            except OSError:
-                _spacy_nlp = spacy.blank("en")
-                _spacy_nlp.add_pipe("sentencizer")
-            log.debug("spaCy sentencizer loaded.")
-        except ImportError:
-            _spacy_nlp = False
-            return None
-    return _spacy_nlp
-
-
-def _split_sentences(text: str) -> list[str]:
-    nlp = _get_spacy()
-    if nlp is None:
-        return _split_sentences_naive(text)
-    doc = nlp(text)
-    return [s.text.strip() for s in doc.sents if s.text.strip()]
-
-
-def sentence_window_chunks(
+def chunk_text(
     text: str,
-    window: int = 5,
-    overlap: int = 1,
-    min_chars: int = 80,
+    *,
+    max_tokens: int | None = None,
+    overlap_tokens: int | None = None,
+    min_chars: int | None = None,
+    embedder: Any = None,
 ) -> list[str]:
-    sentences = _split_sentences(clean_text(text))
-    if not sentences:
+    """Chunks of cleaned *text*, dropping any shorter than *min_chars*.
+
+    Sizes default to the ``chunk_tokens``, ``chunk_overlap_tokens`` and
+    ``min_chunk_chars`` settings; *embedder* to the one the chunk index uses,
+    whose tokenizer counts the tokens.
+    """
+    cleaned = clean_text(text)
+    if not cleaned:
         return []
-    step = max(1, window - overlap)
-    out: list[str] = []
-    for i in range(0, len(sentences), step):
-        chunk = " ".join(sentences[i : i + window])
-        if len(chunk) >= min_chars:
-            out.append(chunk)
-    return out
+    if embedder is None:
+        from pka.storage.vector_store import active_embedder
+
+        embedder = active_embedder()
+    splitter = _splitter(
+        embedder,
+        max_tokens if max_tokens is not None else cfg.chunk_tokens,
+        overlap_tokens if overlap_tokens is not None else cfg.chunk_overlap_tokens,
+    )
+    floor = min_chars if min_chars is not None else cfg.min_chunk_chars
+    return [c for c in splitter.chunks(cleaned) if len(c) >= floor]
+
+
+_segmenter: Any = None
+_segmenter_lock = threading.Lock()
+
+
+def split_sentences(text: str) -> list[str]:
+    """The sentences of *text*, cleaned."""
+    global _segmenter
+    cleaned = clean_text(text or "")
+    if not cleaned:
+        return []
+    with _segmenter_lock:
+        if _segmenter is None:
+            import pysbd
+
+            _segmenter = pysbd.Segmenter(language="en", clean=False)
+        pieces = _segmenter.segment(cleaned)
+    return [s for s in (p.strip() for p in pieces) if s]
 
 
 def trim_to_sentences(text: str, max_sentences: int) -> str:
-    """First ``max_sentences`` sentences of *text*, cleaned.
-
-    Lives here so sentence boundaries agree with :func:`sentence_window_chunks` —
-    anything trimmed for embedding is later windowed by the same splitter.
-    """
+    """First ``max_sentences`` sentences of *text*, cleaned."""
     cleaned = clean_text(text or "")
     if not cleaned or max_sentences <= 0:
         return cleaned
-    sentences = _split_sentences(cleaned)
+    sentences = split_sentences(cleaned)
     if len(sentences) <= max_sentences:
         return cleaned
     return " ".join(sentences[:max_sentences])

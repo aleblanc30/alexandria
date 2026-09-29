@@ -105,10 +105,9 @@ In `.env`, set `ALEXANDRIA_DATA_DIR` to an absolute path:
 ALEXANDRIA_DATA_DIR=C:\Users\<you>\AppData\Local\Alexandria\data
 ```
 
-That is the only storage setting there is. The SQLite file (`archive.db`), the
-Chroma directory (`chroma`), the cached OAuth token and the Zotero/Firefox
-source snapshots are all derived from it, so nothing else needs pointing at the
-data directory. Its default is the relative path `data`, which resolves against
+The SQLite file (`archive.db`), the Chroma directory (`chroma`), the cached
+OAuth token and the Zotero/Firefox source snapshots are all derived from it.
+Its default is the relative path `data`, which resolves against
 the process working directory and would therefore move the library depending on
 where the server was started from; an absolute path removes that dependency.
 
@@ -368,8 +367,7 @@ path that could be wrong is written down: the app directory comes from the
 script's own location, and the library from `ALEXANDRIA_DATA_DIR` in `.env` —
 the same setting the server reads (§4) — falling back to that setting's own
 relative `data` default. Both are printed for confirmation before anything is
-stopped, and `$Port` and `$Task` at the top of the file are the only settings
-left to edit.
+stopped. `$Port` and `$Task`, at the top of the file, are set by hand.
 
 That the script sits inside the tree it checks out is deliberate rather than
 overlooked. PowerShell parses a script file in full before executing any of it,
@@ -400,10 +398,37 @@ each upgrade; copy it elsewhere first if you want to keep more than the last.
 
 `alexandria init` is idempotent and does migrate a populated database in place
 rather than only creating absent tables:
-`init_db` in `pka/db/queries.py` runs `create_all`, then a sequence of guarded
-`ALTER TABLE` steps for the columns added since the archive was built. What the
-backup covers is the case it cannot — a schema change for which no migration
+`init_db` in `pka/db/migrate.py` runs `create_all`, then each guarded
+`ALTER TABLE` / `CREATE INDEX` step for what was added since the archive was
+built, recording every step it runs in the `schema_migrations` table so the next
+start skips it. What the backup covers is the case it cannot — a schema change for which no migration
 step was written.
+
+The first `alexandria init` after an upgrade that adds keyword search builds
+its index over every stored chunk, which takes minutes on a large archive; later
+runs skip the step. Run it before starting the server, so the build is not
+holding up the server's startup.
+
+An upgrade that makes the embedding model a setting leaves an existing archive
+on the model it was built with, `all-MiniLM-L6-v2`, and the server logs one
+warning saying so. `pip install .` brings in `sentence-transformers` (PyTorch was
+already a dependency). Moving the archive to the new default is one
+command, run with the server stopped:
+
+```powershell
+alexandria reembed
+```
+
+It re-embeds every stored chunk, which takes about as long as the embed phases
+of the original syncs, then recomputes document vectors and retrains the
+learned-tag models; nothing is fetched again. The first run downloads the model
+(`intfloat/multilingual-e5-small`) from the Hugging Face Hub once. Re-run
+clustering afterwards (`DESIGN.md` §3.6).
+
+The same upgrade replaces the chunker (`DESIGN.md` §3.5). Documents already in
+the archive keep their chunks, which still work; `alexandria rechunk` re-cuts
+the ones with retained text. Run it after `alexandria reembed`, so the new
+chunks are sized for the new model's tokenizer.
 
 The same `init_db()` runs from the API's startup hook, so an upgrade that skips
 the explicit `alexandria init` still migrates once the task restarts. The script
@@ -431,8 +456,8 @@ row it sees, which is deliberate: an item whose only locator was a bare DOI
 string now keeps the DOI in its own column and is served as a
 `https://doi.org/...` link instead.
 
-No other source does. Calibre's metadata phase inserts only what is absent and
-its embed phase writes documents missing from the index, so books archived
+Calibre does not: its metadata phase inserts only what is absent and its embed
+phase writes documents missing from the index, so books archived
 before the upgrade keep empty `isbn`, `year` and `authors_json`. Bookmarked
 preprints take their identifiers from the fetcher, so only newly fetched ones
 carry them.

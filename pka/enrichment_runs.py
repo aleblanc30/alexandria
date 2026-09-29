@@ -38,7 +38,7 @@ import sqlalchemy as sa
 
 from pka.config import settings as cfg
 from pka.constants import EnrichmentKind, RunStatus
-from pka.db.queries import get_engine
+from pka.db.engine import get_engine
 from pka.db.schema import enrichment_runs
 
 log = logging.getLogger(__name__)

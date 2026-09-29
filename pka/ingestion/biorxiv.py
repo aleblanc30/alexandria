@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -14,9 +13,8 @@ import httpx
 from pka.card_summary import preprint_card_summary
 from pka.ingestion.fetch_base import (
     FetchResult,
-    _fetch_pdf_result,
-    _http_timeout,
-    _limiter,
+    fetch_pdf_text,
+    rate_limited_get,
 )
 from pka.ingestion.identifiers import normalize_doi
 from pka.ingestion.preprint_text import build_preprint_text
@@ -105,20 +103,9 @@ async def _fetch_biorxiv_metadata(
     doi: str,
 ) -> tuple[BiorxivMetadata | None, int | None, str | None]:
     api_url = biorxiv_detail_url(doi)
-    await _limiter.wait(api_url)
-    try:
-        resp = await client.get(
-            api_url,
-            follow_redirects=True,
-            timeout=_http_timeout(),
-        )
-    except httpx.TimeoutException:
-        return None, None, "timeout"
-    except httpx.RequestError as exc:
-        return None, None, str(exc)
-
-    if resp.status_code >= 400:
-        return None, resp.status_code, f"HTTP {resp.status_code}"
+    resp, status, err = await rate_limited_get(client, api_url)
+    if resp is None:
+        return None, status, err
 
     try:
         data = resp.json()
@@ -136,32 +123,7 @@ async def _fetch_biorxiv_pdf_text(
     doi: str,
     version: int,
 ) -> tuple[str | None, int | None, str | None]:
-    pdf_url = biorxiv_pdf_url(doi, version)
-    await _limiter.wait(pdf_url)
-    try:
-        resp = await client.get(
-            pdf_url,
-            follow_redirects=True,
-            timeout=_http_timeout(pdf=True),
-        )
-    except httpx.TimeoutException:
-        return None, None, "pdf timeout"
-    except httpx.RequestError as exc:
-        return None, None, str(exc)
-
-    if resp.status_code >= 400:
-        return None, resp.status_code, f"pdf HTTP {resp.status_code}"
-
-    result = await asyncio.to_thread(
-        _fetch_pdf_result,
-        0,
-        pdf_url,
-        resp.content,
-        resp.status_code,
-    )
-    if result.status != "fetched" or not result.text:
-        return None, resp.status_code, result.error_msg or "pdf extraction failed"
-    return result.text, resp.status_code, None
+    return await fetch_pdf_text(client, biorxiv_pdf_url(doi, version))
 
 
 async def fetch_biorxiv_paper(

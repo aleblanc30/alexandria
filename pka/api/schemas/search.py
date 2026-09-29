@@ -13,6 +13,7 @@ class SearchRequest(BaseModel):
     general_tags: list[str] = []
     cluster_l1_tags: list[str] = []
     cluster_l2_tags: list[str] = []
+    collection_tags: list[str] = []
     wayback_only: bool = False
     cluster_ids: list[int] = []
     tags: list[str] = []
