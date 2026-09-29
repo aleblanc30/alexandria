@@ -6,6 +6,8 @@ The ``client`` fixture comes from ``conftest.py``; row builders come from
 ``tests.api_seed``.
 """
 
+import pytest
+
 from tests.api_seed import seed_docs, seed_run
 
 # ── Tags ──────────────────────────────────────────────────────────────────────
@@ -85,3 +87,55 @@ class TestTags:
         assert l1_tag in l1_tags
         assert l2_tag in l2_tags
         assert l2_tag not in l1_tags
+
+
+class TestDeleteTag:
+    def _tag(self, client, doc_id, tag):
+        client.patch(f"/documents/{doc_id}/tags", json={"add": [tag], "remove": []})
+
+    def test_deletes_manual_tag_from_every_document(self, client):
+        ids = seed_docs(2)
+        for doc_id in ids:
+            self._tag(client, doc_id, "to-delete")
+        self._tag(client, ids[0], "keeper")
+
+        r = client.delete("/tags", params={"tag": "to-delete", "origin": "manual"})
+        assert r.status_code == 200
+        assert r.json()["documents"] == 2
+
+        remaining = [t["tag"] for t in client.get("/tags?origin=manual").json()]
+        assert "to-delete" not in remaining
+        assert "keeper" in remaining
+
+    def test_deletes_every_spelling_in_the_fold_group(self, client):
+        ids = seed_docs(2)
+        self._tag(client, ids[0], "Machine Learning")
+        self._tag(client, ids[1], "machine-learning")
+
+        r = client.delete("/tags", params={"tag": "machine-learning", "origin": "manual"})
+        assert r.status_code == 200
+        assert len(r.json()["spellings"]) == 2
+        assert client.get("/tags?origin=manual").json() == []
+
+    def test_leaves_the_same_tag_under_another_origin(self, client):
+        from pka.clustering.cluster_tags import insert_overlay_tags
+        from pka.constants import TagOrigin
+        from pka.db import engine
+
+        ids = seed_docs(1)
+        self._tag(client, ids[0], "shared-name")
+        with engine.get_engine().begin() as con:
+            insert_overlay_tags(con, ids, "shared-name", TagOrigin.LLM)
+
+        client.delete("/tags", params={"tag": "shared-name", "origin": "manual"})
+        origins = [t["origin"] for t in client.get("/tags?q=shared-name").json()]
+        assert origins == ["llm"]
+
+    def test_unknown_tag_is_404(self, client):
+        r = client.delete("/tags", params={"tag": "nope", "origin": "manual"})
+        assert r.status_code == 404
+
+    @pytest.mark.parametrize("origin", ["source", "cluster_l1", "cluster_l2", "collection", "x"])
+    def test_regenerated_origins_are_refused(self, client, origin):
+        r = client.delete("/tags", params={"tag": "anything", "origin": origin})
+        assert r.status_code == 422

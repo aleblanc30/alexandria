@@ -71,8 +71,26 @@ class TestIngestion:
         assert any(row["domain"] == "b.com" for row in data["top_unfetchable"])
 
     def test_domains_rejects_bad_limit(self, client):
-        assert client.get("/ingestion/domains?limit=0").status_code == 400
+        assert client.get("/ingestion/domains?limit=-1").status_code == 400
         assert client.get("/ingestion/domains?limit=101").status_code == 400
+
+    def test_domains_limit_zero_returns_every_domain(self, client):
+        from pka.constants import FetchStatus, Source
+
+        for i in range(12):
+            make_document(
+                Source.FIREFOX,
+                f"f{i}",
+                f"D{i}",
+                f"https://d{i}.com/1",
+                1,
+                fetch_status=FetchStatus.UNFETCHABLE,
+            )
+
+        assert len(client.get("/ingestion/domains").json()["top_unfetchable"]) == 10
+        data = client.get("/ingestion/domains?limit=0").json()
+        assert len(data["top_domains"]) == 12
+        assert len(data["top_unfetchable"]) == 12
 
     def test_domains_rejects_unknown_source(self, client):
         r = client.get("/ingestion/domains?source=nope")

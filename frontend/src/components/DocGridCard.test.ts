@@ -19,6 +19,7 @@ function doc(overrides: Partial<DocumentListItem> = {}): DocumentListItem {
     source_tags: ['nlp'],
     cluster_l1_tags: ['machine learning'],
     cluster_l2_tags: [],
+    learned_tags: [],
     ...overrides,
   }
 }
@@ -53,10 +54,18 @@ describe('DocGridCard', () => {
     expect(w.find('.tag-pill--cluster_l2').text()).toBe('transformers')
   })
 
+  it('renders learned tags with the learned pill class', () => {
+    const w = mount(DocGridCard, {
+      props: { doc: doc({ source_tags: [], cluster_l1_tags: [], learned_tags: ['to-read'] }) },
+    })
+
+    expect(w.find('.tag-pill--learned').text()).toBe('to-read')
+  })
+
   it('omits the tag row when the document has no tags at all', () => {
     const w = mount(DocGridCard, {
       props: {
-        doc: doc({ source_tags: [], cluster_l1_tags: [], cluster_l2_tags: [] }),
+        doc: doc({ source_tags: [], cluster_l1_tags: [], cluster_l2_tags: [], learned_tags: [] }),
       },
     })
 

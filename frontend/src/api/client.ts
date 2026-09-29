@@ -95,6 +95,7 @@ export type TagAlias = Schemas['TagAliasOut']
 export type DuplicateLink = Schemas['DuplicateLinkOut']
 export type DuplicateScanResult = Schemas['DuplicateScanResult']
 export type TagAliasScanResult = Schemas['ScanResult']
+export type TagDeleteResult = Schemas['TagDeleteResult']
 export type TagVariantGroup = Schemas['VariantGroup']
 export type DocumentListItem = Schemas['DocumentListItem']
 export type DocumentListResponse = Schemas['DocumentListResponse']
@@ -360,6 +361,7 @@ export const unfetchableUrls    = (limit = 50, offset = 0) =>
     {},
     INGESTION_TIMEOUT_MS,
   )
+/** `limit` 0 returns every domain. */
 export const domainTopLists     = (limit = 10, source?: string) =>
   req<DomainTopLists>(
     `/ingestion/domains?limit=${limit}${source ? `&source=${encodeURIComponent(source)}` : ''}`,
@@ -585,6 +587,12 @@ export const acceptTagAlias = (id: number) =>
   req<TagAlias>(`/tags/aliases/${id}/accept`, { method: 'POST' })
 export const rejectTagAlias = (id: number) =>
   req<void>(`/tags/aliases/${id}/reject`, { method: 'POST' })
+/** Overlay origins only (manual, inferred, llm, learned); the API refuses the rest. */
+export const deleteTag = (tag: string, origin: string) =>
+  req<TagDeleteResult>(
+    `/tags?tag=${encodeURIComponent(tag)}&origin=${encodeURIComponent(origin)}`,
+    { method: 'DELETE' },
+  )
 // Embeds every compared tag locally: minutes on a large vocabulary.
 export const scanTagAliases = () =>
   req<TagAliasScanResult>('/tags/aliases/scan', { method: 'POST', body: '{}' }, 600_000)

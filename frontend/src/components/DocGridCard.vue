@@ -18,6 +18,7 @@
       <span v-for="t in doc.source_tags" :key="'s-' + t" class="tag-pill tag-pill--source">#{{ t }}</span>
       <span v-for="t in doc.cluster_l1_tags" :key="'l1-' + t" class="tag-pill tag-pill--cluster_l1">{{ t }}</span>
       <span v-for="t in doc.cluster_l2_tags" :key="'l2-' + t" class="tag-pill tag-pill--cluster_l2">{{ t }}</span>
+      <span v-for="t in doc.learned_tags" :key="'ln-' + t" class="tag-pill tag-pill--learned">{{ t }}</span>
     </div>
     <div class="grid-card-footer">
       <SourceBadge :source="doc.source" />
@@ -83,7 +84,8 @@ const hasTags = computed(
   () =>
     props.doc.source_tags.length > 0
     || props.doc.cluster_l1_tags.length > 0
-    || props.doc.cluster_l2_tags.length > 0,
+    || props.doc.cluster_l2_tags.length > 0
+    || props.doc.learned_tags.length > 0,
 )
 </script>
 

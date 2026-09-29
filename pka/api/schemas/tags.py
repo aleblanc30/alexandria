@@ -49,3 +49,11 @@ class VariantGroup(BaseModel):
     tag: str
     variants: list[str]
     documents: int
+
+
+class TagDeleteResult(BaseModel):
+    tag: str
+    origin: str
+    spellings: list[str]
+    documents: int
+    archived_sessions: int = 0

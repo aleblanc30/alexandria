@@ -207,6 +207,22 @@ class TestBuildDomainTopLists:
         assert len(result["top_domains"]) == 2
         assert len(result["top_unfetchable"]) == 2
 
+    def test_no_limit_returns_every_domain(self):
+        init_db()
+        for i in range(12):
+            make_document(
+                Source.FIREFOX,
+                f"f{i}",
+                f"D{i}",
+                f"https://d{i}.com",
+                1,
+                fetch_status=FetchStatus.UNFETCHABLE,
+            )
+
+        result = build_domain_top_lists(limit=None)
+        assert len(result["top_domains"]) == 12
+        assert len(result["top_unfetchable"]) == 12
+
     def test_empty_archive(self):
         init_db()
         assert build_domain_top_lists() == {"top_domains": [], "top_unfetchable": []}

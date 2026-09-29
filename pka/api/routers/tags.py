@@ -10,12 +10,15 @@ from pka.api.schemas.tags import (
     ScanRequest,
     ScanResult,
     TagAliasOut,
+    TagDeleteResult,
     VariantGroup,
 )
-from pka.constants import Source
+from pka.constants import Source, TagOrigin
 from pka.db import tag_aliases
+from pka.db.tags import DELETABLE_ORIGINS, delete_overlay_tag
 from pka.db.tags import list_tags as query_list_tags
 from pka.tag_dedup import describe, scan, variant_report
+from pka.tag_training import lifecycle
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -48,6 +51,36 @@ def list_tags(
         wayback_only=wayback_only,
         q=q,
         limit=limit,
+    )
+
+
+@router.delete("", response_model=TagDeleteResult)
+def delete_tag(
+    tag: str = Query(..., min_length=1),
+    origin: str = Query(..., description="manual | inferred | llm | learned"),
+):
+    """Remove a tag of one origin from every document that carries it.
+
+    Only overlay origins that nothing regenerates can be deleted; a learned tag
+    also archives its accepted model so the next ingested document does not
+    bring it back.
+    """
+    if origin not in DELETABLE_ORIGINS:
+        raise HTTPException(
+            422,
+            f"Tags of origin {origin!r} cannot be deleted; "
+            f"deletable origins: {', '.join(sorted(DELETABLE_ORIGINS))}",
+        )
+    spellings, documents = delete_overlay_tag(tag, origin)
+    if not spellings:
+        raise HTTPException(404, "No such tag")
+    archived = lifecycle.archive_accepted_sessions(spellings) if origin == TagOrigin.LEARNED else 0
+    return TagDeleteResult(
+        tag=tag,
+        origin=origin,
+        spellings=spellings,
+        documents=documents,
+        archived_sessions=archived,
     )
 
 

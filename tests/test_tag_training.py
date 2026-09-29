@@ -620,6 +620,25 @@ class TestTagTrainingApi:
         assert r.status_code == 200
         assert r.json()["total"] >= 1
 
+    def test_deleting_a_learned_tag_archives_its_model(self, client):
+        pos_ids, neg_ids, _ = _seed_labeled_corpus()
+        created = client.post(
+            "/tag-training/sessions",
+            json={
+                "tag": "delete-me",
+                "labels": [{"doc_id": did, "label": 1} for did in pos_ids]
+                + [{"doc_id": did, "label": 0} for did in neg_ids],
+            },
+        ).json()
+        client.post(f"/tag-training/sessions/{created['session_id']}/accept")
+
+        r = client.delete("/tags", params={"tag": "delete-me", "origin": "learned"})
+        assert r.status_code == 200
+        assert r.json()["archived_sessions"] == 1
+        assert client.get("/tags", params={"origin": "learned", "q": "delete-me"}).json() == []
+        session = client.get(f"/tag-training/sessions/{created['session_id']}").json()
+        assert session["status"] == "archived"
+
 
 class TestDeserializedModelsAreCached:
     """`deserialize_model` runs once per distinct blob, not once per document.

@@ -181,7 +181,8 @@ export const useIngestionStore = defineStore('ingestion', () => {
     } catch { /* unfetchable list is non-critical */ }
 
     try {
-      domains.value = await api.domainTopLists()
+      // limit 0 = every domain; the component scrolls, so it need not stop at the top few.
+      domains.value = await api.domainTopLists(0)
     } catch { /* domain top lists are non-critical */ }
   }
 

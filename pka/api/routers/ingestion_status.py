@@ -103,12 +103,12 @@ async def sync_events(source: str, engine=Depends(get_engine)):
 
 @router.get("/domains", response_model=DomainTopLists)
 def domain_top_lists(source: str | None = None, limit: int = 10):
-    """Top domains by document count and by unfetchable count."""
+    """Top domains by document count and by unfetchable count; ``limit=0`` returns all."""
     if source:
         require_source(source)
-    if not 1 <= limit <= 100:
-        raise HTTPException(400, "limit must be between 1 and 100")
-    return build_domain_top_lists(source=source, limit=limit)
+    if not 0 <= limit <= 100:
+        raise HTTPException(400, "limit must be between 0 and 100")
+    return build_domain_top_lists(source=source, limit=limit or None)
 
 
 @router.get("/unfetchable")

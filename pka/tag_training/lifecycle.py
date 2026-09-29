@@ -570,3 +570,23 @@ def archive_session(session_id: int) -> dict[str, Any]:
             .values(status="archived")
         )
     return get_session(session_id)
+
+
+def archive_accepted_sessions(tags: list[str]) -> int:
+    """Archive the accepted sessions for *tags*; returns how many were archived.
+
+    An accepted session's model scores every newly ingested document, so
+    deleting a learned tag without archiving it would bring the tag back.
+    """
+    if not tags:
+        return 0
+    with get_engine().begin() as con:
+        result = con.execute(
+            tag_training_sessions.update()
+            .where(
+                tag_training_sessions.c.tag.in_(tags)
+                & (tag_training_sessions.c.status == "accepted")
+            )
+            .values(status="archived")
+        )
+    return result.rowcount

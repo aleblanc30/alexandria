@@ -48,6 +48,15 @@
   setting `collection_tags_enabled` (default on) turns the feature off
   (`DESIGN.md` §3.7).
 
+- **Learned tags show on browse cards, and manual, inferred, LLM and learned
+  tags can be deleted.** The grid and list cards now carry a document's
+  learned tags. The Tags page has a *Delete* button that removes the tag from
+  every document (all spellings that fold into it) after a confirmation. Source
+  tags, cluster tags and collection tags have no button, since a sync or a
+  clustering run would write them back. Deleting a learned tag also archives
+  its accepted model, otherwise the next ingested document would bring it back.
+  API: `DELETE /tags?tag=&origin=`.
+
 ### Search
 
 - **Chunks are sized in tokens of the embedding model, by off-the-shelf
@@ -174,6 +183,10 @@
   distinguishable from a document, and `rechunk` refuses a prefix rather than
   re-cutting it and silently shrinking that document's index to its first pages.
   The summary pass still sees the whole book: only what is *stored* is cut.
+
+- **The domain lists on the Ingestion page show every domain.** *Top domains*
+  and *Top unfetchable domains* scroll past the first ten rows and each can be
+  collapsed. `GET /ingestion/domains?limit=0` returns all domains.
 
 ### Maintenance
 

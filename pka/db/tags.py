@@ -96,6 +96,44 @@ def sync_overlay_tags(
             con.execute(overlay_tags.delete().where(scope & overlay_tags.c.tag.in_(sorted(stale))))
 
 
+#: Overlay origins a user may delete outright. Source tags are rewritten from
+#: the source on every sync, and cluster and collection tags are regenerated
+#: from clustering and ``source_collections``, so deleting those rows would not last.
+DELETABLE_ORIGINS = frozenset(
+    {str(TagOrigin.MANUAL), str(TagOrigin.INFERRED), str(TagOrigin.LLM), str(TagOrigin.LEARNED)}
+)
+
+
+def delete_overlay_tag(tag: str, origin: str) -> tuple[list[str], int]:
+    """Delete every overlay row of *origin* that reads as *tag*, on all documents.
+
+    All stored spellings in the tag's fold group go together, matching the
+    single row the tag browser shows. Returns ``(spellings, rows_deleted)``;
+    ``spellings`` is empty when nothing matched. Raises ``ValueError`` for an
+    origin outside :data:`DELETABLE_ORIGINS`.
+    """
+    if origin not in DELETABLE_ORIGINS:
+        raise ValueError(f"Tags of origin {origin!r} cannot be deleted")
+    fm = fold_map()
+    target = fm.canonical(tag, origin)
+    with engine.get_engine().begin() as con:
+        stored = [
+            r[0]
+            for r in con.execute(
+                sa.select(overlay_tags.c.tag).where(overlay_tags.c.origin == origin).distinct()
+            )
+        ]
+        spellings = sorted(t for t in stored if fm.canonical(t, origin) == target)
+        if not spellings:
+            return [], 0
+        result = con.execute(
+            overlay_tags.delete().where(
+                (overlay_tags.c.origin == origin) & overlay_tags.c.tag.in_(spellings)
+            )
+        )
+    return spellings, result.rowcount
+
+
 def list_tags(
     origin: str | None = None,
     sources: list[str] | None = None,

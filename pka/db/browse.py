@@ -143,13 +143,19 @@ def filter_document_ids(
 def _browse_tag_maps(
     con: sa.Connection,
     doc_ids: list[int],
-) -> tuple[dict[int, list[str]], dict[int, list[str]], dict[int, list[str]]]:
-    """Batch-fetch source and cluster overlay tags for browse list items."""
+) -> tuple[
+    dict[int, list[str]],
+    dict[int, list[str]],
+    dict[int, list[str]],
+    dict[int, list[str]],
+]:
+    """Batch-fetch source, cluster and learned tags for browse list items."""
     source_map: dict[int, list[str]] = {doc_id: [] for doc_id in doc_ids}
     l1_map: dict[int, list[str]] = {doc_id: [] for doc_id in doc_ids}
     l2_map: dict[int, list[str]] = {doc_id: [] for doc_id in doc_ids}
+    learned_map: dict[int, list[str]] = {doc_id: [] for doc_id in doc_ids}
     if not doc_ids:
-        return source_map, l1_map, l2_map
+        return source_map, l1_map, l2_map, learned_map
 
     # Chips show one tag per fold group, in its display form, so a card that
     # carries two spellings of a tag shows one chip.
@@ -172,13 +178,19 @@ def _browse_tag_maps(
             overlay_tags.c.origin,
         ).where(
             overlay_tags.c.document_id.in_(doc_ids),
-            overlay_tags.c.origin.in_([TagOrigin.CLUSTER_L1, TagOrigin.CLUSTER_L2]),
+            overlay_tags.c.origin.in_(
+                [TagOrigin.CLUSTER_L1, TagOrigin.CLUSTER_L2, TagOrigin.LEARNED]
+            ),
         )
     ):
-        target = l1_map if origin == TagOrigin.CLUSTER_L1 else l2_map
+        target = {
+            TagOrigin.CLUSTER_L1: l1_map,
+            TagOrigin.CLUSTER_L2: l2_map,
+            TagOrigin.LEARNED: learned_map,
+        }[origin]
         _add_once(target[doc_id], fm.display(tag, str(origin)))
 
-    return source_map, l1_map, l2_map
+    return source_map, l1_map, l2_map, learned_map
 
 
 def _add_once(tags: list[str], tag: str) -> None:
@@ -258,7 +270,7 @@ def list_documents(
             needs_chunk = [r[0] for r in rows if not (r[7] and str(r[7]).strip())]
             if needs_chunk:
                 snippet_map = first_chunk_map(con, needs_chunk)
-        source_map, l1_map, l2_map = _browse_tag_maps(con, doc_ids)
+        source_map, l1_map, l2_map, learned_map = _browse_tag_maps(con, doc_ids)
 
     items = [
         {
@@ -273,6 +285,7 @@ def list_documents(
             "source_tags": source_map.get(doc_id, []),
             "cluster_l1_tags": l1_map.get(doc_id, []),
             "cluster_l2_tags": l2_map.get(doc_id, []),
+            "learned_tags": learned_map.get(doc_id, []),
         }
         for doc_id, source, source_id, title, url_or_path, archive_url, zotero_attachment_key, card_summary in rows
     ]

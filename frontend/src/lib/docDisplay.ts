@@ -13,6 +13,7 @@ export function toGridItem(doc: DocumentOut): DocumentListItem {
     source_tags: doc.source_tags,
     cluster_l1_tags: doc.cluster_label ? [doc.cluster_label] : [],
     cluster_l2_tags: [],
+    learned_tags: doc.overlay_tags.filter(t => t.origin === 'learned').map(t => t.tag),
   }
 }
 

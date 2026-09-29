@@ -56,12 +56,27 @@ class TestDocuments:
             "source_tags",
             "cluster_l1_tags",
             "cluster_l2_tags",
+            "learned_tags",
         ):
             assert key in doc
         assert doc["description"] == "First chunk body text."
         assert doc["source_tags"] == []
         assert doc["cluster_l1_tags"] == []
         assert doc["cluster_l2_tags"] == []
+        assert doc["learned_tags"] == []
+
+    def test_list_documents_shows_learned_tags(self, client):
+        ids = seed_docs(2)
+        from pka.clustering.cluster_tags import insert_overlay_tags
+        from pka.constants import TagOrigin
+        from pka.db import engine
+
+        with engine.get_engine().begin() as con:
+            insert_overlay_tags(con, [ids[0]], "ml-paper", TagOrigin.LEARNED, confidence=0.9)
+
+        by_id = {d["id"]: d for d in client.get("/documents").json()["documents"]}
+        assert by_id[ids[0]]["learned_tags"] == ["ml-paper"]
+        assert by_id[ids[1]]["learned_tags"] == []
 
     def test_list_documents_snippet_truncation(self, client):
         from pka.card_summary import SUMMARY_MAX_LEN

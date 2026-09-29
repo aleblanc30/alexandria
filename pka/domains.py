@@ -125,9 +125,11 @@ def build_domain_frequency_report(
 def build_domain_top_lists(
     *,
     source: str | None = None,
-    limit: int = 10,
+    limit: int | None = 10,
 ) -> dict[str, list[dict[str, Any]]]:
     """Top domains by document count and by unfetchable count, from one scan.
+
+    ``limit=None`` returns every domain in both rankings.
 
     ``skipped`` documents are excluded from the rejected ranking — that status
     marks a deliberate policy outcome (non-HTML extension, Wikipedia special
@@ -139,4 +141,6 @@ def build_domain_top_lists(
         (r for r in rows if r["unfetchable"] > 0),
         key=lambda r: (-r["unfetchable"], r["domain"]),
     )
+    if limit is None:
+        return {"top_domains": rows, "top_unfetchable": rejected}
     return {"top_domains": rows[:limit], "top_unfetchable": rejected[:limit]}

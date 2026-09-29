@@ -35,6 +35,13 @@
                 class="btn btn-sm"
                 @click="openTrainFromSource(t.tag)"
               >Train classifier…</button>
+              <button
+                v-if="canDelete(t)"
+                type="button"
+                class="btn btn-sm btn-danger"
+                :disabled="deleting === t.tag + t.origin"
+                @click="removeTag(t)"
+              >Delete</button>
             </td>
           </tr>
         </tbody>
@@ -147,6 +154,7 @@ import { useRouter } from 'vue-router'
 import {
   acceptTagAlias,
   createTagTrainingFromSourceTag,
+  deleteTag,
   listTagAliases,
   listTagTrainingSessions,
   listTags,
@@ -166,6 +174,10 @@ const sessions = ref<TagTrainingSession[]>([])
 const q      = ref('')
 const origin = ref('all')
 const origins = ['all','source','inferred','manual','learned']
+// Origins the API lets a user delete: nothing regenerates them. Source tags are
+// rewritten by each sync, and cluster and collection tags are derived.
+const deletableOrigins = ['manual', 'inferred', 'llm', 'learned']
+const deleting = ref('')
 const maxCount = computed(() => Math.max(1, ...tags.value.map(t => t.count)))
 const router = useRouter()
 const toast = useToastStore()
@@ -184,6 +196,30 @@ const merged = ref<TagAlias[]>([])
 const scanning = ref(false)
 const mergeAlias = ref('')
 const mergeCanonical = ref('')
+
+function canDelete(t: TagRow): boolean {
+  return deletableOrigins.includes(t.origin)
+}
+
+async function removeTag(t: TagRow) {
+  const learnedNote = t.origin === 'learned'
+    ? '\n\nIts trained model is archived too, so the tag is not applied to new documents.'
+    : ''
+  const ok = window.confirm(
+    `Delete the ${t.origin} tag “${t.tag}” from ${t.count} document${t.count === 1 ? '' : 's'}?${learnedNote}`,
+  )
+  if (!ok) return
+  deleting.value = t.tag + t.origin
+  try {
+    const res = await deleteTag(t.tag, t.origin)
+    toast.push(`Deleted “${t.tag}” from ${res.documents} document${res.documents === 1 ? '' : 's'}`, 'info')
+    await refreshAll()
+  } catch (e: unknown) {
+    toast.push(errorMessage(e), 'error')
+  } finally {
+    deleting.value = ''
+  }
+}
 
 function variantHint(t: TagRow): string {
   const others = (t.variants ?? []).filter(v => v !== t.tag)
@@ -270,6 +306,8 @@ onMounted(refreshAll)
 .mb-2 { margin-bottom: 8px }
 .mb-3 { margin-bottom: 16px }
 .btn-sm { font-size: 11px; padding: 4px 8px; text-decoration: none; display: inline-block }
+.btn-danger { background: #FCEBEB; color: #A32D2D; border-color: #F09595; margin-left: 4px }
+.btn-danger:hover { background: #f8d9d9 }
 .variant-count { font-size: 11px; margin-left: 6px }
 .merge-form { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px }
 .merge-input { width: 160px }

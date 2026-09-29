@@ -19,6 +19,7 @@
       <span v-if="cluster" class="badge badge--cluster">{{ cluster }}</span>
       <span v-if="year" class="hint">{{ year }}</span>
       <span class="hint tags">{{ doc.source_tags.slice(0,3).map(t => '#' + t).join(' ') }}</span>
+      <span v-for="t in learnedTags" :key="'ln-' + t" class="tag-pill tag-pill--learned">{{ t }}</span>
       <span v-if="similarity != null" class="sim">{{ Math.round(similarity * 100) }}%</span>
     </div>
     <div v-if="similarity != null" class="score-bar">
@@ -42,6 +43,14 @@ const props = defineProps<{
 defineEmits<{ click: []; 'toggle-check': [] }>()
 
 const cluster = computed(() => clusterLabel(props.doc))
+// Browse rows carry `learned_tags`; search hits carry every overlay tag with its origin.
+const learnedTags = computed(() => {
+  if ('learned_tags' in props.doc) return props.doc.learned_tags
+  if ('overlay_tags' in props.doc) {
+    return props.doc.overlay_tags.filter(t => t.origin === 'learned').map(t => t.tag)
+  }
+  return []
+})
 const year = computed(() => docAddedYear(props.doc))
 const similarity = computed(() => docSimilarity(props.doc))
 const description = computed(() => docDescription(props.doc))
